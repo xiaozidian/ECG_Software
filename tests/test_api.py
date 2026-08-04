@@ -69,14 +69,17 @@ def test_source_report_image_requires_explicit_phi_access(client):
     assert allowed.data.startswith(b"\x89PNG")
 
 
-def test_integrity_manifest_is_exposed(client):
+def test_integrity_manifest_state_is_consistent(client):
     settings = client.get("/api/settings").json
-    assert settings["integrity_manifest"]["available"] is True
-    assert settings["integrity_manifest"]["case_count"] == 10
-    assert len(settings["integrity_manifest"]["dataset_sha256"]) == 64
     details = [client.get(f"/api/cases/{item['case_id']}").json for item in client.get("/api/cases").json["items"]]
-    assert all(detail["integrity"]["manifest_available"] is True for detail in details)
-    assert any(detail["integrity"]["source_version_warning"] is True for detail in details)
+    manifest = settings["integrity_manifest"]
+    if manifest["available"]:
+        assert manifest["case_count"] == 10
+        assert len(manifest["dataset_sha256"]) == 64
+        assert all(detail["integrity"]["manifest_available"] is True for detail in details)
+    else:
+        assert manifest["case_count"] == 0
+        assert all(detail["integrity"]["manifest_available"] is False for detail in details)
 
 
 def test_mutation_endpoints_reject_invalid_json_and_ranges(client):

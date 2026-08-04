@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
+import sys
+from pathlib import Path
 
 from ecg_core.config import load_config, output_dir, platform_info, user_data_root, writable_data_dir
 
@@ -41,3 +44,17 @@ def test_platform_info_exposes_only_runtime_locations(monkeypatch, tmp_path):
     assert info["machine"]
     assert info["storage_root"] == str(app_root.resolve())
     assert info["config_path"] == str(app_root.resolve() / "config.json")
+
+
+def test_native_user_data_root_matches_operating_system(monkeypatch):
+    monkeypatch.delenv("ECG_APP_DATA_ROOT", raising=False)
+    path = user_data_root()
+
+    if sys.platform == "darwin":
+        assert path == Path.home() / "Library" / "Application Support" / "CardioInsightHolter"
+    elif os.name == "nt":
+        expected_base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
+        assert expected_base
+        assert path == Path(expected_base) / "CardioInsightHolter"
+    else:
+        assert path.name == "cardioinsight-holter"

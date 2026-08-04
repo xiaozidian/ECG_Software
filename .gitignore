@@ -5,6 +5,7 @@
 __pycache__/
 .pytest_cache/
 *.pyc
+tests/* 2.py
 config.json
 .env
 10个病人的心电数据/

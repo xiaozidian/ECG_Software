@@ -1,0 +1,54 @@
+name: Desktop builds
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.system }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - system: macOS arm64
+            os: macos-14
+            artifact_name: CardioInsight-Holter-macOS-arm64
+            artifact_path: CardioInsight-Holter-macOS-arm64.zip
+          - system: Windows x64
+            os: windows-latest
+            artifact_name: CardioInsight-Holter-Windows-x64
+            artifact_path: CardioInsight-Holter-Windows-x64.zip
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Build macOS application
+        if: runner.os == 'macOS'
+        run: |
+          chmod +x scripts/setup_macos.sh scripts/build_macos.sh
+          ./scripts/build_macos.sh
+          ditto -c -k --sequesterRsrc --keepParent \
+            dist/CardioInsightHolter.app \
+            CardioInsight-Holter-macOS-arm64.zip
+      - name: Build Windows application
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & .\scripts\build_windows.ps1
+          Compress-Archive -Path ".\dist\CardioInsightHolter\*" -DestinationPath ".\CardioInsight-Holter-Windows-x64.zip" -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_path }}
+          if-no-files-found: error
+          retention-days: 14

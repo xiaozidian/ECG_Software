@@ -80,6 +80,19 @@ function formatElapsed(seconds, withDay = true) {
   return `${withDay ? `D${day} ` : ""}${hh}:${mm}:${ss}`;
 }
 
+function applyPlatformIdentity(platformName = "") {
+  const isMac = /darwin|mac/i.test(platformName);
+  const isWindows = /windows|win32|win64/i.test(platformName);
+  const key = isMac ? "mac" : isWindows ? "windows" : "other";
+  const label = isMac ? "macOS" : isWindows ? "Windows" : "桌面系统";
+  document.documentElement.dataset.platform = key;
+  $("#searchShortcut").textContent = isMac ? "⌘ K" : "Ctrl K";
+  $("#platformEdition").textContent = `${label} 研究版`;
+  $("#platformHeading").textContent = `${label} 运行环境`;
+  $("#platformIcon").textContent = isMac ? "⌘" : isWindows ? "⊞" : "◫";
+  $("#displayOptimization").textContent = `${isMac ? "Retina" : "HiDPI"} · 系统字体`;
+}
+
 function sourceHint(conclusion) {
   return String(conclusion || "未填写源报告结论").split(/\n/).filter(Boolean).slice(0, 2).join("；");
 }
@@ -455,11 +468,12 @@ async function loadSettings() {
   if(!state.settings)state.settings=await api("/api/settings");
   $("#settingsDataRoot").textContent=state.settings.data_root;$("#settingsCaseCount").textContent=`${state.settings.case_count} 例`;$("#settingsIntegrity").textContent=state.settings.integrity_manifest.available?`SHA-256 · ${state.settings.integrity_manifest.case_count} 例`:"未生成";
   const platform=state.settings.platform||{};
+  applyPlatformIdentity(platform.name||"");
   $("#settingsStorageRoot").textContent=platform.storage_root||"—";
   $("#settingsPlatform").textContent=[platform.name,platform.release].filter(Boolean).join(" ")||"—";
   $("#settingsArchitecture").textContent=platform.machine||"—";
   $("#settingsConfigPath").textContent=platform.config_path||"—";
-  $("#setupConfigPath").textContent=platform.config_path||"~/Library/Application Support/CardioInsightHolter/config.json";
+  $("#setupConfigPath").textContent=platform.config_path||"CardioInsightHolter/config.json";
 }
 
 function openAnnotation(time = state.start + state.duration/2) {
@@ -535,9 +549,7 @@ async function init() {
   bindEvents();
   try {
     const platformName=navigator.userAgentData?.platform||navigator.platform||"";
-    const isMac=/mac/i.test(platformName);
-    document.documentElement.dataset.platform=isMac?"mac":"other";
-    $("#searchShortcut").textContent=isMac?"⌘ K":"Ctrl K";
+    applyPlatformIdentity(platformName);
     const health=await api("/api/health");
     await Promise.all([loadDashboard(),loadSettings()]);
     $("#dataSetupPanel").hidden=health.data_root_found;

@@ -27,7 +27,7 @@
     <div class="global-search">
       <span aria-hidden="true">⌕</span>
       <input id="globalSearch" type="search" placeholder="搜索病例号、患者、诊断…" autocomplete="off">
-      <kbd id="searchShortcut">⌘ K</kbd>
+      <kbd id="searchShortcut">Ctrl / ⌘ K</kbd>
     </div>
     <div class="top-actions">
       <button id="privacyToggle" class="privacy-toggle" type="button" aria-pressed="false">
@@ -49,7 +49,7 @@
       <button class="nav-item" data-page="audit"><span>◎</span><em>审计</em></button>
       <button class="nav-item" data-page="settings"><span>⚙</span><em>设置</em></button>
     </nav>
-    <div class="sidebar-version">v{{ app_version_short }}<br><span>macOS 研究版</span></div>
+    <div class="sidebar-version">v{{ app_version_short }}<br><span id="platformEdition">桌面研究版</span></div>
   </aside>
 
   <main class="main-shell" id="mainContent" tabindex="-1">
@@ -148,10 +148,10 @@
     </section>
 
     <section class="page" id="page-settings">
-      <div class="page-heading compact"><div><p class="eyebrow">系统设置</p><h1>数据源与验证边界</h1><p>适配 macOS 的本地离线研究演示应用。</p></div><span class="status-pill success">仅监听 127.0.0.1</span></div>
+      <div class="page-heading compact"><div><p class="eyebrow">系统设置</p><h1>数据源与验证边界</h1><p>支持 macOS 与 Windows 的本地离线研究演示应用。</p></div><span class="status-pill success">仅监听 127.0.0.1</span></div>
       <div class="settings-grid">
         <article class="card settings-card"><div class="setting-icon">▣</div><div><h2>病例数据源</h2><p id="settingsDataRoot">正在读取…</p><dl><div><dt>病例数</dt><dd id="settingsCaseCount">—</dd></div><div><dt>原始格式</dt><dd>200 Hz · 8×int16 LE</dd></div><div><dt>标准导联</dt><dd>I、II、V1–V6；其余派生</dd></div><div><dt>完整性清单</dt><dd id="settingsIntegrity">正在核验…</dd></div></dl></div></article>
-        <article class="card settings-card"><div class="setting-icon">⌘</div><div><h2>macOS 运行环境</h2><p id="settingsStorageRoot">正在读取…</p><dl><div><dt>系统</dt><dd id="settingsPlatform">macOS</dd></div><div><dt>架构</dt><dd id="settingsArchitecture">—</dd></div><div><dt>本地配置</dt><dd id="settingsConfigPath">—</dd></div><div><dt>显示优化</dt><dd>Retina · 系统字体</dd></div></dl></div></article>
+        <article class="card settings-card"><div id="platformIcon" class="setting-icon">◫</div><div><h2 id="platformHeading">本机运行环境</h2><p id="settingsStorageRoot">正在读取…</p><dl><div><dt>系统</dt><dd id="settingsPlatform">正在识别…</dd></div><div><dt>架构</dt><dd id="settingsArchitecture">—</dd></div><div><dt>本地配置</dt><dd id="settingsConfigPath">—</dd></div><div><dt>显示优化</dt><dd id="displayOptimization">HiDPI · 系统字体</dd></div></dl></div></article>
         <article class="card settings-card"><div class="setting-icon">⌁</div><div><h2>默认算法阈值</h2><p>来自源分析设置 XML，可在事件页临时调整。</p><dl><div><dt>心动过缓</dt><dd>≤ 50 bpm</dd></div><div><dt>心动过速</dt><dd>≥ 120 bpm</dd></div><div><dt>长 RR</dt><dd>≥ 2.5 s</dd></div><div><dt>显示滤波</dt><dd>0.5–40 Hz</dd></div></dl></div></article>
         <article class="card settings-card full"><div class="setting-icon alert">!</div><div><h2>尚未完成的临床上线条件</h2><p>以下项目不属于本次 10 例功能原型的已交付能力。</p><div class="boundary-list"><span>独立金标准算法验证</span><span>IEC 60601-2-47 / EC57 测试</span><span>医疗器械注册与质量体系</span><span>正式登录、RBAC 与 MFA</span><span>HIS / PACS / DICOM / HL7</span><span>数字签名与 PDF/A 验证</span><span>网络安全与灾备</span><span>多中心临床评价</span></div></div></article>
       </div>

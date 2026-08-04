@@ -9,6 +9,7 @@
   color:var(--ink-900); background:var(--surface-alt); font-synthesis:none;
 }
 *{box-sizing:border-box} html,body{margin:0;min-width:860px;min-height:100%;background:var(--surface-alt)} html{scroll-behavior:smooth} body{overflow-x:hidden;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+html[data-platform="windows"]{font-family:"Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",system-ui,sans-serif}
 button,input,select,textarea{font:inherit;color:inherit} button{cursor:pointer;-webkit-appearance:none} button:active{transform:translateY(1px) scale(.985)} button:disabled{cursor:not-allowed;opacity:.45;transform:none} button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,a:focus-visible{outline:3px solid rgba(23,170,166,.28);outline-offset:2px}
 .topbar{height:var(--topbar);position:fixed;z-index:50;inset:0 0 auto 0;background:var(--navy-950);display:flex;align-items:center;padding:0 22px;color:#fff;box-shadow:0 3px 18px rgba(4,19,27,.25)}
 .brand{width:310px;display:flex;align-items:center;gap:12px}.brand-mark{width:39px;height:39px;border-radius:11px;background:var(--teal-500);display:grid;place-items:center}.brand-mark svg{width:31px;fill:none;stroke:white;stroke-width:2.6;stroke-linejoin:round;stroke-linecap:round}.brand strong{display:block;font-size:17px;letter-spacing:.2px}.brand span{display:block;font-size:11px;color:#a9bdc8;margin-top:2px;letter-spacing:.4px}

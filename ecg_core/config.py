@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "CardioInsight Holter 心电分析工作站"
-APP_VERSION = "0.10.0-macos"
+APP_VERSION = "0.11.0"
 SAMPLE_RATE = 200
 CHANNEL_COUNT = 8
 RAW_FOLDER_NAME = "10个病人的心电数据"
@@ -25,7 +25,7 @@ def resource_root() -> Path:
 
 
 def runtime_root() -> Path:
-    """Return the executable directory (read-only for a signed macOS app)."""
+    """Return the executable directory (read-only for installed desktop apps)."""
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
     return source_root()

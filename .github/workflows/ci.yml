@@ -1,4 +1,4 @@
-name: macOS checks
+name: Cross-platform checks
 
 on:
   push:
@@ -9,8 +9,17 @@ permissions:
 
 jobs:
   test:
-    runs-on: macos-14
+    name: ${{ matrix.system }} checks
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - system: macOS
+            os: macos-14
+          - system: Windows
+            os: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -28,3 +37,24 @@ jobs:
         run: python -m compileall -q app.py ecg_core tests
       - name: JavaScript syntax
         run: node --check static/js/app.js
+      - name: macOS launcher syntax
+        if: runner.os == 'macOS'
+        run: zsh -n scripts/setup_macos.sh scripts/build_macos.sh 启动心电分析软件.command
+      - name: Windows PowerShell syntax
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $files = @("scripts/setup_windows.ps1", "scripts/build_windows.ps1")
+          foreach ($file in $files) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $file),
+              [ref]$tokens,
+              [ref]$errors
+            ) | Out-Null
+            if (@($errors).Count -gt 0) {
+              $errors | ForEach-Object { Write-Error $_.Message }
+              exit 1
+            }
+          }

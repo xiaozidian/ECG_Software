@@ -1,5 +1,5 @@
 {
-  "data_root": "/Users/your-name/Documents/ECG/10个病人的心电数据",
+  "data_root": "",
   "privacy_mode": "masked_by_default",
   "listen_host": "127.0.0.1",
   "listen_port": 8765
