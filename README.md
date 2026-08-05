@@ -1,17 +1,17 @@
 # CardioInsight Holter 心电分析工作站
 
-CardioInsight Holter 是一个在本机运行的动态心电研究与软件验证工作站，同时支持 **macOS** 和 **Windows**。程序会按当前系统选择原生用户数据目录、界面字体、显示优化和搜索快捷键；服务默认只监听 `127.0.0.1`，病例文件只读访问，身份信息默认遮蔽。
+CardioInsight Holter 是一个在本机运行的动态心电研究与软件验证工作站，同时支持 **macOS** 和 **Windows**。源码运行时使用项目根目录的本机 `config.json`；程序会按当前系统选择原生数据存储目录、界面字体、显示优化和搜索快捷键。服务默认只监听 `127.0.0.1`，病例文件只读访问，身份信息默认遮蔽。
 
 > 本项目仅用于研究、教学和软件功能验证，不用于独立临床诊断、报警、分诊或治疗决策。自动分类、事件和统计均为待专业人员复核的候选结果。
 
 ## 选择运行系统
 
-| 系统 | 支持版本 | 双击启动 | 用户配置 | 打包产物 |
-|---|---|---|---|---|
-| macOS | macOS 12+，Apple Silicon / Intel | `启动心电分析软件.command` | `~/Library/Application Support/CardioInsightHolter/config.json` | `dist/CardioInsightHolter.app` |
-| Windows | Windows 10/11 64 位 | `启动心电分析软件.cmd` | `%LOCALAPPDATA%\CardioInsightHolter\config.json` | `dist\CardioInsightHolter\CardioInsightHolter.exe` |
+| 系统 | 支持版本 | 双击启动 | 源码配置 | 本地数据目录 | 打包产物 |
+|---|---|---|---|---|---|
+| macOS | macOS 12+，Apple Silicon / Intel | `启动心电分析软件.command` | `项目根目录/config.json` | `~/Library/Application Support/CardioInsightHolter/` | `dist/CardioInsightHolter.app` |
+| Windows | Windows 10/11 64 位 | `启动心电分析软件.cmd` | `项目根目录\config.json` | `%LOCALAPPDATA%\CardioInsightHolter\` | `dist\CardioInsightHolter\CardioInsightHolter.exe` |
 
-两个系统均要求 Python 3.11 或更高版本。首次启动会自动创建项目内 `.venv`、安装运行依赖并生成本机配置文件。
+两个系统均要求 Python 3.11 或更高版本。首次启动会自动创建项目内 `.venv`、安装运行依赖，并把 `config.example.json` 复制为项目根目录的 `config.json`。
 
 ### macOS
 
@@ -35,7 +35,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup_windows.ps1
 
 ## 连接病例数据
 
-首次运行后，编辑当前系统对应的 `config.json`，把 `data_root` 设为 `10个病人的心电数据` 目录的绝对路径：
+首次运行后，编辑项目根目录的 `config.json`，把 `data_root` 设为 `10个病人的心电数据` 目录的绝对路径。源码运行时会优先读取该文件。
+
+> `config.json` 只保留在本机。仓库已通过 `.gitignore` 忽略它，不会被正常的 Git 提交或推送上传；仓库仅保留不含本机路径的 `config.example.json`。
 
 macOS 示例：
 
@@ -98,7 +100,7 @@ GitHub Actions 的 `desktop-builds.yml` 会在 macOS 与 Windows runner 上分�
 
 ## 隐私与仓库边界
 
-仓库不包含原始病例、报告影像、本地 SQLite、完整性清单、导出报告、虚拟环境或应用构建产物。`config.json` 也被忽略，避免把本机病例路径提交到版本控制。
+仓库不包含原始病例、报告影像、本地 SQLite、完整性清单、导出报告、虚拟环境或应用构建产物。项目根目录的 `config.json` 也被忽略，避免把本机病例路径提交到版本控制或上传到 GitHub。
 
 如果需要验证原始数据完整性，请在受控环境中运行 `scripts/build_case_manifest.py`；生成的 `data/case_manifest.json` 只保留在本机。
 

@@ -63,7 +63,7 @@ if sys.platform == 'darwin':
         bundle_identifier='cn.edu.tsinghua.cardioinsight.holter',
         info_plist={
             'CFBundleDisplayName': 'CardioInsight Holter',
-            'CFBundleShortVersionString': '0.11.0',
+            'CFBundleShortVersionString': '0.11.1',
             'LSMinimumSystemVersion': '12.0',
             'LSApplicationCategoryType': 'public.app-category.medical',
             'NSHighResolutionCapable': True,

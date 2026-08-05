@@ -30,12 +30,11 @@ print "正在安装运行依赖…"
 "$VENV_PYTHON" -m pip install --upgrade pip
 "$VENV_PYTHON" -m pip install -r "$PROJECT_ROOT/requirements.txt"
 
-APP_SUPPORT="$HOME/Library/Application Support/CardioInsightHolter"
-mkdir -p "$APP_SUPPORT"
-if [[ ! -f "$APP_SUPPORT/config.json" ]]; then
-  cp "$PROJECT_ROOT/config.example.json" "$APP_SUPPORT/config.json"
-  print "已创建配置：$APP_SUPPORT/config.json"
+CONFIG_PATH="$PROJECT_ROOT/config.json"
+if [[ ! -f "$CONFIG_PATH" ]]; then
+  cp "$PROJECT_ROOT/config.example.json" "$CONFIG_PATH"
+  print "已创建本机配置：$CONFIG_PATH"
 fi
 
 print "macOS 运行环境已就绪。"
-print "请确认 config.json 中的 data_root 指向本机病例目录。"
+print "请确认项目根目录 config.json 中的 data_root 指向本机病例目录。"
