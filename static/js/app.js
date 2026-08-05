@@ -8,6 +8,8 @@ const LEAD_PRESETS = {
   6: ["I", "II", "III", "aVR", "V1", "V5"],
   12: ALL_LEADS,
 };
+const TIME_ZOOM_STEPS = [1, 2, 5, 10, 20, 30, 60, 120];
+const GAIN_ZOOM_STEPS = [5, 10, 20];
 const STATUS_TEXT = {draft: "未审核", reviewed: "已审核", returned: "已驳回"};
 const UI_FONT = '"SF Pro Text", "PingFang SC", "Microsoft YaHei UI", sans-serif';
 const ACTION_TEXT = {
@@ -33,6 +35,7 @@ const state = {
   leads: LEAD_PRESETS[3],
   trend: null,
   waveform: null,
+  waveformRequestId: 0,
   rr: null,
   hrv: null,
   events: null,
@@ -78,6 +81,17 @@ function formatElapsed(seconds, withDay = true) {
   const mm = String(Math.floor((within % 3600) / 60)).padStart(2, "0");
   const ss = String(within % 60).padStart(2, "0");
   return `${withDay ? `D${day} ` : ""}${hh}:${mm}:${ss}`;
+}
+
+function formatElapsedPrecise(seconds) {
+  const totalMilliseconds = Math.max(0, Math.round((Number(seconds) || 0) * 1000));
+  const day = Math.floor(totalMilliseconds / 86400000) + 1;
+  const withinDay = totalMilliseconds % 86400000;
+  const hh = String(Math.floor(withinDay / 3600000)).padStart(2, "0");
+  const mm = String(Math.floor((withinDay % 3600000) / 60000)).padStart(2, "0");
+  const ss = String(Math.floor((withinDay % 60000) / 1000)).padStart(2, "0");
+  const milliseconds = String(withinDay % 1000).padStart(3, "0");
+  return `D${day} ${hh}:${mm}:${ss}.${milliseconds}`;
 }
 
 function applyPlatformIdentity(platformName = "") {
@@ -174,6 +188,7 @@ function renderPatients() {
 async function selectCase(caseId, destination = "review") {
   state.caseId = caseId;
   state.start = 0;
+  state.waveformRequestId += 1;
   state.waveform = state.trend = state.rr = state.hrv = state.events = null;
   await api(`/api/cases/${caseId}/open`, {method: "POST", body: "{}"});
   await loadCase();
@@ -202,6 +217,7 @@ async function loadCase() {
   const duration = caseData.technical.duration_seconds_raw;
   $("#timeSlider").max = Math.max(0, Math.floor(duration - state.duration));
   $("#timeSlider").value = state.start;
+  updateZoomControls();
   renderOverview();
   renderReport();
   if (state.currentPage === "review") await loadWaveform();
@@ -227,14 +243,17 @@ function goPage(name) {
 
 async function loadWaveform() {
   if (!state.caseId) return;
+  const requestId=++state.waveformRequestId;
   const params = new URLSearchParams({
     start: state.start.toFixed(3), duration: state.duration, leads: state.leads.join(","),
     max_points: 5000, filter: state.filter,
   });
   $("#waveMeta").textContent = "正在读取窗口…";
   const data = await api(`/api/cases/${state.caseId}/waveform?${params}`);
+  if(requestId!==state.waveformRequestId)return;
   state.waveform = data;
   state.start = data.start_s;
+  updateZoomControls();
   $("#timeSlider").value = Math.round(state.start);
   $("#cursorTimeLabel").textContent = `${formatElapsed(state.start)}–${formatElapsed(state.start + data.duration_s)}`;
   $("#waveMeta").textContent = `${data.sample_rate_hz} Hz · ${data.filter} · ${formatElapsed(data.start_s)}`;
@@ -247,9 +266,16 @@ async function loadWaveform() {
 
 function canvasContext(canvas, height = null) {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const width = Math.max(300, canvas.parentElement.clientWidth - (canvas.id === "waveformCanvas" ? 0 : 2));
+  const isWaveform = canvas.id === "waveformCanvas";
+  let width;
+  if (isWaveform) {
+    canvas.style.width = "100%";
+    width = Math.max(720, Math.floor(canvas.getBoundingClientRect().width));
+  } else {
+    width = Math.max(300, canvas.parentElement.clientWidth - 2);
+    canvas.style.width = `${width}px`;
+  }
   const cssHeight = height || Number(canvas.getAttribute("height")) || 200;
-  canvas.style.width = `${width}px`;
   canvas.style.height = `${cssHeight}px`;
   canvas.width = Math.round(width * dpr);
   canvas.height = Math.round(cssHeight * dpr);
@@ -496,16 +522,107 @@ async function savePatient() {
   await api(`/api/cases/${id}/patient`,{method:"PATCH",body:JSON.stringify(payload)});$("#patientDialog").close();toast("患者本地覆盖已保存");await loadDashboard();if(state.caseId===id)await loadCase();
 }
 
-function jumpTo(time) {if(!state.caseId)return;state.start=Math.max(0,Math.min(Number(time)-state.duration*.35,state.caseData.technical.duration_seconds_raw-state.duration));goPage("review");loadWaveform().catch(handleError);}
+function jumpTo(time) {if(!state.caseId)return;state.start=Math.max(0,Math.min(Number(time)-state.duration*.35,state.caseData.technical.duration_seconds_raw-state.duration));if(state.currentPage==="review")loadWaveform().catch(handleError);else goPage("review");}
+
+function availableTimeZoomSteps() {
+  const total=Number(state.caseData?.technical?.duration_seconds_raw)||TIME_ZOOM_STEPS[TIME_ZOOM_STEPS.length-1];
+  const steps=TIME_ZOOM_STEPS.filter(value=>value<=total);
+  if(total<TIME_ZOOM_STEPS[TIME_ZOOM_STEPS.length-1]&&!steps.includes(total))steps.push(Math.max(1,total));
+  return steps.length?steps:[Math.max(1,total)];
+}
+
+function updateZoomControls() {
+  const label=$("#zoomWindowLabel"),select=$("#durationSelect"),steps=availableTimeZoomSteps();
+  if(label)label.textContent=`${state.duration} s`;
+  if(select&&[...select.options].some(option=>Number(option.value)===state.duration))select.value=String(state.duration);
+  const index=steps.indexOf(state.duration),hasCase=Boolean(state.caseData);
+  if($("#zoomIn"))$("#zoomIn").disabled=!hasCase||index<=0;
+  if($("#zoomOut"))$("#zoomOut").disabled=!hasCase||index<0||index>=steps.length-1;
+  const resetDuration=Math.min(10,Number(state.caseData?.technical?.duration_seconds_raw)||10);
+  if($("#zoomReset"))$("#zoomReset").disabled=!hasCase||state.duration===resetDuration;
+}
+
+function setWaveformDuration(nextDuration, anchorFraction=.5) {
+  if(!state.caseData)return;
+  const total=Number(state.caseData.technical.duration_seconds_raw)||nextDuration;
+  const duration=Math.max(1,Math.min(Number(nextDuration)||10,total));
+  const anchor=Math.max(0,Math.min(1,Number(anchorFraction)||0));
+  const anchorTime=state.start+state.duration*anchor;
+  state.duration=duration;
+  state.start=Math.max(0,Math.min(anchorTime-duration*anchor,Math.max(0,total-duration)));
+  $("#timeSlider").max=Math.max(0,total-duration);
+  updateZoomControls();
+  loadWaveform().catch(handleError);
+}
+
+function zoomWaveform(zoomIn, anchorFraction=.5) {
+  const steps=availableTimeZoomSteps();
+  let index=steps.indexOf(state.duration);
+  if(index<0)index=steps.reduce((best,value,current)=>Math.abs(value-state.duration)<Math.abs(steps[best]-state.duration)?current:best,0);
+  const nextIndex=Math.max(0,Math.min(steps.length-1,index+(zoomIn?-1:1)));
+  if(nextIndex!==index)setWaveformDuration(steps[nextIndex],anchorFraction);
+}
+
+function resetWaveformZoom() {setWaveformDuration(Math.min(10,Number(state.caseData?.technical?.duration_seconds_raw)||10),.5);}
+
+function zoomWaveformGain(zoomIn) {
+  let index=GAIN_ZOOM_STEPS.indexOf(state.gain);
+  if(index<0)index=1;
+  const nextIndex=Math.max(0,Math.min(GAIN_ZOOM_STEPS.length-1,index+(zoomIn?1:-1)));
+  if(nextIndex===index)return;
+  state.gain=GAIN_ZOOM_STEPS[nextIndex];
+  $("#gainSelect").value=String(state.gain);
+  renderWaveform();
+}
 
 function bindCanvasInteraction() {
-  const canvas=$("#waveformCanvas"),scroller=$("#waveformScroller"),tooltip=$("#waveTooltip");let down=null;
+  const canvas=$("#waveformCanvas"),scroller=$("#waveformScroller"),tooltip=$("#waveTooltip"),cursor=$("#waveCursor");let down=null,wheelTimer=null,wheelIntent=null;
+  const cursorX=$(".wave-cursor-x",cursor),cursorY=$(".wave-cursor-y",cursor),cursorDot=$("i",cursor);
+  const hideCursor=()=>{tooltip.hidden=true;cursor.hidden=true};
+  const finishDrag=event=>{
+    if(!down)return;
+    const rect=canvas.getBoundingClientRect(),dx=event.clientX-down.x;
+    if(Math.abs(dx)>6){state.start=Math.max(0,Math.min(down.start-dx/rect.width*state.duration,state.caseData.technical.duration_seconds_raw-state.duration));loadWaveform().catch(handleError)}
+    down=null;scroller.classList.remove("dragging");
+  };
   canvas.addEventListener("pointerdown",event=>{down={x:event.clientX,start:state.start};scroller.classList.add("dragging");canvas.setPointerCapture(event.pointerId)});
-  canvas.addEventListener("pointerup",event=>{if(!down)return;const rect=canvas.getBoundingClientRect(),dx=event.clientX-down.x;if(Math.abs(dx)>6){state.start=Math.max(0,Math.min(down.start-dx/rect.width*state.duration,state.caseData.technical.duration_seconds_raw-state.duration));loadWaveform().catch(handleError)}down=null;scroller.classList.remove("dragging")});
-  canvas.addEventListener("pointermove",event=>{if(!state.waveform)return;const rect=canvas.getBoundingClientRect(),fraction=Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width)),time=state.waveform.start_s+fraction*state.waveform.duration_s;tooltip.hidden=false;tooltip.style.left=`${event.clientX-rect.left+12}px`;tooltip.style.top=`${Math.max(8,event.clientY-rect.top-28+scroller.scrollTop)}px`;tooltip.textContent=formatElapsed(time)});
-  canvas.addEventListener("pointerleave",()=>tooltip.hidden=true);
+  canvas.addEventListener("pointerup",finishDrag);
+  canvas.addEventListener("pointercancel",event=>{down=null;scroller.classList.remove("dragging");hideCursor();if(canvas.hasPointerCapture(event.pointerId))canvas.releasePointerCapture(event.pointerId)});
+  canvas.addEventListener("pointermove",event=>{
+    if(!state.waveform)return;
+    const rect=canvas.getBoundingClientRect();
+    const localX=Math.max(0,Math.min(rect.width,event.clientX-rect.left));
+    const localY=Math.max(0,Math.min(rect.height-1,event.clientY-rect.top));
+    const fraction=rect.width?localX/rect.width:0;
+    const time=state.waveform.start_s+fraction*state.waveform.duration_s;
+    const leadNames=Object.keys(state.waveform.leads);
+    const leadIndex=Math.min(leadNames.length-1,Math.max(0,Math.floor(localY/(rect.height/leadNames.length))));
+    const lead=leadNames[leadIndex]||"—";
+    const values=state.waveform.leads[lead]||[];
+    const valueIndex=Math.min(values.length-1,Math.max(0,Math.round(fraction*Math.max(0,values.length-1))));
+    const millivolts=Number(values[valueIndex]||0)/1000;
+    const signedVoltage=`${millivolts>=0?"+":""}${millivolts.toFixed(3)} mV`;
+
+    cursor.hidden=false;tooltip.hidden=false;
+    cursorX.style.left=`${localX}px`;cursorX.style.top=`${scroller.scrollTop}px`;cursorX.style.height=`${scroller.clientHeight}px`;
+    cursorY.style.top=`${localY}px`;cursorY.style.left=`${scroller.scrollLeft}px`;cursorY.style.width=`${scroller.clientWidth}px`;
+    cursorDot.style.left=`${localX}px`;cursorDot.style.top=`${localY}px`;
+    tooltip.classList.toggle("flip",localX>rect.width-190);
+    tooltip.style.left=`${localX}px`;tooltip.style.top=`${Math.max(6,localY-42)}px`;
+    tooltip.textContent=`${formatElapsedPrecise(time)}\n${lead}  ${signedVoltage}`;
+  });
+  canvas.addEventListener("pointerleave",()=>{if(!down)hideCursor()});
   canvas.addEventListener("dblclick",event=>{const rect=canvas.getBoundingClientRect(),time=state.waveform.start_s+(event.clientX-rect.left)/rect.width*state.waveform.duration_s;openAnnotation(time)});
-  canvas.addEventListener("wheel",event=>{if(!state.caseId)return;event.preventDefault();state.start=Math.max(0,Math.min(state.start+Math.sign(event.deltaY)*state.duration,state.caseData.technical.duration_seconds_raw-state.duration));loadWaveform().catch(handleError)},{passive:false});
+  canvas.addEventListener("wheel",event=>{
+    if(!state.caseData)return;
+    event.preventDefault();
+    const rect=canvas.getBoundingClientRect();
+    const delta=Math.abs(event.deltaY)>=Math.abs(event.deltaX)?event.deltaY:event.deltaX;
+    if(!delta)return;
+    wheelIntent={gain:event.shiftKey,zoomIn:delta<0,anchor:Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width))};
+    clearTimeout(wheelTimer);
+    wheelTimer=setTimeout(()=>{if(wheelIntent.gain)zoomWaveformGain(wheelIntent.zoomIn);else zoomWaveform(wheelIntent.zoomIn,wheelIntent.anchor);wheelIntent=null},80);
+  },{passive:false});
   $("#overviewCanvas").addEventListener("click",event=>{if(!state.caseData)return;const rect=event.currentTarget.getBoundingClientRect(),time=(event.clientX-rect.left)/rect.width*state.caseData.technical.duration_seconds_raw;jumpTo(time)});
   $("#trendCanvas").addEventListener("click",event=>{if(!state.caseData)return;const rect=event.currentTarget.getBoundingClientRect(),time=(event.clientX-rect.left)/rect.width*state.caseData.technical.duration_seconds_raw;jumpTo(time)});
 }
@@ -527,9 +644,10 @@ function bindEvents() {
   $("#openFirstCase").addEventListener("click",()=>{const first=filteredCases()[0];if(first)selectCase(first.case_id).catch(handleError)});
   $("#privacyToggle").addEventListener("click",async()=>{try{const enabling=!state.includePhi;if(enabling&&!confirm("身份信息包含真实健康数据。仅应在授权环境中查看，是否继续？"))return;await api("/api/privacy/view",{method:"POST",body:JSON.stringify({enabled:enabling})});state.includePhi=enabling;$("#privacyToggle").classList.toggle("visible",state.includePhi);$("#privacyToggle").setAttribute("aria-pressed",String(state.includePhi));$("#privacyText").textContent=state.includePhi?"身份信息正在显示":"身份信息已遮蔽";await loadDashboard();if(state.caseId)await loadCase()}catch(error){handleError(error)}});
   $$('[data-lead-preset]').forEach(button=>button.addEventListener("click",()=>{state.leadPreset=Number(button.dataset.leadPreset);state.leads=LEAD_PRESETS[state.leadPreset];$$('[data-lead-preset]').forEach(b=>b.classList.toggle("active",b===button));loadWaveform().catch(handleError)}));
-  $("#durationSelect").addEventListener("change",event=>{state.duration=Number(event.target.value);$("#timeSlider").max=Math.max(0,state.caseData.technical.duration_seconds_raw-state.duration);loadWaveform().catch(handleError)});
+  $("#durationSelect").addEventListener("change",event=>setWaveformDuration(Number(event.target.value),.5));
   $("#gainSelect").addEventListener("change",event=>{state.gain=Number(event.target.value);renderWaveform()});
   $("#filterSelect").addEventListener("change",event=>{state.filter=event.target.value;loadWaveform().catch(handleError)});
+  $("#zoomIn").addEventListener("click",()=>zoomWaveform(true,.5));$("#zoomOut").addEventListener("click",()=>zoomWaveform(false,.5));$("#zoomReset").addEventListener("click",resetWaveformZoom);
   $("#prevWindow").addEventListener("click",()=>jumpTo(state.start-state.duration*.65));$("#nextWindow").addEventListener("click",()=>jumpTo(state.start+state.duration*1.35));
   let sliderTimer;$("#timeSlider").addEventListener("input",event=>{clearTimeout(sliderTimer);state.start=Number(event.target.value);renderOverview();sliderTimer=setTimeout(()=>loadWaveform().catch(handleError),120)});
   $("#addAnnotation").addEventListener("click",()=>openAnnotation());$("#confirmAnnotation").addEventListener("click",event=>{event.preventDefault();createAnnotation().catch(handleError)});
@@ -540,13 +658,14 @@ function bindEvents() {
   $("#downloadReport").addEventListener("click",()=>{if(state.caseId)window.location.href=withPhi(`/api/cases/${state.caseId}/report.pdf`)});
   $("#reportPageSelect").addEventListener("change",event=>showReportPage(Number(event.target.value)));$("#openReportImage").addEventListener("click",()=>{const url=$("#sourceReportImage").dataset.url;if(url)window.open(url,"_blank","noopener");else toast("请先使用右上角隐私开关显示身份信息","error")});
   $("#refreshAudit").addEventListener("click",()=>loadAudit().catch(handleError));
-  document.addEventListener("keydown",event=>{if(["INPUT","TEXTAREA","SELECT"].includes(document.activeElement.tagName))return;if(event.key==="ArrowLeft"&&state.currentPage==="review"){event.preventDefault();jumpTo(state.start-state.duration*.65)}if(event.key==="ArrowRight"&&state.currentPage==="review"){event.preventDefault();jumpTo(state.start+state.duration*1.35)}if(event.key.toLowerCase()==="a"&&state.currentPage==="review")openAnnotation();if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="k"){event.preventDefault();$("#globalSearch").focus()}});
+  document.addEventListener("keydown",event=>{if(["INPUT","TEXTAREA","SELECT"].includes(document.activeElement.tagName))return;if(event.key==="ArrowLeft"&&state.currentPage==="review"){event.preventDefault();jumpTo(state.start-state.duration*.65)}if(event.key==="ArrowRight"&&state.currentPage==="review"){event.preventDefault();jumpTo(state.start+state.duration*1.35)}if(!event.ctrlKey&&!event.metaKey&&!event.altKey&&state.currentPage==="review"&&(event.key==="+"||event.key==="=")){event.preventDefault();zoomWaveform(true,.5)}if(!event.ctrlKey&&!event.metaKey&&!event.altKey&&state.currentPage==="review"&&(event.key==="-"||event.key==="_")){event.preventDefault();zoomWaveform(false,.5)}if(!event.ctrlKey&&!event.metaKey&&!event.altKey&&state.currentPage==="review"&&event.key==="0"){event.preventDefault();resetWaveformZoom()}if(event.key.toLowerCase()==="a"&&state.currentPage==="review")openAnnotation();if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="k"){event.preventDefault();$("#globalSearch").focus()}});
   bindCanvasInteraction();
   let resizeTimer;window.addEventListener("resize",()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{if(state.currentPage==="review"){renderOverview();renderWaveform()}if(state.currentPage==="trends"){renderTrendChart();renderHistogram();renderPoincare()}},120)});
 }
 
 async function init() {
   bindEvents();
+  updateZoomControls();
   try {
     const platformName=navigator.userAgentData?.platform||navigator.platform||"";
     applyPlatformIdentity(platformName);

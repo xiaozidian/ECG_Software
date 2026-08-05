@@ -95,21 +95,22 @@
       <div id="caseHero" class="case-hero empty-case"><div><p class="eyebrow">当前病例</p><h1>请选择病例</h1><p>从工作列表进入波形复核。</p></div></div>
       <div class="review-toolbar card">
         <div class="toolbar-group"><label>导联布局</label><div class="segmented"><button data-lead-preset="3" class="active">3 导联</button><button data-lead-preset="6">6 导联</button><button data-lead-preset="12">12 导联</button></div></div>
-        <div class="toolbar-group"><label for="durationSelect">窗口</label><select id="durationSelect"><option value="5">5 秒</option><option value="10" selected>10 秒</option><option value="20">20 秒</option><option value="30">30 秒</option><option value="60">60 秒</option></select></div>
+        <div class="toolbar-group"><label for="durationSelect">窗口</label><select id="durationSelect"><option value="1">1 秒</option><option value="2">2 秒</option><option value="5">5 秒</option><option value="10" selected>10 秒</option><option value="20">20 秒</option><option value="30">30 秒</option><option value="60">60 秒</option><option value="120">120 秒</option></select></div>
         <div class="toolbar-group"><label for="gainSelect">增益</label><select id="gainSelect"><option value="5">5 mm/mV</option><option value="10" selected>10 mm/mV</option><option value="20">20 mm/mV</option></select></div>
         <div class="toolbar-group"><label for="filterSelect">显示滤波</label><select id="filterSelect"><option value="display">0.5–40 Hz</option><option value="raw">原始波形</option></select></div>
+        <div class="toolbar-group waveform-zoom-group"><label>时间缩放</label><div class="zoom-controls" role="group" aria-label="波形时间轴缩放"><button id="zoomOut" type="button" title="缩小波形（-）" aria-label="缩小波形">−</button><button id="zoomReset" type="button" title="复位到 10 秒（0）" aria-label="复位到 10 秒"><span id="zoomWindowLabel">10 s</span></button><button id="zoomIn" type="button" title="放大波形（+）" aria-label="放大波形">＋</button></div></div>
         <div class="toolbar-spacer"></div>
         <button class="icon-button" id="prevWindow" title="前一窗口">←</button><button class="icon-button" id="nextWindow" title="后一窗口">→</button><button class="button secondary" id="addAnnotation">＋ 人工标注</button>
       </div>
       <div class="analysis-grid">
         <div class="analysis-main">
           <article class="card trend-strip-card"><div class="mini-card-title"><span>全程心率趋势</span><small id="cursorTimeLabel">D1 00:00:00</small></div><canvas id="overviewCanvas" height="118"></canvas><input id="timeSlider" class="time-slider" type="range" min="0" max="1" value="0" step="1"></article>
-          <article class="card waveform-card"><div class="waveform-title"><div><span class="live-dot"></span><strong>多导联连续波形</strong><small id="waveMeta">—</small></div><div class="wave-legend"><span><i class="normal"></i>N</span><span><i class="supra"></i>S</span><span><i class="vent"></i>V</span><span><i class="noise"></i>噪声</span></div></div><div id="waveformScroller" class="waveform-scroller"><canvas id="waveformCanvas"></canvas><div id="waveTooltip" class="wave-tooltip" hidden></div></div><div class="waveform-foot"><span>拖动波形或使用 ← → 定位；双击创建标注</span><span id="calibrationNote">设备原始标度 · 未做计量学溯源</span></div></article>
+          <article class="card waveform-card"><div class="waveform-title"><div><span class="live-dot"></span><strong>多导联连续波形</strong><small id="waveMeta">—</small></div><div class="wave-legend"><span><i class="normal"></i>N</span><span><i class="supra"></i>S</span><span><i class="vent"></i>V</span><span><i class="noise"></i>噪声</span></div></div><div id="waveformScroller" class="waveform-scroller"><canvas id="waveformCanvas" aria-label="多导联心电波形；滚轮缩放时间轴，按住 Shift 滚轮缩放电压增益，移动指针可查看时间、导联和电压坐标"></canvas><div id="waveCursor" class="wave-cursor" hidden aria-hidden="true"><span class="wave-cursor-x"></span><span class="wave-cursor-y"></span><i></i></div><div id="waveTooltip" class="wave-tooltip" hidden></div></div><div class="waveform-foot"><span>滚轮缩放时间轴 · Shift + 滚轮调增益 · 拖动平移 · 悬停查坐标 · 双击标注</span><span id="calibrationNote">设备原始标度 · 未做计量学溯源</span></div></article>
         </div>
         <aside class="review-rail">
           <article class="card rail-card"><div class="card-header"><div><h2>当前窗口</h2><p>逐搏候选标记</p></div><span id="visibleBeatCount" class="status-pill neutral">0 搏</span></div><div id="visibleEventList" class="event-mini-list empty-state">暂无事件</div></article>
           <article class="card rail-card"><div class="card-header"><div><h2>人工标注</h2><p>保留操作者与时间</p></div></div><div id="annotationList" class="annotation-list empty-state">暂无人工标注</div></article>
-          <article class="card rail-card keyboard-card"><h3>快捷复核</h3><div><kbd>←</kbd><span>前一窗口</span><kbd>→</kbd><span>后一窗口</span><kbd>A</kbd><span>添加标注</span></div></article>
+          <article class="card rail-card keyboard-card"><h3>快捷复核</h3><div><kbd>←</kbd><span>前一窗口</span><kbd>→</kbd><span>后一窗口</span><kbd>+</kbd><span>放大波形</span><kbd>−</kbd><span>缩小波形</span><kbd>0</kbd><span>复位 10 秒</span><kbd>A</kbd><span>添加标注</span></div></article>
         </aside>
       </div>
     </section>
