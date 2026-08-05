@@ -40,13 +40,11 @@ if ($LASTEXITCODE -ne 0) {
     throw "安装运行依赖失败。"
 }
 
-$AppSupport = Join-Path ([Environment]::GetFolderPath("LocalApplicationData")) "CardioInsightHolter"
-New-Item -ItemType Directory -Path $AppSupport -Force | Out-Null
-$ConfigPath = Join-Path $AppSupport "config.json"
+$ConfigPath = Join-Path $ProjectRoot "config.json"
 if (-not (Test-Path -LiteralPath $ConfigPath)) {
     Copy-Item -LiteralPath (Join-Path $ProjectRoot "config.example.json") -Destination $ConfigPath
-    Write-Host "已创建配置：$ConfigPath"
+    Write-Host "已创建本机配置：$ConfigPath"
 }
 
 Write-Host "Windows 运行环境已就绪。"
-Write-Host "请确认 config.json 中的 data_root 指向本机病例目录。"
+Write-Host "请确认项目根目录 config.json 中的 data_root 指向本机病例目录。"

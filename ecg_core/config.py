@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "CardioInsight Holter 心电分析工作站"
-APP_VERSION = "0.11.0"
+APP_VERSION = "0.11.1"
 SAMPLE_RATE = 200
 CHANNEL_COUNT = 8
 RAW_FOLDER_NAME = "10个病人的心电数据"
@@ -55,11 +55,24 @@ def user_data_root() -> Path:
     return base / "cardioinsight-holter"
 
 
+def default_config_path() -> Path:
+    """Return the writable configuration path for the current run mode."""
+    if getattr(sys, "frozen", False):
+        return user_data_root() / "config.json"
+    return source_root() / "config.json"
+
+
 def _config_candidates() -> list[Path]:
-    roots = [user_data_root(), install_root(), runtime_root(), resource_root(), source_root(), Path.cwd()]
+    explicit = os.environ.get("ECG_CONFIG_PATH")
+    candidates = [Path(explicit).expanduser()] if explicit else []
+    if getattr(sys, "frozen", False):
+        roots = [user_data_root(), install_root(), runtime_root(), resource_root(), source_root(), Path.cwd()]
+    else:
+        roots = [source_root(), Path.cwd(), user_data_root(), install_root(), runtime_root(), resource_root()]
+    candidates.extend(root / "config.json" for root in roots)
+
     result: list[Path] = []
-    for root in roots:
-        candidate = root / "config.json"
+    for candidate in candidates:
         if candidate not in result:
             result.append(candidate)
     return result
@@ -129,10 +142,11 @@ def output_dir() -> Path:
 
 
 def platform_info() -> dict[str, str]:
+    active_config = load_config().get("_config_path", str(default_config_path()))
     return {
         "name": platform.system() or sys.platform,
         "release": platform.mac_ver()[0] if sys.platform == "darwin" else platform.release(),
         "machine": platform.machine(),
         "storage_root": str(user_data_root()),
-        "config_path": str(user_data_root() / "config.json"),
+        "config_path": active_config,
     }
