@@ -1,12 +1,9 @@
 # -*- mode: python ; coding: utf-8 -*-
 import sys
-from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_all
 
 datas = [('templates', 'templates'), ('static', 'static')]
-if Path('data/case_manifest.json').is_file():
-    datas.append(('data/case_manifest.json', 'data'))
 binaries = []
 hiddenimports = []
 tmp_ret = collect_all('reportlab')
@@ -63,7 +60,7 @@ if sys.platform == 'darwin':
         bundle_identifier='cn.edu.tsinghua.cardioinsight.holter',
         info_plist={
             'CFBundleDisplayName': 'CardioInsight Holter',
-            'CFBundleShortVersionString': '0.11.1',
+            'CFBundleShortVersionString': '0.12.0',
             'LSMinimumSystemVersion': '12.0',
             'LSApplicationCategoryType': 'public.app-category.medical',
             'NSHighResolutionCapable': True,

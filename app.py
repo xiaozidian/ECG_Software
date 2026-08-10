@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import math
 import os
 import socket
 import threading
@@ -14,17 +15,21 @@ from waitress import serve
 from ecg_core import APP_NAME, APP_VERSION, SAMPLE_RATE
 from ecg_core.config import load_config, platform_info, resource_root, resolve_data_root, user_data_root, writable_data_dir
 from ecg_core.ebi import (
+    SCATTER_MODES,
+    beat_details,
     heart_rate_trend,
     hrv,
     list_events,
     metrics as ebi_metrics,
     rr_visuals,
+    scatter_points,
+    select_scatter_points,
     visible_beats,
 )
 from ecg_core.report_pdf import build_report_pdf
 from ecg_core.repository import CaseNotFound, CaseRepository
 from ecg_core.storage import Storage
-from ecg_core.waveform import ALL_LEADS, read_waveform
+from ecg_core.waveform import ALL_LEADS, read_waveform, read_waveform_strips
 
 ACTOR = "演示分析医生"
 
@@ -72,6 +77,26 @@ def _json_object() -> dict:
     if not isinstance(payload, dict):
         raise ValueError("请求正文必须为 JSON 对象")
     return payload
+
+
+def _coerce_json_number(value, name: str, minimum: float, maximum: float, *, integer: bool = False):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{name} 必须为有效数字")
+    if not minimum <= value <= maximum:
+        raise ValueError(f"{name} 超出允许范围")
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"{name} 必须为有效数字") from exc
+    if not math.isfinite(number):
+        raise ValueError(f"{name} 必须为有效数字")
+    if integer and int(number) != number:
+        raise ValueError(f"{name} 必须为整数")
+    return int(number) if integer else number
+
+
+def _json_number(payload: dict, name: str, default, minimum: float, maximum: float, *, integer: bool = False):
+    return _coerce_json_number(payload.get(name, default), name, minimum, maximum, integer=integer)
 
 
 def _free_port(preferred: int) -> int:
@@ -269,6 +294,86 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
     def rr_endpoint(case_id: str):
         case = case_or_404(case_id)
         return jsonify(rr_visuals(Path(case["paths"]["ebi"]), _number_arg("max_points", 4000, int, 500, 10000)))
+
+    @app.get("/api/cases/<case_id>/scatter")
+    def scatter_endpoint(case_id: str):
+        case = case_or_404(case_id)
+        return jsonify(scatter_points(
+            Path(case["paths"]["ebi"]),
+            request.args.get("mode", "rr"),
+            _number_arg("max_points", 12000, int, 500, 20000),
+            _number_arg("hour_start_s", 0, float, 0, 2_678_400),
+        ))
+
+    @app.post("/api/cases/<case_id>/scatter-selection")
+    def scatter_selection_endpoint(case_id: str):
+        case = case_or_404(case_id)
+        payload = _json_object()
+        raw_polygon = payload.get("polygon")
+        if not isinstance(raw_polygon, list):
+            raise ValueError("polygon 必须为坐标数组")
+        if not 3 <= len(raw_polygon) <= 128:
+            raise ValueError("圈选边界必须包含 3–128 个点")
+        mode = str(payload.get("mode", "rr") or "").lower()
+        if mode not in SCATTER_MODES:
+            raise ValueError("散点图模式必须是 rr、n、nn、s、v 或 hour")
+        polygon: list[tuple[float, float]] = []
+        for point in raw_polygon:
+            if not isinstance(point, list) or len(point) != 2:
+                raise ValueError("polygon 中每个点必须是 [x, y]")
+            polygon.append(tuple(
+                _coerce_json_number(value, "polygon 坐标", -1_000_000_000, 1_000_000_000)
+                for value in point
+            ))
+        return jsonify(select_scatter_points(
+            Path(case["paths"]["ebi"]),
+            mode,
+            polygon,
+            _json_number(payload, "hour_start_s", 0, 0, 2_678_400),
+        ))
+
+    @app.post("/api/cases/<case_id>/waveform-strips")
+    def waveform_strips_endpoint(case_id: str):
+        case = case_or_404(case_id)
+        payload = _json_object()
+        raw_samples = payload.get("sample_indices")
+        if not isinstance(raw_samples, list) or not raw_samples:
+            raise ValueError("sample_indices 必须是非空数组")
+        if len(raw_samples) > 32:
+            raise ValueError("每批最多读取 32 个波形片段")
+        if any(isinstance(value, bool) or not isinstance(value, int) for value in raw_samples):
+            raise ValueError("sample_indices 必须全部为整数")
+        if len(set(raw_samples)) != len(raw_samples):
+            raise ValueError("sample_indices 不能重复")
+        leads = payload.get("leads", ["II", "V1", "V5"])
+        if not isinstance(leads, list) or not 1 <= len(leads) <= 6:
+            raise ValueError("leads 必须包含 1–6 个导联")
+        if any(not isinstance(lead, str) or lead not in ALL_LEADS for lead in leads) or len(set(leads)) != len(leads):
+            raise ValueError("leads 包含不支持或重复的导联")
+        pre_s = _json_number(payload, "pre_s", 1.5, 0.2, 3.0)
+        post_s = _json_number(payload, "post_s", 2.5, 0.4, 5.0)
+        if pre_s + post_s > 6:
+            raise ValueError("波形片段总时长不能超过 6 秒")
+        max_points = _json_number(payload, "max_points", 800, 200, 1200, integer=True)
+        filter_mode = payload.get("filter", "display")
+        if filter_mode not in {"display", "raw"}:
+            raise ValueError("filter 必须是 display 或 raw")
+        ebi_path = Path(case["paths"]["ebi"])
+        details = beat_details(ebi_path, raw_samples)
+        if len(details) != len(raw_samples):
+            raise ValueError("sample_indices 必须对应现有心搏位置")
+        result = read_waveform_strips(
+            Path(case["paths"]["data"]),
+            raw_samples,
+            pre_s,
+            post_s,
+            leads,
+            max_points,
+            filter_mode != "raw",
+        )
+        for item in result["items"]:
+            item.update(details[item["sample_index"]])
+        return jsonify(result)
 
     @app.get("/api/cases/<case_id>/events")
     def events_endpoint(case_id: str):

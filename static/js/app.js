@@ -10,6 +10,10 @@ const LEAD_PRESETS = {
 };
 const TIME_ZOOM_STEPS = [1, 2, 5, 10, 20, 30, 60, 120];
 const GAIN_ZOOM_STEPS = [5, 10, 20];
+const SCATTER_MODES = {rr:"R-R散点图",n:"N散点图",nn:"N-N散点图",s:"S散点图",v:"V散点图",hour:"小时散点图"};
+const BEAT_COLORS = {1:"#168ba0",2:"#7464c8",3:"#c9544c",34:"#7b858a"};
+const SCATTER_STRIP_HEIGHT = 156;
+const SCATTER_STRIP_CACHE_LIMIT = 240;
 const STATUS_TEXT = {draft: "未审核", reviewed: "已审核", returned: "已驳回"};
 const UI_FONT = '"SF Pro Text", "PingFang SC", "Microsoft YaHei UI", sans-serif';
 const ACTION_TEXT = {
@@ -27,6 +31,7 @@ const state = {
   settings: null,
   caseId: null,
   caseData: null,
+  caseRequestId: 0,
   start: 0,
   duration: 10,
   gain: 10,
@@ -36,6 +41,26 @@ const state = {
   trend: null,
   waveform: null,
   waveformRequestId: 0,
+  trendsRequestId: 0,
+  eventsRequestId: 0,
+  scatterMode: "rr",
+  scatterCache: {},
+  scatterData: null,
+  scatterRequestId: 0,
+  scatterSelectionRequestId: 0,
+  scatterStripGeneration: 0,
+  scatterProjectedPoints: [],
+  scatterLasso: [],
+  scatterSelectionPolygon: null,
+  scatterSelectedSamples: [],
+  scatterSelectedSet: new Set(),
+  scatterStripCache: new Map(),
+  scatterStripPending: new Set(),
+  scatterStripFailed: new Set(),
+  scatterStripQueue: [],
+  scatterStripActive: 0,
+  scatterStripControllers: new Set(),
+  scatterFocusedSample: null,
   rr: null,
   hrv: null,
   events: null,
@@ -186,21 +211,36 @@ function renderPatients() {
 }
 
 async function selectCase(caseId, destination = "review") {
+  const requestId=++state.caseRequestId;
   state.caseId = caseId;
+  state.caseData = null;
+  state.report = null;
   state.start = 0;
   state.waveformRequestId += 1;
+  state.trendsRequestId += 1;
+  state.eventsRequestId += 1;
+  state.scatterRequestId += 1;
+  state.scatterSelectionRequestId += 1;
   state.waveform = state.trend = state.rr = state.hrv = state.events = null;
+  state.scatterCache = {};
+  state.scatterData = null;
+  state.scatterMode = "rr";
+  clearScatterSelection();
   await api(`/api/cases/${caseId}/open`, {method: "POST", body: "{}"});
-  await loadCase();
+  if(requestId!==state.caseRequestId||caseId!==state.caseId)return;
+  const loaded=await loadCase(caseId,requestId);
+  if(!loaded)return;
   goPage(destination);
 }
 
-async function loadCase() {
-  if (!state.caseId) return;
+async function loadCase(caseId=state.caseId, requestId=null) {
+  if (!caseId) return false;
+  const activeRequestId=requestId??++state.caseRequestId;
   const [caseData, trend] = await Promise.all([
-    api(withPhi(`/api/cases/${state.caseId}`)),
-    api(`/api/cases/${state.caseId}/trend?bin_seconds=60`),
+    api(withPhi(`/api/cases/${caseId}`)),
+    api(`/api/cases/${caseId}/trend?bin_seconds=60`),
   ]);
+  if(activeRequestId!==state.caseRequestId||caseId!==state.caseId)return false;
   state.caseData = caseData;
   state.trend = trend;
   state.report = caseData.report_workflow;
@@ -221,6 +261,7 @@ async function loadCase() {
   renderOverview();
   renderReport();
   if (state.currentPage === "review") await loadWaveform();
+  return activeRequestId===state.caseRequestId&&caseId===state.caseId;
 }
 
 function goPage(name) {
@@ -233,7 +274,7 @@ function goPage(name) {
   $$(".page").forEach(page => page.classList.toggle("active", page.id === `page-${name}`));
   $$(".nav-item").forEach(item => item.classList.toggle("active", item.dataset.page === name));
   window.scrollTo({top: 0, behavior: "instant"});
-  if (name === "review") loadWaveform().catch(handleError);
+  if (name === "review") {loadWaveform().catch(handleError);loadScatter().catch(handleError);}
   if (name === "trends") loadTrends().catch(handleError);
   if (name === "events") loadEvents().catch(handleError);
   if (name === "report") renderReport();
@@ -262,6 +303,7 @@ async function loadWaveform() {
   renderVisibleEvents();
   renderAnnotations(data.annotations || state.caseData?.annotations || []);
   renderOverview();
+  syncHourScatter();
 }
 
 function canvasContext(canvas, height = null) {
@@ -326,18 +368,21 @@ function renderWaveform() {
       ctx.strokeStyle = "rgba(78,98,109,.18)"; ctx.beginPath(); ctx.moveTo(0, leadHeight * (leadIndex + 1)); ctx.lineTo(width, leadHeight * (leadIndex + 1)); ctx.stroke();
     }
   });
-  const markerColors = {1: "#168ba0", 2: "#7d55a7", 3: "#c94d46", 34: "#7b858a"};
   (state.waveform.beats || []).forEach(beat => {
     const x = (beat.time_s - state.waveform.start_s) / duration * width;
     if (x < 0 || x > width) return;
-    ctx.strokeStyle = markerColors[beat.group] || "#777";
+    ctx.strokeStyle = BEAT_COLORS[beat.group] || "#777";
     ctx.lineWidth = beat.group === 1 ? .6 : 1.25;
     ctx.globalAlpha = beat.group === 1 ? .28 : .68;
     ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
     ctx.globalAlpha = 1;
-    ctx.fillStyle = markerColors[beat.group] || "#777"; ctx.font = "700 9px sans-serif";
+    ctx.fillStyle = BEAT_COLORS[beat.group] || "#777"; ctx.font = "700 9px sans-serif";
     ctx.fillText(beat.label, Math.min(x + 2, width - 12), 11);
   });
+  if(state.scatterFocusedSample!==null){
+    const focusedTime=state.scatterFocusedSample/200,focusedX=(focusedTime-state.waveform.start_s)/duration*width;
+    if(focusedX>=0&&focusedX<=width){ctx.fillStyle="rgba(239,140,33,.18)";ctx.fillRect(focusedX-6,0,12,h);ctx.strokeStyle="#dd7916";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(focusedX,0);ctx.lineTo(focusedX,h);ctx.stroke();ctx.fillStyle="#a95b0d";ctx.font=`700 10px ${UI_FONT}`;ctx.fillText("圈选",Math.min(focusedX+4,width-30),25);}
+  }
   (state.waveform.annotations || []).forEach(annotation => {
     const time = annotation.sample_index / 200;
     const x = (time - state.waveform.start_s) / duration * width;
@@ -387,10 +432,287 @@ function renderAnnotations(items) {
   box.innerHTML = items.length ? items.map(item => `<article class="annotation-item"><header><strong>${escapeHtml(item.label)}</strong><button data-delete-annotation="${item.id}">删除</button></header><p>${formatElapsed(item.sample_index / 200)} · ${escapeHtml(item.lead || "全部")} · ${escapeHtml(item.note || "无备注")}</p><small>${escapeHtml(item.created_by)} · ${escapeHtml(item.created_at)}</small></article>`).join("") : "暂无人工标注";
 }
 
+function setScatterSelectionEmpty(title, detail) {
+  const empty=$("#scatterSelectionEmpty");
+  if(!empty)return;
+  empty.innerHTML=`<span>◯</span><strong>${escapeHtml(title)}</strong><p>${escapeHtml(detail)}</p>`;
+}
+
+function invalidateScatterStripLoads() {
+  state.scatterStripGeneration+=1;
+  state.scatterStripControllers.forEach(controller=>controller.abort());
+  state.scatterStripControllers.clear();
+  state.scatterStripQueue=[];
+  state.scatterStripActive=0;
+  state.scatterStripPending.clear();
+}
+
+function clearScatterSelection() {
+  invalidateScatterStripLoads();
+  state.scatterSelectionRequestId+=1;
+  state.scatterLasso=[];
+  state.scatterSelectionPolygon=null;
+  state.scatterSelectedSamples=[];
+  state.scatterSelectedSet=new Set();
+  state.scatterStripCache.clear();
+  state.scatterStripFailed.clear();
+  state.scatterFocusedSample=null;
+  const count=$("#scatterSelectionCount"),clear=$("#clearScatterSelection");
+  if(count)count.textContent="未圈选";
+  if(clear)clear.disabled=true;
+  setScatterSelectionEmpty("尚未圈选","在散点图密集区画一个闭合圈，片段会在这里按时间排列。");
+  renderScatterSelectionList();
+  renderScatter();
+  if(state.waveform)renderWaveform();
+}
+
+function updateScatterModeButtons() {
+  $$('[data-scatter-mode]').forEach(button=>{
+    const active=button.dataset.scatterMode===state.scatterMode;
+    button.classList.toggle("active",active);
+    button.setAttribute("aria-pressed",String(active));
+  });
+}
+
+function currentScatterHourStart() {return Math.floor(Math.max(0,(Number(state.start)||0)+state.duration*.35)/3600)*3600;}
+function scatterCacheKey(mode=state.scatterMode) {return mode==="hour"?`hour:${currentScatterHourStart()}`:mode;}
+
+async function loadScatter(mode=state.scatterMode) {
+  if(!state.caseId)return;
+  state.scatterMode=SCATTER_MODES[mode]?mode:"rr";
+  updateScatterModeButtons();
+  const hourStart=currentScatterHourStart(),cacheKey=scatterCacheKey(state.scatterMode),cached=state.scatterCache[cacheKey];
+  if(cached){state.scatterData=cached;$("#scatterLoading").hidden=true;initializeScatterRangeInputs(cached.bounds);renderScatter();return;}
+  const requestId=++state.scatterRequestId,caseId=state.caseId,currentMode=state.scatterMode;
+  $("#scatterLoading").hidden=false;
+  try{
+    const params=new URLSearchParams({mode:currentMode,max_points:12000});
+    if(currentMode==="hour")params.set("hour_start_s",hourStart);
+    const data=await api(`/api/cases/${caseId}/scatter?${params}`);
+    if(requestId!==state.scatterRequestId||caseId!==state.caseId||currentMode!==state.scatterMode||currentMode==="hour"&&hourStart!==currentScatterHourStart())return;
+    state.scatterCache[cacheKey]=data;
+    state.scatterData=data;
+    initializeScatterRangeInputs(data.bounds);
+    renderScatter();
+  }finally{if(requestId===state.scatterRequestId&&caseId===state.caseId&&currentMode===state.scatterMode&&!(currentMode==="hour"&&hourStart!==currentScatterHourStart()))$("#scatterLoading").hidden=true;}
+}
+
+async function switchScatterMode(mode) {
+  if(!SCATTER_MODES[mode]||mode===state.scatterMode&&state.scatterData)return;
+  state.scatterRequestId+=1;
+  state.scatterMode=mode;
+  state.scatterData=state.scatterCache[scatterCacheKey(mode)]||null;
+  clearScatterSelection();
+  updateScatterModeButtons();
+  await loadScatter(mode);
+}
+
+function syncHourScatter() {
+  if(state.currentPage!=="review"||state.scatterMode!=="hour")return;
+  if(Number(state.scatterData?.hour_start_s)===currentScatterHourStart())return;
+  state.scatterRequestId+=1;
+  state.scatterData=state.scatterCache[scatterCacheKey("hour")]||null;
+  clearScatterSelection();
+  loadScatter("hour").catch(handleError);
+}
+
+function scatterGeometry(width,height) {
+  const margin={l:42,r:12,t:16,b:42};
+  return {...margin,w:Math.max(1,width-margin.l-margin.r),h:Math.max(1,height-margin.t-margin.b)};
+}
+
+function scatterScreenPoint(point,bounds,geometry) {
+  const x=geometry.l+(point.x-bounds.x_min)/Math.max(1e-9,bounds.x_max-bounds.x_min)*geometry.w;
+  const y=geometry.t+geometry.h-(point.y-bounds.y_min)/Math.max(1e-9,bounds.y_max-bounds.y_min)*geometry.h;
+  return {x,y};
+}
+
+function scatterDataPoint(point,bounds,geometry) {
+  return [
+    bounds.x_min+(point.x-geometry.l)/geometry.w*(bounds.x_max-bounds.x_min),
+    bounds.y_min+(geometry.t+geometry.h-point.y)/geometry.h*(bounds.y_max-bounds.y_min),
+  ];
+}
+
+function drawScatterMarker(ctx,point,x,y,selected) {
+  const color=BEAT_COLORS[point.group]||"#52666f";
+  ctx.fillStyle=color;
+  if(point.group===2){ctx.beginPath();ctx.moveTo(x,y-3.2);ctx.lineTo(x-3.2,y+2.8);ctx.lineTo(x+3.2,y+2.8);ctx.closePath();ctx.fill();}
+  else if(point.group===3)ctx.fillRect(x-2.7,y-2.7,5.4,5.4);
+  else ctx.fillRect(x-1.1,y-1.1,2.2,2.2);
+  if(selected){ctx.strokeStyle="#ef8c21";ctx.lineWidth=1.8;ctx.beginPath();ctx.arc(x,y,5.5,0,Math.PI*2);ctx.stroke();}
+}
+
+function renderScatter() {
+  const canvas=$("#scatterCanvas");
+  if(!canvas)return;
+  const cssHeight=window.matchMedia("(max-width: 980px)").matches?350:390;
+  const {ctx,width,height}=canvasContext(canvas,cssHeight),geometry=scatterGeometry(width,height);
+  ctx.clearRect(0,0,width,height);ctx.fillStyle="#f9fbfb";ctx.fillRect(0,0,width,height);
+  const data=state.scatterData;
+  if(!data){ctx.fillStyle="#87969e";ctx.font=`10px ${UI_FONT}`;ctx.textAlign="center";ctx.fillText(state.caseId?"正在读取散点…":"请选择病例",width/2,height/2);ctx.textAlign="left";return;}
+  const bounds=data.bounds;
+  ctx.font=`9px ${UI_FONT}`;ctx.lineWidth=1;
+  for(let index=0;index<=4;index+=1){
+    const fraction=index/4,x=geometry.l+geometry.w*fraction,y=geometry.t+geometry.h*(1-fraction);
+    ctx.strokeStyle="#dfe7ea";ctx.beginPath();ctx.moveTo(x,geometry.t);ctx.lineTo(x,geometry.t+geometry.h);ctx.stroke();ctx.beginPath();ctx.moveTo(geometry.l,y);ctx.lineTo(geometry.l+geometry.w,y);ctx.stroke();
+    const xv=bounds.x_min+(bounds.x_max-bounds.x_min)*fraction,yv=bounds.y_min+(bounds.y_max-bounds.y_min)*fraction;
+    ctx.fillStyle="#75868f";ctx.textAlign="center";ctx.fillText(Math.round(xv),x,height-24);ctx.textAlign="right";ctx.fillText(Math.round(yv),geometry.l-5,y+3);
+  }
+  ctx.strokeStyle="#647983";ctx.strokeRect(geometry.l,geometry.t,geometry.w,geometry.h);
+  ctx.save();ctx.beginPath();ctx.rect(geometry.l,geometry.t,geometry.w,geometry.h);ctx.clip();ctx.strokeStyle="rgba(88,111,121,.35)";ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(geometry.l,geometry.t+geometry.h);ctx.lineTo(geometry.l+geometry.w,geometry.t);ctx.stroke();ctx.restore();ctx.setLineDash([]);
+  ctx.fillStyle="#516670";ctx.font=`9px ${UI_FONT}`;ctx.textAlign="center";ctx.fillText(`${data.axis.x_label} (${data.axis.x_unit})`,geometry.l+geometry.w/2,height-6);ctx.save();ctx.translate(11,geometry.t+geometry.h/2);ctx.rotate(-Math.PI/2);ctx.fillText(`${data.axis.y_label} (${data.axis.y_unit})`,0,0);ctx.restore();ctx.textAlign="left";
+  state.scatterProjectedPoints=[];
+  ctx.save();ctx.beginPath();ctx.rect(geometry.l,geometry.t,geometry.w,geometry.h);ctx.clip();
+  for(const point of data.points){
+    const projected=scatterScreenPoint(point,bounds,geometry);
+    if(projected.x<geometry.l||projected.x>geometry.l+geometry.w||projected.y<geometry.t||projected.y>geometry.t+geometry.h)continue;
+    state.scatterProjectedPoints.push({...projected,point});
+    drawScatterMarker(ctx,point,projected.x,projected.y,state.scatterSelectedSet.has(point.sample_index));
+  }
+  const polygon=state.scatterLasso.length?state.scatterLasso:state.scatterSelectionPolygon?.map(([x,y])=>scatterScreenPoint({x,y},bounds,geometry))||[];
+  if(polygon.length>=2){ctx.fillStyle="rgba(239,140,33,.12)";ctx.strokeStyle="#e47c13";ctx.lineWidth=2;ctx.setLineDash([5,3]);ctx.beginPath();polygon.forEach((point,index)=>index?ctx.lineTo(point.x,point.y):ctx.moveTo(point.x,point.y));if(state.scatterSelectionPolygon)ctx.closePath();if(state.scatterSelectionPolygon)ctx.fill();ctx.stroke();ctx.setLineDash([]);}
+  ctx.restore();
+  const pointCount=$("#scatterPointCount");
+  const hourLabel=data.mode==="hour"?`${formatElapsed(data.hour_start_s)}–${formatElapsed(data.hour_end_s)} · `:"";
+  pointCount.textContent=`${hourLabel}显示 ${fmtNumber(data.returned_count)} / 全部 ${fmtNumber(data.candidate_count)} 点`;
+  $("#scatterHelp").textContent=data.sampled?"画圈或键盘范围选择后按完整数据精确计算，不受显示抽样影响":"鼠标画圈或展开键盘范围选择；均按完整数据精确计算";
+  canvas.setAttribute("aria-label",`${SCATTER_MODES[data.mode]}；显示 ${data.returned_count} 点，共 ${data.candidate_count} 点；鼠标或触控笔可画圈，键盘用户可使用上方范围选择`);
+  if(!data.candidate_count){ctx.fillStyle="#87969e";ctx.font=`10px ${UI_FONT}`;ctx.textAlign="center";ctx.fillText("本病例没有该类候选点",geometry.l+geometry.w/2,geometry.t+geometry.h/2);ctx.textAlign="left";}
+}
+
+function pointInPolygon(point,polygon) {
+  let inside=false,previous=polygon[polygon.length-1];
+  for(const current of polygon){if((previous.y>point.y)!==(current.y>point.y)&&point.x<=(current.x-previous.x)*(point.y-previous.y)/(current.y-previous.y)+previous.x)inside=!inside;previous=current;}
+  return inside;
+}
+
+function simplifyLasso(points,limit=128) {
+  if(points.length<=limit)return points;
+  return Array.from({length:limit},(_,index)=>points[Math.round(index*(points.length-1)/(limit-1))]);
+}
+
+function initializeScatterRangeInputs(bounds) {
+  if(!bounds)return;
+  [["#scatterXMin",bounds.x_min,bounds.x_min,bounds.x_max],["#scatterXMax",bounds.x_max,bounds.x_min,bounds.x_max],["#scatterYMin",bounds.y_min,bounds.y_min,bounds.y_max],["#scatterYMax",bounds.y_max,bounds.y_min,bounds.y_max]].forEach(([selector,value,minimum,maximum])=>{
+    const input=$(selector);if(!input)return;input.min=String(minimum);input.max=String(maximum);input.value=String(Math.round(value));
+  });
+}
+
+async function applyScatterSelectionPolygon(polygon) {
+  const data=state.scatterData;
+  if(!data||polygon.length<3)return;
+  invalidateScatterStripLoads();
+  state.scatterSelectionRequestId+=1;
+  state.scatterSelectionPolygon=polygon;
+  state.scatterSelectedSamples=[];state.scatterStripCache.clear();state.scatterStripFailed.clear();state.scatterFocusedSample=null;
+  const objectPolygon=polygon.map(([x,y])=>({x,y}));
+  state.scatterSelectedSet=new Set(data.points.filter(point=>pointInPolygon({x:point.x,y:point.y},objectPolygon)).map(point=>point.sample_index));
+  const requestId=state.scatterSelectionRequestId,caseId=state.caseId,mode=state.scatterMode,hourStart=data.hour_start_s??0;
+  $("#scatterSelectionCount").textContent="正在精确圈选…";$("#clearScatterSelection").disabled=false;
+  setScatterSelectionEmpty("正在生成片段列表","正在完整逐搏数据中计算圈内心搏。");renderScatterSelectionList();renderScatter();
+  try{
+    const result=await api(`/api/cases/${caseId}/scatter-selection`,{method:"POST",body:JSON.stringify({mode,polygon,hour_start_s:hourStart})});
+    if(requestId!==state.scatterSelectionRequestId||caseId!==state.caseId||mode!==state.scatterMode)return;
+    state.scatterSelectedSamples=result.sample_indices;
+    state.scatterSelectedSet=new Set(result.sample_indices);
+    $("#scatterSelectionCount").textContent=`圈中 ${fmtNumber(result.total)} 段`;
+    if(result.total)setScatterSelectionEmpty("正在加载片段","滚动列表将按需加载三导联波形。");else setScatterSelectionEmpty("圈内没有数据点","请重新在散点密集区画一个更大的圈。");
+    renderScatterSelectionList();renderScatter();
+  }catch(error){
+    if(requestId===state.scatterSelectionRequestId){clearScatterSelection();handleError(error);}
+  }
+}
+
+async function applyScatterRangeSelection() {
+  if(!state.scatterData)return;
+  const values=["#scatterXMin","#scatterXMax","#scatterYMin","#scatterYMax"].map(selector=>Number($(selector)?.value));
+  if(values.some(value=>!Number.isFinite(value))||values[0]>=values[1]||values[2]>=values[3])throw new Error("请输入有效的横轴和纵轴最小、最大范围");
+  await applyScatterSelectionPolygon([[values[0],values[2]],[values[1],values[2]],[values[1],values[3]],[values[0],values[3]]]);
+}
+
+async function finishScatterLasso() {
+  const canvas=$("#scatterCanvas"),data=state.scatterData;
+  if(!canvas||!data)return;
+  const points=simplifyLasso(state.scatterLasso);
+  state.scatterLasso=[];
+  if(points.length<3){renderScatter();return;}
+  const xs=points.map(point=>point.x),ys=points.map(point=>point.y);
+  if(Math.max(...xs)-Math.min(...xs)<8||Math.max(...ys)-Math.min(...ys)<8){renderScatter();return;}
+  const rect=canvas.getBoundingClientRect(),geometry=scatterGeometry(rect.width,rect.height);
+  await applyScatterSelectionPolygon(points.map(point=>scatterDataPoint(point,data.bounds,geometry)));
+}
+
+function cacheScatterStrip(item) {
+  if(state.scatterStripCache.has(item.sample_index))state.scatterStripCache.delete(item.sample_index);
+  state.scatterStripCache.set(item.sample_index,item);
+  while(state.scatterStripCache.size>SCATTER_STRIP_CACHE_LIMIT){const oldest=state.scatterStripCache.keys().next().value;state.scatterStripCache.delete(oldest);}
+}
+
+async function loadScatterStrips(job,controller) {
+  try{
+    const result=await api(`/api/cases/${job.caseId}/waveform-strips`,{method:"POST",signal:controller.signal,body:JSON.stringify({sample_indices:job.samples,pre_s:1.5,post_s:2.5,leads:["II","V1","V5"],max_points:800,filter:job.filter})});
+    if(job.generation!==state.scatterStripGeneration||job.caseId!==state.caseId||job.filter!==state.filter)return;
+    result.items.forEach(cacheScatterStrip);
+  }catch(error){if(error?.name!=="AbortError"&&job.generation===state.scatterStripGeneration){job.samples.forEach(sample=>state.scatterStripFailed.add(sample));handleError(error);}}
+  finally{
+    if(job.generation===state.scatterStripGeneration){job.samples.forEach(sample=>state.scatterStripPending.delete(sample));state.scatterStripActive=Math.max(0,state.scatterStripActive-1);state.scatterStripControllers.delete(controller);renderScatterSelectionList();pumpScatterStripQueue();}
+  }
+}
+
+function pumpScatterStripQueue() {
+  while(state.scatterStripActive<2&&state.scatterStripQueue.length){
+    const job=state.scatterStripQueue.shift();
+    if(job.generation!==state.scatterStripGeneration||job.caseId!==state.caseId||job.filter!==state.filter){job.samples.forEach(sample=>state.scatterStripPending.delete(sample));continue;}
+    const controller=new AbortController();state.scatterStripControllers.add(controller);state.scatterStripActive+=1;loadScatterStrips(job,controller);
+  }
+}
+
+function queueScatterStrips(sampleIndices) {
+  const generation=state.scatterStripGeneration;
+  state.scatterStripQueue=state.scatterStripQueue.filter(job=>{
+    if(job.generation!==generation)return true;
+    job.samples.forEach(sample=>state.scatterStripPending.delete(sample));return false;
+  });
+  const samples=sampleIndices.filter(sample=>!state.scatterStripCache.has(sample)&&!state.scatterStripPending.has(sample)&&!state.scatterStripFailed.has(sample));
+  if(!samples.length)return;
+  samples.forEach(sample=>state.scatterStripPending.add(sample));
+  state.scatterStripQueue.push({generation,caseId:state.caseId,filter:state.filter,samples});
+  pumpScatterStripQueue();
+}
+
+function renderStripCanvas(canvas,strip) {
+  const dpr=Math.min(window.devicePixelRatio||1,2),width=Math.max(120,Math.floor(canvas.getBoundingClientRect().width)),height=116;
+  canvas.width=Math.round(width*dpr);canvas.height=Math.round(height*dpr);const ctx=canvas.getContext("2d");ctx.setTransform(dpr,0,0,dpr,0,0);ctx.fillStyle="#fff";ctx.fillRect(0,0,width,height);
+  const entries=Object.entries(strip.leads||{}),leadHeight=height/Math.max(entries.length,1),duration=Math.max(strip.duration_s,.001),anchorX=strip.anchor_offset_s/duration*width;
+  ctx.strokeStyle="rgba(228,141,127,.17)";ctx.lineWidth=1;for(let x=0;x<width;x+=width/20){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,height);ctx.stroke();}
+  ctx.fillStyle="rgba(239,140,33,.13)";ctx.fillRect(anchorX-3,0,6,height);ctx.strokeStyle="#dd7916";ctx.beginPath();ctx.moveTo(anchorX,0);ctx.lineTo(anchorX,height);ctx.stroke();
+  entries.forEach(([lead,values],leadIndex)=>{const baseline=leadHeight*(leadIndex+.55),scale=leadHeight*.27/1000;ctx.fillStyle="#087777";ctx.font=`700 8px ${UI_FONT}`;ctx.fillText(lead,3,leadHeight*leadIndex+9);ctx.strokeStyle="#1f2c32";ctx.lineWidth=.85;ctx.beginPath();values.forEach((value,index)=>{const x=index/Math.max(values.length-1,1)*width,y=baseline-Number(value)*scale;index?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();if(leadIndex<entries.length-1){ctx.strokeStyle="#e5ebed";ctx.beginPath();ctx.moveTo(0,leadHeight*(leadIndex+1));ctx.lineTo(width,leadHeight*(leadIndex+1));ctx.stroke();}});
+}
+
+function renderScatterSelectionList() {
+  const viewport=$("#scatterSelectionList"),empty=$("#scatterSelectionEmpty"),virtual=$("#scatterSelectionVirtual");
+  if(!viewport||!empty||!virtual)return;
+  const focusedButton=document.activeElement?.closest?.("[data-scatter-sample]"),focusedSample=focusedButton?Number(focusedButton.dataset.scatterSample):null;
+  const samples=state.scatterSelectedSamples;
+  if(!samples.length){empty.hidden=false;virtual.hidden=true;virtual.innerHTML="";virtual.style.height="0";return;}
+  empty.hidden=true;virtual.hidden=false;virtual.style.height=`${samples.length*SCATTER_STRIP_HEIGHT}px`;
+  const start=Math.max(0,Math.floor(viewport.scrollTop/SCATTER_STRIP_HEIGHT)-2),visibleCount=Math.ceil(viewport.clientHeight/SCATTER_STRIP_HEIGHT)+5,end=Math.min(samples.length,start+visibleCount);
+  const visible=samples.slice(start,end);
+  virtual.innerHTML=visible.map((sample,offset)=>{const index=start+offset,strip=state.scatterStripCache.get(sample),failed=state.scatterStripFailed.has(sample),time=strip?.time_s??sample/200,label=strip?.label||"…",rr=strip?.rr_ms?`RR ${strip.rr_ms} ms`:failed?"加载失败":"波形加载中",active=sample===state.scatterFocusedSample;return `<button type="button" class="scatter-strip-card${active?" active":""}" style="top:${index*SCATTER_STRIP_HEIGHT+4}px" data-scatter-sample="${sample}" data-jump-time="${time}"${active?' aria-current="true"':""} aria-label="第 ${index+1} 个圈选片段，${formatElapsed(time)}，${label}，${rr}"><div class="scatter-strip-meta"><span class="scatter-beat-badge ${label}">${escapeHtml(label)}</span><strong>${formatElapsed(time)}</strong><small>${escapeHtml(rr)} · ${index+1}/${samples.length}</small></div>${strip?`<canvas data-strip-canvas="${sample}" aria-hidden="true"></canvas>`:`<div class="scatter-strip-placeholder">${failed?"片段加载失败，单击重试":"正在加载三导联波形…"}</div>`}</button>`;}).join("");
+  if(focusedSample!==null){const replacement=$(`[data-scatter-sample="${focusedSample}"]`,virtual)||$("[data-scatter-sample]",virtual);if(replacement)replacement.focus({preventScroll:true});else viewport.focus({preventScroll:true});}
+  $$('canvas[data-strip-canvas]',virtual).forEach(canvas=>{const strip=state.scatterStripCache.get(Number(canvas.dataset.stripCanvas));if(strip)renderStripCanvas(canvas,strip)});
+  const missing=visible.filter(sample=>!state.scatterStripCache.has(sample)&&!state.scatterStripPending.has(sample)&&!state.scatterStripFailed.has(sample)).slice(0,16);
+  if(missing.length)queueScatterStrips(missing);
+}
+
 async function loadTrends() {
   if (!state.caseId) return;
-  if (!state.trend) state.trend = await api(`/api/cases/${state.caseId}/trend?bin_seconds=60`);
-  if (!state.rr || !state.hrv) [state.rr, state.hrv] = await Promise.all([api(`/api/cases/${state.caseId}/rr-visuals`), api(`/api/cases/${state.caseId}/hrv`)]);
+  const requestId=++state.trendsRequestId,caseId=state.caseId;
+  const trend=state.trend||await api(`/api/cases/${caseId}/trend?bin_seconds=60`);
+  const [rr,hrv]=state.rr&&state.hrv?[state.rr,state.hrv]:await Promise.all([api(`/api/cases/${caseId}/rr-visuals`),api(`/api/cases/${caseId}/hrv`)]);
+  if(requestId!==state.trendsRequestId||caseId!==state.caseId)return;
+  state.trend=trend;state.rr=rr;state.hrv=hrv;
   renderTrendMetrics(); renderTrendChart(); renderHistogram(); renderPoincare(); renderHrv();
 }
 
@@ -441,10 +763,13 @@ function renderHrv() {
 
 async function loadEvents(type = state.eventType) {
   if (!state.caseId) return;
+  const requestId=++state.eventsRequestId,caseId=state.caseId;
   state.eventType=type;
   $$("[data-event-type]").forEach(button=>button.classList.toggle("active",button.dataset.eventType===type));
   const p=new URLSearchParams({type,limit:500,brady:$("#bradyThreshold").value,tachy:$("#tachyThreshold").value,pause:$("#pauseThreshold").value});
-  state.events=await api(`/api/cases/${state.caseId}/events?${p}`);renderEvents();
+  const events=await api(`/api/cases/${caseId}/events?${p}`);
+  if(requestId!==state.eventsRequestId||caseId!==state.caseId)return;
+  state.events=events;renderEvents();
 }
 
 function renderEvents() {
@@ -523,6 +848,16 @@ async function savePatient() {
 }
 
 function jumpTo(time) {if(!state.caseId)return;state.start=Math.max(0,Math.min(Number(time)-state.duration*.35,state.caseData.technical.duration_seconds_raw-state.duration));if(state.currentPage==="review")loadWaveform().catch(handleError);else goPage("review");}
+
+function focusScatterWaveform(time,sample) {
+  state.scatterFocusedSample=sample;renderScatterSelectionList();renderWaveform();
+  $("#waveMeta").textContent=`正在定位圈选片段 ${formatElapsedPrecise(time)}…`;
+  jumpTo(time);
+  const card=$(".waveform-card");if(!card)return;
+  card.classList.remove("scatter-linked-focus");void card.offsetWidth;card.classList.add("scatter-linked-focus");
+  card.scrollIntoView({behavior:"smooth",block:"center"});
+  setTimeout(()=>card.classList.remove("scatter-linked-focus"),1000);
+}
 
 function availableTimeZoomSteps() {
   const total=Number(state.caseData?.technical?.duration_seconds_raw)||TIME_ZOOM_STEPS[TIME_ZOOM_STEPS.length-1];
@@ -627,6 +962,37 @@ function bindCanvasInteraction() {
   $("#trendCanvas").addEventListener("click",event=>{if(!state.caseData)return;const rect=event.currentTarget.getBoundingClientRect(),time=(event.clientX-rect.left)/rect.width*state.caseData.technical.duration_seconds_raw;jumpTo(time)});
 }
 
+function bindScatterInteraction() {
+  const canvas=$("#scatterCanvas"),viewport=$("#scatterSelectionList");
+  let activePointer=null,drawFrame=null,scrollFrame=null;
+  const localPoint=event=>{
+    const rect=canvas.getBoundingClientRect(),geometry=scatterGeometry(rect.width,rect.height);
+    return {x:Math.max(geometry.l,Math.min(geometry.l+geometry.w,event.clientX-rect.left)),y:Math.max(geometry.t,Math.min(geometry.t+geometry.h,event.clientY-rect.top))};
+  };
+  canvas.addEventListener("pointerdown",event=>{
+    if(activePointer!==null||!state.scatterData||!state.scatterData.candidate_count||event.pointerType==="mouse"&&event.button!==0)return;
+    const rect=canvas.getBoundingClientRect(),geometry=scatterGeometry(rect.width,rect.height),raw={x:event.clientX-rect.left,y:event.clientY-rect.top};
+    if(raw.x<geometry.l||raw.x>geometry.l+geometry.w||raw.y<geometry.t||raw.y>geometry.t+geometry.h)return;
+    event.preventDefault();activePointer=event.pointerId;state.scatterLasso=[localPoint(event)];canvas.setPointerCapture(event.pointerId);renderScatter();
+  });
+  canvas.addEventListener("pointermove",event=>{
+    if(activePointer!==event.pointerId)return;
+    event.preventDefault();const point=localPoint(event),previous=state.scatterLasso[state.scatterLasso.length-1];
+    if(previous&&Math.hypot(point.x-previous.x,point.y-previous.y)<3)return;
+    state.scatterLasso.push(point);if(!drawFrame)drawFrame=requestAnimationFrame(()=>{drawFrame=null;renderScatter()});
+  });
+  const finish=event=>{
+    if(activePointer!==event.pointerId)return;
+    event.preventDefault();const point=localPoint(event),previous=state.scatterLasso[state.scatterLasso.length-1];if(!previous||Math.hypot(point.x-previous.x,point.y-previous.y)>=2)state.scatterLasso.push(point);
+    activePointer=null;if(canvas.hasPointerCapture(event.pointerId))canvas.releasePointerCapture(event.pointerId);finishScatterLasso();
+  };
+  canvas.addEventListener("pointerup",finish);
+  canvas.addEventListener("pointercancel",event=>{if(activePointer!==event.pointerId)return;activePointer=null;state.scatterLasso=[];if(canvas.hasPointerCapture(event.pointerId))canvas.releasePointerCapture(event.pointerId);renderScatter()});
+  canvas.addEventListener("lostpointercapture",event=>{if(activePointer!==event.pointerId)return;activePointer=null;state.scatterLasso=[];renderScatter()});
+  canvas.addEventListener("keydown",event=>{event.stopPropagation();if(event.key==="Escape"){event.preventDefault();activePointer=null;clearScatterSelection();}});
+  viewport.addEventListener("scroll",()=>{if(!scrollFrame)scrollFrame=requestAnimationFrame(()=>{scrollFrame=null;renderScatterSelectionList()})},{passive:true});
+}
+
 function handleError(error) {console.error(error);toast(error.message||"操作失败","error",4500);}
 
 function bindEvents() {
@@ -638,7 +1004,8 @@ function bindEvents() {
   document.addEventListener("click",event=>{
     const open=event.target.closest("[data-open-case]");if(open)selectCase(open.dataset.openCase).catch(handleError);
     const edit=event.target.closest("[data-edit-patient]");if(edit)openPatientEditor(edit.dataset.editPatient);
-    const jump=event.target.closest("[data-jump-time]");if(jump)jumpTo(jump.dataset.jumpTime);
+    const strip=event.target.closest("[data-scatter-sample]");if(strip){const sample=Number(strip.dataset.scatterSample);if(state.scatterStripFailed.has(sample)){state.scatterStripFailed.delete(sample);renderScatterSelectionList();}focusScatterWaveform(Number(strip.dataset.jumpTime),sample);}
+    else {const jump=event.target.closest("[data-jump-time]");if(jump)jumpTo(jump.dataset.jumpTime);}
     const del=event.target.closest("[data-delete-annotation]");if(del&&confirm("删除这条人工标注？"))api(`/api/annotations/${del.dataset.deleteAnnotation}`,{method:"DELETE"}).then(()=>loadWaveform()).catch(handleError);
   });
   $("#openFirstCase").addEventListener("click",()=>{const first=filteredCases()[0];if(first)selectCase(first.case_id).catch(handleError)});
@@ -646,7 +1013,10 @@ function bindEvents() {
   $$('[data-lead-preset]').forEach(button=>button.addEventListener("click",()=>{state.leadPreset=Number(button.dataset.leadPreset);state.leads=LEAD_PRESETS[state.leadPreset];$$('[data-lead-preset]').forEach(b=>b.classList.toggle("active",b===button));loadWaveform().catch(handleError)}));
   $("#durationSelect").addEventListener("change",event=>setWaveformDuration(Number(event.target.value),.5));
   $("#gainSelect").addEventListener("change",event=>{state.gain=Number(event.target.value);renderWaveform()});
-  $("#filterSelect").addEventListener("change",event=>{state.filter=event.target.value;loadWaveform().catch(handleError)});
+  $("#filterSelect").addEventListener("change",event=>{state.filter=event.target.value;invalidateScatterStripLoads();state.scatterStripCache.clear();state.scatterStripFailed.clear();renderScatterSelectionList();loadWaveform().catch(handleError)});
+  $$('[data-scatter-mode]').forEach(button=>button.addEventListener("click",()=>switchScatterMode(button.dataset.scatterMode).catch(handleError)));
+  $("#clearScatterSelection").addEventListener("click",clearScatterSelection);
+  $("#applyScatterRange").addEventListener("click",()=>applyScatterRangeSelection().catch(handleError));
   $("#zoomIn").addEventListener("click",()=>zoomWaveform(true,.5));$("#zoomOut").addEventListener("click",()=>zoomWaveform(false,.5));$("#zoomReset").addEventListener("click",resetWaveformZoom);
   $("#prevWindow").addEventListener("click",()=>jumpTo(state.start-state.duration*.65));$("#nextWindow").addEventListener("click",()=>jumpTo(state.start+state.duration*1.35));
   let sliderTimer;$("#timeSlider").addEventListener("input",event=>{clearTimeout(sliderTimer);state.start=Number(event.target.value);renderOverview();sliderTimer=setTimeout(()=>loadWaveform().catch(handleError),120)});
@@ -658,9 +1028,10 @@ function bindEvents() {
   $("#downloadReport").addEventListener("click",()=>{if(state.caseId)window.location.href=withPhi(`/api/cases/${state.caseId}/report.pdf`)});
   $("#reportPageSelect").addEventListener("change",event=>showReportPage(Number(event.target.value)));$("#openReportImage").addEventListener("click",()=>{const url=$("#sourceReportImage").dataset.url;if(url)window.open(url,"_blank","noopener");else toast("请先使用右上角隐私开关显示身份信息","error")});
   $("#refreshAudit").addEventListener("click",()=>loadAudit().catch(handleError));
-  document.addEventListener("keydown",event=>{if(["INPUT","TEXTAREA","SELECT"].includes(document.activeElement.tagName))return;if(event.key==="ArrowLeft"&&state.currentPage==="review"){event.preventDefault();jumpTo(state.start-state.duration*.65)}if(event.key==="ArrowRight"&&state.currentPage==="review"){event.preventDefault();jumpTo(state.start+state.duration*1.35)}if(!event.ctrlKey&&!event.metaKey&&!event.altKey&&state.currentPage==="review"&&(event.key==="+"||event.key==="=")){event.preventDefault();zoomWaveform(true,.5)}if(!event.ctrlKey&&!event.metaKey&&!event.altKey&&state.currentPage==="review"&&(event.key==="-"||event.key==="_")){event.preventDefault();zoomWaveform(false,.5)}if(!event.ctrlKey&&!event.metaKey&&!event.altKey&&state.currentPage==="review"&&event.key==="0"){event.preventDefault();resetWaveformZoom()}if(event.key.toLowerCase()==="a"&&state.currentPage==="review")openAnnotation();if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="k"){event.preventDefault();$("#globalSearch").focus()}});
+  document.addEventListener("keydown",event=>{if(["INPUT","TEXTAREA","SELECT"].includes(document.activeElement.tagName)||document.activeElement.closest?.(".scatter-review-card"))return;if(event.key==="ArrowLeft"&&state.currentPage==="review"){event.preventDefault();jumpTo(state.start-state.duration*.65)}if(event.key==="ArrowRight"&&state.currentPage==="review"){event.preventDefault();jumpTo(state.start+state.duration*1.35)}if(!event.ctrlKey&&!event.metaKey&&!event.altKey&&state.currentPage==="review"&&(event.key==="+"||event.key==="=")){event.preventDefault();zoomWaveform(true,.5)}if(!event.ctrlKey&&!event.metaKey&&!event.altKey&&state.currentPage==="review"&&(event.key==="-"||event.key==="_")){event.preventDefault();zoomWaveform(false,.5)}if(!event.ctrlKey&&!event.metaKey&&!event.altKey&&state.currentPage==="review"&&event.key==="0"){event.preventDefault();resetWaveformZoom()}if(event.key.toLowerCase()==="a"&&state.currentPage==="review")openAnnotation();if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="k"){event.preventDefault();$("#globalSearch").focus()}});
   bindCanvasInteraction();
-  let resizeTimer;window.addEventListener("resize",()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{if(state.currentPage==="review"){renderOverview();renderWaveform()}if(state.currentPage==="trends"){renderTrendChart();renderHistogram();renderPoincare()}},120)});
+  bindScatterInteraction();
+  let resizeTimer;window.addEventListener("resize",()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{if(state.currentPage==="review"){renderOverview();renderWaveform();renderScatter();renderScatterSelectionList()}if(state.currentPage==="trends"){renderTrendChart();renderHistogram();renderPoincare()}},120)});
 }
 
 async function init() {

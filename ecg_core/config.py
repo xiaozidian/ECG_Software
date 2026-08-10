@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "CardioInsight Holter 心电分析工作站"
-APP_VERSION = "0.11.1"
+APP_VERSION = "0.12.0"
 SAMPLE_RATE = 200
 CHANNEL_COUNT = 8
 RAW_FOLDER_NAME = "10个病人的心电数据"

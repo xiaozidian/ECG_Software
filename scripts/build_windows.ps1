@@ -12,14 +12,14 @@ if (-not (Test-Path -LiteralPath $VenvPython)) {
 
 & $VenvPython -m pip install -r (Join-Path $ProjectRoot "requirements-dev.txt")
 if ($LASTEXITCODE -ne 0) {
-    throw "安装构建依赖失败。"
+    throw "Failed to install build dependencies."
 }
 
 Push-Location $ProjectRoot
 try {
     & $VenvPython -m PyInstaller --noconfirm --clean "CardioInsightHolter.spec"
     if ($LASTEXITCODE -ne 0) {
-        throw "Windows 应用构建失败。"
+        throw "Windows application build failed."
     }
 }
 finally {
@@ -28,8 +28,8 @@ finally {
 
 $ExePath = Join-Path $ProjectRoot "dist\CardioInsightHolter\CardioInsightHolter.exe"
 if (-not (Test-Path -LiteralPath $ExePath)) {
-    throw "构建失败：未生成 $ExePath"
+    throw "Build failed: executable was not generated at $ExePath"
 }
 
-Write-Host "已生成 Windows 应用：$ExePath"
-Write-Host "对外分发前请使用受信任的代码签名证书完成 Authenticode 签名。"
+Write-Host "Windows application generated at: $ExePath"
+Write-Host "Sign the application with a trusted Authenticode certificate before external distribution."

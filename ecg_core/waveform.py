@@ -87,3 +87,55 @@ def read_waveform(
         "filter": "0.5–40 Hz display filter" if apply_filter else "raw",
         "calibration_note": "设备原始标度；本演示版未建立计量学溯源",
     }
+
+
+def read_waveform_strips(
+    path: Path,
+    sample_indices: list[int],
+    pre_s: float = 1.5,
+    post_s: float = 2.5,
+    leads: list[str] | None = None,
+    max_points: int = 800,
+    apply_filter: bool = True,
+) -> dict:
+    """Read small, independently centered waveform excerpts for a virtual list."""
+    selected = list(leads or ["II", "V1", "V5"])
+    if not selected or any(lead not in ALL_LEADS for lead in selected):
+        raise ValueError("片段导联包含不支持的值")
+    if len(set(selected)) != len(selected):
+        raise ValueError("片段导联不能重复")
+    total_samples = path.stat().st_size // (CHANNEL_COUNT * 2)
+    result = []
+    for sample_index in sample_indices:
+        if isinstance(sample_index, bool) or not isinstance(sample_index, int):
+            raise ValueError("sample_indices 必须全部为整数")
+        if not 0 <= sample_index < total_samples:
+            raise ValueError("片段位置超出波形记录范围")
+        anchor_s = sample_index / SAMPLE_RATE
+        start_s = max(0.0, anchor_s - pre_s)
+        end_s = min(total_samples / SAMPLE_RATE, anchor_s + post_s)
+        payload = read_waveform(
+            path,
+            start_s,
+            max(end_s - start_s, 1 / SAMPLE_RATE),
+            selected,
+            max_points,
+            apply_filter,
+        )
+        result.append({
+            "sample_index": sample_index,
+            "time_s": round(anchor_s, 3),
+            "start_s": payload["start_s"],
+            "duration_s": payload["duration_s"],
+            "anchor_offset_s": round(anchor_s - payload["start_s"], 3),
+            "display_sample_rate_hz": payload["display_sample_rate_hz"],
+            "stride": payload["stride"],
+            "leads": payload["leads"],
+        })
+    return {
+        "sample_rate_hz": SAMPLE_RATE,
+        "units": "µV",
+        "filter": "0.5–40 Hz display filter" if apply_filter else "raw",
+        "leads": selected,
+        "items": result,
+    }

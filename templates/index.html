@@ -105,9 +105,46 @@
       <div class="analysis-grid">
         <div class="analysis-main">
           <article class="card trend-strip-card"><div class="mini-card-title"><span>全程心率趋势</span><small id="cursorTimeLabel">D1 00:00:00</small></div><canvas id="overviewCanvas" height="118"></canvas><input id="timeSlider" class="time-slider" type="range" min="0" max="1" value="0" step="1"></article>
-          <article class="card waveform-card"><div class="waveform-title"><div><span class="live-dot"></span><strong>多导联连续波形</strong><small id="waveMeta">—</small></div><div class="wave-legend"><span><i class="normal"></i>N</span><span><i class="supra"></i>S</span><span><i class="vent"></i>V</span><span><i class="noise"></i>噪声</span></div></div><div id="waveformScroller" class="waveform-scroller"><canvas id="waveformCanvas" aria-label="多导联心电波形；滚轮缩放时间轴，按住 Shift 滚轮缩放电压增益，移动指针可查看时间、导联和电压坐标"></canvas><div id="waveCursor" class="wave-cursor" hidden aria-hidden="true"><span class="wave-cursor-x"></span><span class="wave-cursor-y"></span><i></i></div><div id="waveTooltip" class="wave-tooltip" hidden></div></div><div class="waveform-foot"><span>滚轮缩放时间轴 · Shift + 滚轮调增益 · 拖动平移 · 悬停查坐标 · 双击标注</span><span id="calibrationNote">设备原始标度 · 未做计量学溯源</span></div></article>
+          <article class="card waveform-card"><div class="waveform-title"><div><span class="live-dot"></span><strong>多导联连续波形</strong><small id="waveMeta" aria-live="polite">—</small></div><div class="wave-legend"><span><i class="normal"></i>N</span><span><i class="supra"></i>S</span><span><i class="vent"></i>V</span><span><i class="noise"></i>噪声</span></div></div><div id="waveformScroller" class="waveform-scroller"><canvas id="waveformCanvas" aria-label="多导联心电波形；滚轮缩放时间轴，按住 Shift 滚轮缩放电压增益，移动指针可查看时间、导联和电压坐标"></canvas><div id="waveCursor" class="wave-cursor" hidden aria-hidden="true"><span class="wave-cursor-x"></span><span class="wave-cursor-y"></span><i></i></div><div id="waveTooltip" class="wave-tooltip" hidden></div></div><div class="waveform-foot"><span>滚轮缩放时间轴 · Shift + 滚轮调增益 · 拖动平移 · 悬停查坐标 · 双击标注</span><span id="calibrationNote">设备原始标度 · 未做计量学溯源</span></div></article>
         </div>
         <aside class="review-rail">
+          <article class="card scatter-review-card">
+            <div class="scatter-card-header"><div><h2>散点图复核</h2><p>鼠标画圈或键盘输入范围，左侧显示圈内全部心搏片段</p></div><output id="scatterSelectionCount" class="status-pill neutral" aria-live="polite">未圈选</output></div>
+            <div class="scatter-workspace">
+              <section class="scatter-selection-pane" aria-label="圈选波形片段">
+                <div class="scatter-pane-heading"><strong>圈选片段</strong><button id="clearScatterSelection" type="button" class="text-button" disabled>清除</button></div>
+                <div id="scatterSelectionList" class="scatter-selection-list" tabindex="0" aria-label="圈选片段列表">
+                  <div id="scatterSelectionEmpty" class="scatter-selection-empty"><span>◯</span><strong>尚未圈选</strong><p>在散点图密集区画一个闭合圈，片段会在这里按时间排列。</p></div>
+                  <div id="scatterSelectionVirtual" class="scatter-selection-virtual" hidden></div>
+                </div>
+              </section>
+              <section class="scatter-plot-pane">
+                <div class="scatter-mode-grid" role="group" aria-label="散点图类型">
+                  <button type="button" class="active" data-scatter-mode="rr" aria-pressed="true">R-R散点图</button>
+                  <button type="button" data-scatter-mode="n" aria-pressed="false">N散点图</button>
+                  <button type="button" data-scatter-mode="nn" aria-pressed="false">N-N散点图</button>
+                  <button type="button" data-scatter-mode="s" aria-pressed="false">S散点图</button>
+                  <button type="button" data-scatter-mode="v" aria-pressed="false">V散点图</button>
+                  <button type="button" data-scatter-mode="hour" aria-pressed="false">小时散点图</button>
+                </div>
+                <details class="scatter-keyboard-select">
+                  <summary>键盘范围选择</summary>
+                  <div class="scatter-range-grid">
+                    <label>横轴最小值<input id="scatterXMin" type="number" step="1"></label>
+                    <label>横轴最大值<input id="scatterXMax" type="number" step="1"></label>
+                    <label>纵轴最小值<input id="scatterYMin" type="number" step="1"></label>
+                    <label>纵轴最大值<input id="scatterYMax" type="number" step="1"></label>
+                  </div>
+                  <button id="applyScatterRange" type="button" class="button secondary">选择范围内片段</button>
+                </details>
+                <div class="scatter-canvas-wrap">
+                  <canvas id="scatterCanvas" height="390" tabindex="0" aria-label="R-R散点图；按住鼠标或触控笔画圈选择心搏"></canvas>
+                  <div id="scatterLoading" class="scatter-loading">正在读取散点…</div>
+                </div>
+                <div class="scatter-plot-foot"><span id="scatterHelp">按住鼠标画圈；圈选按完整数据精确计算</span><span id="scatterPointCount">—</span></div>
+              </section>
+            </div>
+          </article>
           <article class="card rail-card"><div class="card-header"><div><h2>当前窗口</h2><p>逐搏候选标记</p></div><span id="visibleBeatCount" class="status-pill neutral">0 搏</span></div><div id="visibleEventList" class="event-mini-list empty-state">暂无事件</div></article>
           <article class="card rail-card"><div class="card-header"><div><h2>人工标注</h2><p>保留操作者与时间</p></div></div><div id="annotationList" class="annotation-list empty-state">暂无人工标注</div></article>
           <article class="card rail-card keyboard-card"><h3>快捷复核</h3><div><kbd>←</kbd><span>前一窗口</span><kbd>→</kbd><span>后一窗口</span><kbd>+</kbd><span>放大波形</span><kbd>−</kbd><span>缩小波形</span><kbd>0</kbd><span>复位 10 秒</span><kbd>A</kbd><span>添加标注</span></div></article>

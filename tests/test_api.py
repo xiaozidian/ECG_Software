@@ -114,6 +114,88 @@ def test_waveform_events_trend_and_hrv_endpoints(client):
     assert abs(hrv["calculated"]["sdnn_ms"] - hrv["source"]["sdnn_ms"]) < 2
 
 
+def test_scatter_modes_exact_lasso_and_virtual_strip_batch(client):
+    case_id = _case_id(client, prefer_ventricular=True)
+    payloads = {}
+    for mode in ("rr", "n", "nn", "s", "v", "hour"):
+        response = client.get(f"/api/cases/{case_id}/scatter?mode={mode}&max_points=1000")
+        assert response.status_code == 200
+        data = response.json
+        payloads[mode] = data
+        assert data["mode"] == mode
+        assert data["returned_count"] == len(data["points"])
+        assert data["returned_count"] <= 1000
+        assert data["candidate_count"] >= data["returned_count"]
+        assert all({"sample_index", "time_s", "x", "y", "group", "label", "rr_ms"} <= set(point) for point in data["points"])
+
+    hourly = client.get(f"/api/cases/{case_id}/scatter?mode=hour&hour_start_s=3601&max_points=1000").json
+    assert hourly["hour_start_s"] == 3600
+    assert hourly["axis"]["x_unit"] == hourly["axis"]["y_unit"] == "ms"
+    assert all(3600 <= point["time_s"] < 7200 for point in hourly["points"])
+
+    assert client.get(f"/api/cases/{case_id}/scatter?mode=bad").status_code == 400
+    ventricular = payloads["v"]
+    assert ventricular["candidate_count"] > 0
+    target = ventricular["points"][0]
+    radius = 2
+    polygon = [
+        [target["x"] - radius, target["y"] - radius],
+        [target["x"] + radius, target["y"] - radius],
+        [target["x"] + radius, target["y"] + radius],
+        [target["x"] - radius, target["y"] + radius],
+    ]
+    selected = client.post(
+        f"/api/cases/{case_id}/scatter-selection",
+        json={"mode": "v", "polygon": polygon},
+    )
+    assert selected.status_code == 200
+    assert selected.json["exact"] is True
+    assert selected.json["total"] == len(selected.json["sample_indices"]) > 0
+    assert target["sample_index"] in selected.json["sample_indices"]
+
+    samples = selected.json["sample_indices"][:3]
+    strips = client.post(
+        f"/api/cases/{case_id}/waveform-strips",
+        json={
+            "sample_indices": samples,
+            "pre_s": 1.5,
+            "post_s": 2.5,
+            "leads": ["II", "V1", "V5"],
+            "max_points": 800,
+            "filter": "display",
+        },
+    )
+    assert strips.status_code == 200
+    assert len(strips.json["items"]) == len(samples)
+    for item, sample in zip(strips.json["items"], samples):
+        assert item["sample_index"] == sample
+        assert item["label"] == "V"
+        assert set(item["leads"]) == {"II", "V1", "V5"}
+        assert 0 <= item["anchor_offset_s"] <= item["duration_s"]
+        assert all(1 <= len(values) <= 800 for values in item["leads"].values())
+
+
+def test_scatter_and_strip_validation(client):
+    case_id = _case_id(client, prefer_ventricular=True)
+    selection_url = f"/api/cases/{case_id}/scatter-selection"
+    strips_url = f"/api/cases/{case_id}/waveform-strips"
+    assert client.post(selection_url, json={"mode": "rr", "polygon": []}).status_code == 400
+    assert client.post(selection_url, json={"mode": "rr", "polygon": [[0, 0], [1, 1], [False, 2]]}).status_code == 400
+    assert client.post(selection_url, json={"mode": "rr", "polygon": [[0, 0], [1, 1], [10 ** 400, 2]]}).status_code == 400
+    assert client.post(selection_url, json={"mode": "rr", "polygon": [[0, 0]] * 129}).status_code == 400
+    assert client.post(selection_url, json={"mode": "bad", "polygon": [[0, 0], [1, 0], [1, 1]]}).status_code == 400
+    assert client.post(strips_url, json={"sample_indices": []}).status_code == 400
+    assert client.post(strips_url, json={"sample_indices": [True]}).status_code == 400
+    assert client.post(strips_url, json={"sample_indices": list(range(33))}).status_code == 400
+    assert client.post(strips_url, json={"sample_indices": [999_999_999]}).status_code == 400
+
+    sample = client.get(f"/api/cases/{case_id}/scatter?mode=v&max_points=500").json["points"][0]["sample_index"]
+    assert client.post(strips_url, json={"sample_indices": [sample], "leads": ["BAD"]}).status_code == 400
+    assert client.post(strips_url, json={"sample_indices": [sample], "pre_s": 3, "post_s": 5}).status_code == 400
+    assert client.post(strips_url, json={"sample_indices": [sample], "pre_s": 10 ** 400}).status_code == 400
+    assert client.post(strips_url, json={"sample_indices": [sample], "max_points": 800.5}).status_code == 400
+
+
 def test_annotation_patient_override_report_workflow_and_pdf(client):
     case_id = _case_id(client)
     created = client.post(f"/api/cases/{case_id}/annotations", json={
