@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#102b38">
-  <meta name="description" content="CardioInsight Holter 纯合成数据在线交互演示；不含真实患者数据。">
-  <title>CardioInsight Holter｜纯合成数据在线演示</title>
+  <meta name="description" content="CardioInsight Holter 模拟数据在线交互演示；含一例用户确认模拟源片段，不含真实患者数据。">
+  <title>CardioInsight Holter｜模拟数据在线演示</title>
   <link rel="icon" href="static/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="static/css/app.css">
 </head>
@@ -14,7 +14,7 @@
   <a class="skip-link" href="#mainContent">跳到主要内容</a>
   <div id="loading" class="loading-screen">
     <div class="loading-mark"><span></span><span></span><span></span></div>
-    <div>正在生成纯合成演示病例…</div>
+    <div>正在加载公开模拟病例…</div>
   </div>
 
   <header class="topbar">
@@ -53,14 +53,14 @@
 
   <main class="main-shell" id="mainContent" tabindex="-1">
     <div class="safety-banner" role="note">
-      <strong>纯合成数据在线演示</strong>
-      <span>全部 10 例、波形和统计均由浏览器内固定公式生成，不含真实患者信息；仅展示交互，不用于临床用途。</span>
+      <strong>模拟数据在线演示</strong>
+      <span>含 1 例用户确认的模拟病例源波形片段和 9 例公式病例；不含真实患者数据，仅用于交互展示。</span>
       <button id="dismissSafety" type="button" aria-label="收起提示">×</button>
     </div>
 
     <section class="page active" id="page-dashboard">
       <div class="page-heading">
-        <div><p class="eyebrow">今日工作空间</p><h1>动态心电病例工作台</h1><p>10 例虚构病例由浏览器确定性生成；本站不读取、上传或保存真实病例文件。</p></div>
+        <div><p class="eyebrow">今日工作空间</p><h1>动态心电病例工作台</h1><p>第 5 例直接读取已公开的模拟 DATA 片段，其余病例由浏览器生成；不含真实患者数据。</p></div>
         <div class="heading-actions"><button class="button primary" id="openFirstCase">开始复核</button></div>
       </div>
       <article id="dataSetupPanel" class="setup-panel" hidden>
@@ -68,9 +68,9 @@
         <div><p class="eyebrow">首次运行</p><h2>连接本地病例目录</h2><p>软件未找到心电数据。请按下方路径创建 <code>config.json</code>，并把 <code>data_root</code> 改为病例目录的绝对路径。</p><code id="setupConfigPath">项目根目录/config.json</code></div>
       </article>
       <div class="metric-grid dashboard-metrics">
-        <article class="metric-card"><div class="metric-icon teal">病</div><div><span>病例总数</span><strong id="metricCases">—</strong><small>纯合成虚构病例</small></div></article>
-        <article class="metric-card"><div class="metric-icon blue">时</div><div><span>记录总时长</span><strong id="metricHours">—</strong><small>小时合成波形</small></div></article>
-        <article class="metric-card"><div class="metric-icon violet">搏</div><div><span>有效心搏</span><strong id="metricBeats">—</strong><small>合成算法统计</small></div></article>
+        <article class="metric-card"><div class="metric-icon teal">病</div><div><span>病例总数</span><strong id="metricCases">—</strong><small>公开模拟病例</small></div></article>
+        <article class="metric-card"><div class="metric-icon blue">时</div><div><span>记录总时长</span><strong id="metricHours">—</strong><small>模拟波形时长</small></div></article>
+        <article class="metric-card"><div class="metric-icon violet">搏</div><div><span>有效心搏</span><strong id="metricBeats">—</strong><small>模拟数据统计</small></div></article>
         <article class="metric-card"><div class="metric-icon amber">审</div><div><span>待复核报告</span><strong id="metricPending">—</strong><small>尚未进入已审核状态</small></div></article>
       </div>
       <div class="dashboard-layout">
@@ -204,6 +204,7 @@
   </dialog>
 
   <div id="toastStack" class="toast-stack" aria-live="polite"></div>
+  <script src="static/demo-data/uploaded-sim-af-001/case-data.js"></script>
   <script src="static/js/demo-api.js"></script>
   <script src="static/js/app.js"></script>
 </body>
