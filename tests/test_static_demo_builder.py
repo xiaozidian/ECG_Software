@@ -9,6 +9,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_static_demo_builder(tmp_path: Path) -> None:
+    assert not (PROJECT_ROOT / "static" / "js" / "demo-api.js").exists()
+    assert not (PROJECT_ROOT / "static" / "demo-data").exists()
+    assert (PROJECT_ROOT / "demo" / "static" / "js" / "demo-api.js").is_file()
+    assert (PROJECT_ROOT / "demo" / "static" / "demo-data" / "uploaded-sim-af-001" / "case-data.js").is_file()
     output = tmp_path / "pages"
     subprocess.run(
         [sys.executable, str(PROJECT_ROOT / "scripts" / "build_static_demo.py"), "--output", str(output)],
@@ -16,7 +20,7 @@ def test_static_demo_builder(tmp_path: Path) -> None:
         check=True,
     )
     html = (output / "index.html").read_text(encoding="utf-8")
-    assert "模拟数据在线演示" in html
+    assert "病例数据在线演示" in html
     assert 'data-demo-readonly="true"' in html
     assert 'data-allow-phi="false"' in html
     assert "{{" not in html and "{%" not in html
@@ -29,13 +33,15 @@ def test_static_demo_builder(tmp_path: Path) -> None:
     assert "房颤样候选" in html
     assert (output / "static" / "js" / "demo-api.js").is_file()
     demo_api = (output / "static" / "js" / "demo-api.js").read_text(encoding="utf-8")
-    assert "UPLOADED_ASSET_BASE" in demo_api
-    assert "sourceWaveform" in demo_api
-    assert "raw_patient_data:false" in demo_api
+    assert "ASSET_BASE" in demo_api
+    assert "waveformBuffer" in demo_api
+    assert "COUNT=1" in demo_api
     case_data = output / "static" / "demo-data" / "uploaded-sim-af-001" / "case-data.js"
     waveform_data = output / "static" / "demo-data" / "uploaded-sim-af-001" / "waveform.bin"
     assert case_data.is_file()
     assert waveform_data.stat().st_size == 1_920_000
+    for public_text in (html, demo_api, case_data.read_text(encoding="utf-8")):
+        assert "合成" not in public_text
     assert (output / ".nojekyll").is_file()
     headers = (output / "_headers").read_text(encoding="utf-8")
     assert "Content-Security-Policy:" in headers
@@ -61,6 +67,10 @@ require(process.cwd() + "/static/js/demo-api.js");
 
 (async () => {
   const caseId = window.__CARDIOINSIGHT_UPLOADED_CASE__.case_id;
+  const caseList = await (await window.fetch("/api/cases")).json();
+  if (caseList.total !== 1 || caseList.items.length !== 1) throw new Error("public demo must contain one case");
+  if (caseList.items[0].metadata.name !== "徐有德" || caseList.items[0].case_id !== caseId) throw new Error("unexpected public case");
+  if (JSON.stringify(caseList).includes("合成")) throw new Error("forbidden public wording");
   const detail = await (await window.fetch(`/api/cases/${caseId}`)).json();
   if (detail.technical.duration_seconds_raw !== 600) throw new Error("unexpected disease demo duration");
   if (detail.integrity.raw_patient_data !== false) throw new Error("raw data boundary missing");

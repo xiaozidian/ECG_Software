@@ -1,4 +1,4 @@
-name: Deploy synthetic demo to GitHub Pages
+name: Deploy single-case demo to GitHub Pages
 
 on:
   workflow_dispatch:
@@ -24,7 +24,7 @@ jobs:
           python-version: "3.12"
       - name: Install static builder dependency
         run: python -m pip install "Jinja2>=3.1,<4"
-      - name: Build browser-only synthetic demo
+      - name: Build browser-only single-case demo
         run: python scripts/build_static_demo.py
       - name: Check demo JavaScript
         run: node --check build/pages/static/js/demo-api.js && node --check build/pages/static/js/app.js

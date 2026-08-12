@@ -4,6 +4,28 @@ CardioInsight Holter 是一个在本机运行的动态心电研究与软件验�
 
 > 本项目仅用于研究、教学和软件功能验证，不用于独立临床诊断、报警、分诊或治疗决策。自动分类、事件和统计均为待专业人员复核的候选结果。
 
+## 先区分两个版本
+
+仓库同时维护“实际开发版”和“在线 Demo 版”，二者共享界面基础，但入口、数据和运行方式相互隔离。
+
+| 项目 | 实际开发版 | 在线 Demo 版 |
+|---|---|---|
+| 用途 | macOS / Windows 本机开发、完整功能调试 | GitHub Pages / Cloudflare Pages 公开演示 |
+| 入口 | `app.py`、系统启动脚本或桌面打包程序 | `scripts/build_static_demo.py` 生成的静态站点 |
+| 后端 | Python / Flask API | 无后端；由浏览器内只读 API 适配层提供数据 |
+| 数据 | 本机 `config.json` 指向的病例目录 | 仅“徐有德”一例 10 分钟公开片段 |
+| 配置 | 项目根目录本机 `config.json`，不提交 | 不读取 `config.json`、`.env` 或 `ECG_DATA_ROOT` |
+| 写入 | 标注、报告、审计写入系统用户数据目录 | 只读演示；临时交互最多保存在当前浏览器 |
+| 专属源码 | `app.py`、`ecg_core/`、`templates/`、`static/` | `demo/` |
+| 生成产物 | `dist/` | `build/pages/`；仓库快照为 `docs/demo/` |
+
+版本隔离约定：
+
+- 正式版的 `app.py` 和 `ecg_core/` 不读取 `demo/`；正式 `static/` 中不存放 Demo 病例或 Demo API。
+- `demo/static/` 只保存在线版专属浏览器 API 与公开病例片段；构建时才叠加到独立发布目录。
+- `build/pages/` 和 `docs/demo/` 都是生成结果，不直接手工修改。改动应落在 `templates/`、正式 `static/` 或 `demo/` 的源文件，再重新构建。
+- 本机 `config.json`、完整病例目录、数据库、报告和完整 DATA 不属于在线 Demo，禁止加入发布包。
+
 ## 选择运行系统
 
 | 系统 | 支持版本 | 双击启动 | 源码配置 | 本地数据目录 | 打包产物 |
@@ -69,14 +91,45 @@ Windows 示例：
 
 ### GitHub Pages / Cloudflare Pages 在线演示
 
-原始完整应用需要 Python/Flask 服务、病例目录和可写的应用数据目录，不能直接在只支持静态文件的 GitHub Pages 上运行。仓库因此提供了一个独立的浏览器演示模式：包含 1 例用户明确确认“身份、报告和波形均为模拟内容”的源数据片段，以及 9 例由浏览器固定公式生成的病例。
+原始完整应用需要 Python/Flask 服务、病例目录和可写的应用数据目录，不能直接在只支持静态文件的 GitHub Pages 上运行。仓库因此提供了一个独立的浏览器演示模式，公开版本仅展示用户指定并确认可公开的“徐有德”病例片段。
 
 - 正式演示地址（仓库管理员启用 Pages 后生效）：<https://xiaozidian.github.io/ECG_Software/>
 - `scripts/build_static_demo.py` 生成 Pages 发布包；`.github/workflows/pages.yml` 在 `main` 更新时自动发布。
 - `docs/demo` 保存同一演示的静态快照，可用于无需服务器的发布预览。
-- 第 5 例直接来自用户提供并确认可公开的模拟病例 `2508040855572068`。完整模拟 DATA 约 266 MB，超过 GitHub 100 MB 单文件限制和 Cloudflare Pages 25 MiB 单资源限制，因此发布其 22:53–23:03 的 10 分钟原始 8 通道 int16 片段（约 1.9 MB），并保留模拟姓名、ID、科室、诊断、逐搏分组和完整源报告摘要。
-- 该片段不是重新绘制的波形：`static/demo-data/uploaded-sim-af-001/waveform.bin` 是源模拟 DATA 的直接字节裁剪，`case-data.js` 保存对应 EBI 逐搏记录和模拟资料；页面在浏览器内读取二进制并推导 12 导联。
+- “徐有德”对应病例 `2508040855572068`。完整 DATA 约 266 MB，超过 GitHub 100 MB 单文件限制和 Cloudflare Pages 25 MiB 单资源限制，因此公开版本发布其 22:53–23:03 的 10 分钟原始 8 通道 int16 片段（约 1.9 MB），并保留病例 ID、科室、诊断、逐搏分组和源报告摘要。
+- 该片段不是重新绘制的波形：Demo 源文件 `demo/static/demo-data/uploaded-sim-af-001/waveform.bin` 是源 DATA 的直接字节裁剪，`case-data.js` 保存对应 EBI 逐搏记录和病例资料；发布后位于站点的 `static/demo-data/`，页面在浏览器内读取二进制并推导 12 导联。
 - `scripts/import_public_simulated_case.py` 记录了可复现的裁剪流程，并且必须显式提供 `--confirm-synthetic` 才会导出。
+
+#### 本地构建和预览 Demo
+
+在项目根目录执行：
+
+```zsh
+./.venv/bin/python scripts/build_static_demo.py
+./.venv/bin/python -m http.server 4173 --bind 127.0.0.1 --directory build/pages
+```
+
+然后打开 <http://127.0.0.1:4173/>。预览应只显示 1 例“徐有德”；停止服务按 `Ctrl+C`。构建过程只读取仓库内的模板、正式公共静态资源和 `demo/`，不会读取本机正式 `config.json` 或病例目录。
+
+上线前建议执行：
+
+```zsh
+./.venv/bin/python -m pytest -q
+node --check demo/static/js/demo-api.js
+node --check static/js/app.js
+./.venv/bin/python scripts/build_static_demo.py
+```
+
+#### GitHub Pages 自动上线
+
+1. 将改动合并并推送到 `main`。
+2. GitHub Actions 的 `pages.yml` 自动安装静态构建依赖、生成 `build/pages`、检查 JavaScript 并发布。
+3. 在仓库 **Settings → Pages** 中将 Source 设为 **GitHub Actions**。首次启用后，后续每次推送 `main` 都会自动更新。
+4. 在 Actions 页面确认 `Deploy single-case demo to GitHub Pages` 的 `build` 与 `deploy` 均成功，再访问正式演示地址。
+
+GitHub Pages 上传的是构建产物，不会运行 `app.py`，也不会上传被 `.gitignore` 忽略的本机 `config.json` 与完整病例目录。
+
+#### Cloudflare Pages 上线
 
 Cloudflare Pages 可直接连接本 GitHub 仓库，不需要把 GitHub Pages 作为源站。创建 Pages 项目时使用以下配置：
 
@@ -88,7 +141,15 @@ Cloudflare Pages 可直接连接本 GitHub 仓库，不需要把 GitHub Pages �
 | Build output directory | `build/pages` |
 | Environment variable | `PYTHON_VERSION=3.12` |
 
-每次推送到 `main` 后，Cloudflare 会自动构建并分发同一份模拟数据静态演示。Cloudflare 项目中不需要配置 `ECG_DATA_ROOT`、正式 `config.json` 或本机病例路径；公开片段已经作为受版本控制的静态资源随站点发布。
+每次推送到 `main` 后，Cloudflare 会自动构建并分发同一份单病例静态演示。Cloudflare 项目中不需要配置 `ECG_DATA_ROOT`、正式 `config.json` 或本机病例路径；公开片段已经作为受版本控制的静态资源随站点发布。
+
+Cloudflare 操作顺序：
+
+1. 在 Cloudflare 控制台进入 **Workers & Pages → Create → Pages → Connect to Git**。
+2. 选择 GitHub 仓库 `xiaozidian/ECG_Software`，Production branch 设为 `main`。
+3. 按上表填写构建命令、输出目录和 Python 版本，然后执行首次部署。
+4. 部署成功后先使用 Cloudflare 提供的 `*.pages.dev` 地址检查病例数量、波形加载和浏览器控制台，再按需绑定自定义域名。
+5. 后续只需推送 `main`；Cloudflare 会重新构建。不要在 Cloudflare 环境变量中填写本机路径、患者目录或 `config.json` 内容。
 
 GitHub Pages 模式用于展示界面和交互。若要运行 Python 分析流程、访问经过审批的私有病例或保存长期标注，应使用下方的容器/云部署，并配置身份认证、HTTPS 和私有存储。
 
@@ -96,26 +157,26 @@ GitHub Pages 模式用于展示界面和交互。若要运行 Python 分析流�
 
 | 内容 | 建议位置 | 是否进入 GitHub / 公开镜像 |
 |---|---|---|
-| 源代码、模板、合成数据生成器 | GitHub 仓库 | 是 |
-| 默认公开演示数据 | 1 例经用户确认可公开的模拟源片段 + 9 例公式病例 | 仅提交约 1.9 MB 的模拟片段及逐搏资料；不提交 266 MB 完整 DATA |
-| 经审批的脱敏病例或需长期保留的合成数据 | 私有、加密、只读持久卷，挂载到 `/data/cases` | 否 |
+| 源代码、模板、演示数据生成器 | GitHub 仓库 | 是 |
+| 默认公开演示数据 | 仅“徐有德”一例经用户确认可公开的源病例片段 | 仅提交约 1.9 MB 的病例片段及逐搏资料；不提交 266 MB 完整 DATA |
+| 经审批的脱敏病例或需长期保留的测试数据 | 私有、加密、只读持久卷，挂载到 `/data/cases` | 否 |
 | SQLite、审计、标注和报告 | 私有、加密、可写持久卷，挂载到 `/data/app` | 否 |
 | 可识别的原始病例 | 仅限满足授权、访问控制、审计和合规要求的受控环境 | 禁止进入公开仓库或公开演示 |
 
-### Render 免费合成演示
+### Render 全栈测试环境（与静态 Demo 不同）
 
-仓库根目录的 `render.yaml` 可创建 Render Web Service。Render 会根据 `Dockerfile` 构建镜像，构建阶段运行 `scripts/generate_synthetic_demo.py` 生成 10 例不含真实身份信息的演示记录，因此无需把大体积病例上传到 GitHub。
+该路径运行 Flask，属于实际开发版的容器化测试环境，不是上面的“徐有德”单病例静态 Demo。仓库根目录的 `render.yaml` 可创建 Render Web Service；Render 会根据 `Dockerfile` 构建镜像，构建阶段运行 `scripts/generate_synthetic_demo.py` 生成 10 例不含真实身份信息的测试记录，因此无需把大体积病例上传到 GitHub。仅需公开展示时，优先使用 GitHub Pages 或 Cloudflare Pages。
 
 1. 把代码（不含本地病例、`config.json` 和 `.env`）推送到 GitHub。
 2. 在 Render 控制台从该仓库创建 Blueprint。
 3. 首次创建时，在控制台为 `ECG_DEMO_PASSWORD` 设置高强度随机密码；`ECG_SECRET_KEY` 由 Render 生成，不写入仓库。
 4. 部署完成后，将 Render 提供的 `https://...onrender.com` 地址发给演示设备，并使用演示用户名和密码访问。
 
-免费实例适合只读、可重建的合成演示。它的本地写入可能在重启或重新部署后消失，不适合保存长期标注、报告或任何真实病例。需要持久化时，应改用私有持久卷或受控的院内/云端存储，并完成相应的数据授权、加密、备份、审计和访问控制。
+免费实例适合只读、可重建的功能演示。它的本地写入可能在重启或重新部署后消失，不适合保存长期标注、报告或任何真实病例。需要持久化时，应改用私有持久卷或受控的院内/云端存储，并完成相应的数据授权、加密、备份、审计和访问控制。
 
 ### 通用 Docker 运行
 
-构建并启动内置合成数据的只读演示：
+构建并启动内置演示数据的只读版本：
 
 ```sh
 docker build -t cardioinsight-holter-demo .
@@ -225,13 +286,15 @@ $env:ECG_DATA_ROOT = "C:\absolute\path\to\10个病人的心电数据"
 node --check .\static\js\app.js
 ```
 
-不含病例数据的 GitHub Actions 会在 macOS 与 Windows 上运行平台路径测试、合成 EBI 散点核心测试、Python 编译检查、JavaScript 语法检查和对应平台启动脚本检查。
+不含病例数据的 GitHub Actions 会在 macOS 与 Windows 上运行平台路径测试、生成 EBI 散点核心测试、Python 编译检查、JavaScript 语法检查和对应平台启动脚本检查。
 
 ## 目录
 
 - `app.py`：本机应用入口与 API。
 - `ecg_core/`：数据解析、波形、事件、存储、平台路径和报告核心。
-- `templates/`、`static/`：根据系统动态适配的工作站界面。
+- `templates/`、`static/`：实际开发版使用的工作站界面与公共资源；不包含 Demo 病例数据。
+- `demo/`：在线 Demo 专属浏览器 API 和单病例资源；实际开发版不读取。
+- `build/pages/`：在线 Demo 临时构建产物，已忽略；`docs/demo/` 是同一构建的仓库快照。
 - `tests/`：自动化验证。
 - `docs/`：需求追踪、数据格式、测试和合规边界。
 - `scripts/`：macOS / Windows 环境、打包和完整性工具。

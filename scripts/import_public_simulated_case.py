@@ -20,7 +20,7 @@ from ecg_core.ebi import load_records  # noqa: E402
 from ecg_core.lps_parser import parse_lps  # noqa: E402
 
 
-DEFAULT_OUTPUT = PROJECT_ROOT / "static" / "demo-data" / "uploaded-sim-af-001"
+DEFAULT_OUTPUT = PROJECT_ROOT / "demo" / "static" / "demo-data" / "uploaded-sim-af-001"
 SAMPLE_RATE = 200
 CHANNEL_COUNT = 8
 FRAME_BYTES = CHANNEL_COUNT * 2
@@ -136,11 +136,11 @@ def import_case(
     metadata.update({
         "start_time": excerpt_start.strftime("%Y-%m-%d %H:%M:%S"),
         "start_iso": excerpt_start.isoformat(),
-        "duration_text": f"{duration_seconds / 60:g}分钟公开模拟片段",
+        "duration_text": f"{duration_seconds / 60:g}分钟公开片段",
         "source_record_duration_text": parsed["metadata"]["duration_text"],
         "source_clinical_diagnosis": source_diagnosis,
-        "clinical_diagnosis": f"{source_diagnosis}（模拟源报告：阵发性心房颤动）",
-        "data_classification": "用户确认：全部身份及心电内容均为模拟数据",
+        "clinical_diagnosis": f"{source_diagnosis}（源报告：阵发性心房颤动）",
+        "data_classification": "用户确认可公开",
     })
     summary = _segment_summary(rebased, duration_seconds)
     waveform_sha256 = _sha256(waveform_path)
@@ -150,9 +150,9 @@ def import_case(
         "summary": summary,
         "source_report_summary": parsed["summary"],
         "conclusion": (
-            "用户确认的模拟病例源报告摘要（对应完整模拟记录）：\n"
+            "病例源报告摘要（对应完整记录）：\n"
             f"{parsed['conclusion']}\n\n"
-            f"当前在线版本直接使用该模拟病例从 {start_seconds / 3600:.2f} 小时起的 "
+            f"当前在线版本直接使用该病例从 {start_seconds / 3600:.2f} 小时起的 "
             f"{duration_seconds / 60:g} 分钟原始波形片段；候选节律仍须人工复核。"
         ),
         "technical": {
@@ -160,7 +160,7 @@ def import_case(
             "independent_channels": CHANNEL_COUNT,
             "derived_leads": 12,
             "sample_format": "source excerpt · little-endian int16 · 8-channel interleaved",
-            "units": "µV（源模拟数据标度，未建立计量学溯源）",
+            "units": "µV（源数据标度，未建立计量学溯源）",
             "duration_seconds_raw": duration_seconds,
             "raw_size_bytes": waveform_path.stat().st_size,
             "report_pages": 0,
@@ -184,7 +184,7 @@ def import_case(
             "source_window_start_s": start_seconds,
             "source_window_end_s": start_seconds + duration_seconds,
             "rhythm_candidate_windows_s": [[round(candidate_start, 3), round(candidate_end, 3)]],
-            "note": "身份、报告与波形均由用户确认属于模拟数据；在线版本是源 DATA 的直接裁剪。",
+            "note": "用户确认该病例可公开；在线版本是源 DATA 的直接裁剪。",
         },
         "beats": beats,
         "active": True,
