@@ -98,6 +98,7 @@ Windows 示例：
 - `docs/demo` 保存同一演示的静态快照，可用于无需服务器的发布预览。
 - “徐有德”对应病例 `2508040855572068`。完整 DATA 约 266 MB，超过 GitHub 100 MB 单文件限制和 Cloudflare Pages 25 MiB 单资源限制，因此公开版本发布其 22:53–23:03 的 10 分钟原始 8 通道 int16 片段（约 1.9 MB），并保留病例 ID、科室、诊断、逐搏分组和源报告摘要。
 - 该片段不是重新绘制的波形：Demo 源文件 `demo/static/demo-data/uploaded-sim-af-001/waveform.bin` 是源 DATA 的直接字节裁剪，`case-data.js` 保存对应 EBI 逐搏记录和病例资料；发布后位于站点的 `static/demo-data/`，页面在浏览器内读取二进制并推导 12 导联。
+- HRV 页面并列展示完整源报告（23 小时 04 分钟）与当前公开片段（10 分钟）的重算结果。片段结果直接从 NN 序列计算；SDANN 与 SDNN index 使用 5 分钟分段，三角指数使用 1/128 秒箱宽，定义参考 [ESC/NASPE HRV 测量标准](https://www.escardio.org/static-file/Escardio/Guidelines/Scientific-Statements/guidelines-Heart-Rate-Variability-FT-1996.pdf)。两组数据统计时长不同；10 分钟 SDANN、SDNN index 与三角指数只作为演示估计，不能解释为算法误差或临床结论。
 - `scripts/import_public_simulated_case.py` 记录了可复现的裁剪流程，并且必须显式提供 `--confirm-synthetic` 才会导出。
 
 #### 本地构建和预览 Demo

@@ -77,6 +77,13 @@ require(process.cwd() + "/static/js/demo-api.js");
   if (detail.integrity.user_confirmed_synthetic !== true) throw new Error("synthetic confirmation missing");
   if (detail.simulation_profile.source_waveform_copied !== true) throw new Error("waveform provenance missing");
 
+  const hrv = await (await window.fetch(`/api/cases/${caseId}/hrv`)).json();
+  if (hrv.source.sdann_ms !== 130 || hrv.source.sdnn_index_ms !== 43 || hrv.source.triangular_index !== 34.37) throw new Error("full source report HRV missing");
+  for (const field of ["mean_nn_ms", "sdnn_ms", "sdann_ms", "sdnn_index_ms", "rmssd_ms", "pnn50_pct", "triangular_index"]) {
+    if (!Number.isFinite(hrv.calculated[field])) throw new Error(`excerpt HRV calculation missing: ${field}`);
+  }
+  if (!hrv.calculated.method.includes("5 分钟分段") || hrv.comparison.source_duration !== "23小时04分钟") throw new Error("HRV comparison scope missing");
+
   const events = await (await window.fetch(`/api/cases/${caseId}/events?type=AF`)).json();
   if (events.total !== 1 || events.items[0].type !== "AF") throw new Error("AF-like event missing");
   if (events.items[0].time_s < 479 || events.items[0].time_s > 481) throw new Error("AF-like event misplaced");

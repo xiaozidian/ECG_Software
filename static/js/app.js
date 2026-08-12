@@ -764,8 +764,14 @@ function renderPoincare() {
 
 function renderHrv() {
   const source=state.hrv.source,calc=state.hrv.calculated;
+  const comparison=state.hrv.comparison||{},sourceLabel=comparison.source_label||"源报告";
+  const note=$("#hrvComparisonNote");
+  if(note)note.textContent=comparison.calculated_label
+    ? `${sourceLabel}（${comparison.source_duration||"完整记录"}）与${comparison.calculated_label}（${comparison.calculated_duration||"当前记录"}）；${comparison.warning||"差异不自动替代医生结论。"}`
+    : "源报告与本软件重算结果并列，差异不自动替代医生结论";
   const values=[["Mean NN",null,calc.mean_nn_ms],["SDNN",source.sdnn_ms,calc.sdnn_ms],["SDANN",source.sdann_ms,calc.sdann_ms],["SDNN index",source.sdnn_index_ms,calc.sdnn_index_ms],["rMSSD",source.rmssd_ms,calc.rmssd_ms],["pNN50",source.pnn50_pct,calc.pnn50_pct],["三角指数",source.triangular_index,calc.triangular_index]];
-  $("#hrvTable").innerHTML=values.map(([label,a,b])=>`<div class="compare-cell"><span>${label}</span><strong>${b ?? "—"}${label==="pNN50"?"%":label==="三角指数"?"":" ms"}</strong><small>源报告 ${a ?? "—"}</small></div>`).join("");
+  values[0][1]=source.mean_nn_ms;
+  $("#hrvTable").innerHTML=values.map(([label,a,b])=>`<div class="compare-cell"><span>${label}</span><strong>${b ?? "—"}${label==="pNN50"?"%":label==="三角指数"?"":" ms"}</strong><small>${label==="Mean NN"&&source.mean_nn_derived?"完整报告心率换算 ≈":`${sourceLabel} `}${a ?? "—"}</small></div>`).join("");
 }
 
 async function loadEvents(type = state.eventType) {

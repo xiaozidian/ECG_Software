@@ -12,7 +12,7 @@
   try{saved={...savedDefault,...JSON.parse(localStorage.getItem(STORE_KEY)||"{}")} }catch(_){/* unavailable */}
   const persist=()=>{try{localStorage.setItem(STORE_KEY,JSON.stringify(saved))}catch(_){/* unavailable */}};
   const copy=value=>JSON.parse(JSON.stringify(value));
-  const round=(value,digits=2)=>{const p=10**digits;return Math.round(value*p)/p};
+  const round=(value,digits=2)=>{if(!Number.isFinite(value))return null;const p=10**digits;return Math.round(value*p)/p};
   const response=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store"}});
   const failure=(message,status=400)=>response({error:message},status);
   const requestBody=options=>{try{return options?.body?JSON.parse(options.body):{}}catch(_){return {}}};
@@ -45,9 +45,18 @@
     for(let time=30;time<duration;time+=60){const count=beats.filter(x=>x.group!==34&&x.time_s>=time-30&&x.time_s<time+30).length;points.push({time_s:time,hr:count})}
     const values=points.map(x=>x.hr);return {bin_seconds:60,points,min_hr:Math.min(...values),max_hr:Math.max(...values)};
   }
+  const mean=values=>values.length?values.reduce((sum,value)=>sum+value,0)/values.length:null;
+  const sampleDeviation=values=>values.length>1?Math.sqrt(values.reduce((sum,value)=>sum+(value-mean(values))**2,0)/(values.length-1)):null;
   function hrv(){
-    const source=present().summary,adjust=(value,delta)=>Number.isFinite(value)?round(value+delta):null;
-    return {source,calculated:{nn_count:beats.filter(x=>x.group===1).length,mean_nn_ms:round(60000/source.avg_hr),sdnn_ms:adjust(source.sdnn_ms,1.4),sdann_ms:adjust(source.sdann_ms,.8),sdnn_index_ms:adjust(source.sdnn_index_ms,1.1),rmssd_ms:adjust(source.rmssd_ms,.6),pnn50_pct:adjust(source.pnn50_pct,.3),triangular_index:adjust(source.triangular_index,.2),method:"源 EBI 片段的 N-N 序列"}};
+    const isNormal=beat=>beat.group===1&&beat.rr_ms>=300&&beat.rr_ms<=2000;
+    const normalBeats=beats.filter(isNormal),nn=normalBeats.map(beat=>beat.rr_ms),successiveDifferences=[];
+    for(let index=1;index<beats.length;index++)if(isNormal(beats[index-1])&&isNormal(beats[index]))successiveDifferences.push(beats[index].rr_ms-beats[index-1].rr_ms);
+    const segmentMeans=[],segmentDeviations=[];
+    for(let start=0;start+300<=duration;start+=300){const values=normalBeats.filter(beat=>beat.time_s>=start&&beat.time_s<start+300).map(beat=>beat.rr_ms);if(values.length>1){segmentMeans.push(mean(values));segmentDeviations.push(sampleDeviation(values))}}
+    const binWidth=1000/128,histogram=new Map();nn.forEach(value=>{const bin=Math.floor(value/binWidth);histogram.set(bin,(histogram.get(bin)||0)+1)});const peak=Math.max(0,...histogram.values());
+    const source=copy(sourceCase.source_report_summary||{});source.mean_nn_ms=Number.isFinite(source.avg_hr)?round(60000/source.avg_hr):null;source.mean_nn_derived=Number.isFinite(source.avg_hr);
+    const calculated={nn_count:nn.length,mean_nn_ms:round(mean(nn)),sdnn_ms:round(sampleDeviation(nn)),sdann_ms:round(sampleDeviation(segmentMeans)),sdnn_index_ms:round(mean(segmentDeviations)),rmssd_ms:round(successiveDifferences.length?Math.sqrt(mean(successiveDifferences.map(value=>value**2))):null),pnn50_pct:round(successiveDifferences.length?successiveDifferences.filter(value=>Math.abs(value)>50).length*100/successiveDifferences.length:null),triangular_index:round(peak?nn.length/peak:null),method:"当前 10 分钟源 EBI 片段；5 分钟分段；三角指数箱宽 1/128 秒"};
+    return {source,calculated,comparison:{source_label:"完整源报告",source_duration:sourceCase.metadata.source_record_duration_text,calculated_label:"当前公开片段重算",calculated_duration:sourceCase.metadata.duration_text,warning:"统计时长不同；10 分钟 SDANN、SDNN index 与三角指数仅作演示估计，不应解释为算法误差或临床结论。"}};
   }
   function rrVisuals(){
     const normal=beats.filter(x=>x.group===1&&x.rr_ms>=300&&x.rr_ms<=2000).map(x=>x.rr_ms),histogram=Array.from({length:35},(_,index)=>({start_ms:300+index*50,end_ms:350+index*50,count:0}));
