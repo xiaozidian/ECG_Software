@@ -781,6 +781,7 @@ async function loadEvents(type = state.eventType) {
 
 function renderEvents() {
   const labels={V:"室性候选",S:"室上性候选",pause:"长 RR",tachy:"过速候选",brady:"过缓候选",noise:"噪声"};
+  if(Object.prototype.hasOwnProperty.call(state.events.summary,"AF"))labels.AF="房颤样候选";
   $("#eventSummary").innerHTML=Object.entries(labels).map(([key,label])=>`<article class="event-summary-card"><span>${label}</span><strong>${fmtNumber(state.events.summary[key]||0)}</strong></article>`).join("");
   $("#eventTotal").textContent=`显示 ${state.events.items.length} / ${fmtNumber(state.events.total)}`;
   $("#eventTableBody").innerHTML=state.events.items.map(item=>`<tr><td>${formatElapsed(item.time_s)}</td><td><span class="severity-dot ${item.severity}"></span>${escapeHtml(item.label)}</td><td>${item.hr??"—"} bpm / ${item.rr_ms} ms</td><td>${item.group}</td><td><span class="status-pill warning">${item.review_status}</span></td><td><button class="row-action" data-jump-time="${item.time_s}">查看波形</button></td></tr>`).join("")||`<tr><td colspan="6" class="empty-state">当前筛选没有候选事件</td></tr>`;

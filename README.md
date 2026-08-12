@@ -67,13 +67,26 @@ Windows 示例：
 
 ## 在其他设备打开：容器与云部署
 
-### GitHub Pages 在线演示
+### GitHub Pages / Cloudflare Pages 在线演示
 
 原始完整应用需要 Python/Flask 服务、病例目录和可写的应用数据目录，不能直接在只支持静态文件的 GitHub Pages 上运行。仓库因此提供了一个独立的浏览器演示模式：它按固定公式生成 10 例完全虚构的病例、波形和统计结果，不读取、不上传、也不包含任何本地患者文件。
 
 - 正式演示地址（仓库管理员启用 Pages 后生效）：<https://xiaozidian.github.io/ECG_Software/>
 - `scripts/build_static_demo.py` 生成 Pages 发布包；`.github/workflows/pages.yml` 在 `main` 更新时自动发布。
 - `docs/demo` 保存同一演示的静态快照，可用于无需服务器的发布预览。
+- 第 5 例是 10 分钟的“阵发性房颤样特征”纯合成病例：仅参考去标识后的心率范围和异常比例，使用新数学公式生成不规则 RR、P 波弱化、少量 S/V 候选和短阵房速样片段。它没有复制任何真实逐点波形，疾病特征经过教学化放大，不对应真实人员或临床诊断。
+
+Cloudflare Pages 可直接连接本 GitHub 仓库，不需要把 GitHub Pages 作为源站。创建 Pages 项目时使用以下配置：
+
+| Cloudflare Pages 配置 | 值 |
+|---|---|
+| Production branch | `main` |
+| Framework preset | `None` |
+| Build command | `python -m pip install "Jinja2>=3.1,<4" && python scripts/build_static_demo.py` |
+| Build output directory | `build/pages` |
+| Environment variable | `PYTHON_VERSION=3.12` |
+
+每次推送到 `main` 后，Cloudflare 会自动构建并分发同一份纯合成静态演示。Cloudflare 项目中不得配置 `ECG_DATA_ROOT`、正式 `config.json`、病例路径或任何患者数据；这些内容只属于本地或受控后端环境。
 
 GitHub Pages 模式用于展示界面和交互。若要运行 Python 分析流程、访问经过审批的私有病例或保存长期标注，应使用下方的容器/云部署，并配置身份认证、HTTPS 和私有存储。
 

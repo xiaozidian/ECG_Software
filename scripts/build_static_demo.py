@@ -45,6 +45,7 @@ def build(output: Path) -> Path:
         "源报告统计": "合成算法统计",
         "原报告影像": "合成演示说明",
         "导出 PDF": "下载演示说明",
+        '<button class="active" data-event-type="all">全部</button>': '<button class="active" data-event-type="all">全部</button><button data-event-type="AF">房颤样候选</button>',
     }
     for source, target in replacements.items():
         html = html.replace(source, target)
@@ -58,6 +59,16 @@ def build(output: Path) -> Path:
     (output / "index.html").write_text(html, encoding="utf-8")
     shutil.copytree(PROJECT_ROOT / "static", output / "static")
     (output / ".nojekyll").write_text("", encoding="utf-8")
+    (output / "_headers").write_text(
+        """/*
+  Content-Security-Policy: default-src 'self'; base-uri 'none'; connect-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data: blob:; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'
+  Permissions-Policy: camera=(), geolocation=(), microphone=()
+  Referrer-Policy: no-referrer
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+""",
+        encoding="utf-8",
+    )
     return output
 
 
