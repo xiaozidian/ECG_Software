@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: cardioinsight-holter-demo
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: ECG_DEMO_USERNAME
+        value: demo
+      - key: ECG_DEMO_PASSWORD
+        sync: false
+      - key: ECG_SECRET_KEY
+        generateValue: true
+      - key: ECG_DEMO_READONLY
+        value: "true"
+      - key: ECG_ALLOW_PHI
+        value: "false"
+      - key: ECG_TRUST_PROXY_HEADERS
+        value: "true"
+      - key: ECG_SESSION_COOKIE_SECURE
+        value: "true"

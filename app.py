@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import copy
+import hmac
 import math
 import os
 import socket
@@ -9,8 +12,9 @@ import threading
 import webbrowser
 from pathlib import Path
 
-from flask import Flask, jsonify, render_template, request, send_file, session
+from flask import Flask, abort, jsonify, render_template, request, send_file, session
 from waitress import serve
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from ecg_core import APP_NAME, APP_VERSION, SAMPLE_RATE
 from ecg_core.config import load_config, platform_info, resource_root, resolve_data_root, user_data_root, writable_data_dir
@@ -32,6 +36,33 @@ from ecg_core.storage import Storage
 from ecg_core.waveform import ALL_LEADS, read_waveform, read_waveform_strips
 
 ACTOR = "演示分析医生"
+READONLY_POST_ENDPOINTS = frozenset({"case_open", "scatter_selection_endpoint", "waveform_strips_endpoint"})
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _basic_credentials(value: str) -> tuple[str, str] | None:
+    """Decode a Basic Authorization value without accepting malformed base64."""
+    scheme, separator, token = value.partition(" ")
+    if not separator or scheme.lower() != "basic" or not token:
+        return None
+    try:
+        decoded = base64.b64decode(token, validate=True).decode("utf-8")
+    except (binascii.Error, UnicodeDecodeError, ValueError):
+        return None
+    if ":" not in decoded:
+        return None
+    return tuple(decoded.split(":", 1))
+
+
+def _secure_text_equal(left: str, right: str) -> bool:
+    """Compare credentials in constant time, including non-ASCII values."""
+    return hmac.compare_digest(left.encode("utf-8"), right.encode("utf-8"))
 
 
 def _masked(value: str, keep: int = 1) -> str:
@@ -112,6 +143,12 @@ def _free_port(preferred: int) -> int:
 
 def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | os.PathLike[str] | None = None, testing: bool = False) -> Flask:
     base = resource_root()
+    demo_password = os.environ.get("ECG_DEMO_PASSWORD", "")
+    demo_username = os.environ.get("ECG_DEMO_USERNAME", "demo")
+    demo_readonly = _env_bool("ECG_DEMO_READONLY")
+    trust_proxy_headers = _env_bool("ECG_TRUST_PROXY_HEADERS")
+    session_cookie_secure = _env_bool("ECG_SESSION_COOKIE_SECURE", default=trust_proxy_headers)
+    allow_phi = _env_bool("ECG_ALLOW_PHI", default=not (demo_readonly or bool(demo_password))) and not demo_readonly
     app = Flask(
         __name__,
         template_folder=str(base / "templates"),
@@ -121,10 +158,18 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         TESTING=testing,
         JSON_AS_ASCII=False,
         MAX_CONTENT_LENGTH=4 * 1024 * 1024,
-        SECRET_KEY=os.urandom(32),
+        SECRET_KEY=os.environ.get("ECG_SECRET_KEY") or os.urandom(32),
+        DEMO_AUTH_ENABLED=bool(demo_password),
+        DEMO_READONLY=demo_readonly,
+        ALLOW_PHI=allow_phi,
+        TRUST_PROXY_HEADERS=trust_proxy_headers,
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Strict",
+        SESSION_COOKIE_SECURE=session_cookie_secure,
     )
+    if trust_proxy_headers:
+        # Exactly one trusted deployment proxy is expected to set these headers.
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
     resolved_root = resolve_data_root(data_root)
     repository = CaseRepository(resolved_root)
     storage = Storage(Path(db_path) if db_path else writable_data_dir() / "cardioinsight.db")
@@ -132,13 +177,32 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
     app.extensions["storage"] = storage
 
     @app.before_request
-    def local_mutation_guard():
+    def access_guards():
+        if demo_password and request.endpoint != "health":
+            credentials = _basic_credentials(request.headers.get("Authorization", ""))
+            authenticated = False
+            if credentials is not None:
+                username, password = credentials
+                # Evaluate both comparisons so a wrong username does not skip password work.
+                username_ok = _secure_text_equal(username, demo_username)
+                password_ok = _secure_text_equal(password, demo_password)
+                authenticated = username_ok and password_ok
+            if not authenticated:
+                response = jsonify({"error": "需要演示访问凭据"})
+                response.status_code = 401
+                response.headers["WWW-Authenticate"] = 'Basic realm="CardioInsight Demo", charset="UTF-8"'
+                return response
+
+        if app.config["DEMO_READONLY"] and request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+            if request.method != "POST" or request.endpoint not in READONLY_POST_ENDPOINTS:
+                return jsonify({"error": "公网演示为只读模式，不允许保存或修改数据"}), 403
+
         if request.method in {"POST", "PUT", "PATCH", "DELETE"} and not app.config["TESTING"]:
             if request.headers.get("X-CardioInsight-Request") != "1":
                 return jsonify({"error": "写操作仅接受本地工作站界面请求"}), 403
 
     def include_phi_authorized() -> bool:
-        return _bool_arg("include_phi") and bool(session.get("phi_authorized"))
+        return app.config["ALLOW_PHI"] and _bool_arg("include_phi") and bool(session.get("phi_authorized"))
 
     def case_with_overrides(source: dict) -> dict:
         item = copy.deepcopy(source)
@@ -152,8 +216,6 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         try:
             return repository.get_case(case_id)
         except CaseNotFound:
-            from flask import abort
-
             abort(404, description="病例不存在或数据不完整")
 
     def present_case(source: dict, include_phi: bool, detailed: bool = False) -> dict:
@@ -184,6 +246,8 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         response.headers["X-Frame-Options"] = "SAMEORIGIN"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["Content-Security-Policy"] = "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'"
+        if request.is_secure:
+            response.headers["Strict-Transport-Security"] = "max-age=31536000"
         return response
 
     @app.errorhandler(404)
@@ -201,6 +265,8 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
             app_name=APP_NAME,
             app_version=APP_VERSION,
             app_version_short=APP_VERSION.split("-", 1)[0],
+            demo_readonly=app.config["DEMO_READONLY"],
+            allow_phi=app.config["ALLOW_PHI"],
         )
 
     @app.get("/api/health")
@@ -211,6 +277,8 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
             "version": APP_VERSION,
             "case_count": len(cases),
             "data_root_found": bool(resolved_root),
+            "demo_readonly": app.config["DEMO_READONLY"],
+            "allow_phi": app.config["ALLOW_PHI"],
         })
 
     @app.get("/api/dashboard")
@@ -245,6 +313,8 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
 
     @app.post("/api/privacy/view")
     def privacy_view():
+        if not app.config["ALLOW_PHI"]:
+            return jsonify({"error": "公网演示不提供可识别健康信息"}), 403
         payload = _json_object()
         enabled = payload.get("enabled", True)
         if not isinstance(enabled, bool):
@@ -453,10 +523,14 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
 
     @app.get("/api/audit")
     def audit():
+        if app.config["DEMO_READONLY"]:
+            abort(404)
         return jsonify({"items": storage.list_audit(_number_arg("limit", 200, int, 1, 1000))})
 
     @app.get("/api/settings")
     def settings():
+        if app.config["DEMO_READONLY"]:
+            abort(404)
         manifest = repository._manifest()
         return jsonify({
             "app_name": APP_NAME,

@@ -65,6 +65,84 @@ Windows 示例：
 
 本地标注、报告版本、审计数据库和导出的 PDF 存放在系统原生用户数据目录，不写入签名后的 `.app` 或 `.exe` 目录。
 
+## 在其他设备打开：容器与云部署
+
+### GitHub Pages 在线演示
+
+原始完整应用需要 Python/Flask 服务、病例目录和可写的应用数据目录，不能直接在只支持静态文件的 GitHub Pages 上运行。仓库因此提供了一个独立的浏览器演示模式：它按固定公式生成 10 例完全虚构的病例、波形和统计结果，不读取、不上传、也不包含任何本地患者文件。
+
+- 正式演示地址（仓库管理员启用 Pages 后生效）：<https://xiaozidian.github.io/ECG_Software/>
+- `scripts/build_static_demo.py` 生成 Pages 发布包；`.github/workflows/pages.yml` 在 `main` 更新时自动发布。
+- `docs/demo` 保存同一演示的静态快照，可用于无需服务器的发布预览。
+
+GitHub Pages 模式用于展示界面和交互。若要运行 Python 分析流程、访问经过审批的私有病例或保存长期标注，应使用下方的容器/云部署，并配置身份认证、HTTPS 和私有存储。
+
+数据与代码必须分开保存：
+
+| 内容 | 建议位置 | 是否进入 GitHub / 公开镜像 |
+|---|---|---|
+| 源代码、模板、合成数据生成器 | GitHub 仓库 | 是 |
+| 默认公开演示数据 | Docker 构建时生成的 10 例合成记录 | 只进入演示镜像，不提交原始数据文件 |
+| 经审批的脱敏病例或需长期保留的合成数据 | 私有、加密、只读持久卷，挂载到 `/data/cases` | 否 |
+| SQLite、审计、标注和报告 | 私有、加密、可写持久卷，挂载到 `/data/app` | 否 |
+| 可识别的原始病例 | 仅限满足授权、访问控制、审计和合规要求的受控环境 | 禁止进入公开仓库或公开演示 |
+
+### Render 免费合成演示
+
+仓库根目录的 `render.yaml` 可创建 Render Web Service。Render 会根据 `Dockerfile` 构建镜像，构建阶段运行 `scripts/generate_synthetic_demo.py` 生成 10 例不含真实身份信息的演示记录，因此无需把大体积病例上传到 GitHub。
+
+1. 把代码（不含本地病例、`config.json` 和 `.env`）推送到 GitHub。
+2. 在 Render 控制台从该仓库创建 Blueprint。
+3. 首次创建时，在控制台为 `ECG_DEMO_PASSWORD` 设置高强度随机密码；`ECG_SECRET_KEY` 由 Render 生成，不写入仓库。
+4. 部署完成后，将 Render 提供的 `https://...onrender.com` 地址发给演示设备，并使用演示用户名和密码访问。
+
+免费实例适合只读、可重建的合成演示。它的本地写入可能在重启或重新部署后消失，不适合保存长期标注、报告或任何真实病例。需要持久化时，应改用私有持久卷或受控的院内/云端存储，并完成相应的数据授权、加密、备份、审计和访问控制。
+
+### 通用 Docker 运行
+
+构建并启动内置合成数据的只读演示：
+
+```sh
+docker build -t cardioinsight-holter-demo .
+docker run --rm -p 8765:8765 --env-file .env cardioinsight-holter-demo
+```
+
+`.env` 只保留在部署设备或秘密管理器中，不能提交到 GitHub。使用经审批的私有病例卷时，显式覆盖数据目录：
+
+```sh
+docker run --rm -p 8765:8765 --env-file .env \
+  --mount type=bind,src=/absolute/private/cases,dst=/data/cases,readonly \
+  --mount type=volume,src=cardioinsight-state,dst=/data/app \
+  -e ECG_DATA_ROOT=/data/cases \
+  cardioinsight-holter-demo
+```
+
+容器和云平台统一读取平台提供的 `PORT`，并监听 `0.0.0.0`。公网前端必须由平台提供 HTTPS；本项目的演示密码保护不能替代完整的多用户身份系统、RBAC 或医疗数据合规控制。
+
+### 云部署环境变量
+
+| 变量 | 用途与建议 |
+|---|---|
+| `ECG_DATA_ROOT` | 病例根目录。演示镜像默认指向构建时生成的数据；私有部署建议使用只读卷 `/data/cases`。 |
+| `ECG_APP_DATA_ROOT` | SQLite、审计、标注与报告的可写目录；需要保留时挂载私有持久卷 `/data/app`。 |
+| `ECG_DEMO_PASSWORD` | 非空时启用演示访问密码。公网部署必须在平台控制台设置高强度随机值，禁止写入仓库。 |
+| `ECG_DEMO_READONLY` | 公网演示设为 `true`，阻止资料、标注、报告和身份信息授权等写操作。 |
+| `ECG_ALLOW_PHI` | 公网演示设为 `false`，强制禁止显示可识别身份信息；仅在有明确授权的受控环境中考虑启用。 |
+| `ECG_SECRET_KEY` | Flask 会话签名密钥。使用平台生成或秘密管理器保存的稳定随机值（至少 32 个字符），禁止写入仓库。 |
+| `ECG_DEMO_USERNAME` | 演示用户名，默认 `demo`。 |
+| `ECG_TRUST_PROXY_HEADERS` | 在 Render 等受信任的单层反向代理后设为 `true`。 |
+| `ECG_SESSION_COOKIE_SECURE` | HTTPS 部署设为 `true`，只通过安全连接发送会话 Cookie。 |
+
+### 健康检查
+
+容器和 Render 均使用 `GET /api/health`：
+
+```sh
+curl -fsS https://your-service.example/api/health
+```
+
+可用演示应返回 HTTP 200，且 JSON 中 `status` 为 `ok`、`data_root_found` 为 `true`、`case_count` 为预期病例数。若返回 `data_root_missing`，检查 `ECG_DATA_ROOT` 和私有卷挂载。健康检查端点不返回患者身份或波形数据。
+
 ## 构建桌面应用
 
 必须在目标系统上构建目标产物。
