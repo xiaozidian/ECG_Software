@@ -213,8 +213,12 @@ def test_annotation_patient_override_report_workflow_and_pdf(client):
     assert detail["active"] is False
 
     source = client.get(f"/api/cases/{case_id}/report").json
-    draft = client.put(f"/api/cases/{case_id}/report", json={"conclusion": source["conclusion"] + "\n自动化测试。", "status": "draft"}).json
+    assert source["composition"]["active_page"] == "summary"
+    composition = {**source["composition"], "included_pages": ["cover", "summary", "event_strips"], "active_page": "event_strips", "fast_slow_mode": "both"}
+    draft = client.put(f"/api/cases/{case_id}/report", json={"conclusion": source["conclusion"] + "\n自动化测试。", "status": "draft", "composition": composition}).json
     assert draft["status"] == "draft"
+    assert draft["composition"]["active_page"] == "event_strips"
+    assert draft["composition"]["fast_slow_mode"] == "both"
     reviewed = client.put(f"/api/cases/{case_id}/report", json={"conclusion": draft["conclusion"], "status": "reviewed"}).json
     assert reviewed["status"] == "reviewed"
     assert reviewed["reviewed_by"]
@@ -232,6 +236,13 @@ def test_annotation_patient_override_report_workflow_and_pdf(client):
     assert client.delete(f"/api/annotations/{annotation_id}").status_code == 200
     actions = {item["action"] for item in client.get("/api/audit").json["items"]}
     assert {"annotation.create", "annotation.delete", "patient.update", "report.draft", "report.reviewed", "report.export_pdf"}.issubset(actions)
+
+
+def test_report_composition_validation(client):
+    case_id = _case_id(client)
+    source = client.get(f"/api/cases/{case_id}/report").json
+    assert client.put(f"/api/cases/{case_id}/report", json={"conclusion": source["conclusion"], "composition": []}).status_code == 400
+    assert client.put(f"/api/cases/{case_id}/report", json={"conclusion": source["conclusion"], "composition": {"included_pages": ["summary"], "paper": {"size": "Letter"}}}).status_code == 400
 
 
 def test_patient_patch_validation_merge_and_pdf_uses_override(client, monkeypatch):

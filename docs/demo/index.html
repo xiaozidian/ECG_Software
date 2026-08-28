@@ -41,10 +41,13 @@
     <nav>
       <button class="nav-item active" data-page="dashboard"><span>⌂</span><em>工作台</em></button>
       <button class="nav-item" data-page="patients"><span>♙</span><em>患者</em></button>
-      <button class="nav-item" data-page="review"><span>⌁</span><em>波形复核</em></button>
-      <button class="nav-item" data-page="trends"><span>⌁</span><em>趋势与 HRV</em></button>
-      <button class="nav-item" data-page="events"><span>◇</span><em>事件候选</em></button>
-      <button class="nav-item" data-page="report"><span>▤</span><em>报告</em></button>
+      <div class="nav-section-label" aria-hidden="true">病例流程</div>
+      <button class="nav-item workflow-nav-item" data-page="review" data-workflow-nav="review" title="第 1 步：核对原始波形与散点"><span>1</span><em>波形复核</em></button>
+      <button class="nav-item workflow-nav-item" data-page="edit" data-workflow-nav="edit" title="第 2 步：复核聚类并编辑心搏模板"><span>2</span><em>模板编辑</em></button>
+      <button class="nav-item workflow-nav-item" data-page="trends" data-workflow-nav="trends" title="第 3 步：核对趋势、RR 与 HRV"><span>3</span><em>趋势 HRV</em></button>
+      <button class="nav-item workflow-nav-item" data-page="stt" data-workflow-nav="stt" title="第 4 步：进行 ST‑T 人工复核"><span>4</span><em>ST‑T</em></button>
+      <button class="nav-item workflow-nav-item" data-page="events" data-workflow-nav="events" title="第 5 步：复核候选事件"><span>5</span><em>事件候选</em></button>
+      <button class="nav-item workflow-nav-item" data-page="report" data-workflow-nav="report" title="第 6 步：编排、审核并导出报告"><span>6</span><em>报告</em></button>
       <div class="nav-spacer"></div>
 
     </nav>
@@ -57,6 +60,23 @@
       <span>当前仅展示徐有德一例公开病例数据；所有事件与统计仍须专业人员复核，不用于临床决策。</span>
       <button id="dismissSafety" type="button" aria-label="收起提示">×</button>
     </div>
+
+    <section id="caseWorkflow" class="case-workflow" aria-label="当前病例复核流程" hidden>
+      <div class="case-workflow-context">
+        <span>当前病例</span>
+        <strong id="workflowCaseLabel">—</strong>
+        <small id="workflowProgressLabel">尚未开始</small>
+      </div>
+      <nav class="case-workflow-steps" aria-label="病例复核步骤">
+        <button type="button" data-workflow-page="review"><span>1</span><strong>波形复核</strong><small>原始证据</small></button>
+        <button type="button" data-workflow-page="edit"><span>2</span><strong>模板编辑</strong><small>分类修正</small></button>
+        <button type="button" data-workflow-page="trends"><span>3</span><strong>趋势与 HRV</strong><small>统计核对</small></button>
+        <button type="button" data-workflow-page="stt"><span>4</span><strong>ST‑T</strong><small>人工复核</small></button>
+        <button type="button" data-workflow-page="events"><span>5</span><strong>事件候选</strong><small>逐项确认</small></button>
+        <button type="button" data-workflow-page="report"><span>6</span><strong>报告</strong><small>编排审核</small></button>
+      </nav>
+      <button id="workflowNext" class="workflow-next" type="button">下一步</button>
+    </section>
 
     <section class="page active" id="page-dashboard">
       <div class="page-heading">
@@ -90,21 +110,152 @@
       <article class="card"><div class="card-header"><div><h2>患者记录</h2><p>编辑身份信息前必须主动解除遮蔽</p></div><span id="patientCount" class="status-pill neutral">—</span></div><div class="table-wrap"><table class="data-table"><thead><tr><th>患者</th><th>患者 ID</th><th>性别 / 年龄</th><th>诊断</th><th>检查时间</th><th>状态</th><th></th></tr></thead><tbody id="patientBody"></tbody></table></div></article>
     </section>
 
+    <section class="page" id="page-edit">
+      <div class="page-heading compact edit-page-heading">
+        <div class="edit-title-line"><div><p class="eyebrow">医生工作区</p><h1>心搏模板编辑</h1></div><p id="editCaseLabel">请选择病例</p><span class="edit-scope-note">医生覆盖层 · 不改写源 DATA / EBI</span></div>
+        <div class="edit-heading-actions">
+          <span class="edit-nav-hint">先聚类分型，再逐搏改型</span>
+          <div class="edit-mode-switch" role="tablist" aria-label="编辑工作台视图">
+            <button id="editClusterMode" type="button" role="tab" aria-selected="true" data-edit-mode="cluster">1　聚类分型</button>
+            <button id="editLibraryMode" type="button" role="tab" aria-selected="false" data-edit-mode="library">2　逐搏模板库</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="edit-class-toolbar" aria-label="快速切换心搏类别">
+        <div class="edit-class-toolbar-label"><strong>复核类别</strong><span>单击切换；未选中心搏时可直接按 N / S / V / X</span></div>
+        <div id="editClassSwitcher" class="edit-class-switcher" role="tablist" aria-label="N、S、V、X 源心搏类别"></div>
+        <div class="edit-active-class"><span>当前</span><strong id="editActiveClassName">正常搏</strong><small id="editActiveClassCount">—</small></div>
+      </div>
+
+      <div id="editWorkbench" class="edit-workbench" data-mode="cluster">
+        <div class="edit-left-stack">
+          <aside class="card edit-class-panel" aria-labelledby="editClassPanelTitle">
+            <div class="edit-panel-heading"><div><h2 id="editClassPanelTitle">类别与散点</h2><p>先选择 V、S、N 或已有模板</p></div><span id="editClassCount" class="status-pill neutral">—</span></div>
+            <div class="edit-class-content">
+              <canvas id="editScatterCanvas" height="190" tabindex="0" aria-label="R-R 散点图；选择类别后显示对应心搏位置"></canvas>
+              <div class="edit-class-lists">
+                <div class="edit-class-section"><div class="edit-section-label"><span>源 EBI 分组</span><small>只读</small></div><div id="editSourceClassList" class="edit-class-list"></div></div>
+                <div class="edit-class-section"><div class="edit-section-label"><span>医生模板</span><small>派生关系</small></div><div id="editCustomClassList" class="edit-class-list"></div></div>
+              </div>
+            </div>
+          </aside>
+
+          <aside class="card edit-density-panel" aria-labelledby="editDensityTitle">
+            <div class="edit-panel-heading"><div><h2 id="editDensityTitle">模板形态集合 · 框选分型</h2><p>在同一类别中框出方向或形态相近的波形</p></div><span id="editMorphologyCount" class="status-pill neutral">—</span></div>
+            <div class="edit-morphology-stage">
+              <figure class="edit-morphology-primary"><figcaption><span id="editDensityPrimaryLabel">当前类别</span><small>拖动矩形选择波形簇</small></figcaption><div id="editMorphCanvasWrap" class="edit-morph-canvas-wrap"><canvas id="editDensityPrimary" height="190" tabindex="0" aria-label="当前类别心搏形态集合；拖动矩形框选相似波形并创建新模板"></canvas><div id="editMorphTooltip" class="wave-tooltip" hidden></div></div></figure>
+              <figure class="edit-morphology-selection"><figcaption><span>框选结果</span><small id="editMorphSelectionLabel">尚未选择</small></figcaption><canvas id="editDensitySelection" height="92" aria-label="当前形态框选结果"></canvas></figure>
+            </div>
+            <div class="edit-morphology-foot">
+              <details class="edit-keyboard-range"><summary>键盘矩形范围</summary><div><label for="editRangeStart">横向起点<input id="editRangeStart" type="range" min="0" max="100" value="38"></label><label for="editRangeEnd">横向终点<input id="editRangeEnd" type="range" min="0" max="100" value="62"></label><label for="editRangeTop">纵向上界<input id="editRangeTop" type="range" min="0" max="100" value="18"></label><label for="editRangeBottom">纵向下界<input id="editRangeBottom" type="range" min="0" max="100" value="54"></label><output id="editRangeOutput">X 38–62% · Y 18–54%</output><button id="applyEditRange" class="button secondary" type="button">应用矩形</button></div></details>
+              <button id="clearEditSelection" class="text-button" type="button" disabled>清除框选</button>
+            </div>
+          </aside>
+        </div>
+
+        <div class="edit-main-stack">
+          <section class="edit-overview-panel" aria-label="病例概览">
+            <article class="card edit-trend-card"><div class="edit-panel-heading"><div><h2>全天心率定位</h2><p>点击趋势切换连续波形窗口</p></div><strong id="editWindowLabel">—</strong></div><canvas id="editTrendCanvas" height="90" aria-label="全天心率趋势；点击可切换模板编辑窗口"></canvas></article>
+            <article class="card edit-hist-card"><div class="edit-panel-heading"><div><h2>RR 分布</h2><p>当前病例有效 RR</p></div><span id="editHistogramRange">300–2000 ms</span></div><canvas id="editHistogramCanvas" height="90" aria-label="RR 间期直方图"></canvas></article>
+          </section>
+
+          <article class="card edit-gallery-panel">
+            <div class="edit-panel-heading"><div><h2 id="editGalleryTitle">正常搏 · 代表片段</h2><p id="editGalleryDescription">点击片段定位下方连续波形</p></div><div class="edit-gallery-actions"><button id="editTemplateInfo" class="text-button" type="button" hidden>编辑模板信息</button><span id="editGalleryCount" class="status-pill neutral">—</span></div></div>
+            <div id="editTemplateGallery" class="edit-template-gallery" aria-live="polite"></div>
+          </article>
+
+          <article class="card edit-waveform-panel">
+            <div class="edit-wave-toolbar">
+              <div><span class="live-dot"></span><div><strong>连续波形 · 复核上下文</strong><small id="editWaveMeta">等待读取波形</small></div></div>
+              <div class="edit-wave-actions"><label for="editLeadSelect">参考导联</label><select id="editLeadSelect"><option>II</option><option>V1</option><option>V5</option><option>I</option><option>III</option><option>aVR</option><option>aVL</option><option>aVF</option><option>V2</option><option>V3</option><option>V4</option><option>V6</option></select><button id="editPrevWindow" class="icon-button" type="button" aria-label="前一编辑窗口">←</button><button id="editNextWindow" class="icon-button" type="button" aria-label="后一编辑窗口">→</button></div>
+            </div>
+            <div id="editWaveCanvasWrap" class="edit-wave-canvas-wrap"><canvas id="editWaveformCanvas" height="320" tabindex="0" aria-label="三导联连续波形；用于查看当前模板在原记录中的上下文"></canvas><div id="editWaveTooltip" class="wave-tooltip" hidden></div></div>
+            <div class="edit-wave-foot"><span>连续波形仅用于核对上下文；请在左侧“模板形态集合”中框选并派生新模板。</span><span>选中代表片段可定位</span></div>
+          </article>
+        </div>
+      </div>
+
+      <div id="editLibraryWorkbench" class="edit-library-workbench" hidden aria-label="心搏模板库工作台">
+        <section class="card edit-library-deck-panel">
+          <div class="edit-panel-heading"><div><h2>模板带</h2><p>源 EBI 分组与医生自建模板的继承关系</p></div><span id="editLibraryDeckCount" class="status-pill neutral">—</span></div>
+          <div id="editLibraryDeck" class="edit-library-deck"></div>
+        </section>
+
+        <section class="edit-library-analytics" aria-label="模板统计概览">
+          <article class="card edit-library-hist"><div class="edit-panel-heading"><div><h2>RR 分布</h2><p>当前病例有效 RR</p></div><span>300–2000 ms</span></div><canvas id="editLibraryHistogramCanvas" height="92"></canvas></article>
+          <article class="card edit-library-filter-panel"><div class="edit-panel-heading"><div><h2>类型筛选</h2><p>筛选不改写源分组</p></div><span id="editLibraryFilterCount">—</span></div><div id="editLibraryTypeStrip" class="edit-library-type-strip" role="toolbar" aria-label="心搏类型筛选"><button type="button" data-edit-library-filter="all" aria-pressed="true">全部</button><button type="button" data-edit-library-filter="N">N</button><button type="button" data-edit-library-filter="S">S</button><button type="button" data-edit-library-filter="V">V</button><button type="button" data-edit-library-filter="X">X</button><button type="button" data-edit-library-filter="P">P</button><button type="button" data-edit-library-filter="O">O</button></div><canvas id="editLibraryTrendCanvas" height="54"></canvas></article>
+          <article class="card edit-library-scatter"><div class="edit-panel-heading"><div><h2>R-R 散点</h2><p>当前模板高亮</p></div><span>源数据</span></div><canvas id="editLibraryScatterCanvas" height="146"></canvas></article>
+        </section>
+
+        <section class="card edit-library-matrix-panel">
+          <div class="edit-panel-heading"><div><h2 id="editLibraryMatrixTitle">代表心搏库</h2><p>单击选中，⌘ / Ctrl 多选，Shift 连选；然后直接敲击 N / S / V / X / P / O 改型</p></div><div class="edit-library-selection-tools"><span id="editLibrarySelectionCount" class="status-pill neutral">未选择</span><button id="restoreEditBeatType" class="text-button" type="button" disabled>恢复源类型</button></div></div>
+          <div id="editLibraryMatrix" class="edit-library-matrix" aria-live="polite" aria-keyshortcuts="N S V X P O Backspace"></div>
+        </section>
+
+        <section class="card edit-library-wave-panel">
+          <div class="edit-wave-toolbar"><div><span class="live-dot"></span><div><strong>连续波形 · 逐搏编辑</strong><small id="editLibraryWaveMeta">等待读取波形</small></div></div><div class="edit-wave-actions"><span class="edit-key-legend" aria-label="心搏改型快捷键"><kbd>N</kbd><kbd>S</kbd><kbd>V</kbd><kbd>X</kbd><kbd>P</kbd><kbd>O</kbd><small>Backspace 恢复</small></span><label for="editLibraryLeadSelect">参考导联</label><select id="editLibraryLeadSelect"><option>II</option><option>V1</option><option>V5</option><option>I</option><option>III</option><option>aVR</option><option>aVL</option><option>aVF</option><option>V2</option><option>V3</option><option>V4</option><option>V6</option></select><button id="editLibraryPrevWindow" class="icon-button" type="button" aria-label="前一编辑窗口">←</button><button id="editLibraryNextWindow" class="icon-button" type="button" aria-label="后一编辑窗口">→</button></div></div>
+          <div class="edit-library-wave-wrap"><canvas id="editLibraryWaveformCanvas" height="250" tabindex="0" aria-keyshortcuts="N S V X P O Backspace" aria-label="三导联连续心电波形；单击选中最近心搏后用键盘改型"></canvas><div id="editLibraryWaveTooltip" class="wave-tooltip" hidden></div></div>
+          <canvas id="editLibraryNavigatorCanvas" class="edit-library-navigator" height="42" aria-label="当前窗口导航条"></canvas>
+        </section>
+
+        <aside class="edit-library-density-panel" aria-label="形态叠加对照">
+          <figure><figcaption><span id="editLibraryDensityLabel">当前模板</span><small>全部代表搏</small></figcaption><canvas id="editLibraryDensityPrimary" height="118"></canvas></figure>
+          <figure><figcaption><span>选中心搏</span><small id="editLibraryDensitySelectionLabel">尚未选择</small></figcaption><canvas id="editLibraryDensitySelection" height="118"></canvas></figure>
+          <p>形态叠加仅用于快速复核；键盘改型作为医生覆盖层保存，不改写源 EBI 分组。</p>
+        </aside>
+      </div>
+
+      <div id="editClassPopover" class="edit-class-popover" popover="manual" hidden>
+        <form id="editClassForm">
+          <div class="edit-popover-heading"><div><strong>从形态集合派生新模板</strong><small id="editSelectionSummary">尚未框选形态波形</small></div><button id="closeEditClassPopover" type="button" aria-label="关闭新建类别">×</button></div>
+          <label for="editClassName">类别名称<input id="editClassName" type="text" maxlength="80" required placeholder="例如：房速复核类 A"></label>
+          <label for="editRhythmFamily">模板家族<select id="editRhythmFamily"><option>全部</option><option>单发</option><option>成对</option><option>房速</option><option>二联律</option><option>三联律(NPN)</option><option>三联律(NPP)</option><option>四联律</option><option selected>自定义</option></select></label>
+          <label for="editClassNote">复核备注<textarea id="editClassNote" rows="3" maxlength="1200" placeholder="记录形态特征、排除依据或模板用途…"></textarea></label>
+          <div class="edit-popover-actions"><button id="cancelEditClass" class="button secondary" type="button">保留选区</button><button id="saveEditClass" class="button primary" type="submit">保存到当前浏览器</button></div>
+        </form>
+      </div>
+    </section>
+
     <section class="page" id="page-review">
       <div id="caseHero" class="case-hero empty-case"><div><p class="eyebrow">当前病例</p><h1>请选择病例</h1><p>从工作列表进入波形复核。</p></div></div>
       <div class="review-toolbar card">
-        <div class="toolbar-group"><label>导联布局</label><div class="segmented"><button data-lead-preset="3" class="active">3 导联</button><button data-lead-preset="6">6 导联</button><button data-lead-preset="12">12 导联</button></div></div>
+        <div class="toolbar-group lead-toolbar-group"><label for="leadPickerButton">显示导联</label><button id="leadPickerButton" class="lead-picker-trigger" type="button" title="选择主界面显示的导联；也可在波形上右键"><span id="selectedLeadLabel">II · V1 · V5</span><small>最多 3 条</small></button></div>
         <div class="toolbar-group"><label for="durationSelect">窗口</label><select id="durationSelect"><option value="1">1 秒</option><option value="2">2 秒</option><option value="5">5 秒</option><option value="10" selected>10 秒</option><option value="20">20 秒</option><option value="30">30 秒</option><option value="60">60 秒</option><option value="120">120 秒</option></select></div>
         <div class="toolbar-group"><label for="gainSelect">增益</label><select id="gainSelect"><option value="5">5 mm/mV</option><option value="10" selected>10 mm/mV</option><option value="20">20 mm/mV</option></select></div>
         <div class="toolbar-group"><label for="filterSelect">显示滤波</label><select id="filterSelect"><option value="display">0.5–40 Hz</option><option value="raw">原始波形</option></select></div>
         <div class="toolbar-group waveform-zoom-group"><label>时间缩放</label><div class="zoom-controls" role="group" aria-label="波形时间轴缩放"><button id="zoomOut" type="button" title="缩小波形（-）" aria-label="缩小波形">−</button><button id="zoomReset" type="button" title="复位到 10 秒（0）" aria-label="复位到 10 秒"><span id="zoomWindowLabel">10 s</span></button><button id="zoomIn" type="button" title="放大波形（+）" aria-label="放大波形">＋</button></div></div>
         <div class="toolbar-spacer"></div>
-        <button class="icon-button" id="prevWindow" title="前一窗口">←</button><button class="icon-button" id="nextWindow" title="后一窗口">→</button><button class="button secondary" id="addAnnotation" hidden disabled>＋ 人工标注</button>
+        <div class="window-nav-controls" role="group" aria-label="切换波形窗口"><button class="icon-button" id="prevWindow" title="前一窗口" aria-label="前一波形窗口">←</button><button class="icon-button" id="nextWindow" title="后一窗口" aria-label="后一波形窗口">→</button></div><button class="button secondary" id="addAnnotation" hidden disabled>＋ 人工标注</button>
       </div>
       <div class="analysis-grid">
         <div class="analysis-main">
           <article class="card trend-strip-card"><div class="mini-card-title"><span>全程心率趋势</span><small id="cursorTimeLabel">D1 00:00:00</small></div><canvas id="overviewCanvas" height="118"></canvas><input id="timeSlider" class="time-slider" type="range" min="0" max="1" value="0" step="1"></article>
-          <article class="card waveform-card"><div class="waveform-title"><div><span class="live-dot"></span><strong>多导联连续波形</strong><small id="waveMeta" aria-live="polite">—</small></div><div class="wave-legend"><span><i class="normal"></i>N</span><span><i class="supra"></i>S</span><span><i class="vent"></i>V</span><span><i class="noise"></i>噪声</span></div></div><div id="waveformScroller" class="waveform-scroller"><canvas id="waveformCanvas" aria-label="多导联心电波形；滚轮缩放时间轴，按住 Shift 滚轮缩放电压增益，移动指针可查看时间、导联和电压坐标"></canvas><div id="waveCursor" class="wave-cursor" hidden aria-hidden="true"><span class="wave-cursor-x"></span><span class="wave-cursor-y"></span><i></i></div><div id="waveTooltip" class="wave-tooltip" hidden></div></div><div class="waveform-foot"><span>滚轮缩放时间轴 · Shift + 滚轮调增益 · 拖动平移 · 悬停查坐标 · 双击标注</span><span id="calibrationNote">设备原始标度 · 未做计量学溯源</span></div></article>
+          <article id="waveformCard" class="card waveform-card">
+            <div class="waveform-title">
+              <div><span class="live-dot"></span><strong id="waveformTitle">连续波形 · 三导联复核</strong><small id="waveMeta" aria-live="polite">—</small></div>
+              <div class="waveform-title-actions">
+                <div class="wave-legend"><span><i class="normal"></i>N</span><span><i class="supra"></i>S</span><span><i class="vent"></i>V</span><span><i class="noise"></i>噪声</span></div>
+                <button id="toggleWaveformFullscreen" class="waveform-mode-button" type="button" aria-keyshortcuts="F" aria-label="全屏查看全部十二导联"><span aria-hidden="true">⛶</span><em>全屏多导联</em></button>
+              </div>
+            </div>
+            <div id="waveformScroller" class="waveform-scroller"><canvas id="waveformCanvas" tabindex="0" aria-keyshortcuts="F Shift+F10" aria-label="三导联连续心电波形；右键选择导联，双击全屏查看全部十二导联，滚轮缩放时间轴，按住 Shift 滚轮缩放电压增益，移动指针可查看时间、导联和电压坐标"></canvas><div id="waveCursor" class="wave-cursor" hidden aria-hidden="true"><span class="wave-cursor-x"></span><span class="wave-cursor-y"></span><i></i></div><div id="waveTooltip" class="wave-tooltip" hidden></div></div>
+            <div class="waveform-foot"><span id="waveInteractionHint">右键选择最多 3 条导联 · 双击全屏查看全部 12 导联 · 滚轮缩放 · 拖动平移 · 悬停查坐标</span><span id="calibrationNote">设备原始标度 · 未做计量学溯源</span></div>
+            <dialog id="leadPickerDialog" class="lead-picker-dialog" aria-labelledby="leadPickerTitle">
+              <form method="dialog">
+                <div class="lead-picker-header"><div><span>分析通道</span><h2 id="leadPickerTitle">选择主界面显示导联</h2></div><button value="cancel" aria-label="关闭导联选择">×</button></div>
+                <p class="lead-picker-help">主界面最多同时显示 3 条；全屏模式始终展示全部 12 导联。</p>
+                <fieldset class="lead-choice-grid">
+                  <legend class="visually-hidden">可显示的心电导联</legend>
+                  <label><input type="checkbox" value="I" data-lead-choice><span>I</span></label><label><input type="checkbox" value="aVR" data-lead-choice><span>aVR</span></label><label><input type="checkbox" value="V1" data-lead-choice><span>V1</span></label><label><input type="checkbox" value="V4" data-lead-choice><span>V4</span></label>
+                  <label><input type="checkbox" value="II" data-lead-choice><span>II</span></label><label><input type="checkbox" value="aVL" data-lead-choice><span>aVL</span></label><label><input type="checkbox" value="V2" data-lead-choice><span>V2</span></label><label><input type="checkbox" value="V5" data-lead-choice><span>V5</span></label>
+                  <label><input type="checkbox" value="III" data-lead-choice><span>III</span></label><label><input type="checkbox" value="aVF" data-lead-choice><span>aVF</span></label><label><input type="checkbox" value="V3" data-lead-choice><span>V3</span></label><label><input type="checkbox" value="V6" data-lead-choice><span>V6</span></label>
+                </fieldset>
+                <div class="lead-picker-status"><output id="leadSelectionCount" aria-live="polite">已选 3 / 3</output><span>右键波形可随时重新选择</span></div>
+                <div class="lead-picker-actions"><button id="resetLeadSelection" type="button" class="button secondary">恢复推荐</button><span></span><button value="cancel" class="button secondary">取消</button><button id="applyLeadSelection" type="button" class="button primary">应用导联</button></div>
+              </form>
+            </dialog>
+          </article>
         </div>
         <aside class="review-rail">
           <article class="card scatter-review-card">
@@ -162,6 +313,80 @@
       </div>
     </section>
 
+    <section class="page" id="page-stt">
+      <div class="page-heading compact stt-page-heading">
+        <div><p class="eyebrow">复极候选筛查</p><h1>ST‑T 医生复核工作台</h1><p id="sttCaseLabel">请选择病例</p></div>
+        <div class="stt-heading-actions"><span id="sttCapabilityBadge" class="status-pill warning">人工复核模式</span><button id="openSttGuidance" class="button secondary" type="button">判读边界与依据</button></div>
+      </div>
+
+      <div class="stt-safety-strip" role="note" aria-labelledby="sttSafetyTitle">
+        <span class="stt-safety-icon" aria-hidden="true">!</span>
+        <div><strong id="sttSafetyTitle">定量 ST 分析尚未启用</strong><p id="sttSafetyText">当前数据未完成幅值计量溯源和 J 点算法验证。本页支持原始波形定位、手工游标测量和复核标注，不生成缺血或心肌梗死诊断。</p></div>
+        <button id="openSttLimitations" class="text-button" type="button">查看原因</button>
+      </div>
+
+      <div class="stt-workbench">
+        <aside class="card stt-queue-panel" aria-labelledby="sttQueueTitle">
+          <div class="stt-panel-header"><div><h2 id="sttQueueTitle">复核队列</h2><p>算法候选与源报告线索分开呈现</p></div><output id="sttCandidateCount" class="status-pill neutral">0 条</output></div>
+          <div id="sttCandidateList" class="stt-candidate-list" aria-live="polite"></div>
+          <div class="stt-source-section"><div class="stt-section-label"><span>源报告线索</span><small>仅供回看，不等同于本软件判定</small></div><div id="sttSourceNotes" class="stt-source-notes"></div></div>
+        </aside>
+
+        <section class="stt-analysis-column" aria-label="ST-T 波形复核区">
+          <article class="card stt-overview-card">
+            <div class="stt-panel-header"><div><h2>全天定位</h2><p>心率趋势仅用于快速定位原始波形</p></div><strong id="sttWindowTime" class="stt-window-time">D1 00:00:00</strong></div>
+            <canvas id="sttOverviewCanvas" height="94" aria-label="全天心率趋势，点击可定位 ST-T 复核窗口"></canvas>
+            <input id="sttTimeSlider" class="time-slider" type="range" min="0" max="1" value="0" step="1" aria-label="选择 ST-T 复核时间">
+          </article>
+
+          <article class="card stt-trend-card">
+            <div class="stt-panel-header"><div><h2>十二导联 ST 趋势</h2><p>保留参考软件的信息结构；定量能力通过标定与算法验证后开放</p></div><span class="status-pill neutral">暂不可定量</span></div>
+            <div id="sttTrendRows" class="stt-trend-rows" aria-label="十二导联 ST 趋势能力状态"></div>
+          </article>
+
+          <article class="card stt-waveform-card">
+            <div class="stt-waveform-toolbar">
+              <div><span class="live-dot"></span><div><strong>当前窗口 · 手工测量</strong><small id="sttWaveMeta">等待读取原始波形</small></div></div>
+              <div class="stt-waveform-actions">
+                <button id="sttLeadPickerButton" class="lead-picker-trigger" type="button" title="选择最多三条复核导联"><span id="sttSelectedLeadLabel">II · V1 · V5</span><small>最多 3 条</small></button>
+                <label for="sttMeasurementPoint">测量点</label><select id="sttMeasurementPoint"><option value="60" selected>ST60（J+60 ms）</option><option value="80">ST80（J+80 ms）</option><option value="0">J 点</option></select>
+                <div class="window-nav-controls"><button id="sttPrevWindow" class="icon-button" type="button" aria-label="前一复核窗口">←</button><button id="sttNextWindow" class="icon-button" type="button" aria-label="后一复核窗口">→</button></div>
+                <button id="sttOpenTwelveLead" class="button dark" type="button">全屏 12 导联</button>
+              </div>
+            </div>
+            <div id="sttWaveCanvasWrap" class="stt-wave-canvas-wrap"><canvas id="sttWaveformCanvas" height="438" tabindex="0" aria-label="最多三导联 ST-T 手工复核波形；拖动 ISO 与 J 游标调整测量位置，右键选择导联，双击进入全屏十二导联"></canvas><div id="sttWaveTooltip" class="wave-tooltip" hidden></div></div>
+            <div class="stt-waveform-foot"><span>拖动 <b>ISO</b> 与 <b>J</b> 游标 · ST 测量点按 J+60/80 ms 自动联动 · 右键选择导联 · 双击全屏</span><span>原始设备单位 · 不换算 mV</span></div>
+          </article>
+        </section>
+
+        <aside class="card stt-review-panel" aria-labelledby="sttReviewTitle">
+          <div class="stt-panel-header"><div><h2 id="sttReviewTitle">测量与复核意见</h2><p>自动值与医生修正必须可区分</p></div><span class="status-pill warning">需医生确认</span></div>
+          <dl class="stt-method-summary">
+            <div><dt>基线</dt><dd id="sttBaselineMethod">手工 ISO / 个体稳定基线</dd></div><div><dt>测量点</dt><dd id="sttPointMethod">J+60 ms</dd></div><div><dt>导联体系</dt><dd id="sttLeadSystem">电极位置未知</dd></div><div><dt>显示滤波</dt><dd>原始波形</dd></div>
+          </dl>
+          <div class="stt-measurement-heading"><span>当前导联相对差值</span><small>仅显示设备原始单位</small></div>
+          <div id="sttMeasurementList" class="stt-measurement-list"></div>
+          <div class="stt-nudge-controls" aria-label="手工微调测量游标"><span>游标微调（5 ms）</span><div><button id="sttIsoEarlier" type="button">ISO ←</button><button id="sttIsoLater" type="button">ISO →</button><button id="sttJEarlier" type="button">J ←</button><button id="sttJLater" type="button">J →</button></div></div>
+          <form id="sttReviewForm" class="stt-review-form">
+            <label for="sttFinding">医生复核描述<select id="sttFinding"><option value="无法判读">无法判读</option><option value="未见明确动态 ST-T 改变">未见明确动态 ST‑T 改变</option><option value="ST 段压低候选">ST 段压低候选</option><option value="ST 段抬高候选">ST 段抬高候选</option><option value="T 波形态异常候选">T 波形态异常候选</option><option value="非特异性 ST-T 改变">非特异性 ST‑T 改变</option><option value="伪差或体位改变">伪差或体位改变</option></select></label>
+            <label for="sttReviewNote">复核备注<textarea id="sttReviewNote" rows="5" maxlength="1200" placeholder="记录症状时间、体位/活动、信号质量、相邻导联表现及排除依据…"></textarea></label>
+            <label class="stt-check-line"><input id="sttSignalChecked" type="checkbox"><span>已核对信号质量、基线漂移与 R 波幅度变化</span></label>
+            <button id="saveSttAnnotation" class="button primary" type="submit" hidden disabled>保存为人工复核标注</button>
+            <p class="stt-readonly-note">在线 Demo 可体验测量交互，但不会保存复核意见。</p>
+          </form>
+          <details class="stt-review-checklist"><summary>复核时需要排除什么？</summary><ul><li>运动、呼吸、体位变化与电极松脱</li><li>基线漂移、肌电噪声和 R 波幅度突变</li><li>LBBB、起搏、预激、LVH 等继发性复极改变</li><li>心率过快导致 ST60 / ST80 接近 T 波</li></ul></details>
+        </aside>
+      </div>
+
+      <dialog id="sttLeadDialog" class="lead-picker-dialog" aria-labelledby="sttLeadDialogTitle">
+        <form method="dialog"><div class="lead-picker-header"><div><span>ST‑T 复核导联</span><h2 id="sttLeadDialogTitle">选择当前显示导联</h2></div><button value="cancel" aria-label="关闭导联选择">×</button></div><p class="lead-picker-help">普通视图最多同时显示 3 条；双击波形或点击按钮可进入全屏 12 导联复核。</p><fieldset class="lead-choice-grid"><legend class="visually-hidden">ST-T 复核导联</legend><label><input type="checkbox" value="I" data-stt-lead-choice><span>I</span></label><label><input type="checkbox" value="aVR" data-stt-lead-choice><span>aVR</span></label><label><input type="checkbox" value="V1" data-stt-lead-choice><span>V1</span></label><label><input type="checkbox" value="V4" data-stt-lead-choice><span>V4</span></label><label><input type="checkbox" value="II" data-stt-lead-choice><span>II</span></label><label><input type="checkbox" value="aVL" data-stt-lead-choice><span>aVL</span></label><label><input type="checkbox" value="V2" data-stt-lead-choice><span>V2</span></label><label><input type="checkbox" value="V5" data-stt-lead-choice><span>V5</span></label><label><input type="checkbox" value="III" data-stt-lead-choice><span>III</span></label><label><input type="checkbox" value="aVF" data-stt-lead-choice><span>aVF</span></label><label><input type="checkbox" value="V3" data-stt-lead-choice><span>V3</span></label><label><input type="checkbox" value="V6" data-stt-lead-choice><span>V6</span></label></fieldset><div class="lead-picker-status"><output id="sttLeadSelectionCount" aria-live="polite">已选 3 / 3</output><span>选择按标准导联顺序显示</span></div><div class="lead-picker-actions"><button id="resetSttLeadSelection" type="button" class="button secondary">恢复推荐</button><span></span><button value="cancel" class="button secondary">取消</button><button id="applySttLeadSelection" type="button" class="button primary">应用导联</button></div></form>
+      </dialog>
+
+      <dialog id="sttGuidanceDialog" class="modal stt-guidance-dialog" aria-labelledby="sttGuidanceTitle">
+        <form method="dialog"><div class="modal-header"><div><p class="eyebrow">医学与产品边界</p><h2 id="sttGuidanceTitle">ST‑T 判读依据</h2></div><button value="cancel" aria-label="关闭判读依据">×</button></div><div class="stt-guidance-content"><section><h3>本工作台现在能做什么</h3><p>定位真实原始波形、手工修正 ISO 与 J 点、选择 J / ST60 / ST80 测量点，并把医生描述保存为可追溯标注。未经校准的幅值只显示为设备原始单位。</p></section><section><h3>动态心电筛查参考</h3><p>完成幅值标定与算法验证后，可将 J+60 ms、相对个体稳定基线变化 ±0.10 mV、持续 ≥60 秒作为候选筛查配置；它不能直接诊断心肌缺血。</p></section><section><h3>标准 12 导联急性阈值不能混用</h3><p>急性冠脉综合征场景在 J 点判读，并要求解剖相邻导联；V2–V3 的 ST 抬高阈值还随年龄和性别变化。动态心电阈值不能替代急诊标准 12 导联、症状、肌钙蛋白与医生判断。</p></section><div class="stt-emergency-note"><strong>急症提醒</strong><p>正在出现胸痛、呼吸困难、晕厥或冷汗等症状时，应立即进入临床急症评估流程，不应等待本软件分析结果。</p></div></div><div class="modal-actions"><button value="default" class="button primary">我已了解</button></div></form>
+      </dialog>
+    </section>
+
     <section class="page" id="page-events">
       <div class="page-heading compact"><div><p class="eyebrow">候选事件队列</p><h1>事件复核</h1><p id="eventCaseLabel">请选择病例</p></div><div class="threshold-inline"><label>慢 <input id="bradyThreshold" type="number" value="50" min="20" max="100"> bpm</label><label>快 <input id="tachyThreshold" type="number" value="120" min="80" max="250"> bpm</label><label>长 RR <input id="pauseThreshold" type="number" value="2.5" min="1.5" max="10" step="0.1"> s</label><button id="refreshEvents" class="button secondary">重新筛选</button></div></div>
       <div id="eventSummary" class="event-summary"></div>
@@ -169,14 +394,50 @@
     </section>
 
     <section class="page" id="page-report">
-      <div class="page-heading compact"><div><p class="eyebrow">报告与归档</p><h1>报告复核</h1><p id="reportCaseLabel">请选择病例</p></div><div class="report-actions"><span id="reportStatus" class="status-pill warning">未审核</span><button id="saveReport" class="button secondary" hidden disabled>保存草稿</button><button id="returnReport" class="button danger-ghost" hidden disabled>驳回</button><button id="approveReport" class="button primary" hidden disabled>审核通过</button><button id="downloadReport" class="button dark">下载演示说明</button></div></div>
-      <div class="report-layout">
-        <div class="report-editor-column">
-          <article class="card"><div class="card-header"><div><h2>统计对照</h2><p>源报告与结构化重算</p></div><span id="reportVersion" class="status-pill neutral">v1</span></div><div id="reportStats" class="report-stats"></div></article>
-          <article class="card conclusion-card"><div class="card-header"><div><h2>医生复核结论</h2><p>公网演示为只读展示</p></div><span class="autosave-state" id="reportSaveState">尚未修改</span></div><textarea id="conclusionEditor" rows="15" placeholder="输入复核结论…" readonly></textarea><div class="editor-foot"><span>演示期间不保存报告变更</span><span id="conclusionCount">0 / 12000</span></div></article>
-        </div>
-        <aside class="card source-report-card"><div class="card-header"><div><h2>病例报告</h2><p>仅作为人工复核依据</p></div><select id="reportPageSelect"></select></div><div class="source-report-view"><div id="sourceReportPrivacy" class="source-report-privacy"><span>▧</span><strong>病例报告已遮蔽</strong><p>公网演示不提供包含可识别健康信息的原报告页面。</p></div><img id="sourceReportImage" alt="原报告页面" loading="lazy" hidden></div><div class="source-report-foot"><button id="openReportImage" class="text-button" hidden disabled>在新窗口查看原图 ↗</button><small>原始报告包含可识别健康信息</small></div></aside>
+      <div class="report-page-heading"><div><p class="eyebrow">报告与归档</p><h1>诊断报告编排</h1><p id="reportCaseLabel">请选择病例</p></div><div class="report-actions"><span id="reportStatus" class="status-pill warning">未审核</span><span id="reportVersion" class="status-pill neutral">v1</span><button id="openSourceReport" class="button secondary">原报告</button><button id="openReportSettings" class="button secondary">页面设置</button><button id="printReport" class="button secondary">打印预览</button><button id="saveReport" class="button secondary" hidden disabled>保存草稿</button><button id="returnReport" class="button danger-ghost" hidden disabled>驳回</button><button id="approveReport" class="button primary" hidden disabled>审核通过</button><button id="downloadReport" class="button dark">下载演示说明</button></div></div>
+      <div class="report-workbench">
+        <aside class="card report-config-rail">
+          <div class="report-panel-heading"><div><strong>事件与图条</strong><small>点击定位到相应报告页</small></div><span id="reportEventTotal">—</span></div>
+          <div id="reportEventClasses" class="report-event-classes"></div>
+          <fieldset class="report-radio-panel"><legend>最快最慢心率图条打印模式</legend><label><input type="radio" name="reportFastMode" value="rr" checked> 仅打印 RR 最快最慢心率</label><label><input type="radio" name="reportFastMode" value="nn"> 仅打印 NN 最快最慢心率</label><label><input type="radio" name="reportFastMode" value="both"> 同时打印 RR 与 NN 最快最慢心率</label></fieldset>
+          <div class="report-pages-heading"><strong>报告页</strong><small id="reportPageCount">0 项</small></div>
+          <div id="reportPageChecklist" class="report-page-checklist" aria-label="选择报告展示内容"></div>
+          <div class="report-template-dock"><label>综述模板<select id="reportTemplateSelect"><option value="comprehensive">综合动态心电模板</option><option value="rhythm">心律失常复核模板</option><option value="concise">简洁医生报告</option><option value="custom">自定义编排</option></select></label><button id="applyReportTemplate" class="button secondary" type="button">应用模板</button></div>
+        </aside>
+
+        <section class="report-compose-main">
+          <nav class="card report-mode-toolbar" aria-label="报告功能模块">
+            <div class="report-module-tabs">
+              <button class="active" type="button" data-report-page-target="summary"><span aria-hidden="true">▤</span><em>综合报告</em></button>
+              <button type="button" data-report-preview-mode="event"><span aria-hidden="true">⌁</span><em>事件图条</em></button>
+              <button type="button" data-report-page-target="hourly"><span aria-hidden="true">▥</span><em>小时统计</em></button>
+              <button type="button" data-report-page-target="scatter"><span aria-hidden="true">∴</span><em>散点图</em></button>
+              <button type="button" data-report-page-target="st_trend"><span aria-hidden="true">ST</span><em>ST 趋势</em></button>
+              <button type="button" data-report-page-target="t_trend"><span aria-hidden="true">T</span><em>T 波趋势</em></button>
+              <button type="button" data-report-page-target="af"><span aria-hidden="true">AF</span><em>房颤 / 房扑</em></button>
+              <button type="button" data-report-page-target="hrv_time"><span aria-hidden="true">RR</span><em>HRV</em></button>
+              <button type="button" data-report-preview-mode="twelve"><span aria-hidden="true">Ⅻ</span><em>全导联</em></button>
+            </div>
+            <div class="report-page-jump"><label for="reportActivePageSelect">当前页</label><select id="reportActivePageSelect"></select><button id="reportPrevPage" class="icon-button" type="button" aria-label="上一报告页">←</button><button id="reportNextPage" class="icon-button" type="button" aria-label="下一报告页">→</button></div>
+          </nav>
+          <article class="card report-preview-card">
+            <header class="report-preview-header"><div><strong id="reportPageTitle">首页报告</strong><small id="reportPageSubtitle">源数据与本软件结构化结果</small></div><span id="reportRenderStatus" class="status-pill neutral">准备预览</span></header>
+            <div id="reportPreviewBody" class="report-preview-body" aria-live="polite"><div class="report-loading-state"><span></span><strong>正在组织报告内容</strong><small>读取趋势、事件图条与复核统计…</small></div></div>
+            <footer class="report-preview-footer"><span id="reportNavigatorLabel">第 1 / 1 页</span><span>所见即当前编排预览 · 未提供的数据不会生成结果</span></footer>
+          </article>
+          <article class="card report-conclusion-dock"><div class="report-panel-heading"><div><strong>报告结论</strong><small>在线 Demo 可预览编排，结论保持只读</small></div><span class="autosave-state" id="reportSaveState">尚未修改</span></div><textarea id="conclusionEditor" rows="5" maxlength="12000" placeholder="输入医生复核结论…" readonly></textarea><footer><span>演示编排只保存在当前浏览器</span><span id="conclusionCount">0 / 12000</span></footer></article>
+        </section>
+
+        <aside class="report-summary-rail">
+          <article class="card"><div class="report-panel-heading"><div><strong>检查统计</strong><small>源报告 / 结构化重算并列</small></div><span class="report-source-badge">对照</span></div><div id="reportStats" class="report-stats"></div></article>
+          <article class="card report-hrv-summary"><div class="report-panel-heading"><div><strong>HRV 摘要</strong><small>按可用数据展示</small></div></div><div id="reportHrvStats" class="report-dense-stats"><div class="report-rail-empty">读取中…</div></div></article>
+          <article class="card report-provenance"><div class="report-panel-heading"><div><strong>报告边界</strong><small>生成依据与可追溯性</small></div></div><dl id="reportProvenance"><div><dt>波形</dt><dd>200 Hz 原始记录</dd></div><div><dt>事件</dt><dd>候选项，需医生复核</dd></div><div><dt>未解析页</dt><dd>明确空态，不生成数值</dd></div></dl></article>
+        </aside>
       </div>
+
+      <dialog id="reportSettingsDialog" class="modal report-settings-dialog" aria-labelledby="reportSettingsTitle"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">报告页面设置</p><h2 id="reportSettingsTitle">打印与图条参数</h2></div><button value="cancel" aria-label="关闭">×</button></div><div class="report-settings-grid"><label>纸张<select id="reportPaperSize"><option>A4</option><option>A3</option></select></label><label>方向<select id="reportPaperOrientation"><option value="portrait">纵向</option><option value="landscape">横向</option></select></label><label>走纸速度<select id="reportPaperSpeed"><option>25 mm/s</option><option>12.5 mm/s</option><option>50 mm/s</option></select></label><label>增益<select id="reportPaperGain"><option>10 mm/mV</option><option>5 mm/mV</option><option>20 mm/mV</option></select></label><label class="report-setting-check"><input id="reportShowGrid" type="checkbox" checked> 显示心电网格</label><label class="report-setting-check"><input id="reportShowLabels" type="checkbox" checked> 显示导联与时间标记</label></div><p class="modal-note">页面设置影响编排与打印预览；正式 PDF 仍保留研究演示与人工复核边界说明。</p><div class="modal-actions"><button value="cancel" class="button secondary">取消</button><button id="applyReportSettings" type="button" class="button primary">应用设置</button></div></form></dialog>
+
+      <dialog id="sourceReportDialog" class="modal source-report-dialog" aria-labelledby="sourceReportTitle"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">人工复核依据</p><h2 id="sourceReportTitle">病例报告</h2></div><div class="source-report-dialog-actions"><select id="reportPageSelect"></select><button value="cancel" aria-label="关闭">×</button></div></div><div class="source-report-view"><div id="sourceReportPrivacy" class="source-report-privacy"><span>▧</span><strong>病例报告已遮蔽</strong><p>公网演示不提供包含可识别健康信息的原报告页面。</p></div><img id="sourceReportImage" alt="原报告页面" loading="lazy" hidden></div><div class="source-report-foot"><button id="openReportImage" type="button" class="text-button" hidden disabled>在新窗口查看原图 ↗</button><small>原始报告可能包含可识别健康信息</small></div></form></dialog>
     </section>
 
 
@@ -188,7 +449,7 @@
     <form method="dialog" id="annotationForm">
       <div class="modal-header"><div><p class="eyebrow">人工复核</p><h2>创建波形标注</h2></div><button value="cancel" aria-label="关闭">×</button></div>
       <input id="annotationSample" type="hidden">
-      <div class="form-grid"><label>位置<input id="annotationTime" readonly></label><label>导联<select id="annotationLead"><option>II</option><option>V1</option><option>V5</option><option>全部</option></select></label><label>类别<select id="annotationCategory"><option value="note">复核备注</option><option value="N">N 正常</option><option value="S">S 室上性</option><option value="V">V 室性</option><option value="noise">噪声</option></select></label><label>标题<input id="annotationLabel" required maxlength="120" value="人工复核标记"></label><label class="full">备注<textarea id="annotationNote" rows="4" maxlength="2000" placeholder="记录修改理由或观察…"></textarea></label></div>
+      <div class="form-grid"><label>位置<input id="annotationTime" readonly></label><label>导联<select id="annotationLead"><option>I</option><option>II</option><option>III</option><option>aVR</option><option>aVL</option><option>aVF</option><option>V1</option><option>V2</option><option>V3</option><option>V4</option><option>V5</option><option>V6</option><option>全部</option></select></label><label>类别<select id="annotationCategory"><option value="note">复核备注</option><option value="N">N 正常</option><option value="S">S 室上性</option><option value="V">V 室性</option><option value="noise">噪声</option></select></label><label>标题<input id="annotationLabel" required maxlength="120" value="人工复核标记"></label><label class="full">备注<textarea id="annotationNote" rows="4" maxlength="2000" placeholder="记录修改理由或观察…"></textarea></label></div>
       <div class="modal-actions"><button value="cancel" class="button secondary">取消</button><button id="confirmAnnotation" value="default" class="button primary">保存标注</button></div>
     </form>
   </dialog>

@@ -15,6 +15,14 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, Tabl
 from .config import APP_VERSION
 
 FONT_NAME = "STSong-Light"
+REPORT_PAGE_LABELS = {
+    "cover": "封面", "summary": "首页报告", "hourly": "小时统计表格", "scatter": "散点图",
+    "st_trend": "ST趋势图", "t_trend": "T波趋势图", "event_strips": "事件图条", "st_events": "ST事件",
+    "pacing": "起搏报告", "af": "房颤/房扑", "hrv_time": "HRV时域报告", "hrv_frequency": "HRV频域报告",
+    "hrv_overview": "HRV概述", "hrt": "心率震荡(HRT)报告", "qtd": "QT离散度(QTd)报告",
+    "vcg": "心电向量(VCG)报告", "dc": "心率减速力(DC)报告", "twa": "T波电交替(TWA)报告",
+    "vlp": "心室晚电位(VLP)报告", "sap": "睡眠窒息(SAP)报告",
+}
 
 
 def _register_font() -> None:
@@ -96,8 +104,19 @@ def build_report_pdf(case: dict, calculated: dict, report: dict) -> BytesIO:
         ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
     ]))
     conclusion = html.escape(report.get("conclusion", "")).replace("\n", "<br/>")
+    composition = report.get("composition") or {}
+    included_pages = [REPORT_PAGE_LABELS[key] for key in composition.get("included_pages", []) if key in REPORT_PAGE_LABELS]
+    paper = composition.get("paper") or {}
     story.extend([
         stats,
+        Paragraph("报告编排", heading),
+        Paragraph(
+            "已选页面：" + ("、".join(included_pages) if included_pages else "默认首页报告")
+            + f"<br/>页面设置：{html.escape(str(paper.get('size', 'A4')))} · "
+            + ("横向" if paper.get("orientation") == "landscape" else "纵向")
+            + f" · {html.escape(str(paper.get('speed', '25 mm/s')))} · {html.escape(str(paper.get('gain', '10 mm/mV')))}",
+            body,
+        ),
         Paragraph("复核结论", heading),
         Paragraph(conclusion or "（未填写）", body),
         Paragraph("流程状态", heading),

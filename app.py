@@ -33,6 +33,7 @@ from ecg_core.ebi import (
 from ecg_core.report_pdf import build_report_pdf
 from ecg_core.repository import CaseNotFound, CaseRepository
 from ecg_core.storage import Storage
+from ecg_core.stt import build_stt_review
 from ecg_core.waveform import ALL_LEADS, read_waveform, read_waveform_strips
 
 ACTOR = "演示分析医生"
@@ -306,6 +307,11 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
     def case_detail(case_id: str):
         return jsonify(present_case(case_or_404(case_id), include_phi_authorized(), detailed=True))
 
+    @app.get("/api/cases/<case_id>/stt-review")
+    def stt_review(case_id: str):
+        case = case_or_404(case_id)
+        return jsonify(build_stt_review(case.get("conclusion", "")))
+
     @app.patch("/api/cases/<case_id>/patient")
     def patient_update(case_id: str):
         case_or_404(case_id)
@@ -445,6 +451,107 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
             item.update(details[item["sample_index"]])
         return jsonify(result)
 
+    @app.get("/api/cases/<case_id>/beat-templates")
+    def beat_templates(case_id: str):
+        case_or_404(case_id)
+        return jsonify({"items": storage.list_beat_templates(case_id)})
+
+    @app.get("/api/cases/<case_id>/beat-overrides")
+    def beat_overrides(case_id: str):
+        case_or_404(case_id)
+        return jsonify({"items": storage.list_beat_overrides(case_id)})
+
+    def _validated_override_beats(case: dict, payload: dict) -> tuple[list[int], list[dict]]:
+        raw_samples = payload.get("sample_indices")
+        if not isinstance(raw_samples, list) or not raw_samples or len(raw_samples) > 500:
+            raise ValueError("sample_indices 必须包含 1–500 个心搏")
+        if any(isinstance(value, bool) or not isinstance(value, int) for value in raw_samples):
+            raise ValueError("sample_indices 必须全部为整数")
+        if len(raw_samples) != len(set(raw_samples)):
+            raise ValueError("sample_indices 不能重复")
+        max_sample = int(case["technical"]["duration_seconds_raw"] * SAMPLE_RATE)
+        if any(value < 0 or value >= max_sample for value in raw_samples):
+            raise ValueError("sample_indices 超出记录范围")
+        details = beat_details(Path(case["paths"]["ebi"]), raw_samples)
+        if len(details) != len(raw_samples):
+            raise ValueError("sample_indices 必须对应源 EBI 中的心搏")
+        return raw_samples, [details[sample] for sample in raw_samples]
+
+    @app.put("/api/cases/<case_id>/beat-overrides")
+    def beat_override_update(case_id: str):
+        case = case_or_404(case_id)
+        payload = _json_object()
+        _, details = _validated_override_beats(case, payload)
+        class_code = payload.get("class_code")
+        if not isinstance(class_code, str):
+            raise ValueError("缺少人工心搏类型")
+        items = storage.set_beat_overrides(case_id, details, class_code.upper(), ACTOR)
+        return jsonify({"items": items, "changed": len(items)})
+
+    @app.delete("/api/cases/<case_id>/beat-overrides")
+    def beat_override_restore(case_id: str):
+        case = case_or_404(case_id)
+        payload = _json_object()
+        samples, _ = _validated_override_beats(case, payload)
+        return jsonify({"ok": True, "changed": storage.clear_beat_overrides(case_id, samples, ACTOR)})
+
+    @app.post("/api/cases/<case_id>/beat-templates")
+    def beat_template_create(case_id: str):
+        case = case_or_404(case_id)
+        payload = _json_object()
+        raw_samples = payload.get("sample_indices")
+        if not isinstance(raw_samples, list) or not raw_samples:
+            raise ValueError("sample_indices 必须是非空数组")
+        if len(raw_samples) > 500:
+            raise ValueError("单个模板类别最多保存 500 个心搏")
+        if any(isinstance(value, bool) or not isinstance(value, int) for value in raw_samples):
+            raise ValueError("sample_indices 必须全部为整数")
+        max_sample = int(case["technical"]["duration_seconds_raw"] * SAMPLE_RATE)
+        if any(value < 0 or value >= max_sample for value in raw_samples):
+            raise ValueError("sample_indices 超出记录范围")
+        details = beat_details(Path(case["paths"]["ebi"]), raw_samples)
+        if len(details) != len(raw_samples):
+            raise ValueError("sample_indices 必须对应现有心搏位置")
+        source_class = payload.get("source_class", "")
+        if not isinstance(source_class, str):
+            raise ValueError("父类别标识不合法")
+        if source_class:
+            source_groups = {"source-N": 1, "source-S": 2, "source-V": 3, "source-X": 34}
+            if source_class in source_groups:
+                expected_group = source_groups[source_class]
+                if any(details[sample]["group"] != expected_group for sample in raw_samples):
+                    raise ValueError("选中心搏不属于指定的源类别")
+            else:
+                if not source_class.startswith("custom-"):
+                    raise ValueError("父类别不存在")
+                try:
+                    parent_id = int(source_class.removeprefix("custom-"))
+                except ValueError as exc:
+                    raise ValueError("父类别不存在") from exc
+                parent = storage.get_beat_template(parent_id)
+                if parent is None or parent["case_id"] != case_id:
+                    raise ValueError("父类别不存在或不属于当前病例")
+                if not set(raw_samples) <= set(parent["sample_indices"]):
+                    raise ValueError("选中心搏不属于指定的父模板")
+        return jsonify(storage.create_beat_template(case_id, payload, ACTOR)), 201
+
+    @app.patch("/api/beat-templates/<int:template_id>")
+    def beat_template_update(template_id: int):
+        existing = storage.get_beat_template(template_id)
+        if existing is None:
+            return jsonify({"error": "模板类别不存在"}), 404
+        case_or_404(existing["case_id"])
+        return jsonify(storage.update_beat_template(template_id, _json_object(), ACTOR))
+
+    @app.delete("/api/beat-templates/<int:template_id>")
+    def beat_template_delete(template_id: int):
+        existing = storage.get_beat_template(template_id)
+        if existing is None:
+            return jsonify({"error": "模板类别不存在"}), 404
+        case_or_404(existing["case_id"])
+        storage.delete_beat_template(template_id, ACTOR)
+        return jsonify({"ok": True})
+
     @app.get("/api/cases/<case_id>/events")
     def events_endpoint(case_id: str):
         case = case_or_404(case_id)
@@ -492,9 +599,12 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         payload = _json_object()
         conclusion = payload.get("conclusion", "")
         status = payload.get("status", "draft")
+        composition = payload.get("composition")
         if not isinstance(conclusion, str) or not isinstance(status, str):
             raise ValueError("conclusion 和 status 必须为文本")
-        return jsonify(storage.save_report(case_id, conclusion, status, ACTOR))
+        if composition is not None and not isinstance(composition, dict):
+            raise ValueError("composition 必须为 JSON 对象")
+        return jsonify(storage.save_report(case_id, conclusion, status, ACTOR, composition))
 
     @app.get("/api/cases/<case_id>/report.pdf")
     def report_pdf(case_id: str):
