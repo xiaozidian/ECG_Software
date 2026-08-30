@@ -51,6 +51,12 @@ def test_static_demo_builder(tmp_path: Path) -> None:
     assert 'id="caseWorkflow"' in html
     assert 'data-workflow-page="review"' in html
     assert 'data-workflow-page="report"' in html
+    assert '<span>1</span>' not in html
+    assert "第 1 步" not in html
+    assert ">1　聚类分型<" not in html
+    assert ">2　逐搏模板库<" not in html
+    assert 'class="nav-item workflow-nav-item"' in html
+    assert '<svg aria-hidden="true" viewBox="0 0 24 24">' in html
     assert html.index('data-page="review"') < html.index('data-page="edit"') < html.index('data-page="trends"')
     assert 'id="editClassSwitcher"' in html
     assert "先聚类分型，再逐搏改型" in html

@@ -332,7 +332,7 @@ function renderCaseWorkflow() {
   const metadata=state.caseData?.metadata||{};
   $("#workflowCaseLabel").textContent=`${state.caseId} · ${metadata.name||"病例"}`;
   const visited=CASE_WORKFLOW_STEPS.filter(step=>state.workflowVisited.has(step.page)).length,currentIndex=Math.max(0,CASE_WORKFLOW_STEPS.findIndex(step=>step.page===state.currentPage));
-  $("#workflowProgressLabel").textContent=`第 ${currentIndex+1} / ${CASE_WORKFLOW_STEPS.length} 步 · 已查看 ${visited} 步`;
+  $("#workflowProgressLabel").textContent=`当前：${CASE_WORKFLOW_STEPS[currentIndex].label} · 已查看 ${visited} 个环节`;
   $$('[data-workflow-page]').forEach(button=>{const page=button.dataset.workflowPage,current=page===state.currentPage,wasVisited=state.workflowVisited.has(page)&&!current;button.classList.toggle("current",current);button.classList.toggle("visited",wasVisited);button.setAttribute("aria-current",current?"step":"false");button.title=wasVisited?"已查看，可返回复核":"打开此复核步骤";});
   $$('[data-workflow-nav]').forEach(item=>item.classList.toggle("workflow-visited",state.workflowVisited.has(item.dataset.workflowNav)&&item.dataset.workflowNav!==state.currentPage));
   const current=CASE_WORKFLOW_STEPS[currentIndex],next=$("#workflowNext");next.textContent=current.page==="report"?"返回工作台":`下一步：${current.next} →`;next.setAttribute("aria-label",current.page==="report"?"返回病例工作台":`进入下一步：${current.next}`);

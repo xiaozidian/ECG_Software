@@ -39,15 +39,15 @@
 
   <aside class="sidebar" aria-label="主导航">
     <nav>
-      <button class="nav-item active" data-page="dashboard"><span>⌂</span><em>工作台</em></button>
-      <button class="nav-item" data-page="patients"><span>♙</span><em>患者</em></button>
+      <button class="nav-item active" data-page="dashboard"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5V20h-6v-6h-4v6H4Z"/></svg><em>工作台</em></button>
+      <button class="nav-item" data-page="patients"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.25"/><path d="M5.5 20c.45-4 2.65-6 6.5-6s6.05 2 6.5 6Z"/></svg><em>患者</em></button>
       <div class="nav-section-label" aria-hidden="true">病例流程</div>
-      <button class="nav-item workflow-nav-item" data-page="review" data-workflow-nav="review" title="第 1 步：核对原始波形与散点"><span>1</span><em>波形复核</em></button>
-      <button class="nav-item workflow-nav-item" data-page="edit" data-workflow-nav="edit" title="第 2 步：复核聚类并编辑心搏模板"><span>2</span><em>模板编辑</em></button>
-      <button class="nav-item workflow-nav-item" data-page="trends" data-workflow-nav="trends" title="第 3 步：核对趋势、RR 与 HRV"><span>3</span><em>趋势 HRV</em></button>
-      <button class="nav-item workflow-nav-item" data-page="stt" data-workflow-nav="stt" title="第 4 步：进行 ST‑T 人工复核"><span>4</span><em>ST‑T</em></button>
-      <button class="nav-item workflow-nav-item" data-page="events" data-workflow-nav="events" title="第 5 步：复核候选事件"><span>5</span><em>事件候选</em></button>
-      <button class="nav-item workflow-nav-item" data-page="report" data-workflow-nav="report" title="第 6 步：编排、审核并导出报告"><span>6</span><em>报告</em></button>
+      <button class="nav-item workflow-nav-item" data-page="review" data-workflow-nav="review" title="核对原始波形与散点"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 13h4l2-5 3.2 10 2.3-7 1.8 2H21"/></svg><em>波形复核</em></button>
+      <button class="nav-item workflow-nav-item" data-page="edit" data-workflow-nav="edit" title="复核聚类并编辑心搏模板"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><path d="m14 19 5-5 2 2-5 5h-2Z"/></svg><em>模板编辑</em></button>
+      <button class="nav-item workflow-nav-item" data-page="trends" data-workflow-nav="trends" title="核对趋势、RR 与 HRV"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 19V5M4 19h16M7 15l3-4 3 2 5-6"/></svg><em>趋势 HRV</em></button>
+      <button class="nav-item workflow-nav-item" data-page="stt" data-workflow-nav="stt" title="进行 ST‑T 人工复核"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 14h4l2-5 3 9 2-6h7M5 5h6M8 5v3M15 5h6M18 5v3"/></svg><em>ST‑T</em></button>
+      <button class="nav-item workflow-nav-item" data-page="events" data-workflow-nav="events" title="复核候选事件"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m12 4 8 8-8 8-8-8Z"/><circle cx="12" cy="12" r="1.5"/></svg><em>事件候选</em></button>
+      <button class="nav-item workflow-nav-item" data-page="report" data-workflow-nav="report" title="编排、审核并导出报告"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6Z"/><path d="M15 3v5h4M9 12h7M9 16h7"/></svg><em>报告</em></button>
       <div class="nav-spacer"></div>
 
     </nav>
@@ -68,12 +68,12 @@
         <small id="workflowProgressLabel">尚未开始</small>
       </div>
       <nav class="case-workflow-steps" aria-label="病例复核步骤">
-        <button type="button" data-workflow-page="review"><span>1</span><strong>波形复核</strong><small>原始证据</small></button>
-        <button type="button" data-workflow-page="edit"><span>2</span><strong>模板编辑</strong><small>分类修正</small></button>
-        <button type="button" data-workflow-page="trends"><span>3</span><strong>趋势与 HRV</strong><small>统计核对</small></button>
-        <button type="button" data-workflow-page="stt"><span>4</span><strong>ST‑T</strong><small>人工复核</small></button>
-        <button type="button" data-workflow-page="events"><span>5</span><strong>事件候选</strong><small>逐项确认</small></button>
-        <button type="button" data-workflow-page="report"><span>6</span><strong>报告</strong><small>编排审核</small></button>
+        <button type="button" data-workflow-page="review"><span aria-hidden="true"></span><strong>波形复核</strong><small>原始证据</small></button>
+        <button type="button" data-workflow-page="edit"><span aria-hidden="true"></span><strong>模板编辑</strong><small>分类修正</small></button>
+        <button type="button" data-workflow-page="trends"><span aria-hidden="true"></span><strong>趋势与 HRV</strong><small>统计核对</small></button>
+        <button type="button" data-workflow-page="stt"><span aria-hidden="true"></span><strong>ST‑T</strong><small>人工复核</small></button>
+        <button type="button" data-workflow-page="events"><span aria-hidden="true"></span><strong>事件候选</strong><small>逐项确认</small></button>
+        <button type="button" data-workflow-page="report"><span aria-hidden="true"></span><strong>报告</strong><small>编排审核</small></button>
       </nav>
       <button id="workflowNext" class="workflow-next" type="button">下一步</button>
     </section>
@@ -116,8 +116,8 @@
         <div class="edit-heading-actions">
           <span class="edit-nav-hint">先聚类分型，再逐搏改型</span>
           <div class="edit-mode-switch" role="tablist" aria-label="编辑工作台视图">
-            <button id="editClusterMode" type="button" role="tab" aria-selected="true" data-edit-mode="cluster">1　聚类分型</button>
-            <button id="editLibraryMode" type="button" role="tab" aria-selected="false" data-edit-mode="library">2　逐搏模板库</button>
+            <button id="editClusterMode" type="button" role="tab" aria-selected="true" data-edit-mode="cluster">聚类分型</button>
+            <button id="editLibraryMode" type="button" role="tab" aria-selected="false" data-edit-mode="library">逐搏模板库</button>
           </div>
         </div>
       </div>
