@@ -62,6 +62,8 @@ def test_static_demo_builder(tmp_path: Path) -> None:
     assert "先聚类分型，再逐搏改型" in html
     assert "不改写源 DATA / EBI" in html
     assert 'id="editMorphCanvasWrap"' in html
+    assert "拖动框选 · 右键取消" in html
+    assert "右键或按 Escape 取消框选" in html
     assert 'id="editRangeTop"' in html
     assert 'id="editRangeBottom"' in html
     assert 'id="editLibraryWorkbench"' in html
@@ -90,6 +92,8 @@ def test_static_demo_builder(tmp_path: Path) -> None:
     assert "function advanceCaseWorkflow" in app_js
     assert 'numberShortcut={1:"source-N",2:"source-S",3:"source-V",4:"source-X"}' in app_js
     assert "function applyMorphologySelection" in app_js
+    assert 'morphCanvas.addEventListener("contextmenu"' in app_js
+    assert 'morphTooltip.hidden=true;clearEditSelection()' in app_js
     assert "beat-templates" in app_js
     assert "beat-overrides" in app_js
     assert 'key:"source-X"' in app_js
