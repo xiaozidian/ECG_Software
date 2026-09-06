@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -21,6 +22,8 @@ def test_static_demo_builder(tmp_path: Path) -> None:
         check=True,
     )
     html = (output / "index.html").read_text(encoding="utf-8")
+    assert re.search(r'static/js/demo-api.js\?v=[a-f0-9]{12}', html)
+    html = re.sub(r'\?v=[a-f0-9]{12}', '', html)
     assert "病例数据在线演示" in html
     assert 'data-demo-readonly="true"' in html
     assert 'data-allow-phi="false"' in html
@@ -36,7 +39,7 @@ def test_static_demo_builder(tmp_path: Path) -> None:
     assert 'id="toggleWaveformFullscreen"' in html
     assert 'data-lead-choice' in html
     assert 'data-lead-preset' not in html
-    assert "右键选择最多 3 条导联" in html
+    assert "右键最近心搏重标注" in html
     assert "双击全屏查看全部 12 导联" in html
     assert 'data-page="stt"' in html
     assert 'id="page-stt"' in html
@@ -89,6 +92,10 @@ def test_static_demo_builder(tmp_path: Path) -> None:
     assert "设备原始单位" in app_js
     assert "async function loadEdit()" in app_js
     assert "CASE_WORKFLOW_STEPS" in app_js
+    assert "Math.max(300, canvas.parentElement.clientWidth" not in app_js
+    clinical_js = (output / "static/js/clinical-workflow.js").read_text(encoding="utf-8")
+    assert "review-workflow" in clinical_js and "event-reviews" in clinical_js
+    assert "beforeunload" in clinical_js
     assert "function advanceCaseWorkflow" in app_js
     assert 'numberShortcut={1:"source-N",2:"source-S",3:"source-V",4:"source-X"}' in app_js
     assert "function applyMorphologySelection" in app_js
@@ -96,6 +103,13 @@ def test_static_demo_builder(tmp_path: Path) -> None:
     assert 'morphTooltip.hidden=true;clearEditSelection()' in app_js
     assert "beat-templates" in app_js
     assert "beat-overrides" in app_js
+    assert 'id="beatRelabelMenu"' in html
+    assert 'data-beat-relabel-code="N"' in html
+    assert 'data-beat-relabel-code="O"' in html
+    assert 'openBeatRelabelMenu(event,canvas,state.waveform,"review")' in app_js
+    assert 'openBeatRelabelMenu(event,waveCanvas,state.editWaveform,"edit")' in app_js
+    assert "function restoreBeatRelabelTarget" in app_js
+    assert "仅写入医生覆盖层，不改写源 DATA / EBI" in html
     assert 'key:"source-X"' in app_js
     assert "HRV 时域报告" in app_js
     assert "reportFastSlowCandidates" in app_js
@@ -116,7 +130,8 @@ def test_static_demo_builder(tmp_path: Path) -> None:
 const fs = require("fs");
 const path = require("path");
 global.document = {addEventListener() {}};
-global.localStorage = {getItem() { return null; }, setItem() {}};
+const browserStore = new Map();
+global.localStorage = {getItem(key) { return browserStore.get(key)||null; }, setItem(key, value) {browserStore.set(key,value);}};
 global.location = {href: "https://demo.invalid/"};
 global.window = {};
 require(path.join(process.cwd(), "static/demo-data/uploaded-sim-af-001/case-data.js"));
@@ -189,6 +204,38 @@ require(process.cwd() + "/static/js/demo-api.js");
   if (sourceGroupAfterOverride !== parentGroup) throw new Error("demo override rewrote source EBI grouping");
   const restoredOverride = await (await window.fetch(`/api/cases/${caseId}/beat-overrides`, {method: "DELETE", body: JSON.stringify({sample_indices: sameGroupSamples.slice(0, 2)})})).json();
   if (restoredOverride.changed !== 2) throw new Error("demo beat override restore missing");
+
+  const getWorkflow = async () => (await window.fetch(`/api/cases/${caseId}/review-workflow`)).json();
+  const put = (suffix,payload) => window.fetch(`/api/cases/${caseId}/${suffix}`, {method:"PUT",body:JSON.stringify(payload)});
+  let workflow = await getWorkflow();
+  if (workflow.pending_steps.length !== 5) throw new Error("navigation silently confirmed clinical steps");
+  const blocked = await put("report", {conclusion:"回归测试，不代表临床复核",status:"reviewed"});
+  if (blocked.ok) throw new Error("unreviewed demo report approved");
+  const event = events.items[0];
+  const retained = await put("event-reviews", {items:[event],status:"retained"});
+  if (!retained.ok) throw new Error("event review failed");
+  for (const step of ["review","edit","trends","stt","events"]) {
+    workflow = await getWorkflow();
+    const confirmed = await put("review-workflow", {step,revision:workflow.revision,confirmed:true,note:"自动化交互测试"});
+    if (!confirmed.ok) throw new Error("checkpoint confirmation failed: "+step);
+  }
+  workflow = await getWorkflow();
+  if (workflow.pending_steps.length || Object.values(workflow.events)[0].status !== "retained") throw new Error("workflow state missing");
+  const stale = await put("review-workflow", {step:"review",revision:workflow.revision-1,confirmed:true});
+  if (stale.ok) throw new Error("stale confirmation accepted");
+  const approved = await put("report",{conclusion:"回归测试，不代表临床复核",status:"reviewed"});
+  if (!approved.ok) throw new Error("completed report could not be approved");
+  await put("beat-overrides",{sample_indices:sameGroupSamples.slice(0,1),class_code:"V"});
+  workflow = await getWorkflow();
+  if (workflow.pending_steps.length !== 5 || workflow.report_status !== "draft") throw new Error("upstream edit did not invalidate approval");
+  if (Object.values(workflow.events)[0].status !== "pending") throw new Error("upstream edit left stale evidence accepted");
+  // Re-create the adapter, emulating reload with the same browser storage.
+  delete require.cache[require.resolve(process.cwd()+"/static/js/demo-api.js")];
+  require(process.cwd()+"/static/js/demo-api.js");
+  const reloaded = await getWorkflow();
+  if (JSON.stringify(reloaded) !== JSON.stringify(workflow)) throw new Error("review workflow lost on reload");
+  const secondPage = await (await window.fetch(`/api/cases/${caseId}/events?type=all&limit=100&offset=100`)).json();
+  if (!secondPage.items.length || secondPage.items.length > 100) throw new Error("event pagination failed");
 })().catch(error => { console.error(error); process.exitCode = 1; });
 """
     subprocess.run(["node", "-e", browser_probe], cwd=output, check=True)

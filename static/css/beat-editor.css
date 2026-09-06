@@ -1,0 +1,42 @@
+/* Compact clinical commands: never resize the waveform canvas. */
+#beatRelabelMenu.full-beat-menu{width:370px;max-width:calc(100vw - 24px);max-height:calc(100dvh - 90px);padding:0;border:1px solid #b8cbd1;border-radius:7px;box-shadow:0 8px 30px #102b3830;overflow:hidden;color:#243d49;background:#fff;font:13px/1.45 system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+.full-beat-menu header,.beat-editor-dialog header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #dae5e9}
+.full-beat-menu header button,.beat-editor-dialog header button{border:0;background:transparent;font-size:22px;cursor:pointer}
+.full-beat-menu .editor-context{margin:0;padding:8px 14px;background:#edf6f6;font-size:12px}
+.editor-menu-scroll{max-height:calc(100dvh - 252px);overflow:auto;padding:6px 8px;overscroll-behavior:contain}
+.full-beat-menu button{display:flex;gap:8px;align-items:center;justify-content:space-between;width:100%;padding:7px 8px;border:0;border-radius:3px;background:transparent;color:inherit;cursor:pointer;text-align:left;font:inherit;min-height:32px}
+.full-beat-menu button:hover,.full-beat-menu summary:hover{background:#e0f2f1}
+.full-beat-menu button:disabled{opacity:.4;cursor:not-allowed}
+.full-beat-menu button:focus-visible,.full-beat-menu summary:focus-visible,.beat-editor-dialog button:focus-visible{outline:2px solid #008b8b;outline-offset:-2px;background:#e8f5f5}
+.full-beat-menu .editor-types{display:grid;grid-template-columns:1fr 1fr;gap:2px}
+.full-beat-menu .editor-types button{justify-content:flex-start;font-size:12px}
+.full-beat-menu kbd{font:600 11px ui-monospace,monospace;min-width:22px;color:#0c7c80}
+.full-beat-menu details{border-top:1px solid #e5ecef}
+.full-beat-menu summary{padding:8px;cursor:pointer;font-weight:600;list-style-position:inside}
+.full-beat-menu details p{padding:0 8px;margin:2px 0;font-size:11px;color:#5e7481}
+.editor-actions{border-top:1px solid #ccdce0;margin-top:5px;padding-top:3px}
+.full-beat-menu .editor-selection-tools{display:grid;grid-template-columns:1fr 1fr;border-block:1px solid #dce7ea}
+.full-beat-menu footer{border-top:1px solid #dce7ea;padding:8px 14px;font-size:11px;color:#647b85;background:#f8fbfb}
+.beat-editor-dialog{width:min(720px,calc(100vw - 36px));max-height:calc(100dvh - 40px);margin:auto;padding:0;border:1px solid #b9ccd3;border-radius:8px;color:#203b46;background:#fff;box-shadow:0 16px 70px #092e4640}
+.beat-editor-dialog::backdrop{background:#102b3860}
+.beat-editor-dialog form{margin:0}
+.beat-editor-dialog h2{font-size:18px;margin:0}
+.editor-dialog-body{padding:14px 20px;max-height:calc(100dvh - 190px);overflow:auto;line-height:1.6;font-size:14px}
+.editor-dialog-body>p{margin:0 0 16px;color:#4c6571}
+.editor-dialog-body table{width:100%;border-collapse:collapse}
+.editor-dialog-body th,.editor-dialog-body td{text-align:left;border-bottom:1px solid #d9e5e9;padding:10px;font-variant-numeric:tabular-nums}
+.editor-dialog-body label{display:flex;flex-direction:column;gap:6px;margin-bottom:12px;font-size:13px}
+.editor-dialog-body input,.editor-dialog-body select,.editor-dialog-body textarea{padding:8px;border:1px solid #afc5ce;border-radius:4px;font-size:14px;min-width:0}
+.editor-dialog-body textarea{width:100%;resize:vertical}
+.beat-editor-dialog footer{display:flex;justify-content:flex-end;gap:10px;padding:12px 20px;background:#f4f8f9;border-top:1px solid #dae5e9}
+.editor-error{color:#ac3029;min-height:0;padding:0 20px;margin:0 0 10px}
+.editor-settings{display:grid;grid-template-columns:1fr 1fr;gap:10px 18px}
+.editor-nudges{display:flex;gap:8px;margin-bottom:10px}
+.editor-nudges button{padding:8px 20px}
+#qrsCandidatePreview{width:100%;height:190px;border:1px solid #d2e0e4}
+.qrs-candidate-list{max-height:210px;overflow:auto;margin-top:12px}
+.qrs-candidate-list label{flex-direction:row;align-items:center;border-bottom:1px solid #dce7e9;padding:5px;margin:0}
+.qrs-candidate-list small{margin-left:auto;color:#657d86}
+.beat-edit-history{position:absolute;right:8px;bottom:4px;display:flex;align-items:center;gap:6px;background:#fffffff0;border:1px solid #d4e3e7;border-radius:4px;padding:3px 7px;z-index:3;font-size:10px;color:#546f7c}
+.beat-edit-history button{padding:3px 8px;border:0;border-left:1px solid #d5e2e7;background:transparent;color:#087d80;cursor:pointer;font:inherit}
+@media(max-width:580px){.editor-settings{grid-template-columns:1fr}.full-beat-menu .editor-types{grid-template-columns:1fr}.editor-dialog-body{padding:12px}.beat-editor-dialog h2{font-size:16px}}

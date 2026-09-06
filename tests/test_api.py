@@ -219,6 +219,11 @@ def test_annotation_patient_override_report_workflow_and_pdf(client):
     assert draft["status"] == "draft"
     assert draft["composition"]["active_page"] == "event_strips"
     assert draft["composition"]["fast_slow_mode"] == "both"
+    for step in ("review", "edit", "trends", "stt", "events"):
+        progress = client.get(f"/api/cases/{case_id}/review-workflow").json
+        assert client.put(f"/api/cases/{case_id}/review-workflow", json={
+            "step": step, "revision": progress["revision"], "confirmed": True,
+        }).status_code == 200
     reviewed = client.put(f"/api/cases/{case_id}/report", json={"conclusion": draft["conclusion"], "status": "reviewed"}).json
     assert reviewed["status"] == "reviewed"
     assert reviewed["reviewed_by"]

@@ -12,7 +12,7 @@ from .config import SAMPLE_RATE
 
 HEADER_SIZE = 32
 RECORD = struct.Struct("<IHHIIII")
-GROUP_LABELS = {1: "N", 2: "S", 3: "V", 34: "噪声"}
+GROUP_LABELS = {1: "N", 2: "S", 3: "V", 4: "其他节律", 5: "起搏", 6: "传导异常", 7: "融合/逸搏", 8: "未分类", 34: "噪声"}
 SCATTER_MODES = frozenset({"rr", "n", "nn", "s", "v", "hour"})
 SCATTER_DEFINITIONS = {
     "rr": "全部有效心搏的 RR(i)–RR(i+1)",
@@ -22,7 +22,7 @@ SCATTER_DEFINITIONS = {
     "v": "以 V 心搏为中心的 RR(i)–RR(i+1)",
     "hour": "主波形所在一小时内全部有效心搏的 RR(i)–RR(i+1)",
 }
-VALID_BEAT_GROUPS = frozenset({1, 2, 3})
+VALID_BEAT_GROUPS = frozenset({1, 2, 3, 4, 5, 6, 7, 8})
 
 
 @lru_cache(maxsize=3)
@@ -39,12 +39,16 @@ def _record_sample_indexes(path_text: str) -> tuple[int, ...]:
     return tuple(record[0] for record in load_records(path_text))
 
 
+def records_for(path):
+    return path.records if hasattr(path, "records") else load_records(str(path))
+
+
 def _valid(records):
     return [record for record in records if record[2] != 34]
 
 
 def metrics(path: Path, duration_seconds: float) -> dict:
-    records = load_records(str(path))
+    records = records_for(path)
     valid = _valid(records)
     rr = [record[6] for record in valid if 250 <= record[6] <= 5000]
     longest = max(valid, key=lambda item: item[6]) if valid else None
@@ -67,7 +71,7 @@ def heart_rate_trend(path: Path, duration_seconds: float, bin_seconds: int = 60)
     bin_seconds = max(10, min(int(bin_seconds), 600))
     bin_samples = SAMPLE_RATE * bin_seconds
     bins = [0] * (int(math.ceil(duration_seconds / bin_seconds)) or 1)
-    for record in load_records(str(path)):
+    for record in records_for(path):
         if record[2] == 34:
             continue
         index = min(record[0] // bin_samples, len(bins) - 1)
@@ -87,7 +91,10 @@ def heart_rate_trend(path: Path, duration_seconds: float, bin_seconds: int = 60)
 
 
 def hrv(path: Path) -> dict:
-    records = load_records(str(path))
+    if hasattr(path, "records"):
+        from .beat_editor import edited_hrv
+        return edited_hrv(path)
+    records = records_for(path)
     nn: list[tuple[int, int]] = []
     previous_group = None
     for record in records:
@@ -120,16 +127,22 @@ def hrv(path: Path) -> dict:
 
 
 def rr_visuals(path: Path, max_points: int = 4000) -> dict:
-    records = load_records(str(path))
+    records = records_for(path)
     values = [record[6] for record in records if record[2] == 1 and 300 <= record[6] <= 2000]
+    if hasattr(path,"records"):
+        values=[b[6] for a,b in zip(records,records[1:]) if a[2]==b[2]==1 and 300<=b[6]<=2000]
     bins = list(range(300, 2050, 50))
     counts = [0] * (len(bins) - 1)
     for value in values:
-        index = min((value - 300) // 50, len(counts) - 1)
+        index = int(min((value - 300) // 50, len(counts) - 1))
         if index >= 0:
             counts[index] += 1
     stride = max(1, (len(values) - 1) // max_points)
     poincare = [[values[i - 1], values[i]] for i in range(1, len(values), stride)][:max_points]
+    if hasattr(path, "records"):
+        # Plot only genuinely adjacent NN intervals, never bridge exclusions.
+        triples = [r for r in iter_scatter_points(records, "nn")]
+        poincare = [[r["x"], r["y"]] for r in _even_sample(triples,max_points)]
     return {
         "histogram": [{"start_ms": bins[i], "end_ms": bins[i + 1], "count": counts[i]} for i in range(len(counts))],
         "poincare": poincare,
@@ -226,8 +239,11 @@ def scatter_points(path: Path, mode: str = "rr", max_points: int = 12000, hour_s
     mode = _validate_scatter_mode(mode)
     hour_start_s = _normalize_hour_start(hour_start_s)
     max_points = max(500, min(int(max_points), 20000))
-    candidates = list(iter_scatter_points(load_records(str(path)), mode, hour_start_s))
+    candidates = list(iter_scatter_points(records_for(path), mode, hour_start_s))
     returned = _sample_scatter_points(candidates, mode, max_points)
+    if hasattr(path, "by_sample"):
+        for point in returned:
+            point.update({key:path.by_sample[point["sample_index"]][key] for key in ("class_code","label","name")})
     max_x = max((point["x"] for point in candidates), default=1)
     max_y = max((point["y"] for point in candidates), default=1)
     axis = {"x_label": "RR(i)", "y_label": "RR(i+1)", "x_unit": "ms", "y_unit": "ms"}
@@ -288,7 +304,7 @@ def select_scatter_points(
     max_y = max(point[1] for point in polygon)
     samples: list[int] = []
     groups = Counter()
-    for point in iter_scatter_points(load_records(str(path)), mode, hour_start_s):
+    for point in iter_scatter_points(records_for(path), mode, hour_start_s):
         if not (min_x <= point["x"] <= max_x and min_y <= point["y"] <= max_y):
             continue
         if _point_in_polygon(point["x"], point["y"], polygon):
@@ -306,8 +322,8 @@ def select_scatter_points(
 
 
 def beat_details(path: Path, sample_indices: list[int]) -> dict[int, dict]:
-    records = load_records(str(path))
-    indexes = _record_sample_indexes(str(path))
+    records = records_for(path)
+    indexes = tuple(record[0] for record in records)
     result: dict[int, dict] = {}
     for sample_index in sample_indices:
         position = bisect_left(indexes, sample_index)
@@ -322,6 +338,9 @@ def beat_details(path: Path, sample_indices: list[int]) -> dict[int, dict]:
             "rr_ms": record[6],
             "hr": round(60000 / record[6], 1) if record[6] else None,
         }
+    if hasattr(path, "by_sample"):
+        for sample in result:
+            result[sample].update(path.by_sample[sample])
     return result
 
 
@@ -329,7 +348,7 @@ def visible_beats(path: Path, start_s: float, duration_s: float) -> list[dict]:
     start_sample = int(start_s * SAMPLE_RATE)
     end_sample = int((start_s + duration_s) * SAMPLE_RATE)
     result = []
-    for record in load_records(str(path)):
+    for record in records_for(path):
         if record[0] < start_sample:
             continue
         if record[0] > end_sample:
@@ -342,6 +361,9 @@ def visible_beats(path: Path, start_s: float, duration_s: float) -> list[dict]:
             "rr_ms": record[6],
             "hr": round(60000 / record[6], 1) if record[6] else None,
         })
+    if hasattr(path, "by_sample"):
+        for item in result:
+            item.update(path.by_sample[item["sample_index"]])
     return result
 
 
@@ -356,9 +378,18 @@ def list_events(
 ) -> dict:
     events: list[dict] = []
     summary = Counter()
-    for record in load_records(str(path)):
+    if hasattr(path,"document"):
+        from .beat_editor import edited_events
+        return edited_events(path,event_type,offset,limit)
+    if hasattr(path, "document"):
+        opts=path.document["settings"]
+        brady_threshold,tachy_threshold,pause_seconds=opts["brady"],opts["tachy"],opts["pause"]
+    for record in records_for(path):
         sample, _, group, _, _, _, rr = record
-        if group == 2:
+        manual = path.by_sample[sample] if hasattr(path, "by_sample") else None
+        if manual and manual["kind"]=="rhythm":
+            kind, label, severity = ("AF" if manual["class_code"] in ("A","M") else "AFL"), "人工标记："+manual["name"], "medium"
+        elif group == 2:
             kind, label, severity = "S", "室上性候选心搏", "medium"
         elif group == 3:
             kind, label, severity = "V", "室性候选心搏", "high"
@@ -370,6 +401,8 @@ def list_events(
             kind, label, severity = "tachy", f"心动过速候选 {60000 / rr:.0f} bpm", "medium"
         elif rr and 60000 / rr <= brady_threshold:
             kind, label, severity = "brady", f"心动过缓候选 {60000 / rr:.0f} bpm", "medium"
+        elif manual and group in (4,5,6,7,8):
+            kind, label, severity = "manual", "人工分类："+manual["name"], "low"
         else:
             continue
         summary[kind] += 1

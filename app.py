@@ -5,6 +5,7 @@ import base64
 import binascii
 import copy
 import hmac
+import json
 import math
 import os
 import socket
@@ -33,6 +34,8 @@ from ecg_core.ebi import (
 from ecg_core.report_pdf import build_report_pdf
 from ecg_core.repository import CaseNotFound, CaseRepository
 from ecg_core.storage import Storage
+from ecg_core.beat_editor import BeatEditorStore, EditedRecords, TYPES, apply_operation, propose_qrs, integer
+from ecg_core.ebi import load_records
 from ecg_core.stt import build_stt_review
 from ecg_core.waveform import ALL_LEADS, read_waveform, read_waveform_strips
 
@@ -219,6 +222,16 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         except CaseNotFound:
             abort(404, description="病例不存在或数据不完整")
 
+    editor = BeatEditorStore(storage)
+
+    def edited_feed(case, document=None):
+        value = editor.read(case["case_id"])
+        return EditedRecords(load_records(case["paths"]["ebi"]), document or value["document"],
+            storage.list_beat_overrides(case["case_id"]), case["technical"]["duration_seconds_raw"])
+
+    def analysis_path(case):
+        return edited_feed(case) if request.args.get("analysis") == "edited" else Path(case["paths"]["ebi"])
+
     def present_case(source: dict, include_phi: bool, detailed: bool = False) -> dict:
         item = case_with_overrides(source)
         item["phi_masked"] = not include_phi
@@ -233,9 +246,15 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
             if include_phi else []
         )
         item["generated_report_url"] = f"/api/cases/{item['case_id']}/report.pdf"
+        item["review_workflow"] = storage.get_review(source["case_id"])
         if detailed:
             duration = source["technical"]["duration_seconds_raw"]
-            item["calculated"] = ebi_metrics(Path(source["paths"]["ebi"]), duration)
+            item["calculated"] = ebi_metrics(analysis_path(source), duration)
+            item["analysis_revision"] = editor.read(source["case_id"])["revision"] if request.args.get("analysis") == "edited" else None
+            if item["analysis_revision"] is not None:
+                feed=edited_feed(source)
+                item["beat_editor_settings"]=feed.document["settings"]
+                item["manual_longest"]=next((r for r in feed.beats if r["id"]==feed.document["longest_id"]),None)
             item["report_workflow"] = storage.get_report(source["case_id"], source["conclusion"])
             item["annotations"] = storage.list_annotations(source["case_id"])
         return item
@@ -348,7 +367,11 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         max_points = _number_arg("max_points", 4000, int, 200, 12000)
         filtered = request.args.get("filter", "display") != "raw"
         payload = read_waveform(Path(case["paths"]["data"]), start, duration, leads, max_points, filtered)
-        payload["beats"] = visible_beats(Path(case["paths"]["ebi"]), payload["start_s"], payload["duration_s"])
+        feed=analysis_path(case)
+        payload["beats"] = visible_beats(feed, payload["start_s"], payload["duration_s"])
+        if hasattr(feed,"markers"):
+            payload["beats"] += [r for r in feed.markers if payload["start_s"]<=r["time_s"]<=payload["start_s"]+payload["duration_s"]]
+            payload["beats"].sort(key=lambda r:r["sample_index"])
         payload["annotations"] = [
             annotation for annotation in storage.list_annotations(case_id)
             if payload["start_s"] * SAMPLE_RATE <= annotation["sample_index"] <= (payload["start_s"] + payload["duration_s"]) * SAMPLE_RATE
@@ -359,23 +382,23 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
     def trend(case_id: str):
         case = case_or_404(case_id)
         bin_seconds = _number_arg("bin_seconds", 60, int, 10, 600)
-        return jsonify(heart_rate_trend(Path(case["paths"]["ebi"]), case["technical"]["duration_seconds_raw"], bin_seconds))
+        return jsonify(heart_rate_trend(analysis_path(case), case["technical"]["duration_seconds_raw"], bin_seconds))
 
     @app.get("/api/cases/<case_id>/hrv")
     def hrv_endpoint(case_id: str):
         case = case_or_404(case_id)
-        return jsonify({"calculated": hrv(Path(case["paths"]["ebi"])), "source": case["summary"]})
+        return jsonify({"calculated": hrv(analysis_path(case)), "source": case["summary"]})
 
     @app.get("/api/cases/<case_id>/rr-visuals")
     def rr_endpoint(case_id: str):
         case = case_or_404(case_id)
-        return jsonify(rr_visuals(Path(case["paths"]["ebi"]), _number_arg("max_points", 4000, int, 500, 10000)))
+        return jsonify(rr_visuals(analysis_path(case), _number_arg("max_points", 4000, int, 500, 10000)))
 
     @app.get("/api/cases/<case_id>/scatter")
     def scatter_endpoint(case_id: str):
         case = case_or_404(case_id)
         return jsonify(scatter_points(
-            Path(case["paths"]["ebi"]),
+            analysis_path(case),
             request.args.get("mode", "rr"),
             _number_arg("max_points", 12000, int, 500, 20000),
             _number_arg("hour_start_s", 0, float, 0, 2_678_400),
@@ -402,7 +425,7 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
                 for value in point
             ))
         return jsonify(select_scatter_points(
-            Path(case["paths"]["ebi"]),
+            analysis_path(case),
             mode,
             polygon,
             _json_number(payload, "hour_start_s", 0, 0, 2_678_400),
@@ -434,7 +457,7 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         filter_mode = payload.get("filter", "display")
         if filter_mode not in {"display", "raw"}:
             raise ValueError("filter 必须是 display 或 raw")
-        ebi_path = Path(case["paths"]["ebi"])
+        ebi_path = analysis_path(case)
         details = beat_details(ebi_path, raw_samples)
         if len(details) != len(raw_samples):
             raise ValueError("sample_indices 必须对应现有心搏位置")
@@ -451,10 +474,68 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
             item.update(details[item["sample_index"]])
         return jsonify(result)
 
+    def editor_summary(case, value):
+        feed=edited_feed(case,value["document"])
+        return dict(revision=value["revision"], settings=value["document"]["settings"],
+            can_undo=bool(value["undo"]), can_redo=bool(value["redo"]), types=TYPES,
+            metrics=ebi_metrics(feed,feed.duration), hrv=hrv(feed),
+            type_counts=dict(__import__("collections").Counter(row["class_code"] for row in feed.beats)),
+            markers=feed.markers, manual_longest=next((r for r in feed.beats if r["id"]==value["document"]["longest_id"]),None),
+            note="按医生修订位置重算 RR；不生成自动疾病诊断，源 EBI 保留不变")
+
+    @app.get("/api/cases/<case_id>/beat-editor")
+    def beat_editor_get(case_id):
+        return jsonify(editor_summary(case_or_404(case_id),editor.read(case_id)))
+
+    @app.get("/api/cases/<case_id>/beat-editor/beats")
+    def beat_editor_beats(case_id):
+        feed=edited_feed(case_or_404(case_id))
+        return jsonify(items=feed.beats,markers=feed.markers)
+
+    @app.post("/api/cases/<case_id>/beat-editor/preview")
+    def beat_editor_preview(case_id):
+        case=case_or_404(case_id);payload=_json_object();current=editor.read(case_id)
+        integer(payload.get("revision"),"编辑版本")
+        if payload.get("revision")!=current["revision"]:raise ValueError("编辑版本已变化，请刷新")
+        if payload.get("operation")=="detect":
+            opts=current["document"]["settings"]
+            start=_json_number(payload,"start_s",0,0,case["technical"]["duration_seconds_raw"])
+            duration=_json_number(payload,"duration_s",10,1,60)
+            wave=read_waveform(Path(case["paths"]["data"]),start,duration,[opts["lead"]],12000,False)
+            feed=edited_feed(case)
+            candidates=propose_qrs(wave["leads"][opts["lead"]],round(wave["start_s"]*SAMPLE_RATE),
+                [r["sample_index"] for r in feed.beats if r["group"]!=34],opts)
+            return jsonify(candidates=candidates,revision=current["revision"],requires_confirmation=True,
+                method="导数平方能量 / MAD 阈值 / 局部峰定位 / 不应期排重；研究候选，须逐一确认")
+        changed,count=apply_operation(load_records(case["paths"]["ebi"]),current["document"],
+            storage.list_beat_overrides(case_id),payload,case["technical"]["duration_seconds_raw"])
+        return jsonify(affected=count,before=editor_summary(case,current),
+            after=editor_summary(case,{**current,"document":changed}),requires_confirmation=True)
+
+    @app.put("/api/cases/<case_id>/beat-editor")
+    def beat_editor_commit(case_id):
+        case=case_or_404(case_id);payload=_json_object()
+        if payload.get("confirmed") is not True:raise ValueError("请确认预览后再提交")
+        op=payload.get("operation")
+        def transform(document):
+            return apply_operation(load_records(case["paths"]["ebi"]),document,
+                storage.list_beat_overrides(case_id),payload,case["technical"]["duration_seconds_raw"])[0]
+        value=editor.commit(case_id,payload.get("revision"),ACTOR,transform,op)
+        return jsonify(editor_summary(case,value))
+
     @app.get("/api/cases/<case_id>/beat-templates")
     def beat_templates(case_id: str):
-        case_or_404(case_id)
-        return jsonify({"items": storage.list_beat_templates(case_id)})
+        case=case_or_404(case_id)
+        items=storage.list_beat_templates(case_id)
+        if request.args.get("analysis")=="edited":
+            feed=edited_feed(case);by_id={r["id"]:r for r in feed.beats}
+            with storage.connect() as db:
+                refs={row["template_id"]:json.loads(row["beat_ids"]) for row in db.execute("SELECT * FROM beat_edit_template_refs WHERE case_id=?",(case_id,))}
+            for item in items:
+                ids=refs.get(item["id"],[f"s:{s}" for s in item["sample_indices"]])
+                item["sample_indices"]=sorted(by_id[key]["sample_index"] for key in ids if key in by_id)
+                item["beat_count"]=len(item["sample_indices"])
+        return jsonify({"items": items})
 
     @app.get("/api/cases/<case_id>/beat-overrides")
     def beat_overrides(case_id: str):
@@ -509,7 +590,7 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         max_sample = int(case["technical"]["duration_seconds_raw"] * SAMPLE_RATE)
         if any(value < 0 or value >= max_sample for value in raw_samples):
             raise ValueError("sample_indices 超出记录范围")
-        details = beat_details(Path(case["paths"]["ebi"]), raw_samples)
+        details = beat_details(analysis_path(case), raw_samples)
         if len(details) != len(raw_samples):
             raise ValueError("sample_indices 必须对应现有心搏位置")
         source_class = payload.get("source_class", "")
@@ -533,7 +614,12 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
                     raise ValueError("父类别不存在或不属于当前病例")
                 if not set(raw_samples) <= set(parent["sample_indices"]):
                     raise ValueError("选中心搏不属于指定的父模板")
-        return jsonify(storage.create_beat_template(case_id, payload, ACTOR)), 201
+        item=storage.create_beat_template(case_id, payload, ACTOR)
+        feed=edited_feed(case);by_sample=feed.by_sample
+        ids=[by_sample[s]["id"] for s in raw_samples if s in by_sample]
+        with storage.connect() as db:
+            db.execute("INSERT INTO beat_edit_template_refs VALUES(?,?,?)",(item["id"],case_id,json.dumps(ids)))
+        return jsonify(item), 201
 
     @app.patch("/api/beat-templates/<int:template_id>")
     def beat_template_update(template_id: int):
@@ -552,11 +638,41 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         storage.delete_beat_template(template_id, ACTOR)
         return jsonify({"ok": True})
 
+    @app.get("/api/cases/<case_id>/review-workflow")
+    def review_workflow_get(case_id: str):
+        case_or_404(case_id)
+        return jsonify(storage.get_review(case_id))
+
+    @app.put("/api/cases/<case_id>/review-workflow")
+    def review_workflow_put(case_id: str):
+        case_or_404(case_id)
+        return jsonify(storage.complete_review(case_id, _json_object(), ACTOR))
+
+    @app.put("/api/cases/<case_id>/event-reviews")
+    def event_review_put(case_id: str):
+        case = case_or_404(case_id)
+        payload = _json_object()
+        records = payload.get("items", [])
+        if not isinstance(records, list) or not 1 <= len(records) <= 500:
+            raise ValueError("每次处理 1–500 个事件")
+        samples = [item.get("sample_index") for item in records if isinstance(item, dict)]
+        if any(isinstance(sample, bool) or not isinstance(sample, int) for sample in samples):
+            raise ValueError("事件心搏必须为整数")
+        details = beat_details(analysis_path(case), samples)
+        valid = set(details)
+        return jsonify(storage.save_event_review(case_id, payload, ACTOR, valid))
+
     @app.get("/api/cases/<case_id>/events")
     def events_endpoint(case_id: str):
         case = case_or_404(case_id)
+        feed=analysis_path(case)
+        if hasattr(feed,"document"):
+            # Page filters are transient; the right-menu settings remain the saved default.
+            feed.document["settings"]={**feed.document["settings"],**{
+                key:_number_arg(key,feed.document["settings"][key],kind,lo,hi)
+                for key,kind,lo,hi in (("brady",int,20,100),("tachy",int,80,250),("pause",float,1.5,10)) if key in request.args}}
         return jsonify(list_events(
-            Path(case["paths"]["ebi"]),
+            feed,
             request.args.get("type", "all"),
             _number_arg("offset", 0, int, 0),
             _number_arg("limit", 200, int, 1, 1000),
@@ -613,8 +729,12 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         report_case = case_with_overrides(case)
         if not include_phi:
             report_case = _masked_report_case(report_case)
-        calculated = ebi_metrics(Path(case["paths"]["ebi"]), case["technical"]["duration_seconds_raw"])
+        calculated = ebi_metrics(edited_feed(case), case["technical"]["duration_seconds_raw"])
         report = storage.get_report(case_id, case["conclusion"])
+        report["review_snapshot"] = storage.get_review(case_id)
+        report["override_count"] = len(storage.list_beat_overrides(case_id)) + len(editor.read(case_id)["document"]["changes"])
+        report["edited_analysis"] = True
+        report["analysis_revision"] = editor.read(case_id)["revision"]
         privacy_mode = "phi-visible" if include_phi else "masked"
         storage.audit(ACTOR, "report.export_pdf", case_id, f"version={report['version']} privacy={privacy_mode}")
         response = send_file(build_report_pdf(report_case, calculated, report), mimetype="application/pdf", as_attachment=True, download_name=f"{case_id}_心电分析复核报告.pdf")

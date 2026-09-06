@@ -9,6 +9,8 @@
   <title>{{ app_name }}</title>
   <link rel="icon" href="{{ url_for('static', filename='icon.svg') }}" type="image/svg+xml">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/clinical-workflow.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/beat-editor.css') }}">
 </head>
 <body>
   <a class="skip-link" href="#mainContent">跳到主要内容</a>
@@ -79,7 +81,40 @@
         <button type="button" data-workflow-page="report"><span aria-hidden="true"></span><strong>报告</strong><small>编排审核</small></button>
       </nav>
       <button id="workflowNext" class="workflow-next" type="button">下一步</button>
+      <div class="workflow-task-line"><span id="workflowTaskHint"></span><button id="workflowReturn" type="button" hidden>返回来源</button><button id="workflowBrowseNext" type="button">仅浏览下一步 →</button></div>
     </section>
+
+    <dialog id="workflowConfirmDialog" class="modal workflow-confirm-dialog" aria-labelledby="workflowConfirmTitle">
+      <form id="workflowConfirmForm">
+        <div class="modal-header"><h2 id="workflowConfirmTitle">确认本环节复核</h2><button type="button" data-close-workflow aria-label="关闭">×</button></div>
+        <p id="workflowConfirmDescription"></p>
+        <p id="workflowLimitNotice" class="workflow-limit"></p>
+        <label class="workflow-confirm-check"><input id="workflowConfirmed" type="checkbox" required> <span>我已核对本环节内容及数据限制，确认可以进入下一环节。</span></label>
+        <label class="workflow-note">复核备注（选填）<textarea id="workflowNote" rows="3" maxlength="1200" placeholder="记录判断依据、未能评估的内容及原因"></textarea></label>
+        <p id="workflowConfirmError" role="alert"></p>
+        <div class="modal-actions"><button type="button" class="button secondary" data-close-workflow>暂不确认</button><button id="workflowConfirmSubmit" class="button primary" type="submit">确认并继续</button></div>
+      </form>
+    </dialog>
+
+    <div id="beatRelabelMenu" class="beat-relabel-menu" popover="manual" role="menu" aria-label="心搏重标注" hidden>
+      <header>
+        <div><span id="beatRelabelCurrentCode" class="beat-relabel-current">N</span><div><strong>重标注心搏</strong><small id="beatRelabelMeta">—</small></div></div>
+        <button id="closeBeatRelabelMenu" type="button" aria-label="关闭心搏重标注菜单">×</button>
+      </header>
+      <div class="beat-relabel-options" aria-label="选择心搏类型">
+        <button type="button" role="menuitem" data-beat-relabel-code="N"><kbd>N</kbd><span><strong>正常</strong><small>正常心搏</small></span><i aria-hidden="true">✓</i></button>
+        <button type="button" role="menuitem" data-beat-relabel-code="S"><kbd>S</kbd><span><strong>室上性候选</strong><small>需医生复核</small></span><i aria-hidden="true">✓</i></button>
+        <button type="button" role="menuitem" data-beat-relabel-code="V"><kbd>V</kbd><span><strong>室性候选</strong><small>需医生复核</small></span><i aria-hidden="true">✓</i></button>
+        <button type="button" role="menuitem" data-beat-relabel-code="X"><kbd>X</kbd><span><strong>噪声 / 待确认</strong><small>信号质量问题</small></span><i aria-hidden="true">✓</i></button>
+        <button type="button" role="menuitem" data-beat-relabel-code="P"><kbd>P</kbd><span><strong>起搏</strong><small>起搏心搏</small></span><i aria-hidden="true">✓</i></button>
+        <button type="button" role="menuitem" data-beat-relabel-code="O"><kbd>O</kbd><span><strong>其他</strong><small>其他人工分类</small></span><i aria-hidden="true">✓</i></button>
+      </div>
+      <div class="beat-relabel-actions">
+        <button id="restoreBeatRelabel" type="button" role="menuitem"><span>恢复源类型</span><small id="beatRelabelSource">源 EBI：N</small></button>
+        <button id="beatRelabelLeadSettings" type="button" role="menuitem"><span>显示导联设置</span><small>主界面最多 3 条</small></button>
+      </div>
+      <footer>仅写入医生覆盖层，不改写源 DATA / EBI</footer>
+    </div>
 
     <section class="page active" id="page-dashboard">
       <div class="page-heading">
@@ -173,8 +208,8 @@
               <div><span class="live-dot"></span><div><strong>连续波形 · 复核上下文</strong><small id="editWaveMeta">等待读取波形</small></div></div>
               <div class="edit-wave-actions"><label for="editLeadSelect">参考导联</label><select id="editLeadSelect"><option>II</option><option>V1</option><option>V5</option><option>I</option><option>III</option><option>aVR</option><option>aVL</option><option>aVF</option><option>V2</option><option>V3</option><option>V4</option><option>V6</option></select><button id="editPrevWindow" class="icon-button" type="button" aria-label="前一编辑窗口">←</button><button id="editNextWindow" class="icon-button" type="button" aria-label="后一编辑窗口">→</button></div>
             </div>
-            <div id="editWaveCanvasWrap" class="edit-wave-canvas-wrap"><canvas id="editWaveformCanvas" height="320" tabindex="0" aria-label="三导联连续波形；用于查看当前模板在原记录中的上下文"></canvas><div id="editWaveTooltip" class="wave-tooltip" hidden></div></div>
-            <div class="edit-wave-foot"><span>连续波形仅用于核对上下文；请在左侧“模板形态集合”中框选并派生新模板。</span><span>选中代表片段可定位</span></div>
+            <div id="editWaveCanvasWrap" class="edit-wave-canvas-wrap"><canvas id="editWaveformCanvas" height="320" tabindex="0" aria-keyshortcuts="N S V X P O Backspace Shift+F10" aria-label="三导联连续波形；单击选中最近心搏，右键打开重标注菜单，也可用 N、S、V、X、P、O 键直接改型"></canvas><div id="editWaveTooltip" class="wave-tooltip" hidden></div></div>
+            <div class="edit-wave-foot"><span>单击选中心搏后可直接敲 N / S / V / X / P / O；右键可打开完整重标注菜单。</span><span>医生覆盖层 · 可恢复源类型</span></div>
           </article>
         </div>
       </div>
@@ -198,7 +233,7 @@
 
         <section class="card edit-library-wave-panel">
           <div class="edit-wave-toolbar"><div><span class="live-dot"></span><div><strong>连续波形 · 逐搏编辑</strong><small id="editLibraryWaveMeta">等待读取波形</small></div></div><div class="edit-wave-actions"><span class="edit-key-legend" aria-label="心搏改型快捷键"><kbd>N</kbd><kbd>S</kbd><kbd>V</kbd><kbd>X</kbd><kbd>P</kbd><kbd>O</kbd><small>Backspace 恢复</small></span><label for="editLibraryLeadSelect">参考导联</label><select id="editLibraryLeadSelect"><option>II</option><option>V1</option><option>V5</option><option>I</option><option>III</option><option>aVR</option><option>aVL</option><option>aVF</option><option>V2</option><option>V3</option><option>V4</option><option>V6</option></select><button id="editLibraryPrevWindow" class="icon-button" type="button" aria-label="前一编辑窗口">←</button><button id="editLibraryNextWindow" class="icon-button" type="button" aria-label="后一编辑窗口">→</button></div></div>
-          <div class="edit-library-wave-wrap"><canvas id="editLibraryWaveformCanvas" height="250" tabindex="0" aria-keyshortcuts="N S V X P O Backspace" aria-label="三导联连续心电波形；单击选中最近心搏后用键盘改型"></canvas><div id="editLibraryWaveTooltip" class="wave-tooltip" hidden></div></div>
+          <div class="edit-library-wave-wrap"><canvas id="editLibraryWaveformCanvas" height="250" tabindex="0" aria-keyshortcuts="N S V X P O Backspace Shift+F10" aria-label="三导联连续心电波形；单击选中最近心搏后用键盘改型，右键可打开重标注菜单"></canvas><div id="editLibraryWaveTooltip" class="wave-tooltip" hidden></div></div>
           <canvas id="editLibraryNavigatorCanvas" class="edit-library-navigator" height="42" aria-label="当前窗口导航条"></canvas>
         </section>
 
@@ -223,7 +258,7 @@
     <section class="page" id="page-review">
       <div id="caseHero" class="case-hero empty-case"><div><p class="eyebrow">当前病例</p><h1>请选择病例</h1><p>从工作列表进入波形复核。</p></div></div>
       <div class="review-toolbar card">
-        <div class="toolbar-group lead-toolbar-group"><label for="leadPickerButton">显示导联</label><button id="leadPickerButton" class="lead-picker-trigger" type="button" title="选择主界面显示的导联；也可在波形上右键"><span id="selectedLeadLabel">II · V1 · V5</span><small>最多 3 条</small></button></div>
+        <div class="toolbar-group lead-toolbar-group"><label for="leadPickerButton">显示导联</label><button id="leadPickerButton" class="lead-picker-trigger" type="button" title="选择主界面显示的导联"><span id="selectedLeadLabel">II · V1 · V5</span><small>最多 3 条</small></button></div>
         <div class="toolbar-group"><label for="durationSelect">窗口</label><select id="durationSelect"><option value="1">1 秒</option><option value="2">2 秒</option><option value="5">5 秒</option><option value="10" selected>10 秒</option><option value="20">20 秒</option><option value="30">30 秒</option><option value="60">60 秒</option><option value="120">120 秒</option></select></div>
         <div class="toolbar-group"><label for="gainSelect">增益</label><select id="gainSelect"><option value="5">5 mm/mV</option><option value="10" selected>10 mm/mV</option><option value="20">20 mm/mV</option></select></div>
         <div class="toolbar-group"><label for="filterSelect">显示滤波</label><select id="filterSelect"><option value="display">0.5–40 Hz</option><option value="raw">原始波形</option></select></div>
@@ -242,8 +277,8 @@
                 <button id="toggleWaveformFullscreen" class="waveform-mode-button" type="button" aria-keyshortcuts="F" aria-label="全屏查看全部十二导联"><span aria-hidden="true">⛶</span><em>全屏多导联</em></button>
               </div>
             </div>
-            <div id="waveformScroller" class="waveform-scroller"><canvas id="waveformCanvas" tabindex="0" aria-keyshortcuts="F Shift+F10" aria-label="三导联连续心电波形；右键选择导联，双击全屏查看全部十二导联，滚轮缩放时间轴，按住 Shift 滚轮缩放电压增益，移动指针可查看时间、导联和电压坐标"></canvas><div id="waveCursor" class="wave-cursor" hidden aria-hidden="true"><span class="wave-cursor-x"></span><span class="wave-cursor-y"></span><i></i></div><div id="waveTooltip" class="wave-tooltip" hidden></div></div>
-            <div class="waveform-foot"><span id="waveInteractionHint">右键选择最多 3 条导联 · 双击全屏查看全部 12 导联 · 滚轮缩放 · 拖动平移 · 悬停查坐标</span><span id="calibrationNote">设备原始标度 · 未做计量学溯源</span></div>
+            <div id="waveformScroller" class="waveform-scroller"><canvas id="waveformCanvas" tabindex="0" aria-keyshortcuts="F Shift+F10" aria-label="三导联连续心电波形；右键最近心搏可重标注，双击全屏查看全部十二导联，滚轮缩放时间轴，按住 Shift 滚轮缩放电压增益，移动指针可查看时间、导联和电压坐标"></canvas><div id="waveCursor" class="wave-cursor" hidden aria-hidden="true"><span class="wave-cursor-x"></span><span class="wave-cursor-y"></span><i></i></div><div id="waveTooltip" class="wave-tooltip" hidden></div></div>
+            <div class="waveform-foot"><span id="waveInteractionHint">右键最近心搏重标注 · 双击全屏查看全部 12 导联 · 滚轮缩放 · 拖动平移 · 悬停查坐标</span><span id="calibrationNote">设备原始标度 · 未做计量学溯源</span></div>
             <dialog id="leadPickerDialog" class="lead-picker-dialog" aria-labelledby="leadPickerTitle">
               <form method="dialog">
                 <div class="lead-picker-header"><div><span>分析通道</span><h2 id="leadPickerTitle">选择主界面显示导联</h2></div><button value="cancel" aria-label="关闭导联选择">×</button></div>
@@ -254,7 +289,7 @@
                   <label><input type="checkbox" value="II" data-lead-choice><span>II</span></label><label><input type="checkbox" value="aVL" data-lead-choice><span>aVL</span></label><label><input type="checkbox" value="V2" data-lead-choice><span>V2</span></label><label><input type="checkbox" value="V5" data-lead-choice><span>V5</span></label>
                   <label><input type="checkbox" value="III" data-lead-choice><span>III</span></label><label><input type="checkbox" value="aVF" data-lead-choice><span>aVF</span></label><label><input type="checkbox" value="V3" data-lead-choice><span>V3</span></label><label><input type="checkbox" value="V6" data-lead-choice><span>V6</span></label>
                 </fieldset>
-                <div class="lead-picker-status"><output id="leadSelectionCount" aria-live="polite">已选 3 / 3</output><span>右键波形可随时重新选择</span></div>
+                <div class="lead-picker-status"><output id="leadSelectionCount" aria-live="polite">已选 3 / 3</output><span>可由波形右键菜单进入此设置</span></div>
                 <div class="lead-picker-actions"><button id="resetLeadSelection" type="button" class="button secondary">恢复推荐</button><span></span><button value="cancel" class="button secondary">取消</button><button id="applyLeadSelection" type="button" class="button primary">应用导联</button></div>
               </form>
             </dialog>
@@ -479,6 +514,9 @@
   </dialog>
 
   <div id="toastStack" class="toast-stack" aria-live="polite"></div>
+  <script src="{{ url_for('static', filename='js/beat-engine.js') }}"></script>
   <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/clinical-workflow.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/beat-editor-ui.js') }}"></script>
 </body>
 </html>

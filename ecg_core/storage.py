@@ -102,11 +102,15 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
 
-class Storage:
+from .review_workflow import ReviewWorkflowMixin
+
+
+class Storage(ReviewWorkflowMixin):
     def __init__(self, path: Path):
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
+        self.initialize_review()
 
     def connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path, timeout=10)
@@ -369,6 +373,7 @@ class Storage:
 
     def audit(self, actor: str, action: str, case_id: str = "", detail: str = "") -> None:
         with self.connect() as db:
+            self.invalidate_review(db, case_id, action)
             db.execute(
                 "INSERT INTO audit_log(case_id,actor,action,detail,created_at) VALUES(?,?,?,?,?)",
                 (case_id, actor, action, detail, utc_now()),
@@ -464,7 +469,10 @@ class Storage:
             raise ValueError("invalid report status")
         now = utc_now()
         with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
             old = db.execute("SELECT * FROM report_drafts WHERE case_id=?", (case_id,)).fetchone()
+            if status == "reviewed":
+                self.assert_report_ready(db, case_id, conclusion)
             version = int(old["version"]) + 1 if old else 1
             old_composition = normalize_report_composition(json.loads(old["composition"] or "{}")) if old else normalize_report_composition(None)
             next_composition = normalize_report_composition(composition) if composition is not None else old_composition

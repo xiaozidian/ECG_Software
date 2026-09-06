@@ -1,0 +1,106 @@
+/* Clinical workstation: legible controls, task ownership and explicit review state. */
+:root{--case-workflow-height:100px;--ink-500:#586f7b;--ink-300:#637986}
+html{scroll-behavior:auto}
+.card,.metric-card{box-shadow:none;border-radius:8px}
+.page-heading .eyebrow,.report-page-heading .eyebrow{display:none}
+.button{min-height:34px;font-size:12px}
+button:active{transform:none}
+button:focus-visible,a:focus-visible,select:focus-visible,textarea:focus-visible,input:focus-visible{outline:2px solid #087777;outline-offset:2px}
+.case-workflow{grid-template-columns:minmax(190px,240px) minmax(480px,1fr) auto;grid-template-rows:50px 28px;padding:8px 14px;gap:4px 12px}
+.case-workflow-context{display:grid}
+.case-workflow-context span{font-size:11px}
+.case-workflow-context strong{font-size:12px}
+.case-workflow-context small{font-size:11px}
+.case-workflow-steps button strong{font-size:12px}
+.case-workflow-steps button small{font-size:11px;color:#586f7b}
+.case-workflow-steps button.needs-review>span{background:#bf791c;border-color:#a86711}
+.case-workflow-steps button.needs-review small{color:#8b5816}
+.workflow-next{height:36px;font-size:12px}
+.workflow-task-line{grid-column:1/-1;min-width:0;display:flex;align-items:center;gap:16px;border-top:1px solid #dbe4e7;padding-top:5px;font-size:12px;color:#445e6b}
+.workflow-task-line>span{flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.workflow-task-line button{border:0;background:transparent;color:#087777;white-space:nowrap;font-size:12px;padding:3px}
+.workflow-confirm-dialog{width:min(540px,calc(100vw - 40px))}
+.workflow-confirm-dialog form{padding:22px}
+.workflow-confirm-dialog h2{font-size:19px}
+.workflow-confirm-dialog p{font-size:14px;line-height:1.6}
+.workflow-confirm-check{display:flex;gap:10px;font-size:14px;align-items:start;margin:20px 0}
+.workflow-confirm-check input{width:18px;height:18px;accent-color:#087777;flex-shrink:0}
+.workflow-note{display:grid;gap:8px;font-size:13px}
+.workflow-note textarea{resize:vertical;min-height:85px;width:100%;padding:10px;border:1px solid #b9cbd2;border-radius:6px;font-size:14px}
+.workflow-note textarea::placeholder{color:#5a6e79}
+#workflowConfirmError{color:#a72e2e;min-height:20px}
+.workflow-limit{color:#785016;background:#fff5e4;border:1px solid #e5d0ae;border-radius:5px;padding:9px;font-size:12px!important;line-height:1.5}
+.report-summary-rail{display:flex;flex-direction:column;overflow-y:auto;gap:6px}
+.report-summary-rail>.card{flex:0 0 auto;min-height:0}
+.report-summary-rail .report-stat span,.report-summary-rail .report-stat small,.report-dense-stats dt,.report-dense-stats small,.report-provenance dt,.report-provenance dd{font-size:10px}
+.report-summary-rail .report-stat strong,.report-dense-stats dd{font-size:12px}
+.report-summary-rail .report-stat{min-height:41px}
+.report-preflight{padding:12px;flex:0 0 auto;font-size:12px}
+.report-preflight h2{font-size:15px;margin:0 0 8px}
+.report-preflight h3{font-size:13px;margin:16px 0 6px}
+.report-preflight p{margin:6px 0 10px;line-height:1.5}
+.preflight-steps{display:grid}
+.preflight-steps button{display:flex;gap:7px;align-items:center;min-height:32px;text-align:left;font-size:12px;border:0;border-bottom:1px solid #e4eaed;background:white}
+.preflight-steps button:hover{background:#edf7f6}
+.preflight-steps button>span{color:#087777}
+.preflight-steps small{margin-left:auto;color:#536c7a;font-size:11px}
+.evidence-list{max-height:160px;overflow:auto;display:grid;gap:4px}
+.evidence-list button{border:0;background:#eef6f6;color:#066568;text-align:left;padding:7px;font-size:12px;border-radius:4px}
+.clinical-event-pager{display:flex;justify-content:space-between;align-items:center;padding:12px;gap:10px;border-top:1px solid #d9e3e6;font-size:12px}
+#page-events .table-wrap{max-height:calc(100dvh - 365px)}
+#eventTableBody select{min-height:32px;min-width:130px;border:1px solid #bacdd4;background:#fff;border-radius:5px;padding:5px;font-size:12px}
+.data-table{font-size:13px}.data-table th{font-size:12px;letter-spacing:0;text-transform:none}
+.data-table .row-action{font-size:12px;min-height:32px}
+.edit-class-toolbar{grid-template-columns:190px minmax(420px,1fr) 160px}
+.edit-class-toolbar-label strong,.edit-class-switcher button span{font-size:12px}
+.edit-class-toolbar-label span,.edit-class-switcher button em,.edit-active-class small{font-size:10px}
+.edit-class-switcher kbd{font-size:12px}
+.edit-class-switcher button small{display:none}
+.edit-active-class strong{font-size:12px}
+.edit-class-switcher button{padding-right:6px}
+.clinical-beat-toolbar{height:32px;display:flex;align-items:center;gap:5px;padding:3px 10px;background:#f4f8f9;border-bottom:1px solid #d5e0e4;font-size:11px;flex-shrink:0}
+.clinical-beat-toolbar>span{color:#4d6571;margin-right:auto;white-space:nowrap}
+.clinical-beat-toolbar button{min-height:25px;padding:3px 8px;border:1px solid #bbd0d5;border-radius:4px;background:white;font-size:12px;font-weight:700;white-space:nowrap}
+.clinical-beat-toolbar button:hover{background:#def1ef;border-color:#087777}
+.clinical-beat-toolbar small{font-size:10px;font-weight:400}
+.edit-wave-canvas-wrap,.edit-library-wave-wrap{display:flex;flex-direction:column}
+.edit-wave-canvas-wrap>canvas,.edit-library-wave-wrap>canvas{min-height:0;flex:1;height:calc(100% - 32px)!important}
+.edit-library-workbench{grid-template-rows:minmax(54px,.1fr) minmax(70px,.14fr) minmax(112px,.22fr) minmax(230px,.54fr);overflow:auto}
+.edit-library-deck-panel .edit-panel-heading{display:none}
+.edit-library-deck-card canvas{min-height:0}
+.edit-library-wave-panel .edit-key-legend{display:none}
+@media(max-height:850px){
+  .edit-library-workbench{grid-template-rows:54px 64px 100px minmax(225px,1fr);gap:5px}
+  .edit-library-matrix{display:flex;overflow-x:auto}
+  .edit-library-beat{width:140px;min-width:140px;height:100%}
+  .edit-library-matrix-panel .edit-panel-heading{min-height:30px;height:30px}
+  .edit-library-matrix-panel .edit-panel-heading p{display:none}
+  .edit-library-wave-panel .edit-wave-toolbar{height:32px;min-height:32px}
+  .edit-library-navigator{height:24px;min-height:24px}
+}
+.beat-relabel-menu{max-height:calc(100dvh - 90px);overflow-y:auto;box-shadow:0 3px 8px #142f3d33}
+.beat-relabel-menu>header small,.beat-relabel-options>button>span small,.beat-relabel-menu>footer{font-size:11px}
+.beat-relabel-options>button>span strong,.beat-relabel-actions>button span{font-size:13px}
+.report-panel-heading small,.report-preview-header small,.report-page-checklist label{font-size:11px}
+.report-conclusion-dock textarea{font-size:14px;line-height:1.65}
+@media(max-width:1280px){
+  :root{--case-workflow-height:130px}
+  .case-workflow{grid-template-columns:minmax(190px,1fr) auto;grid-template-rows:35px 42px 25px}
+  .case-workflow-context{grid-column:1;grid-row:1;display:grid;border-right:0}
+  .case-workflow-context small{display:none}
+  .case-workflow-steps{grid-column:1/-1;grid-row:2}
+  .workflow-next{grid-column:2;grid-row:1}
+  .workflow-task-line{grid-row:3}
+  .edit-class-toolbar{grid-template-columns:1fr 160px}
+  .clinical-beat-toolbar small{display:none}
+}
+@media(max-width:980px){
+  .report-summary-rail{max-height:45vh}
+  .workflow-task-line>span{font-size:11px}
+  .case-workflow-steps button{padding-left:20px}
+}
+@media(max-width:1050px){.report-summary-rail{grid-column:1/-1;max-height:45vh}.report-preflight h2{font-size:15px}}
+@media print{.workflow-task-line,.clinical-beat-toolbar,.report-preflight{display:none!important}}
+/* Keep desktop clinical controls usable on smaller screens; never hide overflow. */
+@media(max-width:859px){html,body{overflow-x:auto}.topbar{min-width:860px}.case-workflow{min-width:790px}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important}}

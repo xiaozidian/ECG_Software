@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import re
 import shutil
 from pathlib import Path
 
@@ -61,6 +63,14 @@ def build(output: Path) -> Path:
         '<script src="static/js/demo-api.js"></script>\n  '
         + app_script,
     )
+    def version_asset(match):
+        attribute, relative = match.groups()
+        asset = DEMO_STATIC_ROOT / relative.removeprefix("static/")
+        if not asset.is_file():
+            asset = PROJECT_ROOT / relative
+        digest = hashlib.sha256(asset.read_bytes()).hexdigest()[:12]
+        return f'{attribute}="{relative}?v={digest}"'
+    html = re.sub(r'(src|href)="(static/(?:js|css)/[^"]+)"', version_asset, html)
     if "{{" in html or "{%" in html:
         raise RuntimeError("unrendered Jinja markup remains")
     html = "\n".join(line.rstrip() for line in html.splitlines()) + "\n"

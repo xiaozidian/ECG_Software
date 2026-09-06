@@ -18,7 +18,7 @@ const EDIT_SOURCE_CLASSES = [
 const EDIT_BEAT_TYPES = {
   N:{code:"N",name:"正常",color:"#168ba0"},S:{code:"S",name:"室上性候选",color:"#7464c8"},
   V:{code:"V",name:"室性候选",color:"#c9544c"},X:{code:"X",name:"噪声 / 待确认",color:"#7b858a"},
-  P:{code:"P",name:"起搏",color:"#c77a1d"},O:{code:"O",name:"其他",color:"#405563"},
+  P:{code:"P",name:"起搏",color:"#c77a1d"},O:{code:"O",name:"房早未下传",color:"#405563"},
 };
 const EDIT_FAMILY_DEFAULT_NAMES = {"全部":"全部复核类","单发":"单发复核类","成对":"成对复核类","房速":"房速复核类","二联律":"二联律复核类","三联律(NPN)":"三联律 NPN 复核类","三联律(NPP)":"三联律 NPP 复核类","四联律":"四联律复核类","自定义":"自建类别"};
 const SCATTER_STRIP_HEIGHT = 156;
@@ -117,6 +117,7 @@ const state = {
   editWaveform: null,
   editTemplates: [],
   editBeatOverrides: new Map(),
+  beatRelabelTarget: null,
   editSelectedSamples: new Set(),
   editSelectionAnchor: null,
   editLibraryFilter: "all",
@@ -169,6 +170,8 @@ function escapeHtml(value) {
 }
 
 async function api(path, options = {}) {
+  if(path.startsWith("/api/cases/"))path+=(path.includes("?")?"&":"?")+"analysis=edited";
+  const requestCase=state.caseId;
   const response = await fetch(path, {
     headers: {"Content-Type": "application/json", "X-Actor": "demo-analyst", "X-CardioInsight-Request": "1", ...(options.headers || {})},
     ...options,
@@ -176,6 +179,10 @@ async function api(path, options = {}) {
   const type = response.headers.get("content-type") || "";
   const payload = type.includes("application/json") ? await response.json() : null;
   if (!response.ok) throw new Error(payload?.error || `请求失败（${response.status}）`);
+  if(requestCase===state.caseId&&/^(PUT|PATCH|DELETE|POST)$/.test(options.method||"")&&/\/(beat-overrides|beat-templates|annotations|patient)(\/|$)/.test(path)){
+    state.reportComposer=null;
+    await clinicalWorkflow.refresh(requestCase).catch(()=>{clinicalWorkflow.receive(null);toast("修改已保存，但复核状态读取失败，请刷新后继续审核","error",6000);});
+  }
   return payload;
 }
 
@@ -279,7 +286,7 @@ function renderWorklist() {
       <td><div class="hr-range"><strong>${s.avg_hr ?? "—"}</strong> bpm<small>${s.min_hr ?? "—"}–${s.max_hr ?? "—"}</small></div></td>
       <td class="candidate-count"><span class="status-pill ${s.ventricular_beats ? "danger" : "neutral"}">V ${fmtNumber(s.ventricular_beats)}</span> <span class="status-pill neutral">S ${fmtNumber(s.supraventricular_beats)}</span></td>
       <td><span class="source-hint" title="${escapeHtml(sourceHint(item.conclusion))}">${escapeHtml(sourceHint(item.conclusion))}</span></td>
-      <td><button class="row-action" data-open-case="${item.case_id}">复核 →</button></td>
+      <td><button class="row-action" data-open-case="${item.case_id}">${item.review_workflow?.report_status==="reviewed"?"查看报告":item.review_workflow?.steps&&Object.keys(item.review_workflow.steps).length?"继续复核 →":"开始复核 →"}</button></td>
     </tr>`;
   }).join("") || `<tr><td colspan="7" class="empty-state">没有符合条件的病例</td></tr>`;
 }
@@ -325,28 +332,17 @@ function markWorkflowVisited(page) {
 }
 
 function renderCaseWorkflow() {
-  const workflow=$("#caseWorkflow");if(!workflow)return;
-  const visible=Boolean(state.caseId&&CASE_WORKFLOW_PAGES.has(state.currentPage));
-  workflow.hidden=!visible;document.body.classList.toggle("case-workflow-visible",visible);
-  if(!visible){$$('[data-workflow-nav]').forEach(item=>item.classList.remove("workflow-visited"));return;}
-  const metadata=state.caseData?.metadata||{};
-  $("#workflowCaseLabel").textContent=`${state.caseId} · ${metadata.name||"病例"}`;
-  const visited=CASE_WORKFLOW_STEPS.filter(step=>state.workflowVisited.has(step.page)).length,currentIndex=Math.max(0,CASE_WORKFLOW_STEPS.findIndex(step=>step.page===state.currentPage));
-  $("#workflowProgressLabel").textContent=`当前：${CASE_WORKFLOW_STEPS[currentIndex].label} · 已查看 ${visited} 个环节`;
-  $$('[data-workflow-page]').forEach(button=>{const page=button.dataset.workflowPage,current=page===state.currentPage,wasVisited=state.workflowVisited.has(page)&&!current;button.classList.toggle("current",current);button.classList.toggle("visited",wasVisited);button.setAttribute("aria-current",current?"step":"false");button.title=wasVisited?"已查看，可返回复核":"打开此复核步骤";});
-  $$('[data-workflow-nav]').forEach(item=>item.classList.toggle("workflow-visited",state.workflowVisited.has(item.dataset.workflowNav)&&item.dataset.workflowNav!==state.currentPage));
-  const current=CASE_WORKFLOW_STEPS[currentIndex],next=$("#workflowNext");next.textContent=current.page==="report"?"返回工作台":`下一步：${current.next} →`;next.setAttribute("aria-label",current.page==="report"?"返回病例工作台":`进入下一步：${current.next}`);
+  clinicalWorkflow.render();
 }
 
 function advanceCaseWorkflow() {
-  const index=CASE_WORKFLOW_STEPS.findIndex(step=>step.page===state.currentPage);
-  if(index<0)return;
-  markWorkflowVisited(state.currentPage);
-  if(index===CASE_WORKFLOW_STEPS.length-1){goPage("dashboard");return;}
-  goPage(CASE_WORKFLOW_STEPS[index+1].page);
+  if(state.currentPage==="report"&&state.report?.status==="reviewed"){goPage("dashboard");return;}
+  clinicalWorkflow.confirmStep();
 }
 
 async function selectCase(caseId, destination = "review") {
+  if(!clinicalWorkflow.allowLeave())return;
+  clinicalWorkflow.reset();
   const requestId=++state.caseRequestId;
   state.caseId = caseId;
   state.workflowVisited = loadCaseWorkflow(caseId);
@@ -372,6 +368,7 @@ async function selectCase(caseId, destination = "review") {
   state.editScatterData = state.editRr = state.editWaveform = null;
   state.editTemplates = state.editTemplateStrips = [];
   state.editBeatOverrides = new Map();
+  state.beatRelabelTarget = null;
   state.editSelectedSamples = new Set();
   state.editSelectionAnchor = null;
   state.editLibraryFilter = "all";
@@ -396,21 +393,27 @@ async function selectCase(caseId, destination = "review") {
 async function loadCase(caseId=state.caseId, requestId=null) {
   if (!caseId) return false;
   const activeRequestId=requestId??++state.caseRequestId;
-  const [caseData, trend] = await Promise.all([
+  const [caseData, trend, overrides] = await Promise.all([
     api(withPhi(`/api/cases/${caseId}`)),
     api(`/api/cases/${caseId}/trend?bin_seconds=60`),
+    api(`/api/cases/${caseId}/beat-overrides`),
   ]);
   if(activeRequestId!==state.caseRequestId||caseId!==state.caseId)return false;
   state.caseData = caseData;
+  for(const key of ["brady","tachy","pause"]){
+    if(caseData.beat_editor_settings?.[key]!==undefined)$("#"+key+"Threshold").value=caseData.beat_editor_settings[key];
+  }
   state.trend = trend;
+  state.editBeatOverrides = new Map((overrides.items || []).map(item => [Number(item.sample_index), item]));
   state.report = caseData.report_workflow;
+  clinicalWorkflow.receive(caseData.review_workflow);
   state.reportDirty = false;
   if (state.start === 0 && caseData.calculated.first_beat_time_s > state.duration) {
     state.start = Math.max(0, caseData.calculated.first_beat_time_s - 2);
   }
   if (state.sttStart === 0) state.sttStart = state.start;
   if (state.editStart === 0) state.editStart = state.start;
-  const m = caseData.metadata, s = caseData.summary;
+  const m = caseData.metadata, calc=caseData.calculated, s = {...caseData.summary,avg_hr:calc.avg_hr_from_rr,total_beats:calc.valid_beats,ventricular_beats:calc.group_counts?.["3"]||0,supraventricular_beats:calc.group_counts?.["2"]||0,longest_rr_s:(calc.longest_rr_ms||0)/1000};
   $("#caseHero").classList.remove("empty-case");
   $("#caseHero").innerHTML = `<div><p class="eyebrow">当前病例 · ${caseData.case_id}</p><h1>${escapeHtml(m.name)}　${escapeHtml(m.sex)}　${m.age ?? "—"} 岁</h1><p>${escapeHtml(m.clinical_diagnosis || "未提供临床诊断")} · ${escapeHtml(m.start_time)} · ${escapeHtml(m.duration_text)}</p></div><div class="case-meta-chips"><span>平均心率<strong>${s.avg_hr ?? "—"} bpm</strong></span><span>有效心搏<strong>${fmtNumber(s.total_beats)}</strong></span><span>V / S<strong>${fmtNumber(s.ventricular_beats)} / ${fmtNumber(s.supraventricular_beats)}</strong></span><span>最长 RR<strong>${s.longest_rr_s ?? "—"} s</strong></span></div>`;
   $("#trendCaseLabel").textContent = `${caseData.case_id} · ${m.name} · ${m.duration_text}`;
@@ -432,6 +435,7 @@ async function loadCase(caseId=state.caseId, requestId=null) {
 }
 
 function goPage(name) {
+  if(name!==state.currentPage&&state.reportDirty&&!clinicalWorkflow.allowLeave())return;
   if (state.demoReadonly && ["audit", "settings"].includes(name)) name = "dashboard";
   const needsCase = ["edit", "review", "trends", "stt", "events", "report"].includes(name);
   if (needsCase && !state.caseId) {
@@ -445,6 +449,7 @@ function goPage(name) {
   $$(".nav-item").forEach(item => item.classList.toggle("active", item.dataset.page === name));
   renderCaseWorkflow();
   window.scrollTo({top: 0, behavior: "instant"});
+  if (name === "dashboard") loadDashboard().catch(handleError);
   if (name === "review") {loadWaveform().catch(handleError);loadScatter().catch(handleError);}
   if (name === "trends") loadTrends().catch(handleError);
   if (name === "stt") loadStt().catch(handleError);
@@ -478,11 +483,11 @@ function updateWaveformModeUI() {
     button.setAttribute("aria-label", state.waveformExpanded ? "退出全屏多导联" : "全屏查看全部十二导联");
   }
   if (canvas) canvas.setAttribute("aria-label", state.waveformExpanded
-    ? "十二导联连续心电波形；双击或按 F 退出全屏，右键设置主界面导联，移动指针可查看时间、导联和电压坐标"
-    : "最多三导联连续心电波形；右键选择导联，双击或按 F 全屏查看全部十二导联，滚轮缩放时间轴，按住 Shift 滚轮缩放电压增益，移动指针可查看时间、导联和电压坐标");
+    ? "十二导联连续心电波形；右键最近心搏可重标注，双击或按 F 退出全屏，移动指针可查看时间、导联和电压坐标"
+    : "最多三导联连续心电波形；右键最近心搏可重标注，双击或按 F 全屏查看全部十二导联，滚轮缩放时间轴，按住 Shift 滚轮缩放电压增益，移动指针可查看时间、导联和电压坐标");
   if (hint) hint.textContent = state.waveformExpanded
-    ? "全部 12 导联 · 双击或按 F 退出 · 右键设置主界面导联 · 滚轮缩放 · 拖动平移"
-    : "右键选择最多 3 条导联 · 双击或按 F 全屏查看全部 12 导联 · 滚轮缩放 · 拖动平移 · 悬停查坐标";
+    ? "全部 12 导联 · 右键最近心搏重标注 · 双击或按 F 退出 · 滚轮缩放 · 拖动平移"
+    : "右键最近心搏重标注 · 双击或按 F 全屏查看全部 12 导联 · 滚轮缩放 · 拖动平移 · 悬停查坐标";
 }
 
 function updateLeadPickerState() {
@@ -586,15 +591,10 @@ async function loadWaveform() {
 
 function canvasContext(canvas, height = null) {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const isWaveform = canvas.id === "waveformCanvas";
-  let width;
-  if (isWaveform) {
-    canvas.style.width = "100%";
-    width = Math.max(720, Math.floor(canvas.getBoundingClientRect().width));
-  } else {
-    width = Math.max(300, canvas.parentElement.clientWidth - 2);
-    canvas.style.width = `${width}px`;
-  }
+  // Measure the CSS slot, not a minimum backing-store size: small strip cards
+  // must show the whole time window rather than clipping a 300 px canvas.
+  canvas.style.width = "100%";
+  const width = Math.max(1, Math.floor(canvas.getBoundingClientRect().width || canvas.parentElement.clientWidth - 2));
   const cssHeight = height || Number(canvas.getAttribute("height")) || 200;
   canvas.style.height = `${cssHeight}px`;
   canvas.width = Math.round(width * dpr);
@@ -652,13 +652,17 @@ function renderWaveform() {
   (state.waveform.beats || []).forEach(beat => {
     const x = (beat.time_s - state.waveform.start_s) / duration * width;
     if (x < 0 || x > width) return;
-    ctx.strokeStyle = BEAT_COLORS[beat.group] || "#777";
-    ctx.lineWidth = beat.group === 1 ? .6 : 1.25;
-    ctx.globalAlpha = beat.group === 1 ? .28 : .68;
+    const code=editEffectiveCode(beat),type=editBeatType(code),isNormal=code==="N";
+    ctx.strokeStyle = type.color;
+    ctx.lineWidth = isNormal ? .6 : 1.25;
+    ctx.globalAlpha = isNormal ? .28 : .68;
     ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
     ctx.globalAlpha = 1;
-    ctx.fillStyle = BEAT_COLORS[beat.group] || "#777"; ctx.font = "700 9px sans-serif";
-    ctx.fillText(beat.label, Math.min(x + 2, width - 12), 11);
+    ctx.fillStyle = type.color; ctx.font = "700 9px sans-serif";
+    ctx.fillText(code, Math.min(x + 2, width - 12), 11);
+    if((typeof beatEditor!=="undefined"&&beatEditor.selected(Number(beat.sample_index)))||(state.beatRelabelTarget?.surface==="review"&&Number(state.beatRelabelTarget.sample_index)===Number(beat.sample_index))){
+      ctx.fillStyle="rgba(239,140,33,.14)";ctx.fillRect(x-8,0,16,h);ctx.strokeStyle="#ef8c21";ctx.lineWidth=1.4;ctx.strokeRect(x-8+.5,.5,15,h-1);
+    }
   });
   if(state.scatterFocusedSample!==null){
     const focusedTime=state.scatterFocusedSample/200,focusedX=(focusedTime-state.waveform.start_s)/duration*width;
@@ -702,9 +706,9 @@ function renderOverview() {
 function renderVisibleEvents() {
   const beats = state.waveform?.beats || [];
   $("#visibleBeatCount").textContent = `${beats.length} 搏`;
-  const abnormal = beats.filter(item => item.group !== 1);
+  const abnormal = beats.filter(item => editEffectiveCode(item) !== "N");
   $("#visibleEventList").classList.toggle("empty-state", !abnormal.length);
-  $("#visibleEventList").innerHTML = abnormal.length ? abnormal.slice(0, 50).map(item => `<div class="mini-event" data-jump-time="${item.time_s}"><span class="event-marker ${item.label}"></span><div><strong>${escapeHtml(item.label === "噪声" ? "噪声 / 待确认" : `${item.label} 候选心搏`)}</strong><small>${formatElapsed(item.time_s)} · RR ${item.rr_ms} ms · ${item.hr ?? "—"} bpm</small></div></div>`).join("") : "当前窗口无异常候选";
+  $("#visibleEventList").innerHTML = abnormal.length ? abnormal.slice(0, 50).map(item => {const code=editEffectiveCode(item),manual=state.editBeatOverrides.has(Number(item.sample_index)),type=editBeatType(code);return `<div class="mini-event" data-jump-time="${item.time_s}"><span class="event-marker ${code}"></span><div><strong>${escapeHtml(`${code} · ${type.name}${manual?"（人工）":""}`)}</strong><small>${formatElapsed(item.time_s)} · RR ${item.rr_ms} ms · ${item.hr ?? "—"} bpm</small></div></div>`;}).join("") : "当前窗口无异常候选";
 }
 
 function renderAnnotations(items) {
@@ -980,7 +984,7 @@ function renderScatterSelectionList() {
   empty.hidden=true;virtual.hidden=false;virtual.style.height=`${samples.length*SCATTER_STRIP_HEIGHT}px`;
   const start=Math.max(0,Math.floor(viewport.scrollTop/SCATTER_STRIP_HEIGHT)-2),visibleCount=Math.ceil(viewport.clientHeight/SCATTER_STRIP_HEIGHT)+5,end=Math.min(samples.length,start+visibleCount);
   const visible=samples.slice(start,end);
-  virtual.innerHTML=visible.map((sample,offset)=>{const index=start+offset,strip=state.scatterStripCache.get(sample),failed=state.scatterStripFailed.has(sample),time=strip?.time_s??sample/200,label=strip?.label||"…",rr=strip?.rr_ms?`RR ${strip.rr_ms} ms`:failed?"加载失败":"波形加载中",active=sample===state.scatterFocusedSample;return `<button type="button" class="scatter-strip-card${active?" active":""}" style="top:${index*SCATTER_STRIP_HEIGHT+4}px" data-scatter-sample="${sample}" data-jump-time="${time}"${active?' aria-current="true"':""} aria-label="第 ${index+1} 个圈选片段，${formatElapsed(time)}，${label}，${rr}"><div class="scatter-strip-meta"><span class="scatter-beat-badge ${label}">${escapeHtml(label)}</span><strong>${formatElapsed(time)}</strong><small>${escapeHtml(rr)} · ${index+1}/${samples.length}</small></div>${strip?`<canvas data-strip-canvas="${sample}" aria-hidden="true"></canvas>`:`<div class="scatter-strip-placeholder">${failed?"片段加载失败，单击重试":"正在加载三导联波形…"}</div>`}</button>`;}).join("");
+  virtual.innerHTML=visible.map((sample,offset)=>{const index=start+offset,strip=state.scatterStripCache.get(sample),failed=state.scatterStripFailed.has(sample),time=strip?.time_s??sample/200,label=strip?editEffectiveCode(strip):"…",rr=strip?.rr_ms?`RR ${strip.rr_ms} ms`:failed?"加载失败":"波形加载中",active=sample===state.scatterFocusedSample;return `<button type="button" class="scatter-strip-card${active?" active":""}" style="top:${index*SCATTER_STRIP_HEIGHT+4}px" data-scatter-sample="${sample}" data-jump-time="${time}"${active?' aria-current="true"':""} aria-label="第 ${index+1} 个圈选片段，${formatElapsed(time)}，${label}，${rr}"><div class="scatter-strip-meta"><span class="scatter-beat-badge ${label}">${escapeHtml(label)}</span><strong>${formatElapsed(time)}</strong><small>${escapeHtml(rr)} · ${index+1}/${samples.length}</small></div>${strip?`<canvas data-strip-canvas="${sample}" aria-hidden="true"></canvas>`:`<div class="scatter-strip-placeholder">${failed?"片段加载失败，单击重试":"正在加载三导联波形…"}</div>`}</button>`;}).join("");
   if(focusedSample!==null){const replacement=$(`[data-scatter-sample="${focusedSample}"]`,virtual)||$("[data-scatter-sample]",virtual);if(replacement)replacement.focus({preventScroll:true});else viewport.focus({preventScroll:true});}
   $$('canvas[data-strip-canvas]',virtual).forEach(canvas=>{const strip=state.scatterStripCache.get(Number(canvas.dataset.stripCanvas));if(strip)renderStripCanvas(canvas,strip)});
   const missing=visible.filter(sample=>!state.scatterStripCache.has(sample)&&!state.scatterStripPending.has(sample)&&!state.scatterStripFailed.has(sample)).slice(0,16);
@@ -1258,14 +1262,79 @@ function renderEditScatter() {
 }
 
 function drawEditStrip(canvas,item) {
-  const height=editCanvasHeight(canvas,state.editMode==="library"?100:76,44),{ctx,width}=canvasContext(canvas,height),values=item?.leads?.[state.editLead]||Object.values(item?.leads||{})[0]||[],m={l:7,r:7,t:5,b:5},plotW=width-m.l-m.r,plotH=height-m.t-m.b;
+  const height=editCanvasHeight(canvas,state.editMode==="library"?100:76,12),{ctx,width}=canvasContext(canvas,height),values=item?.leads?.[state.editLead]||Object.values(item?.leads||{})[0]||[],m={l:7,r:7,t:3,b:3},plotW=width-m.l-m.r,plotH=height-m.t-m.b;
   ctx.clearRect(0,0,width,height);ctx.fillStyle="#fbfdfd";ctx.fillRect(0,0,width,height);ctx.strokeStyle="#e3eaed";[.25,.5,.75].forEach(f=>{const y=m.t+plotH*f;ctx.beginPath();ctx.moveTo(m.l,y);ctx.lineTo(width-m.r,y);ctx.stroke();});
   const magnitudes=values.map(value=>Math.abs(Number(value)||0)).sort((a,b)=>a-b),limit=Math.max(40,magnitudes[Math.floor(magnitudes.length*.96)]||40),scale=plotH*.42/limit,baseline=m.t+plotH*.53;ctx.strokeStyle="#263f49";ctx.lineWidth=1.05;ctx.beginPath();values.forEach((value,index)=>{const x=m.l+index/Math.max(1,values.length-1)*plotW,y=baseline-(Number(value)||0)*scale;index?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();const anchor=Math.max(0,Math.min(1,Number(item?.anchor_offset_s||.6)/Math.max(.001,Number(item?.duration_s)||1.6)));ctx.strokeStyle="#0b9290";ctx.beginPath();ctx.moveTo(m.l+anchor*plotW,m.t);ctx.lineTo(m.l+anchor*plotW,m.t+plotH);ctx.stroke();
 }
 
 function editSourceCode(item) {return ({1:"N",2:"S",3:"V",34:"X"})[Number(item?.group)]||String(item?.label||"O").toUpperCase();}
-function editEffectiveCode(item) {return state.editBeatOverrides.get(Number(item?.sample_index))?.class_code||editSourceCode(item);}
+function editEffectiveCode(item) {return item?.class_code||state.editBeatOverrides.get(Number(item?.sample_index))?.class_code||editSourceCode(item);}
+function editBeatType(code){const type=ECGBeatEngine.types[code];return type?{...type,color:BEAT_COLORS[type.group]||"#a37827"}:(EDIT_BEAT_TYPES[code]||EDIT_BEAT_TYPES.O);}
 function editSelected(sample) {return state.editSelectedSamples.has(Number(sample));}
+
+function refreshBeatOverrideViews() {
+  if(state.currentPage==="review"){renderWaveform();renderVisibleEvents();renderScatterSelectionList();}
+  if(state.currentPage==="edit"){renderEditGallery();renderEditWaveform();if(state.editMode==="library")renderEditLibrary();}
+}
+
+function closeBeatRelabelMenu({keepTarget=false}={}) {
+  if(typeof beatEditor!=="undefined")beatEditor.invalidate();
+  const menu=$("#beatRelabelMenu");if(!menu)return;
+  try{if(menu.matches(":popover-open"))menu.hidePopover();}catch(_){/* fallback uses hidden */}
+  menu.hidden=true;
+  if(!keepTarget){state.beatRelabelTarget=null;refreshBeatOverrideViews();}
+}
+
+function nearestBeatForRelabel(canvas,waveform,clientX,surface,maxDistance=44) {
+  const beats=waveform?.beats||[];if(!beats.length)return null;
+  const rect=canvas.getBoundingClientRect(),geometry=surface==="review"?{l:0,w:rect.width}:editWaveGeometry(rect.width,rect.height),localX=Math.max(geometry.l,Math.min(geometry.l+geometry.w,clientX-rect.left)),fraction=(localX-geometry.l)/Math.max(1,geometry.w),time=waveform.start_s+fraction*waveform.duration_s;
+  const nearest=beats.reduce((best,beat)=>!best||Math.abs(beat.time_s-time)<Math.abs(best.time_s-time)?beat:best,null),beatX=geometry.l+(nearest.time_s-waveform.start_s)/Math.max(.001,waveform.duration_s)*geometry.w;
+  return Math.abs(beatX-localX)<=maxDistance?nearest:null;
+}
+
+function positionBeatRelabelMenu(menu,clientX,clientY) {
+  const gap=8,proposedLeft=clientX+8,proposedTop=clientY+8;
+  menu.style.left=`${Math.max(12,Math.min(window.innerWidth-304,proposedLeft))}px`;
+  menu.style.top=`${Math.max(70,proposedTop)}px`;
+  requestAnimationFrame(()=>{const rect=menu.getBoundingClientRect();menu.style.left=`${Math.max(12,Math.min(window.innerWidth-rect.width-12,rect.left))}px`;menu.style.top=`${Math.max(70,Math.min(window.innerHeight-rect.height-gap,rect.top))}px`;});
+}
+
+function openBeatRelabelMenu(event,canvas,waveform,surface="review",keyboard=false) {
+  if(typeof beatEditor!=="undefined")return beatEditor.open(event,canvas,waveform,surface,keyboard);
+  if(!state.caseId||!canvas||!waveform)return;
+  const rect=canvas.getBoundingClientRect(),clientX=keyboard?rect.left+rect.width/2:event.clientX,clientY=keyboard?rect.top+Math.min(rect.height/2,180):event.clientY,nearest=nearestBeatForRelabel(canvas,waveform,clientX,surface,keyboard?Infinity:44);
+  if(!nearest){toast("请在心搏标记附近右击","error");return;}
+  const sample=Number(nearest.sample_index),sourceCode=editSourceCode(nearest),effectiveCode=editEffectiveCode(nearest),type=EDIT_BEAT_TYPES[effectiveCode]||EDIT_BEAT_TYPES.O,menu=$("#beatRelabelMenu");
+  closeBeatRelabelMenu({keepTarget:true});
+  state.beatRelabelTarget={caseId:state.caseId,sample_index:sample,time_s:Number(nearest.time_s),sourceCode,effectiveCode,surface};
+  if(surface!=="review"){state.editSelectedSamples=new Set([sample]);state.editSelectionAnchor=sample;state.editSelectedSample=sample;}
+  $("#beatRelabelCurrentCode").textContent=effectiveCode;
+  $("#beatRelabelCurrentCode").style.cssText=`background:${type.color}1f;color:${type.color}`;
+  $("#beatRelabelMeta").textContent=`${formatElapsedPrecise(nearest.time_s)} · RR ${nearest.rr_ms??"—"} ms · 当前 ${effectiveCode}`;
+  $("#beatRelabelSource").textContent=`源 EBI：${sourceCode}`;
+  $("#restoreBeatRelabel").disabled=!state.editBeatOverrides.has(sample);
+  $("#beatRelabelLeadSettings").hidden=surface!=="review";
+  $$('[data-beat-relabel-code]').forEach(button=>button.setAttribute("aria-current",String(button.dataset.beatRelabelCode===effectiveCode)));
+  menu.hidden=false;positionBeatRelabelMenu(menu,clientX,clientY);
+  try{if(!menu.matches(":popover-open"))menu.showPopover();}catch(_){/* fallback uses hidden */}
+  refreshBeatOverrideViews();
+  setTimeout(()=>($(`[data-beat-relabel-code="${effectiveCode}"]`,menu)||$('[data-beat-relabel-code]',menu))?.focus({preventScroll:true}),0);
+}
+
+async function applyBeatRelabelTarget(classCode) {
+  const target=state.beatRelabelTarget,type=EDIT_BEAT_TYPES[classCode];if(!target||!type)return;
+  const result=await api(`/api/cases/${state.caseId}/beat-overrides`,{method:"PUT",body:JSON.stringify({sample_indices:[target.sample_index],class_code:type.code})});
+  if(target.caseId!==state.caseId)return;
+  (result.items||[]).forEach(item=>state.editBeatOverrides.set(Number(item.sample_index),item));
+  closeBeatRelabelMenu();toast(`已人工改为 ${type.code} · ${type.name}`);
+}
+
+async function restoreBeatRelabelTarget() {
+  const target=state.beatRelabelTarget;if(!target)return;
+  const result=await api(`/api/cases/${state.caseId}/beat-overrides`,{method:"DELETE",body:JSON.stringify({sample_indices:[target.sample_index]})});
+  if(target.caseId!==state.caseId)return;
+  state.editBeatOverrides.delete(target.sample_index);closeBeatRelabelMenu();toast(result.changed?`已恢复源类型 ${target.sourceCode}`:"当前心搏已是源类型");
+}
 
 function selectEditSample(sample,time,event=null,items=state.editTemplateStrips) {
   const value=Number(sample),ordered=items.map(item=>Number(item.sample_index));
@@ -1273,19 +1342,25 @@ function selectEditSample(sample,time,event=null,items=state.editTemplateStrips)
     const start=ordered.indexOf(state.editSelectionAnchor),end=ordered.indexOf(value);for(const item of ordered.slice(Math.min(start,end),Math.max(start,end)+1))state.editSelectedSamples.add(item);
   }else if(event&&(event.metaKey||event.ctrlKey)){state.editSelectedSamples.has(value)?state.editSelectedSamples.delete(value):state.editSelectedSamples.add(value);state.editSelectionAnchor=value;
   }else{state.editSelectedSamples=new Set([value]);state.editSelectionAnchor=value;}
-  state.editSelectedSample=value;renderEditGallery();renderEditWaveform();renderEditLibrary();if(Number.isFinite(Number(time)))setEditStart(Number(time)-state.editDuration*.35);
+  state.editSelectedSample=value;renderEditGallery();renderEditWaveform();renderEditLibrary();
+  if(Number.isFinite(Number(time))&&(Number(time)<state.editStart||Number(time)>state.editStart+state.editDuration))setEditStart(Number(time)-state.editDuration*.35);
 }
 
 async function applyEditBeatType(classCode) {
+  if(typeof beatEditor!=="undefined")return beatEditor.quickEdit(classCode);
   if(!state.caseId||!state.editSelectedSamples.size)return toast("请先选中一个或多个心搏","error");
   const type=EDIT_BEAT_TYPES[classCode];if(!type)return;
-  const samples=[...state.editSelectedSamples];const result=await api(`/api/cases/${state.caseId}/beat-overrides`,{method:"PUT",body:JSON.stringify({sample_indices:samples,class_code:type.code})});
-  (result.items||[]).forEach(item=>state.editBeatOverrides.set(Number(item.sample_index),item));renderEditGallery();renderEditWaveform();renderEditLibrary();toast(`${samples.length} 搏已人工改为 ${type.code} · ${type.name}`);
+  const caseId=state.caseId,samples=[...state.editSelectedSamples];const result=await api(`/api/cases/${caseId}/beat-overrides`,{method:"PUT",body:JSON.stringify({sample_indices:samples,class_code:type.code})});
+  if(caseId!==state.caseId)return;
+  (result.items||[]).forEach(item=>state.editBeatOverrides.set(Number(item.sample_index),item));refreshBeatOverrideViews();toast(`${samples.length} 搏已人工改为 ${type.code} · ${type.name}`);
 }
 
 async function restoreEditBeatType() {
+  if(typeof beatEditor!=="undefined")return beatEditor.restore();
   if(!state.caseId||!state.editSelectedSamples.size)return toast("请先选中心搏","error");
-  const samples=[...state.editSelectedSamples];const result=await api(`/api/cases/${state.caseId}/beat-overrides`,{method:"DELETE",body:JSON.stringify({sample_indices:samples})});samples.forEach(sample=>state.editBeatOverrides.delete(sample));renderEditGallery();renderEditWaveform();renderEditLibrary();toast(`已恢复 ${result.changed||0} 搏的源 EBI 类型`);
+  const caseId=state.caseId,samples=[...state.editSelectedSamples];const result=await api(`/api/cases/${caseId}/beat-overrides`,{method:"DELETE",body:JSON.stringify({sample_indices:samples})});
+  if(caseId!==state.caseId)return;
+  samples.forEach(sample=>state.editBeatOverrides.delete(sample));refreshBeatOverrideViews();toast(`已恢复 ${result.changed||0} 搏的源 EBI 类型`);
 }
 
 function renderEditGallery() {
@@ -1343,7 +1418,7 @@ function renderEditLibraryMatrix() {
 }
 
 function renderEditLibraryNavigator() {
-  const canvas=$("#editLibraryNavigatorCanvas"),wave=state.editWaveform;if(!canvas||!wave)return;const values=wave.leads?.[state.editLead]||Object.values(wave.leads||{})[0]||[],{ctx,width,height}=canvasContext(canvas,42),middle=height/2,magnitude=Math.max(50,...values.filter((_,i)=>i%20===0).map(value=>Math.abs(Number(value)||0))),scale=height*.36/magnitude;ctx.clearRect(0,0,width,height);ctx.fillStyle="#f2f6f7";ctx.fillRect(0,0,width,height);ctx.strokeStyle="#2e5d68";ctx.beginPath();values.forEach((value,index)=>{const x=index/Math.max(1,values.length-1)*width,y=middle-Number(value||0)*scale;index?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();ctx.strokeStyle="#0b9290";ctx.strokeRect(.5,.5,width-1,height-1);
+  const canvas=$("#editLibraryNavigatorCanvas"),wave=state.editWaveform;if(!canvas||!wave)return;const values=wave.leads?.[state.editLead]||Object.values(wave.leads||{})[0]||[],{ctx,width,height}=canvasContext(canvas,editCanvasHeight(canvas,34,20)),middle=height/2,magnitude=Math.max(50,...values.filter((_,i)=>i%20===0).map(value=>Math.abs(Number(value)||0))),scale=height*.36/magnitude;ctx.clearRect(0,0,width,height);ctx.fillStyle="#f2f6f7";ctx.fillRect(0,0,width,height);ctx.strokeStyle="#2e5d68";ctx.beginPath();values.forEach((value,index)=>{const x=index/Math.max(1,values.length-1)*width,y=middle-Number(value||0)*scale;index?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();ctx.strokeStyle="#0b9290";ctx.strokeRect(.5,.5,width-1,height-1);
 }
 
 function renderEditLibrary() {
@@ -1399,7 +1474,10 @@ function bindEditInteraction() {
   canvas.addEventListener("pointermove",event=>{if(!state.editWaveform)return;const rect=canvas.getBoundingClientRect(),g=editWaveGeometry(rect.width,rect.height),fraction=fractionFor(event),leads=Object.keys(state.editWaveform.leads||{}),localY=Math.max(g.t,Math.min(g.t+g.h,event.clientY-rect.top)),leadIndex=Math.max(0,Math.min(leads.length-1,Math.floor((localY-g.t)/(g.h/Math.max(1,leads.length))))),lead=leads[leadIndex],values=state.editWaveform.leads[lead]||[],index=Math.max(0,Math.min(values.length-1,Math.round(fraction*Math.max(0,values.length-1)))),value=Number(values[index]),time=state.editWaveform.start_s+fraction*state.editWaveform.duration_s;tooltip.hidden=false;tooltip.classList.toggle("flip",event.clientX-rect.left>rect.width-190);tooltip.style.left=`${event.clientX-rect.left}px`;tooltip.style.top=`${Math.max(5,localY-42)}px`;tooltip.textContent=`${formatElapsedPrecise(time)}\n${lead||"—"}  ${Number.isFinite(value)?`${value.toFixed(0)} 设备单位`:"—"}`;});canvas.addEventListener("pointerleave",()=>{tooltip.hidden=true;});
   const libraryCanvas=$("#editLibraryWaveformCanvas"),libraryTooltip=$("#editLibraryWaveTooltip");
   libraryCanvas.addEventListener("pointermove",event=>{if(!state.editWaveform)return;const rect=libraryCanvas.getBoundingClientRect(),g=editWaveGeometry(rect.width,rect.height),fraction=Math.max(0,Math.min(1,(event.clientX-rect.left-g.l)/g.w)),time=state.editWaveform.start_s+fraction*state.editWaveform.duration_s,nearest=(state.editWaveform.beats||[]).reduce((best,beat)=>!best||Math.abs(beat.time_s-time)<Math.abs(best.time_s-time)?beat:best,null);libraryTooltip.hidden=false;libraryTooltip.style.left=`${event.clientX-rect.left}px`;libraryTooltip.style.top="8px";libraryTooltip.textContent=`${formatElapsedPrecise(time)}${nearest?`\n最近心搏 ${editEffectiveCode(nearest)} · 点击选中`:""}`;});libraryCanvas.addEventListener("pointerleave",()=>{libraryTooltip.hidden=true;});
-  [canvas,libraryCanvas].forEach(waveCanvas=>waveCanvas.addEventListener("click",event=>{if(!state.editWaveform?.beats?.length)return;const rect=waveCanvas.getBoundingClientRect(),g=editWaveGeometry(rect.width,rect.height),fraction=Math.max(0,Math.min(1,(event.clientX-rect.left-g.l)/g.w)),time=state.editWaveform.start_s+fraction*state.editWaveform.duration_s,nearest=state.editWaveform.beats.reduce((best,beat)=>!best||Math.abs(beat.time_s-time)<Math.abs(best.time_s-time)?beat:best,null);if(nearest)selectEditSample(nearest.sample_index,nearest.time_s,event,state.editWaveform.beats);}));
+  [canvas,libraryCanvas].forEach(waveCanvas=>{
+    waveCanvas.addEventListener("click",event=>{if(!state.editWaveform?.beats?.length)return;const rect=waveCanvas.getBoundingClientRect(),g=editWaveGeometry(rect.width,rect.height),fraction=Math.max(0,Math.min(1,(event.clientX-rect.left-g.l)/g.w)),time=state.editWaveform.start_s+fraction*state.editWaveform.duration_s,nearest=state.editWaveform.beats.reduce((best,beat)=>!best||Math.abs(beat.time_s-time)<Math.abs(best.time_s-time)?beat:best,null);if(nearest)selectEditSample(nearest.sample_index,nearest.time_s,event,state.editWaveform.beats);});
+    waveCanvas.addEventListener("contextmenu",event=>{event.preventDefault();(waveCanvas===canvas?tooltip:libraryTooltip).hidden=true;openBeatRelabelMenu(event,waveCanvas,state.editWaveform,"edit");waveCanvas.focus({preventScroll:true});});
+  });
 
   const morphCanvas=$("#editDensityPrimary"),morphWrap=$("#editMorphCanvasWrap"),morphTooltip=$("#editMorphTooltip");let morphPointer=null,morphStart={x:0,y:0},morphCurrent={x:0,y:0};const morphPosition=event=>{const rect=morphCanvas.getBoundingClientRect();return {x:Math.max(0,Math.min(1,(event.clientX-rect.left)/Math.max(1,rect.width))),y:Math.max(0,Math.min(1,(event.clientY-rect.top)/Math.max(1,rect.height)))};};
   morphCanvas.addEventListener("pointerdown",event=>{if(morphPointer!==null||!state.editTemplateStrips.length||event.pointerType==="mouse"&&event.button!==0)return;event.preventDefault();morphPointer=event.pointerId;morphStart=morphCurrent=morphPosition(event);state.editMorphDraft={x1:morphStart.x,y1:morphStart.y,x2:morphStart.x,y2:morphStart.y};try{morphCanvas.setPointerCapture(event.pointerId)}catch(_){/* capture is progressive enhancement */}morphWrap.classList.add("selecting");morphTooltip.hidden=true;renderEditDensity();});
@@ -1412,13 +1490,15 @@ function bindEditInteraction() {
 
 async function loadEvents(type = state.eventType) {
   if (!state.caseId) return;
+  if(type!==state.eventType)clinicalWorkflow.resetEvents();
   const requestId=++state.eventsRequestId,caseId=state.caseId;
   state.eventType=type;
   $$("[data-event-type]").forEach(button=>button.classList.toggle("active",button.dataset.eventType===type));
-  const p=new URLSearchParams({type,limit:500,brady:$("#bradyThreshold").value,tachy:$("#tachyThreshold").value,pause:$("#pauseThreshold").value});
+  const p=new URLSearchParams({type,offset:clinicalWorkflow.offset,limit:100,brady:$("#bradyThreshold").value,tachy:$("#tachyThreshold").value,pause:$("#pauseThreshold").value});
   const events=await api(`/api/cases/${caseId}/events?${p}`);
   if(requestId!==state.eventsRequestId||caseId!==state.caseId)return;
   state.events=events;renderEvents();
+  clinicalWorkflow.updatedEvents();
 }
 
 function renderEvents() {
@@ -1426,7 +1506,7 @@ function renderEvents() {
   if(Object.prototype.hasOwnProperty.call(state.events.summary,"AF"))labels.AF="房颤样候选";
   $("#eventSummary").innerHTML=Object.entries(labels).map(([key,label])=>`<article class="event-summary-card"><span>${label}</span><strong>${fmtNumber(state.events.summary[key]||0)}</strong></article>`).join("");
   $("#eventTotal").textContent=`显示 ${state.events.items.length} / ${fmtNumber(state.events.total)}`;
-  $("#eventTableBody").innerHTML=state.events.items.map(item=>`<tr><td>${formatElapsed(item.time_s)}</td><td><span class="severity-dot ${item.severity}"></span>${escapeHtml(item.label)}</td><td>${item.hr??"—"} bpm / ${item.rr_ms} ms</td><td>${item.group}</td><td><span class="status-pill warning">${item.review_status}</span></td><td><button class="row-action" data-jump-time="${item.time_s}">查看波形</button></td></tr>`).join("")||`<tr><td colspan="6" class="empty-state">当前筛选没有候选事件</td></tr>`;
+  $("#eventTableBody").innerHTML=state.events.items.map(item=>`<tr><td>${formatElapsed(item.time_s)}</td><td><span class="severity-dot ${item.severity}"></span>${escapeHtml(item.label)}</td><td>${item.hr??"—"} bpm / ${item.rr_ms} ms</td><td>${item.group}</td><td>${clinicalWorkflow.eventCell(item)}</td><td><button class="row-action" data-jump-time="${item.time_s}">查看波形</button></td></tr>`).join("")||`<tr><td colspan="6" class="empty-state">当前筛选没有候选事件</td></tr>`;
 }
 
 function normalizedReportComposition(value=state.report?.composition) {
@@ -1445,12 +1525,12 @@ function normalizedReportComposition(value=state.report?.composition) {
 }
 
 function reportLocalCompositionKey(){return `cardioinsight.report-composition.${state.caseId||"none"}`;}
-function loadLocalReportComposition(){if(!state.demoReadonly)return null;try{return JSON.parse(localStorage.getItem(reportLocalCompositionKey())||"null")}catch(_){return null}}
+function loadLocalReportComposition(){if(!state.demoReadonly||clinicalWorkflow.writable())return null;try{return JSON.parse(localStorage.getItem(reportLocalCompositionKey())||"null")}catch(_){return null}}
 function reportPage(key){return REPORT_PAGES.find(item=>item.key===key)||REPORT_PAGES[1];}
 function reportIncludedPages(){return state.reportComposition?.included_pages||[];}
 
 function markReportCompositionDirty(message="有未保存的编排修改") {
-  if(state.demoReadonly){try{localStorage.setItem(reportLocalCompositionKey(),JSON.stringify(state.reportComposition))}catch(_){/* unavailable */}$("#reportSaveState").textContent="编排已保存到当前浏览器";}
+  if(state.demoReadonly&&!clinicalWorkflow.writable()){$("#reportSaveState").textContent="只读编排预览";}
   else{state.reportDirty=true;$("#reportSaveState").textContent=message;}
 }
 
@@ -1463,7 +1543,7 @@ function renderReport() {
   $("#reportVersion").textContent=`v${state.report.version}`;
   if(!state.reportDirty)$("#conclusionEditor").value=state.report.conclusion||"";updateConclusionCount();
   if(!state.reportDirty)$("#reportSaveState").textContent=state.demoReadonly?"编排可保存在当前浏览器":state.report.updated_at?`上次保存 ${state.report.updated_at}`:"源报告导入，尚未编辑";
-  const stats=[["总心搏",fmtNumber(source.total_beats),`有效 ${fmtNumber(calc.valid_beats)}`],["平均心率",`${source.avg_hr??"—"} bpm`,`RR重算 ${calc.avg_hr_from_rr??"—"}`],["心率范围",`${source.min_hr??"—"}–${source.max_hr??"—"} bpm`,"源报告"],["最长 RR",`${source.longest_rr_s??"—"} s`,`重算 ${calc.longest_rr_ms?`${(calc.longest_rr_ms/1000).toFixed(3)} s`:"—"}`],["室性心搏",fmtNumber(source.ventricular_beats),`源分组 3 · ${fmtNumber(calc.group_counts?.["3"]||0)}`],["室上性心搏",fmtNumber(source.supraventricular_beats),`源分组 2 · ${fmtNumber(calc.group_counts?.["2"]||0)}`],["伪差 / 排除",fmtNumber(calc.group_counts?.["34"]||0),"不计入有效心搏"]];
+  const stats=[["有效心搏",fmtNumber(calc.valid_beats),`源报告 ${fmtNumber(source.total_beats)}`],["平均心率",`${calc.avg_hr_from_rr??"—"} bpm`,`源报告 ${source.avg_hr??"—"}`],["心率范围",`${source.min_hr??"—"}–${source.max_hr??"—"} bpm`,"源报告分钟统计，非逐搏极值"],["最长 RR",`${calc.longest_rr_ms==null?"—":(calc.longest_rr_ms/1000).toFixed(3)} s`,`源报告 ${source.longest_rr_s??"—"} s`],["室性心搏",fmtNumber(calc.group_counts?.["3"]||0),`源报告 ${fmtNumber(source.ventricular_beats)}`],["室上性心搏",fmtNumber(calc.group_counts?.["2"]||0),`源报告 ${fmtNumber(source.supraventricular_beats)}`],["伪差 / 排除",fmtNumber(calc.group_counts?.["34"]||0),"不计入有效心搏"]];
   $("#reportStats").innerHTML=stats.map(([label,value,note])=>`<div class="report-stat"><span>${label}</span><strong>${value}</strong><small>${note}</small></div>`).join("");
   const eventSummary=state.reportComposer?.events?.summary||{};
   const eventRows=[['tachy','最快心率'],['brady','最慢心率'],['V','室性候选'],['S','室上性候选'],['AF','房颤样候选'],['pause','长 RR'],['noise','其他 / 噪声']];
@@ -1478,7 +1558,7 @@ function renderReport() {
   const included=composition.included_pages.map(reportPage);$("#reportActivePageSelect").innerHTML=included.map(item=>`<option value="${item.key}">${escapeHtml(item.label)}</option>`).join("");$("#reportActivePageSelect").value=composition.active_page;
   $("#reportPaperSize").value=composition.paper.size;$("#reportPaperOrientation").value=composition.paper.orientation;$("#reportPaperSpeed").value=composition.paper.speed;$("#reportPaperGain").value=composition.paper.gain;$("#reportShowGrid").checked=composition.paper.show_grid;$("#reportShowLabels").checked=composition.paper.show_labels;
   const sourceSelect=$("#reportPageSelect"),pageCount=Number(state.caseData.technical.report_pages)||0;sourceSelect.innerHTML=pageCount?Array.from({length:pageCount},(_,i)=>`<option value="${i}">原报告第 ${i+1} 页</option>`).join(""):`<option>无原报告影像</option>`;if(pageCount){sourceSelect.value="0";showReportPage(0);}
-  renderReportHrvSummary();renderReportPreview();
+  renderReportHrvSummary();renderReportPreview();clinicalWorkflow.render();
 }
 
 async function loadReport() {
@@ -1487,7 +1567,7 @@ async function loadReport() {
   renderReport();
   if(state.reportComposer?.caseId===caseId){renderReport();return;}
   $("#reportRenderStatus").textContent="读取数据";
-  const start=Math.max(0,Math.min(Number(state.caseData.calculated?.longest_rr_time_s||state.caseData.calculated?.first_beat_time_s||0)-2,Math.max(0,state.caseData.technical.duration_seconds_raw-8)));
+  const start=Math.max(0,Math.min(Number(state.caseData.manual_longest?.time_s||state.caseData.calculated?.longest_rr_time_s||state.caseData.calculated?.first_beat_time_s||0)-2,Math.max(0,state.caseData.technical.duration_seconds_raw-8)));
   const [hrv,events,scatter,scatterNn,waveform]=await Promise.all([
     api(`/api/cases/${caseId}/hrv`),api(`/api/cases/${caseId}/events?type=all&limit=160`),api(`/api/cases/${caseId}/scatter?mode=rr&max_points=5000`),
     api(`/api/cases/${caseId}/scatter?mode=nn&max_points=5000`),
@@ -1495,14 +1575,20 @@ async function loadReport() {
   ]);
   if(requestId!==state.reportRequestId||caseId!==state.caseId)return;
   const candidates=[];const seen=new Set();
+  if(state.caseData.manual_longest){const item=state.caseData.manual_longest;candidates.push({...item,report_caption:"医生指定最长 RR 图条"});seen.add(item.sample_index)}
+  for(const item of clinicalWorkflow.retained().slice(0,20)){
+    candidates.push({...item,time_s:item.sample_index/200,report_caption:"医生保留 · "+item.type});seen.add(item.sample_index);
+  }
   const extremes=[];
   for(const [kind,data] of [["RR",scatter],["NN",scatterNn]]){const points=(data.points||[]).filter(point=>Number.isFinite(point.rr_ms));if(points.length){extremes.push({...points.reduce((best,item)=>item.rr_ms<best.rr_ms?item:best),report_caption:`${kind} 最快`});extremes.push({...points.reduce((best,item)=>item.rr_ms>best.rr_ms?item:best),report_caption:`${kind} 最慢`});}}
   for(const item of extremes){if(!seen.has(item.sample_index)){candidates.push(item);seen.add(item.sample_index)}}
-  for(const item of events.items||[]){if(!seen.has(item.sample_index)){candidates.push(item);seen.add(item.sample_index)}if(candidates.length>=8)break;}
-  for(const item of waveform.beats||[]){if(!seen.has(item.sample_index)){candidates.push(item);seen.add(item.sample_index)}if(candidates.length>=8)break;}
+  for(const item of events.items||[]){if(clinicalWorkflow.decision(item)!=="excluded"&&!seen.has(item.sample_index)){candidates.push({...item,report_caption:"源候选 · "+item.type});seen.add(item.sample_index)}if(candidates.length>=8)break;}
+  for(const item of waveform.beats||[]){if(item.kind==="nonbeat")continue;if(!seen.has(item.sample_index)){candidates.push(item);seen.add(item.sample_index)}if(candidates.length>=8)break;}
   let strips={items:[]};
   if(candidates.length){strips=await api(`/api/cases/${caseId}/waveform-strips`,{method:"POST",body:JSON.stringify({sample_indices:candidates.map(item=>item.sample_index),leads:["I","II","III","V1","V3","V5"],pre_s:.8,post_s:1.8,max_points:520,filter:"display"})});}
   if(requestId!==state.reportRequestId||caseId!==state.caseId)return;
+  const captions=new Map(candidates.map(item=>[item.sample_index,item.report_caption]));
+  strips.items=(strips.items||[]).map(item=>({...item,report_caption:captions.get(item.sample_index)}));
   state.reportComposer={caseId,hrv,events,scatter,scatterNn,waveform,strips,extremes};
   renderReport();
 }
@@ -1558,7 +1644,7 @@ function reportCoverPageHtml(metadata,summary,calculated){
   const fact=(label,value,wide="")=>`<div class="report-patient-fact ${wide}"><span>${label}</span><strong>${reportCoverValue(value)}</strong></div>`;
   const metric=(label,value,note="")=>`<div><dt>${label}</dt><dd>${value}</dd>${note?`<small>${note}</small>`:""}</div>`;
   return `<div class="report-cover-page"><article class="report-cover-sheet">
-    <header class="report-document-title"><h2>动态心电图检测报告</h2><p>检查信息</p></header>
+    <header class="report-document-title"><h2>动态心电图检测报告</h2><p>源报告摘要 · 未随逐搏修订更新</p></header>
     <section class="report-patient-grid" aria-label="检查信息">
       ${fact("姓名",metadata.name)}${fact("性别",metadata.sex)}${fact("年龄",metadata.age===null||metadata.age===undefined?null:`${metadata.age} 岁`)}${fact("起搏器",metadata.pacemaker)}
       ${fact("患者 ID",metadata.patient_id||state.caseData.case_id)}${fact("床位",metadata.bed)}${fact("记录时间",metadata.start_time,"span-2")}
@@ -1610,7 +1696,7 @@ function reportPageHtml(page){
   const m=state.caseData.metadata,s=state.caseData.summary,c=state.caseData.calculated;
   if(!page.available)return reportUnavailableBody(page);
   if(page.key==="cover")return reportCoverPageHtml(m,s,c);
-  if(page.key==="summary")return `<div class="report-summary-page"><div class="report-dual-trends"><figure><figcaption>全程心率趋势</figcaption><canvas id="reportTrendCanvas" height="54"></canvas></figure><figure><figcaption>RR 间期趋势</figcaption><canvas id="reportRrTrendCanvas" height="42"></canvas></figure></div><div class="report-summary-workspace"><section class="report-summary-gallery"><header><div><strong>代表图条</strong><small>最快、最慢与主要候选事件</small></div><span>点击图条切换右侧全导联</span></header><div class="report-strip-grid report-strip-grid-compact">${reportStripCards(4,null,reportFastSlowCandidates(),"compact")}</div></section><section class="report-detail-sheet"><header><div><strong>同步全导联复核</strong><small>${formatElapsed(state.reportComposer.waveform.start_s)} · ${state.reportComposer.waveform.filter}</small></div><span>${escapeHtml(state.reportComposition.paper.speed)} · ${escapeHtml(state.reportComposition.paper.gain)}</span></header><canvas id="reportSummaryTwelveCanvas" height="360"></canvas><footer>当前图条仅用于报告编排与医生复核 · 幅值标定状态见病例技术说明</footer></section></div><dl class="report-summary-bottom"><div><dt>总心搏</dt><dd>${fmtNumber(s.total_beats)}</dd></div><div><dt>平均心率</dt><dd>${s.avg_hr??"—"} bpm</dd></div><div><dt>V / S</dt><dd>${fmtNumber(s.ventricular_beats)} / ${fmtNumber(s.supraventricular_beats)}</dd></div><div><dt>最长 RR</dt><dd>${s.longest_rr_s??"—"} s</dd></div></dl></div>`;
+  if(page.key==="summary")return `<div class="report-summary-page"><div class="report-dual-trends"><figure><figcaption>全程心率趋势</figcaption><canvas id="reportTrendCanvas" height="54"></canvas></figure><figure><figcaption>RR 间期趋势</figcaption><canvas id="reportRrTrendCanvas" height="42"></canvas></figure></div><div class="report-summary-workspace"><section class="report-summary-gallery"><header><div><strong>代表图条</strong><small>最快、最慢与主要候选事件</small></div><span>点击图条切换右侧全导联</span></header><div class="report-strip-grid report-strip-grid-compact">${reportStripCards(4,null,reportFastSlowCandidates(),"compact")}</div></section><section class="report-detail-sheet"><header><div><strong>同步全导联复核</strong><small>${formatElapsed(state.reportComposer.waveform.start_s)} · ${state.reportComposer.waveform.filter}</small></div><span>${escapeHtml(state.reportComposition.paper.speed)} · ${escapeHtml(state.reportComposition.paper.gain)}</span></header><canvas id="reportSummaryTwelveCanvas" height="360"></canvas><footer>当前图条仅用于报告编排与医生复核 · 幅值标定状态见病例技术说明</footer></section></div><dl class="report-summary-bottom"><div><dt>修订有效心搏</dt><dd>${fmtNumber(c.valid_beats)}</dd></div><div><dt>平均心率</dt><dd>${c.avg_hr_from_rr??"—"} bpm</dd></div><div><dt>V / S</dt><dd>${fmtNumber(c.group_counts?.["3"]||0)} / ${fmtNumber(c.group_counts?.["2"]||0)}</dd></div><div><dt>最长 RR</dt><dd>${c.longest_rr_ms==null?"—":(c.longest_rr_ms/1000).toFixed(3)} s</dd></div></dl></div>`;
   if(page.key==="hourly"){const points=state.trend?.points||[],rows=points.slice(0,24);return `<div class="report-hourly-page"><canvas id="reportHourlyCanvas" height="155"></canvas><div class="report-hourly-table"><table><thead><tr><th>时段</th><th>平均心率</th><th>记录范围</th></tr></thead><tbody>${rows.map((point,i)=>`<tr><td>${formatElapsed(point.time_s,false)}</td><td>${point.hr??"—"} bpm</td><td>${i===0?"起始时段":"连续统计"}</td></tr>`).join("")}</tbody></table></div></div>`;}
   if(page.key==="scatter")return `<div class="report-scatter-page"><div><strong>R‑R 散点图</strong><small>${fmtNumber(state.reportComposer.scatter?.candidate_count||0)} 个候选点</small></div><canvas id="reportScatterCanvas" height="430"></canvas></div>`;
   if(page.key==="event_strips")return reportEventPageHtml();
@@ -1621,7 +1707,7 @@ function reportPageHtml(page){
 
 function reportFastSlowCandidates(){const mode=state.reportComposition?.fast_slow_mode||"rr",allowed=mode==="both"?["RR","NN"]:[mode.toUpperCase()],items=(state.reportComposer?.extremes||[]).filter(item=>allowed.some(kind=>item.report_caption.startsWith(kind))),merged=new Map();for(const item of items){const previous=merged.get(item.sample_index);merged.set(item.sample_index,previous?{...item,report_caption:`${previous.report_caption.split(" ")[0]} / ${item.report_caption}`} : item)}return [...merged.values()];}
 function reportEventPageHtml(){const all=state.reportComposer?.events?.items||[],filter=state.reportEventFilter,items=filter==="all"?all:all.filter(item=>item.type===filter),extremes=reportFastSlowCandidates();return `<div class="report-event-page"><aside><div><strong>事件索引</strong><small>${fmtNumber(items.length)} 条候选</small></div>${items.slice(0,28).map((item,index)=>`<button type="button" data-report-event-sample="${item.sample_index}" class="${state.reportFocusedSample===item.sample_index?"active":""}"><span>${index+1}</span><strong>${formatElapsed(item.time_s)}</strong><em>${escapeHtml(item.label)}</em></button>`).join("")||`<p>当前类别没有候选事件</p>`}</aside><div class="report-event-trends report-dual-trends"><figure><figcaption>全程心率趋势</figcaption><canvas id="reportTrendCanvas" height="54"></canvas></figure><figure><figcaption>事件定位趋势</figcaption><canvas id="reportRrTrendCanvas" height="42"></canvas></figure></div><section class="report-event-gallery"><header><strong>代表图条</strong><small>点击后在右侧同步展开</small></header><div class="report-strip-grid report-strip-grid-event">${reportStripCards(6,null,extremes,"event")}</div></section><section class="report-detail-sheet report-event-detail"><header><div><strong>全导联事件页</strong><small>${formatElapsed(state.reportComposer.waveform.start_s)} · 8 秒</small></div><span>12 导联同步</span></header><canvas id="reportEventTwelveCanvas" height="500"></canvas><footer>${escapeHtml(state.reportComposition.paper.speed)} · ${escapeHtml(state.reportComposition.paper.gain)} · 当前粉色定位带对应选中事件</footer></section></div>`;}
-function reportStripCards(limit=6,filterSamples=null,priority=[],variant="standard"){let strips=state.reportComposer?.strips?.items||[],captionBySample=new Map(priority.map(item=>[item.sample_index,item.report_caption]));if(filterSamples)strips=strips.filter(item=>filterSamples.includes(item.sample_index));if(priority.length){const rank=new Map(priority.map((item,index)=>[item.sample_index,index]));strips=[...strips].sort((a,b)=>(rank.get(a.sample_index)??999)-(rank.get(b.sample_index)??999));}const leadCaption="I · II · III · V1 · V3 · V5";return strips.slice(0,limit).map((item,index)=>`<article class="report-strip-card report-strip-card-${variant}${state.reportFocusedSample===item.sample_index?" active":""}" data-report-strip-sample="${item.sample_index}"><header><strong>${escapeHtml(captionBySample.get(item.sample_index)||item.label||"N")}</strong><span>${formatElapsed(item.time_s)} · ${item.hr??"—"} bpm</span></header><canvas id="reportStrip${index}" data-report-strip-index="${(state.reportComposer.strips.items||[]).indexOf(item)}" data-report-strip-height="${variant==="event"?108:96}" height="${variant==="event"?108:96}"></canvas><footer>${leadCaption} · RR ${item.rr_ms??"—"} ms</footer></article>`).join("")||`<div class="report-module-empty compact"><strong>当前没有可定位的事件图条</strong></div>`;}
+function reportStripCards(limit=6,filterSamples=null,priority=[],variant="standard"){let strips=state.reportComposer?.strips?.items||[],captionBySample=new Map(priority.map(item=>[item.sample_index,item.report_caption]));if(filterSamples)strips=strips.filter(item=>filterSamples.includes(item.sample_index));if(priority.length){const rank=new Map(priority.map((item,index)=>[item.sample_index,index]));strips=[...strips].sort((a,b)=>(rank.get(a.sample_index)??999)-(rank.get(b.sample_index)??999));}const leadCaption="I · II · III · V1 · V3 · V5";return strips.slice(0,limit).map((item,index)=>`<article class="report-strip-card report-strip-card-${variant}${state.reportFocusedSample===item.sample_index?" active":""}" data-report-strip-sample="${item.sample_index}"><header><strong>${escapeHtml(item.report_caption||captionBySample.get(item.sample_index)||item.label||"N")}</strong><span>${formatElapsed(item.time_s)} · ${item.hr??"—"} bpm</span></header><canvas id="reportStrip${index}" data-report-strip-index="${(state.reportComposer.strips.items||[]).indexOf(item)}" data-report-strip-height="${variant==="event"?108:96}" height="${variant==="event"?108:96}"></canvas><footer>${leadCaption} · RR ${item.rr_ms??"—"} ms</footer></article>`).join("")||`<div class="report-module-empty compact"><strong>当前没有可定位的事件图条</strong></div>`;}
 
 function drawReportSeries(canvas,points,xValue,yValue,color="#267db1",fill=false){if(!canvas||!points?.length)return;const {ctx,width,height}=canvasContext(canvas,Number(canvas.getAttribute("height"))||80),m={l:28,r:8,t:8,b:15},w=width-m.l-m.r,h=height-m.t-m.b,xs=points.map(xValue),ys=points.map(yValue).filter(Number.isFinite),xMin=Math.min(...xs),xMax=Math.max(...xs),yMin=Math.min(...ys),yMax=Math.max(...ys),dy=Math.max(1,yMax-yMin),dx=Math.max(1,xMax-xMin);ctx.fillStyle="#fff";ctx.fillRect(0,0,width,height);ctx.strokeStyle="#dce5e8";ctx.lineWidth=.7;[0,.5,1].forEach(f=>{const y=m.t+h*f;ctx.beginPath();ctx.moveTo(m.l,y);ctx.lineTo(m.l+w,y);ctx.stroke()});ctx.beginPath();points.forEach((point,index)=>{const x=m.l+(xValue(point)-xMin)/dx*w,y=m.t+h-(yValue(point)-yMin)/dy*h;index?ctx.lineTo(x,y):ctx.moveTo(x,y)});if(fill){ctx.lineTo(m.l+w,m.t+h);ctx.lineTo(m.l,m.t+h);ctx.closePath();ctx.fillStyle="rgba(38,125,177,.12)";ctx.fill();ctx.beginPath();points.forEach((point,index)=>{const x=m.l+(xValue(point)-xMin)/dx*w,y=m.t+h-(yValue(point)-yMin)/dy*h;index?ctx.lineTo(x,y):ctx.moveTo(x,y)})}ctx.strokeStyle=color;ctx.lineWidth=1.2;ctx.stroke();}
 function drawReportWaveform(canvas,waveform,leadNames,height){if(!canvas||!waveform)return;const {ctx,width,height:h}=canvasContext(canvas,height),names=(leadNames||Object.keys(waveform.leads)).filter(name=>waveform.leads[name]),leadHeight=h/Math.max(1,names.length);ctx.fillStyle="#fffefd";ctx.fillRect(0,0,width,h);if(state.reportComposition.paper.show_grid){for(let x=0;x<width;x+=10){ctx.strokeStyle=x%50===0?"rgba(231,133,117,.25)":"rgba(241,181,169,.16)";ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke()}for(let y=0;y<h;y+=10){ctx.strokeStyle=y%50===0?"rgba(231,133,117,.25)":"rgba(241,181,169,.16)";ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(width,y);ctx.stroke()}}names.forEach((name,row)=>{const values=waveform.leads[name],base=leadHeight*(row+.52),range=Math.max(200,...values.map(value=>Math.abs(Number(value)||0))),scale=leadHeight*.36/range;if(state.reportComposition.paper.show_labels){ctx.fillStyle="#0a7180";ctx.font=`700 9px ${UI_FONT}`;ctx.fillText(name,5,row*leadHeight+12)}ctx.beginPath();values.forEach((value,index)=>{const x=index/Math.max(1,values.length-1)*width,y=base-Number(value)*scale;index?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.strokeStyle="#28383f";ctx.lineWidth=.9;ctx.stroke()});}
@@ -1645,12 +1731,15 @@ function showReportPage(index) {
 function updateConclusionCount() {const value=$("#conclusionEditor").value;$("#conclusionCount").textContent=`${value.length} / 12000`;}
 
 async function saveReport(status="draft") {
-  if (state.demoReadonly) {toast("公网演示为只读模式", "error");return;}
+  if (!clinicalWorkflow.writable()) {toast("当前服务为只读模式", "error");return;}
   if (!state.caseId) return;
-  if(status==="reviewed"&&state.reportDirty){await saveReport("draft");}
+  if(status==="reviewed"&&(state.reportDirty||!clinicalWorkflow.readiness())){toast("请先完成复核环节并保存当前草稿","error");return;}
+  const caseId=state.caseId;
   const conclusion=$("#conclusionEditor").value;
   const saved=await api(`/api/cases/${state.caseId}/report`,{method:"PUT",body:JSON.stringify({conclusion,status,composition:state.reportComposition})});
+  if(caseId!==state.caseId)return;
   state.report=saved;state.caseData.report_workflow=saved;state.reportDirty=false;renderReport();renderCaseWorkflow();
+  await clinicalWorkflow.refresh(caseId);
   toast(status==="reviewed"?"报告已标记为审核通过":status==="returned"?"报告已驳回并保留版本":"草稿已保存");
 }
 
@@ -1697,7 +1786,7 @@ async function savePatient() {
   await api(`/api/cases/${id}/patient`,{method:"PATCH",body:JSON.stringify(payload)});$("#patientDialog").close();toast("患者本地覆盖已保存");await loadDashboard();if(state.caseId===id)await loadCase();
 }
 
-function jumpTo(time) {if(!state.caseId)return;state.start=Math.max(0,Math.min(Number(time)-state.duration*.35,state.caseData.technical.duration_seconds_raw-state.duration));if(state.currentPage==="review")loadWaveform().catch(handleError);else goPage("review");}
+function jumpTo(time) {if(!state.caseId)return;clinicalWorkflow.sourceJump(time);state.start=Math.max(0,Math.min(Number(time)-state.duration*.35,state.caseData.technical.duration_seconds_raw-state.duration));if(state.currentPage==="review")loadWaveform().catch(handleError);else goPage("review");}
 
 function focusScatterWaveform(time,sample) {
   state.scatterFocusedSample=sample;renderScatterSelectionList();renderWaveform();
@@ -1797,7 +1886,7 @@ function bindCanvasInteraction() {
     tooltip.textContent=`${formatElapsedPrecise(time)}\n${lead}  ${signedVoltage}`;
   });
   canvas.addEventListener("pointerleave",()=>{if(!down)hideCursor()});
-  canvas.addEventListener("contextmenu",event=>{event.preventDefault();hideCursor();openLeadPicker()});
+  canvas.addEventListener("contextmenu",event=>{event.preventDefault();hideCursor();openBeatRelabelMenu(event,canvas,state.waveform,"review")});
   canvas.addEventListener("dblclick",event=>{event.preventDefault();toggleWaveformFullscreen()});
   canvas.addEventListener("wheel",event=>{
     if(!state.caseData)return;
@@ -1894,7 +1983,7 @@ function bindEvents() {
   $("#globalSearch").addEventListener("input",event=>{state.search=event.target.value;renderWorklist();renderPatients()});
   $("#worklistFilter").addEventListener("change",renderWorklist);$("#showDeleted").addEventListener("change",renderPatients);
   document.addEventListener("click",event=>{
-    const open=event.target.closest("[data-open-case]");if(open)selectCase(open.dataset.openCase).catch(handleError);
+    const open=event.target.closest("[data-open-case]");if(open){const progress=state.cases.find(item=>item.case_id===open.dataset.openCase)?.review_workflow;selectCase(open.dataset.openCase,progress?.next_step||"review").catch(handleError);}
     const edit=event.target.closest("[data-edit-patient]");if(edit)openPatientEditor(edit.dataset.editPatient);
     const strip=event.target.closest("[data-scatter-sample]");if(strip){const sample=Number(strip.dataset.scatterSample);if(state.scatterStripFailed.has(sample)){state.scatterStripFailed.delete(sample);renderScatterSelectionList();}focusScatterWaveform(Number(strip.dataset.jumpTime),sample);}
     else {const jump=event.target.closest("[data-jump-time]");if(jump)jumpTo(jump.dataset.jumpTime);}
@@ -1910,6 +1999,13 @@ function bindEvents() {
   $$('[data-lead-choice]').forEach(choice=>choice.addEventListener("change",updateLeadPickerState));
   $("#resetLeadSelection").addEventListener("click",()=>setLeadPickerSelection(DEFAULT_PREVIEW_LEADS));
   $("#applyLeadSelection").addEventListener("click",applyLeadSelection);
+  $$('[data-beat-relabel-code]').forEach(button=>button.addEventListener("click",()=>applyBeatRelabelTarget(button.dataset.beatRelabelCode).catch(handleError)));
+  $("#restoreBeatRelabel").addEventListener("click",()=>restoreBeatRelabelTarget().catch(handleError));
+  $("#closeBeatRelabelMenu").addEventListener("click",()=>closeBeatRelabelMenu());
+  $("#beatRelabelLeadSettings").addEventListener("click",()=>{closeBeatRelabelMenu();openLeadPicker();});
+  $("#beatRelabelMenu").addEventListener("contextmenu",event=>event.preventDefault());
+  $("#beatRelabelMenu").addEventListener("keydown",event=>{const menu=$("#beatRelabelMenu"),items=$$('button:not([hidden]):not(:disabled)',menu),index=items.indexOf(document.activeElement);if(event.key==="Escape"){event.preventDefault();event.stopPropagation();closeBeatRelabelMenu();return;}if(["ArrowDown","ArrowUp","Home","End"].includes(event.key)){event.preventDefault();event.stopPropagation();const next=event.key==="Home"?0:event.key==="End"?items.length-1:Math.max(0,(index<0?0:index+(event.key==="ArrowDown"?1:-1)+items.length)%items.length);items[next]?.focus();return;}const code=event.key.toUpperCase();if(!event.ctrlKey&&!event.metaKey&&!event.altKey&&EDIT_BEAT_TYPES[code]){event.preventDefault();event.stopPropagation();applyBeatRelabelTarget(code).catch(handleError);}});
+  document.addEventListener("pointerdown",event=>{const menu=$("#beatRelabelMenu");if(menu&&!menu.hidden&&!menu.contains(event.target))closeBeatRelabelMenu();});
   $("#sttLeadPickerButton").addEventListener("click",openSttLeadPicker);
   $$('[data-stt-lead-choice]').forEach(choice=>choice.addEventListener("change",updateSttLeadPickerState));
   $("#resetSttLeadSelection").addEventListener("click",()=>setSttLeadPickerSelection(DEFAULT_PREVIEW_LEADS));
@@ -1953,7 +2049,7 @@ function bindEvents() {
   let sliderTimer;$("#timeSlider").addEventListener("input",event=>{clearTimeout(sliderTimer);state.start=Number(event.target.value);renderOverview();sliderTimer=setTimeout(()=>loadWaveform().catch(handleError),120)});
   $("#addAnnotation").addEventListener("click",()=>openAnnotation());$("#confirmAnnotation").addEventListener("click",event=>{event.preventDefault();createAnnotation().catch(handleError)});
   $("#confirmPatient").addEventListener("click",event=>{event.preventDefault();savePatient().catch(handleError)});
-  $$('[data-event-type]').forEach(button=>button.addEventListener("click",()=>loadEvents(button.dataset.eventType).catch(handleError)));$("#refreshEvents").addEventListener("click",()=>loadEvents().catch(handleError));
+  $$('[data-event-type]').forEach(button=>button.addEventListener("click",()=>loadEvents(button.dataset.eventType).catch(handleError)));$("#refreshEvents").addEventListener("click",()=>{clinicalWorkflow.resetEvents();loadEvents().catch(handleError);});
   $("#conclusionEditor").addEventListener("input",()=>{state.reportDirty=true;$("#reportSaveState").textContent="有未保存修改";updateConclusionCount()});
   $("#saveReport").addEventListener("click",()=>saveReport("draft").catch(handleError));$("#approveReport").addEventListener("click",()=>saveReport("reviewed").catch(handleError));$("#returnReport").addEventListener("click",()=>saveReport("returned").catch(handleError));
   $("#downloadReport").addEventListener("click",()=>{if(state.caseId)window.location.href=withPhi(`/api/cases/${state.caseId}/report.pdf`)});
@@ -1968,7 +2064,7 @@ function bindEvents() {
   $("#reportPreviewBody").addEventListener("click",event=>{const target=event.target.closest?.("[data-report-event-sample],[data-report-strip-sample]");if(target)focusReportEvent(Number(target.dataset.reportEventSample||target.dataset.reportStripSample)).catch(handleError)});
   $("#reportPageSelect").addEventListener("change",event=>showReportPage(Number(event.target.value)));$("#openReportImage").addEventListener("click",()=>{const url=$("#sourceReportImage").dataset.url;if(url)window.open(url,"_blank","noopener");else toast("请先使用右上角隐私开关显示身份信息","error")});
   $("#refreshAudit")?.addEventListener("click",()=>loadAudit().catch(handleError));
-  document.addEventListener("keydown",event=>{if((event.key==="ContextMenu"||event.shiftKey&&event.key==="F10")&&document.activeElement===$("#waveformCanvas")){event.preventDefault();openLeadPicker();return}if((event.key==="ContextMenu"||event.shiftKey&&event.key==="F10")&&document.activeElement===$("#sttWaveformCanvas")){event.preventDefault();openSttLeadPicker();return}if(event.key==="Escape"&&state.waveformFullscreenFallback){event.preventDefault();exitWaveformFullscreen().catch(handleError);return}if(["INPUT","TEXTAREA","SELECT"].includes(document.activeElement.tagName)||document.activeElement.closest?.(".scatter-review-card")||$("#leadPickerDialog").open||$("#sttLeadDialog").open||$("#sttGuidanceDialog").open)return;const editKey=event.key.toUpperCase(),noModifier=!event.ctrlKey&&!event.metaKey&&!event.altKey;if(noModifier&&state.currentPage==="edit"){const sourceShortcut={N:"source-N",S:"source-S",V:"source-V",X:"source-X"},numberShortcut={1:"source-N",2:"source-S",3:"source-V",4:"source-X"},switchClass=numberShortcut[event.key]||(!state.editSelectedSamples.size?sourceShortcut[editKey]:null);if(switchClass){event.preventDefault();selectEditClass(switchClass);return}if(EDIT_BEAT_TYPES[editKey]){event.preventDefault();applyEditBeatType(editKey).catch(handleError);return}if(event.key==="Backspace"){event.preventDefault();restoreEditBeatType().catch(handleError);return}if(event.key==="Escape"&&state.editSelectedSamples.size){event.preventDefault();state.editSelectedSamples=new Set();state.editSelectionAnchor=null;renderEditGallery();renderEditWaveform();renderEditLibrary();toast("已清除心搏选择");return}}if(event.key==="ArrowLeft"&&state.currentPage==="review"){event.preventDefault();jumpTo(state.start-state.duration*.65)}if(event.key==="ArrowRight"&&state.currentPage==="review"){event.preventDefault();jumpTo(state.start+state.duration*1.35)}if(noModifier&&state.currentPage==="review"&&(event.key==="+"||event.key==="=")){event.preventDefault();zoomWaveform(true,.5)}if(noModifier&&state.currentPage==="review"&&(event.key==="-"||event.key==="_")){event.preventDefault();zoomWaveform(false,.5)}if(noModifier&&state.currentPage==="review"&&event.key==="0"){event.preventDefault();resetWaveformZoom()}if(noModifier&&state.currentPage==="review"&&event.key.toLowerCase()==="f"){event.preventDefault();toggleWaveformFullscreen()}if(noModifier&&state.currentPage==="stt"&&event.key.toLowerCase()==="f"){event.preventDefault();openSttTwelveLead().catch(handleError)}if(event.key.toLowerCase()==="a"&&state.currentPage==="review")openAnnotation();if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="k"){event.preventDefault();$("#globalSearch").focus()}});
+  document.addEventListener("keydown",event=>{const contextKey=event.key==="ContextMenu"||event.shiftKey&&event.key==="F10";if(contextKey&&document.activeElement===$("#waveformCanvas")){event.preventDefault();openBeatRelabelMenu(event,$("#waveformCanvas"),state.waveform,"review",true);return}if(contextKey&&[$("#editWaveformCanvas"),$("#editLibraryWaveformCanvas")].includes(document.activeElement)){event.preventDefault();openBeatRelabelMenu(event,document.activeElement,state.editWaveform,"edit",true);return}if(contextKey&&document.activeElement===$("#sttWaveformCanvas")){event.preventDefault();openSttLeadPicker();return}if(event.key==="Escape"&&!$("#beatRelabelMenu").hidden){event.preventDefault();closeBeatRelabelMenu();return}if(event.key==="Escape"&&state.waveformFullscreenFallback){event.preventDefault();exitWaveformFullscreen().catch(handleError);return}if(["INPUT","TEXTAREA","SELECT"].includes(document.activeElement.tagName)||document.activeElement.closest?.(".scatter-review-card")||$("#leadPickerDialog").open||$("#sttLeadDialog").open||$("#sttGuidanceDialog").open)return;const editKey=event.key.toUpperCase(),noModifier=!event.ctrlKey&&!event.metaKey&&!event.altKey;if(noModifier&&state.currentPage==="edit"){const sourceShortcut={N:"source-N",S:"source-S",V:"source-V",X:"source-X"},numberShortcut={1:"source-N",2:"source-S",3:"source-V",4:"source-X"},switchClass=numberShortcut[event.key]||(!state.editSelectedSamples.size?sourceShortcut[editKey]:null);if(switchClass){event.preventDefault();selectEditClass(switchClass);return}if(EDIT_BEAT_TYPES[editKey]){event.preventDefault();applyEditBeatType(editKey).catch(handleError);return}if(event.key==="Backspace"){event.preventDefault();restoreEditBeatType().catch(handleError);return}if(event.key==="Escape"&&state.editSelectedSamples.size){event.preventDefault();state.editSelectedSamples=new Set();state.editSelectionAnchor=null;renderEditGallery();renderEditWaveform();renderEditLibrary();toast("已清除心搏选择");return}}if(event.key==="ArrowLeft"&&state.currentPage==="review"){event.preventDefault();jumpTo(state.start-state.duration*.65)}if(event.key==="ArrowRight"&&state.currentPage==="review"){event.preventDefault();jumpTo(state.start+state.duration*1.35)}if(noModifier&&state.currentPage==="review"&&(event.key==="+"||event.key==="=")){event.preventDefault();zoomWaveform(true,.5)}if(noModifier&&state.currentPage==="review"&&(event.key==="-"||event.key==="_")){event.preventDefault();zoomWaveform(false,.5)}if(noModifier&&state.currentPage==="review"&&event.key==="0"){event.preventDefault();resetWaveformZoom()}if(noModifier&&state.currentPage==="review"&&event.key.toLowerCase()==="f"){event.preventDefault();toggleWaveformFullscreen()}if(noModifier&&state.currentPage==="stt"&&event.key.toLowerCase()==="f"){event.preventDefault();openSttTwelveLead().catch(handleError)}if(event.key.toLowerCase()==="a"&&state.currentPage==="review")openAnnotation();if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="k"){event.preventDefault();$("#globalSearch").focus()}});
   bindCanvasInteraction();
   bindSttInteraction();
   bindScatterInteraction();
