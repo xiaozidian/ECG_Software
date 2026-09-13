@@ -4,8 +4,8 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
-STEPS = ("review", "edit", "trends", "stt", "events")
-LABELS = dict(zip(STEPS, ("波形复核", "模板编辑", "趋势与 HRV", "ST-T", "事件复核")))
+STEPS = ("edit", "stt")
+LABELS = {"edit":"模板编辑", "stt":"ST-T"}
 
 
 def stamp():
@@ -38,9 +38,9 @@ class ReviewWorkflowMixin:
         if action.startswith("beat_override."):
             affected = STEPS  # waveform and classifications changed, source statistics did not
         elif action.startswith("beat_template."):
-            affected = STEPS[1:]
+            affected = STEPS
         elif action.startswith("annotation."):
-            affected = ("stt", "events")
+            affected = ("stt",)
         elif action == "patient.update":
             affected = STEPS
         elif action == "event.review":
@@ -57,6 +57,14 @@ class ReviewWorkflowMixin:
             for event in value["events"].values():
                 event["status"] = "pending"
         self._write_review(db, value)
+        report=db.execute("SELECT composition FROM report_drafts WHERE case_id=?",(case_id,)).fetchone()
+        if report:
+            composition=json.loads(report["composition"] or "{}")
+            reviews=composition.get("category_reviews",{})
+            if action.startswith("annotation."):reviews.pop("ST",None)
+            elif action != "event.review":reviews.clear()
+            composition["category_reviews"]=reviews
+            db.execute("UPDATE report_drafts SET composition=? WHERE case_id=?",(json.dumps(composition,ensure_ascii=False),case_id))
         db.execute("""UPDATE report_drafts SET status='draft', reviewed_by='', version=version+1,
             updated_at=? WHERE case_id=? AND status='reviewed'""", (stamp(), case_id))
 

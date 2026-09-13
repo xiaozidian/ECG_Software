@@ -1,0 +1,22 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+rootdir: /private/tmp/ecg-implementation.bz5m5inr
+configfile: pytest.ini
+testpaths: tests
+collected 109 items
+
+tests/test_api.py .............                                          [ 11%]
+tests/test_beat_editor.py .......................................        [ 47%]
+tests/test_beat_overrides.py ..                                          [ 49%]
+tests/test_beat_templates.py ...                                         [ 52%]
+tests/test_clinical_analysis.py ...................                      [ 69%]
+tests/test_config.py .....                                               [ 74%]
+tests/test_dataset.py .....                                              [ 78%]
+tests/test_review_workflow.py .....                                      [ 83%]
+tests/test_scatter.py ....                                               [ 87%]
+tests/test_security.py .....                                             [ 91%]
+tests/test_static_demo_builder.py .                                      [ 92%]
+tests/test_stt.py ....                                                   [ 96%]
+tests/test_synthetic_demo.py ....                                        [100%]
+
+============================= 109 passed in 37.29s =============================

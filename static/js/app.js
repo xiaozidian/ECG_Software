@@ -20,7 +20,7 @@ const EDIT_BEAT_TYPES = {
   V:{code:"V",name:"室性候选",color:"#c9544c"},X:{code:"X",name:"噪声 / 待确认",color:"#7b858a"},
   P:{code:"P",name:"起搏",color:"#c77a1d"},O:{code:"O",name:"房早未下传",color:"#405563"},
 };
-const EDIT_FAMILY_DEFAULT_NAMES = {"全部":"全部复核类","单发":"单发复核类","成对":"成对复核类","房速":"房速复核类","二联律":"二联律复核类","三联律(NPN)":"三联律 NPN 复核类","三联律(NPP)":"三联律 NPP 复核类","四联律":"四联律复核类","自定义":"自建类别"};
+const EDIT_FAMILY_DEFAULT_NAMES = {"全部":"全部复核类","单发":"单发复核类","成对":"成对复核类","房速":"房速复核类","二联律":"二联律复核类","三联律(NNP)":"三联律 NPN 复核类","三联律(NPP)":"三联律 NPP 复核类","四联律":"四联律复核类","自定义":"自建类别"};
 const SCATTER_STRIP_HEIGHT = 156;
 const SCATTER_STRIP_CACHE_LIMIT = 240;
 const STATUS_TEXT = {draft: "未审核", reviewed: "已审核", returned: "已驳回"};
@@ -48,7 +48,7 @@ const APP_MODE = Object.freeze({
   allowPhi: document.documentElement.dataset.allowPhi === "true",
 });
 const CASE_WORKFLOW_STEPS = Object.freeze([
-  {page:"review",label:"波形复核",next:"模板编辑"},
+  {page:"review",label:"总览",next:"模板编辑"},
   {page:"edit",label:"模板编辑",next:"趋势与 HRV"},
   {page:"trends",label:"趋势与 HRV",next:"ST‑T 复核"},
   {page:"stt",label:"ST‑T 复核",next:"事件候选"},
@@ -1074,13 +1074,24 @@ function sttMeasurementValues() {
 function renderSttCapability() {
   const review=state.sttReview;
   if(!review)return;
-  $("#sttCapabilityBadge").textContent=review.manual_review_only?"人工复核模式":"能力待确认";
+  const automatic=review.automatic_candidates||{},items=automatic.items||[],quality=automatic.quality;
+  $("#sttCapabilityBadge").textContent=automatic.enabled?"自动筛查 · 待医生确认":"人工复核模式";
+  $("#sttSafetyTitle").textContent=automatic.enabled?"自动筛查结果必须由医生复核":"当前病例仅支持人工复核";
   $("#sttSafetyText").textContent=review.calibration?.message||"当前病例只允许人工定性复核，不生成自动 ST-T 诊断。";
   $("#sttLeadSystem").textContent=review.lead_system?.message||"导联体系待核验";
   $("#sttBaselineMethod").textContent=review.measurement_protocol?.baseline?.label||"手工 ISO / 个体稳定基线";
-  const reasons=review.automatic_candidates?.reasons||[];
-  $("#sttCandidateCount").textContent="0 条";
-  $("#sttCandidateList").innerHTML=`<div class="stt-unavailable-state"><span aria-hidden="true">∿</span><strong>未生成自动 ST‑T 候选</strong><p>${escapeHtml(reasons.slice(0,2).join("；")||"当前测量链尚未验证。")}</p><button type="button" class="row-action" data-stt-current-window>从当前时间窗人工复核</button></div>`;
+  $("#sttCandidateCount").textContent=`${items.length} 条`;
+  if(items.length){
+    $("#sttCandidateList").innerHTML=items.map(item=>{
+      const peak=Number(item.peak_deviation_units),value=Number.isFinite(peak)?`${peak>=0?"+":""}${peak.toFixed(0)}`:"—";
+      return `<button type="button" class="stt-candidate-card" data-stt-candidate="${Number(item.start_s)||0}" data-stt-leads="${escapeHtml((item.leads||[]).join(","))}"><span><strong>${escapeHtml(item.label||"ST‑T 候选")}</strong><em>待医生复核</em></span><small>${escapeHtml(formatElapsed(Number(item.start_s)||0))}–${escapeHtml(formatElapsed(Number(item.end_s)||0))}</small><b>${escapeHtml((item.leads||[]).join(" / ")||"导联待确认")} · 峰值 ${value} 设备单位</b></button>`;
+    }).join("");
+  }else{
+    const reasons=automatic.reasons||[],coverage=Number(quality?.coverage_pct),message=automatic.enabled
+      ? `本次筛查未发现达到持续性规则的候选${Number.isFinite(coverage)?`；可分析覆盖 ${coverage.toFixed(1)}%`:""}。这不等同于排除疾病。`
+      : reasons.slice(0,2).join("；")||"当前测量链尚未提供自动候选。";
+    $("#sttCandidateList").innerHTML=`<div class="stt-unavailable-state"><span aria-hidden="true">∿</span><strong>${automatic.enabled?"未检出持续性自动候选":"未生成自动 ST‑T 候选"}</strong><p>${escapeHtml(message)}</p><button type="button" class="row-action" data-stt-current-window>从当前时间窗人工复核</button></div>`;
+  }
   const fragments=review.source_report?.fragments||[];
   $("#sttSourceNotes").innerHTML=fragments.length
     ? fragments.map(text=>`<blockquote><span>源报告</span><p>${escapeHtml(text)}</p></blockquote>`).join("")
@@ -1092,7 +1103,16 @@ function renderSttTrendRows() {
   const total=Math.max(1,Number(state.caseData.technical.duration_seconds_raw)||1);
   const left=Math.max(0,Math.min(100,state.sttStart/total*100));
   const width=Math.max(.35,Math.min(100-left,state.sttDuration/total*100));
-  $("#sttTrendRows").innerHTML=ALL_LEADS.map(lead=>`<div class="stt-trend-row"><strong>${lead}</strong><div class="stt-disabled-track" style="--window-left:${left}%;--window-width:${width}%"><span></span><i></i></div><small>待标定</small></div>`).join("");
+  const trends=state.sttReview?.analysis?.trends?.leads||{},enabled=Boolean(state.sttReview?.automatic_candidates?.enabled);
+  $("#sttTrendNote").textContent=enabled?"16 秒代表搏块 · 局部参考 · J+60 ms · 设备原始单位":"自动趋势不可用；保留手工复核入口";
+  $("#sttTrendBadge").textContent=enabled?"机器候选":"不可定量";
+  $("#sttTrendRows").innerHTML=ALL_LEADS.map(lead=>{
+    const points=(trends[lead]||[]).filter(point=>Number.isFinite(Number(point.deviation_units)));
+    if(points.length<2)return `<div class="stt-trend-row"><strong>${lead}</strong><div class="stt-disabled-track" style="--window-left:${left}%;--window-width:${width}%"><span></span><i></i></div><small>无有效块</small></div>`;
+    const limit=Math.max(100,...points.map(point=>Math.abs(Number(point.deviation_units)))),polyline=points.map(point=>`${(Number(point.time_s)/total*100).toFixed(2)},${(8-Number(point.deviation_units)/limit*6).toFixed(2)}`).join(" ");
+    const target=state.sttStart+state.sttDuration/2,current=points.reduce((best,point)=>Math.abs(point.time_s-target)<Math.abs(best.time_s-target)?point:best,points[0]),value=Number(current.deviation_units);
+    return `<div class="stt-trend-row"><strong>${lead}</strong><div class="stt-trend-track" style="--window-left:${left}%;--window-width:${width}%"><svg viewBox="0 0 100 16" preserveAspectRatio="none" aria-hidden="true"><line x1="0" y1="8" x2="100" y2="8"></line><polyline points="${polyline}"></polyline></svg><span></span><i></i></div><small>${value>=0?"+":""}${value.toFixed(0)}</small></div>`;
+  }).join("");
 }
 
 function renderSttOverview() {
@@ -1177,14 +1197,14 @@ async function openSttTwelveLead() {
 }
 
 async function saveSttReviewAnnotation() {
-  if(state.demoReadonly){toast("在线 Demo 不保存复核意见","error");return;}
+  if(!clinicalWorkflow.writable()){toast("当前服务为只读","error");return;}
   if(!state.caseId||!state.sttWaveform)return;
   const finding=$("#sttFinding").value,qualityChecked=$("#sttSignalChecked").checked;
   if(finding!=="无法判读"&&!qualityChecked){toast("形成复核描述前，请先核对信号质量与伪差","error",4200);$("#sttSignalChecked").focus();return;}
   const pointLabel=state.sttMeasurementMs===0?"J 点":`J+${state.sttMeasurementMs} ms`,values=sttMeasurementValues(),rawValues=values.map(item=>`${item.lead} ${item.delta===null?"—":`${item.delta>=0?"+":""}${item.delta.toFixed(0)}`}`).join("，"),freeNote=$("#sttReviewNote").value.trim();
   const sampleRate=Number(state.sttWaveform.sample_rate_hz)||200,sampleIndex=Math.round((state.sttStart+sttLandmarkFractions().j*state.sttDuration)*sampleRate),note=[`方法：手工 ISO → ${pointLabel}`,`显示导联：${state.leads.join(" / ")}`,`相对差值（设备原始单位）：${rawValues}`,`信号质量核对：${qualityChecked?"已核对":"未核对"}`,freeNote].filter(Boolean).join("；").slice(0,2000);
-  await api(`/api/cases/${state.caseId}/annotations`,{method:"POST",body:JSON.stringify({sample_index:sampleIndex,lead:state.leads.length===1?state.leads[0]:"全部",category:"note",label:`ST-T 人工复核：${finding}`,note})});
-  toast("ST‑T 复核意见已保存为人工标注");$("#sttReviewNote").value="";
+  await api(`/api/cases/${state.caseId}/annotations`,{method:"POST",body:JSON.stringify({sample_index:sampleIndex,lead:state.leads.length===1?state.leads[0]:"全部",category:"note",label:`ST-T 人工复核：${finding}`,note,details:{kind:"ST",status:finding.includes("无法")?"pending":finding.includes("未见")||finding.includes("伪差")?"excluded":"confirmed",end_sample:Math.min(Math.round(state.caseData.technical.duration_seconds_raw*200)-1,Math.round((state.sttStart+state.sttDuration)*200)),finding}})});
+  await clinicalWorkflow.refresh();toast("ST‑T 结构化复核意见已保存");$("#sttReviewNote").value="";
 }
 
 function setEditMode(mode, rerender=true) {
@@ -1991,6 +2011,7 @@ function bindEvents() {
     const editClass=event.target.closest("[data-edit-class]");if(editClass)selectEditClass(editClass.dataset.editClass);
     const editSample=event.target.closest("[data-edit-sample]");if(editSample){selectEditSample(editSample.dataset.editSample,editSample.dataset.editTime,event);}
     const libraryFilter=event.target.closest("[data-edit-library-filter]");if(libraryFilter){state.editLibraryFilter=libraryFilter.dataset.editLibraryFilter;renderEditLibrary();}
+    const sttCandidate=event.target.closest("[data-stt-candidate]");if(sttCandidate){const leads=String(sttCandidate.dataset.sttLeads||"").split(",").filter(lead=>ALL_LEADS.includes(lead)).slice(0,3);if(leads.length)state.leads=leads;setSttStart(Math.max(0,Number(sttCandidate.dataset.sttCandidate)||0));}
     if(event.target.closest("[data-stt-current-window]")){$("#sttWaveformCanvas")?.focus();$("#sttWaveformCanvas")?.scrollIntoView({behavior:"smooth",block:"center"});}
   });
   $("#openFirstCase").addEventListener("click",()=>{const first=filteredCases()[0];if(first)selectCase(first.case_id).catch(handleError)});

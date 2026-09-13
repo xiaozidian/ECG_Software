@@ -5,7 +5,7 @@ from io import BytesIO
 
 
 def complete_all(client, case_id):
-    for step in ("review", "edit", "trends", "stt", "events"):
+    for step in ("edit", "stt"):
         progress = client.get(f"/api/cases/{case_id}/review-workflow").json
         result = client.put(f"/api/cases/{case_id}/review-workflow", json={
             "step": step, "revision": progress["revision"], "confirmed": True, "note": "已核对源数据限制",
@@ -22,7 +22,7 @@ def test_review_requires_explicit_confirmation_and_current_revision(client):
     assert client.get(base + "/review-workflow").json["pending_steps"] == progress["pending_steps"]
     assert client.put(base + "/review-workflow", json={"step": "review", "revision": 0}).status_code == 400
     assert client.put(base + "/review-workflow", json={"step": "review", "revision": False, "confirmed": True}).status_code == 400
-    assert client.put(base + "/review-workflow", json={"step": "review", "revision": 0, "confirmed": True}).status_code == 200
+    assert client.put(base + "/review-workflow", json={"step": "edit", "revision": 0, "confirmed": True}).status_code == 200
     assert client.put(base + "/review-workflow", json={"step": "edit", "revision": 0, "confirmed": True}).status_code == 400
     assert client.put(base + "/report", json={"conclusion": "测试结论", "status": "reviewed"}).status_code == 400
     assert client.get("/api/cases/nonexistent/review-workflow").status_code == 404
@@ -37,12 +37,15 @@ def test_edit_invalidates_checkpoints_and_previously_approved_report(client):
     assert retained.status_code == 200
     complete_all(client, case_id)
     assert client.put(base + "/report", json={"conclusion": "复核测试", "status": "draft"}).status_code == 200
-    approved = client.put(base + "/report", json={"conclusion": "复核测试", "status": "reviewed"})
+    index = client.get(base + "/report-events").json
+    composition={"category_reviews":index["basis_versions"]}
+    client.put(base + "/report", json={"conclusion":"复核测试","status":"draft","composition":composition})
+    approved = client.put(base + "/report", json={"conclusion": "复核测试", "status": "reviewed", "composition":composition})
     assert approved.json["status"] == "reviewed"
     changed = client.put(base + "/beat-overrides", json={"sample_indices": [event["sample_index"]], "class_code": "N"})
     assert changed.status_code == 200
     progress = client.get(base + "/review-workflow").json
-    assert len(progress["pending_steps"]) == 5
+    assert len(progress["pending_steps"]) == 2
     assert all(item["status"] == "stale" for item in progress["steps"].values())
     assert all(item["status"] == "pending" for item in progress["events"].values())
     assert progress["report_status"] == "draft"
@@ -71,7 +74,7 @@ def test_events_validate_samples_and_persist_separately_from_source(client):
 def test_review_survives_storage_restart_and_blank_report_is_blocked(tmp_path):
     path = tmp_path / "review.db"
     store = Storage(path)
-    for index, step in enumerate(("review", "edit", "trends", "stt", "events")):
+    for index, step in enumerate(("edit", "stt")):
         store.complete_review("test", {"step": step, "revision": index, "confirmed": True}, "tester")
     reopened = Storage(path)
     assert reopened.get_review("test")["pending_steps"] == []
@@ -95,7 +98,7 @@ def test_pdf_receives_current_review_and_evidence_snapshot(client, monkeypatch):
     monkeypatch.setattr("app.build_report_pdf", fake_pdf)
     assert client.get(base + "/report.pdf").status_code == 200
     review = captured["review_snapshot"]
-    assert len(review["steps"]) == 5
+    assert len(review["steps"]) == 2
     assert all(item["status"] == "done" for item in review["steps"].values())
     assert review["events"][f"{event['type']}:{event['sample_index']}"]["status"] == "retained"
     assert captured["override_count"] == 0

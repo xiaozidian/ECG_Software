@@ -1,0 +1,11 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+rootdir: /private/tmp/ecg-implementation.bz5m5inr
+configfile: pytest.ini
+collected 21 items
+
+tests/test_clinical_analysis.py ...................                      [ 90%]
+tests/test_static_demo_builder.py .                                      [ 95%]
+tests/test_api.py .                                                      [100%]
+
+============================= 21 passed in 12.55s ==============================

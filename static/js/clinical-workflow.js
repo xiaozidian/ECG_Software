@@ -13,7 +13,7 @@ const clinicalWorkflow = (() => {
   const labels = {retained:"保留为证据",excluded:"已排除",pending:"待复核"};
   let data = null, request = 0, context = null, dialogContext = null, eventOffset = 0;
   const writable = () => !state.demoReadonly || Boolean(window.__CARDIOINSIGHT_UPLOADED_CASE__);
-  const pending = () => CASE_WORKFLOW_STEPS.filter(step => step.page !== "report" && data?.steps?.[step.page]?.status !== "done");
+  const pending = () => CASE_WORKFLOW_STEPS.filter(step => ["edit","stt"].includes(step.page) && data?.steps?.[step.page]?.status !== "done");
   const receive = value => {data=value||null;render();};
   async function refresh(caseId=state.caseId) {
     if(!caseId)return;
@@ -36,18 +36,19 @@ const clinicalWorkflow = (() => {
     const m=state.caseData?.metadata||{};
     $("#workflowCaseLabel").textContent=`${m.name||"病例"} · ${state.caseId}`;
     $("#workflowCaseLabel").title=`${m.sex||""} ${m.age??"—"} 岁 · ${m.start_time||""} · ${m.duration_text||""}`;
-    $("#workflowProgressLabel").textContent=data?`${5-pending().length} / 5 环节已确认 · ${data.report_status==="reviewed"?"报告已审核":"报告待审核"}`:"正在读取复核记录…";
+    $("#workflowProgressLabel").textContent=data?`${2-pending().length} / 2 环节已确认 · ${data.report_status==="reviewed"?"报告已审核":"报告待审核"}`:"正在读取复核记录…";
     $$("[data-workflow-page]").forEach(button=>{
       const page=button.dataset.workflowPage,done=page==="report"?data?.report_status==="reviewed":data?.steps?.[page]?.status==="done",stale=data?.steps?.[page]?.status==="stale";
       button.classList.toggle("current",page===state.currentPage);
       button.classList.toggle("visited",done);button.classList.toggle("needs-review",stale);
       button.setAttribute("aria-current",page===state.currentPage?"step":"false");
-      $("small",button).textContent=done?"已确认":stale?"修改后待复核":"待复核";
+      $("small",button).textContent=["review","trends"].includes(page)?"浏览":done?"已确认":stale?"修改后待复核":"待复核";
       button.title=`${button.textContent.trim()} · 点击仅切换页面，不确认复核`;
     });
     $$("[data-workflow-nav]").forEach(button=>button.classList.toggle("workflow-visited",data?.steps?.[button.dataset.workflowNav]?.status==="done"));
     const next=$("#workflowNext"),isReport=state.currentPage==="report";
     next.textContent=isReport?(data?.report_status==="reviewed"?"完成，返回工作台":"查看审核前检查"):data?.steps?.[state.currentPage]?.status==="done"?"已确认 · 继续 →":"确认本步并继续";
+    if(!["edit","stt","report"].includes(state.currentPage))next.textContent="继续浏览 →";
     next.disabled=!data||(!writable()&&!isReport);
     $("#workflowTaskHint").textContent=tasks[state.currentPage];
     $("#workflowBrowseNext").hidden=isReport;
@@ -61,6 +62,7 @@ const clinicalWorkflow = (() => {
     goPage(CASE_WORKFLOW_STEPS[i+1]?.page||"dashboard");
   }
   function confirmStep() {
+    if(!["edit","stt","report"].includes(state.currentPage)){browse();return;}
     if(state.currentPage==="report"){if(data?.report_status==="reviewed"){goPage("dashboard");return;}$("#reportPreflight")?.scrollIntoView({block:"nearest"});$("#reportPreflight")?.focus();return;}
     if(data?.steps?.[state.currentPage]?.status==="done"){browse();return;}
     if(!data)return;
@@ -87,7 +89,7 @@ const clinicalWorkflow = (() => {
   function renderPreflight() {
     const panel=$("#reportPreflight");if(!panel)return;
     const retained=Object.values(data?.events||{}).filter(x=>x.status==="retained");
-    panel.innerHTML=`<h2>审核前检查</h2><p>${pending().length?`尚有 ${pending().length} 个环节未确认`:"各环节已确认，请核对结论并保存"}</p><div class="preflight-steps">${CASE_WORKFLOW_STEPS.filter(x=>x.page!=="report").map(x=>`<button type="button" data-clinical-step="${x.page}"><span>${data?.steps?.[x.page]?.status==="done"?"✓":"○"}</span>${x.label}<small>${data?.steps?.[x.page]?.status==="stale"?"需重核":data?.steps?.[x.page]?.status==="done"?"已确认":"待确认"}</small></button>`).join("")}</div><p class="workflow-limit">RR、HRV 与候选使用当前修订；源报告摘要不改写。房颤/房扑标签是医生逐搏标记，不是自动诊断或发作负荷。请核对结论。</p><h3>医生保留的证据 · ${retained.length}</h3><div class="evidence-list">${retained.map(x=>`<button type="button" data-jump-time="${x.sample_index/200}">${escapeHtml(x.type)} · ${formatElapsed(x.sample_index/200)} ↗</button>`).join("")||"<p>尚未保留事件证据，可到事件复核中选择。</p>"}</div><small>${writable()?(state.demoReadonly?"演示修改仅存此浏览器":"确认与修改写入本地审计"):"当前服务为只读"}</small>`;
+    panel.innerHTML=`<h2>审核前检查</h2><p>${pending().length?`尚有 ${pending().length} 个环节未确认`:"各环节已确认，请核对结论并保存"}</p><div class="preflight-steps">${CASE_WORKFLOW_STEPS.filter(x=>["edit","stt"].includes(x.page)).map(x=>`<button type="button" data-clinical-step="${x.page}"><span>${data?.steps?.[x.page]?.status==="done"?"✓":"○"}</span>${x.label}<small>${data?.steps?.[x.page]?.status==="stale"?"需重核":data?.steps?.[x.page]?.status==="done"?"已确认":"待确认"}</small></button>`).join("")}</div><p class="workflow-limit">RR、HRV 与候选使用当前修订；源报告摘要不改写。房颤/房扑标签是医生逐搏标记，不是自动诊断或发作负荷。请核对结论。</p><h3>医生保留的证据 · ${retained.length}</h3><div class="evidence-list">${retained.map(x=>`<button type="button" data-jump-time="${x.sample_index/200}">${escapeHtml(x.type)} · ${formatElapsed(x.sample_index/200)} ↗</button>`).join("")||"<p>尚未保留事件证据，可到事件复核中选择。</p>"}</div><small>${writable()?(state.demoReadonly?"演示修改仅存此浏览器":"确认与修改写入本地审计"):"当前服务为只读"}</small>`;
     const approve=$("#approveReport");
     if(approve&&writable()){
       approve.disabled=pending().length>0||state.reportDirty||!$("#conclusionEditor")?.value.trim();

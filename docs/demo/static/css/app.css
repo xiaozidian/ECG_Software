@@ -210,6 +210,17 @@ body.case-workflow-visible .main-shell:has(.safety-banner.hidden) #page-edit.act
 @media(max-height:780px){#page-edit.active{grid-template-rows:36px 36px minmax(0,1fr)}.edit-class-toolbar{height:36px;padding-block:2px}.edit-class-switcher{height:30px}.edit-class-switcher button{padding-left:32px}.edit-class-switcher kbd{top:4px}}
 @media(prefers-reduced-motion:reduce){.case-workflow-steps button,.workflow-next{transition:none}}
 
+/* Automatic ST-T screening remains visually distinct from physician confirmation. */
+.stt-candidate-list:has(.stt-candidate-card){display:grid;gap:7px;max-height:330px;overflow:auto}
+.stt-candidate-card{width:100%;padding:10px;border:1px solid var(--line-soft);border-radius:9px;background:#fff;text-align:left;color:var(--ink-700);cursor:pointer}
+.stt-candidate-card:hover,.stt-candidate-card:focus-visible{border-color:#78b6b3;background:var(--teal-50);outline:0}
+.stt-candidate-card>span{display:flex;align-items:center;justify-content:space-between;gap:6px}.stt-candidate-card strong{font-size:.6875rem}.stt-candidate-card em{padding:2px 5px;border-radius:999px;background:#fff1dc;color:#83531e;font-size:.5rem;font-style:normal}
+.stt-candidate-card small,.stt-candidate-card b{display:block;margin-top:5px;font-size:.5625rem;line-height:1.45}.stt-candidate-card small{color:var(--ink-500)}.stt-candidate-card b{font-weight:650;color:var(--teal-700)}
+.stt-trend-track{height:17px;position:relative;overflow:hidden;border:1px solid #d9e4e7;border-radius:4px;background:#f8fafb}
+.stt-trend-track svg{position:absolute;inset:0;width:100%;height:100%}.stt-trend-track line{stroke:#c5d2d7;stroke-width:.35}.stt-trend-track polyline{fill:none;stroke:#2678b9;stroke-width:1;vector-effect:non-scaling-stroke}
+.stt-trend-track span{position:absolute;left:var(--window-left);top:0;bottom:0;width:var(--window-width);min-width:3px;background:rgba(11,146,144,.13);border-inline:1px solid rgba(11,146,144,.45)}
+.stt-trend-track i{position:absolute;left:var(--window-left);top:5px;width:5px;height:5px;border-radius:50%;background:var(--teal-600);transform:translateX(-2px)}
+
 /* Shared waveform beat relabel menu: one clinical action model for review and template editing. */
 .beat-relabel-menu{position:fixed;inset:auto;width:min(292px,calc(100vw - 24px));margin:0;padding:0;border:1px solid #cbd8dc;border-radius:10px;background:#fff;color:var(--ink-900);box-shadow:0 12px 30px rgba(14,39,51,.2);overflow:hidden;z-index:95}
 .beat-relabel-menu:popover-open{display:block}

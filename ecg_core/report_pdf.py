@@ -33,6 +33,7 @@ def _register_font() -> None:
 
 
 def build_report_pdf(case: dict, calculated: dict, report: dict) -> BytesIO:
+    if "selected_waveforms" in report:return build_composed_pdf(case,calculated,report)
     _register_font()
     output = BytesIO()
     doc = SimpleDocTemplate(
@@ -162,3 +163,54 @@ def build_report_pdf(case: dict, calculated: dict, report: dict) -> BytesIO:
     doc.build(story, onFirstPage=footer, onLaterPages=footer)
     output.seek(0)
     return output
+
+
+def build_composed_pdf(case, calculated, report):
+    """V2 renders the same resolved selection, figures and tables as the print view."""
+    from reportlab.lib.pagesizes import A3, landscape
+    from reportlab.platypus import KeepTogether
+    from reportlab.graphics.shapes import Drawing, PolyLine, String, Line
+    _register_font()
+    output=BytesIO();composition=report['composition'];paper=composition.get('paper',{})
+    size=A3 if paper.get('size')=='A3' else A4
+    if paper.get('orientation')=='landscape':size=landscape(size)
+    doc=SimpleDocTemplate(output,pagesize=size,leftMargin=15*mm,rightMargin=15*mm,topMargin=15*mm,bottomMargin=15*mm)
+    width=size[0]-30*mm
+    style=ParagraphStyle('composed',fontName=FONT_NAME,fontSize=10,leading=16)
+    title=ParagraphStyle('composed-title',parent=style,fontSize=18,leading=26,spaceAfter=12)
+    para=lambda text:Paragraph(html.escape(str(text).replace('·',' / ').replace('–','-').replace('—','-')).replace('\n','<br/>'),style)
+    def table(rows):
+        columns=len(rows[0]);widths=([width*.23]+[width*.77/(columns-1)]*(columns-1)) if columns>3 else [width/columns]*columns
+        t=Table([[para(v if v is not None else '—') for v in row] for row in rows],colWidths=widths,repeatRows=1)
+        t.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#edf5f6')),('GRID',(0,0),(-1,-1),.3,colors.HexColor('#c6d7dc')),('VALIGN',(0,0),(-1,-1),'TOP'),('LEFTPADDING',(0,0),(-1,-1),5),('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5)]));return t
+    story=[Paragraph('动态心电分析报告',title),para(f"{case['case_id']} · {case['metadata'].get('name','')} · {case['metadata'].get('start_time','')}"),para(f"{report['status']} v{report['version']} · {report.get('reviewed_by','') or '未审核'}"),Spacer(1,10),para(report.get('conclusion',''))]
+    story += [para(b['text']) for b in composition.get('diagnosis_blocks',[])]
+    from .clinical_analysis import CATEGORIES
+    data=report['event_statistics']
+    story += [Spacer(1,12),para('全部已确认结果统计（图条选择不改变统计）'),table([['分类','事件次数','心搏数量']]+[[label,data['confirmed_category_counts'][k],data['confirmed_beat_counts'].get(k,'—')] for k,label in CATEGORIES])]
+    h=report['hrv_windows'];story += [Spacer(1,12),para(f"HRV 第{h['window_index']+1}窗口 · 实际覆盖 {h['actual_duration_s']/3600:.2f}小时"),para(h['method'])]
+    rows=[['时段','SDNN ms','RMSSD ms','pNN50 %','平均NN ms','有效NN','覆盖 / 有效NN秒']]
+    rows += [[r['label'],r['sdnn_ms'],r['rmssd_ms'],r['pnn50_pct'],r['mean_nn_ms'],r['nn_count'],f"{r['coverage_s']} / {r['valid_nn_s']}"] for r in list(h['periods'].values())+h['hourly']]
+    trend=Drawing(width,100);valid=[r['sdnn_ms'] for r in h['hourly'] if r['sdnn_ms'] is not None];maximum=max([1]+valid)
+    previous=None
+    for i,r in enumerate(h['hourly']):
+        if r['sdnn_ms'] is None:previous=None;continue
+        xy=(20+i*(width-40)/max(1,len(h['hourly'])-1),15+r['sdnn_ms']/maximum*70)
+        if previous:trend.add(Line(*previous,*xy,strokeColor=colors.HexColor('#0b7d7b')))
+        trend.add(String(xy[0],xy[1]+3,str(r['sdnn_ms']),fontName='Helvetica',fontSize=7));previous=xy
+    story += [trend,table(rows)]
+    for i,event in enumerate(report.get('selected_waveforms',[])):
+        wave=event['waveform'];leads=list(wave['leads'].items());row_height=72;d=Drawing(width,row_height*len(leads))
+        for j,(lead,values) in enumerate(leads):
+            base=(len(leads)-j-.5)*row_height;magnitude=max([50]+[abs(v) for v in values]);points=[]
+            for x,v in enumerate(values):points += [x/max(1,len(values)-1)*width,base-v/magnitude*row_height*.4]
+            if len(points)>=4:d.add(PolyLine(points,strokeColor=colors.HexColor('#244f59'),strokeWidth=.5))
+            d.add(String(2,(len(leads)-j)*row_height-10,lead,fontName='Helvetica',fontSize=8))
+        for sample in event['target_samples']:
+            x=(sample/200-wave['start_s'])/wave['duration_s']*width
+            if 0<=x<=width:d.add(Line(x,0,x,d.height,strokeColor=colors.HexColor('#debdad'),strokeWidth=.25))
+        story += [Spacer(1,14),KeepTogether([para(f"{i+1}. {event['caption']}"),d,para(f"{wave['start_s']:.3f}–{wave['start_s']+wave['duration_s']:.3f}秒 · 原始设备波形，自适应幅度 · 目标 {event['beat_count']} 搏")])]
+    story += [Spacer(1,12),para('源报告作为独立对照，未参与本页修订后统计。'),para(f"源报告摘要：有效心搏 {case.get('summary',{}).get('total_beats','—')} · 平均心率 {case.get('summary',{}).get('avg_hr','—')} bpm · SDNN {case.get('summary',{}).get('sdnn_ms','—')} ms"),para('研究演示输出 · 原始电压标定未建立计量学溯源。')]
+    def footer(canvas,document):
+        canvas.setFont(FONT_NAME,8);canvas.drawRightString(size[0]-15*mm,8*mm,f"第 {document.page} 页")
+    doc.build(story,onFirstPage=footer,onLaterPages=footer);output.seek(0);return output

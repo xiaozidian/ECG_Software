@@ -32,12 +32,14 @@ from ecg_core.ebi import (
     visible_beats,
 )
 from ecg_core.report_pdf import build_report_pdf
+from ecg_core.clinical_analysis import build_index, query_index, hrv_windows, validate_report
+from ecg_core.storage import normalize_report_composition
 from ecg_core.repository import CaseNotFound, CaseRepository
 from ecg_core.storage import Storage
 from ecg_core.beat_editor import BeatEditorStore, EditedRecords, TYPES, apply_operation, propose_qrs, integer
 from ecg_core.ebi import load_records
 from ecg_core.stt import build_stt_review
-from ecg_core.waveform import ALL_LEADS, read_waveform, read_waveform_strips
+from ecg_core.waveform import read_event_waveform, ALL_LEADS, read_waveform, read_waveform_strips
 
 ACTOR = "演示分析医生"
 READONLY_POST_ENDPOINTS = frozenset({"case_open", "scatter_selection_endpoint", "waveform_strips_endpoint"})
@@ -329,7 +331,17 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
     @app.get("/api/cases/<case_id>/stt-review")
     def stt_review(case_id: str):
         case = case_or_404(case_id)
-        return jsonify(build_stt_review(case.get("conclusion", "")))
+        editor_value = editor.read(case_id)
+        feed = edited_feed(case, editor_value["document"])
+        overrides = storage.list_beat_overrides(case_id)
+        override_signature = ",".join(f"{item['sample_index']}:{item['class_code']}" for item in overrides)
+        return jsonify(build_stt_review(
+            case.get("conclusion", ""),
+            case["paths"]["data"],
+            feed.records,
+            case["technical"]["duration_seconds_raw"],
+            analysis_revision=f"editor-{editor_value['revision']}|overrides-{override_signature or 'none'}",
+        ))
 
     @app.patch("/api/cases/<case_id>/patient")
     def patient_update(case_id: str):
@@ -383,6 +395,36 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         case = case_or_404(case_id)
         bin_seconds = _number_arg("bin_seconds", 60, int, 10, 600)
         return jsonify(heart_rate_trend(analysis_path(case), case["technical"]["duration_seconds_raw"], bin_seconds))
+
+    def clinical_index(case):
+        feed=edited_feed(case)
+        templates=storage.list_beat_templates(case["case_id"])
+        by_id={r["id"]:r for r in feed.beats}
+        with storage.connect() as db:
+            refs={r["template_id"]:json.loads(r["beat_ids"]) for r in db.execute("SELECT * FROM beat_edit_template_refs WHERE case_id=?",(case["case_id"],))}
+        for t in templates:
+            t["sample_indices"]=[by_id[k]["sample_index"] for k in refs.get(t["id"],[f"s:{s}" for s in t["sample_indices"]]) if k in by_id]
+        return build_index(feed,templates,storage.list_annotations(case["case_id"]),storage.get_review(case["case_id"]))
+
+    @app.get("/api/cases/<case_id>/template-occurrences")
+    def template_occurrences(case_id):
+        return jsonify(query_index(clinical_index(case_or_404(case_id)),request.args,True))
+
+    @app.get("/api/cases/<case_id>/report-events")
+    def report_events(case_id):
+        return jsonify(query_index(clinical_index(case_or_404(case_id)),request.args))
+
+    @app.get("/api/cases/<case_id>/event-waveform")
+    def event_waveform(case_id):
+        case=case_or_404(case_id)
+        start=_number_arg("start",0,float,0)
+        end=_number_arg("end",start+4,float,start+1)
+        return jsonify(read_event_waveform(case["paths"]["data"],start,end,request.args.get("leads","II,V1,V5").split(","),_number_arg("max_points",2400,int,200,12000)))
+
+    @app.get("/api/cases/<case_id>/hrv-windows")
+    def hrv_window_endpoint(case_id):
+        case=case_or_404(case_id)
+        return jsonify(hrv_windows(edited_feed(case),case["metadata"].get("start_iso") or case["metadata"].get("start_time"),request.args.get("window",0)))
 
     @app.get("/api/cases/<case_id>/hrv")
     def hrv_endpoint(case_id: str):
@@ -696,6 +738,8 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         if not 0 <= int(sample_index) < int(case["technical"]["duration_seconds_raw"] * SAMPLE_RATE):
             raise ValueError("sample_index 超出记录范围")
         payload["sample_index"] = int(sample_index)
+        if isinstance(payload.get("details"),dict) and payload["details"].get("end_sample",sample_index)>=int(case["technical"]["duration_seconds_raw"]*SAMPLE_RATE):
+            raise ValueError("结束位置超出记录范围")
         return jsonify(storage.create_annotation(case_id, payload, ACTOR)), 201
 
     @app.delete("/api/annotations/<int:annotation_id>")
@@ -720,7 +764,9 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
             raise ValueError("conclusion 和 status 必须为文本")
         if composition is not None and not isinstance(composition, dict):
             raise ValueError("composition 必须为 JSON 对象")
-        return jsonify(storage.save_report(case_id, conclusion, status, ACTOR, composition))
+        composition=normalize_report_composition(composition if composition is not None else storage.get_report(case_id, "")["composition"])
+        validate_report(clinical_index(case_or_404(case_id)),composition,storage.get_review(case_id),status=="reviewed")
+        return jsonify(storage.save_report(case_id, conclusion, status, ACTOR, composition,payload.get("expected_version")))
 
     @app.get("/api/cases/<case_id>/report.pdf")
     def report_pdf(case_id: str):
@@ -735,6 +781,13 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         report["override_count"] = len(storage.list_beat_overrides(case_id)) + len(editor.read(case_id)["document"]["changes"])
         report["edited_analysis"] = True
         report["analysis_revision"] = editor.read(case_id)["revision"]
+        index=clinical_index(case)
+        resolved=validate_report(index,report['composition'],report['review_snapshot'])
+        if len(resolved)!=len(report['composition'].get('selected_events',[])):
+            raise ValueError('已选图条失效，请重新筛选后导出')
+        report['selected_waveforms']=[{**e,'waveform':read_event_waveform(case['paths']['data'],max(0,e['time_s']-.8),e['end_s']+1.6)} for e in resolved]
+        report['event_statistics']=query_index(index,{'fast_slow_mode':report['composition'].get('fast_slow_mode','rr')})
+        report['hrv_windows']=hrv_windows(edited_feed(case),case['metadata'].get('start_iso') or case['metadata'].get('start_time'),report['composition'].get('hrv_window',0))
         privacy_mode = "phi-visible" if include_phi else "masked"
         storage.audit(ACTOR, "report.export_pdf", case_id, f"version={report['version']} privacy={privacy_mode}")
         response = send_file(build_report_pdf(report_case, calculated, report), mimetype="application/pdf", as_attachment=True, download_name=f"{case_id}_心电分析复核报告.pdf")

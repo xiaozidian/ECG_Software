@@ -139,3 +139,19 @@ def read_waveform_strips(
         "leads": selected,
         "items": result,
     }
+
+
+def read_event_waveform(path, start_s, end_s, leads=None, max_points=2400):
+    """Whole event overview. Directly sample bounded positions; no 120 s truncation."""
+    import mmap
+    import struct
+    total=Path(path).stat().st_size//16
+    first=max(0,min(total-1,int(start_s*SAMPLE_RATE)))
+    last=min(total,max(first+1,int(end_s*SAMPLE_RATE)))
+    stride=max(1,math.ceil((last-first)/max(200,min(12000,int(max_points)))))
+    channels=[[] for _ in range(8)]
+    with Path(path).open('rb') as f, mmap.mmap(f.fileno(),0,access=mmap.ACCESS_READ) as raw:
+        for sample in range(first,last,stride):
+            for i,value in enumerate(struct.unpack_from('<8h',raw,sample*16)):channels[i].append(value)
+    derived=_derive(channels)
+    return dict(start_s=first/200,duration_s=(last-first)/200,sample_rate_hz=200,display_sample_rate_hz=200/stride,stride=stride,units='µV',filter='raw overview',leads={k:derived[k] for k in (leads or ['II','V1','V5']) if k in derived},beats=[],annotations=[])

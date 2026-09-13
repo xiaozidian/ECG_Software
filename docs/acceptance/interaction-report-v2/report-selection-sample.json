@@ -1,0 +1,96 @@
+{
+  "fixture": "existing public 10-minute Demo",
+  "status": "draft",
+  "selected_strips": 3,
+  "diagnosis_blocks": [
+    {
+      "key": "S:single",
+      "text": "单发房早",
+      "manual": false,
+      "needs_review": false,
+      "acknowledged": false
+    },
+    {
+      "key": "S:triplet",
+      "text": "连续三发房早",
+      "manual": false,
+      "needs_review": false,
+      "acknowledged": false
+    }
+  ],
+  "all_S_events": 31,
+  "all_S_beats": 144,
+  "selected_events": [
+    {
+      "event_id": "S:single:s:47827:s:47827",
+      "basis_version": "2bb696b3-741638a5",
+      "caption": "单发房早"
+    },
+    {
+      "event_id": "S:single:s:100553:s:100553",
+      "basis_version": "2bb696b3-741638a5",
+      "caption": "单发房早"
+    },
+    {
+      "event_id": "S:triplet:s:105657:s:105833",
+      "basis_version": "2bb696b3-741638a5",
+      "caption": "连续三发房早"
+    }
+  ],
+  "hrv": {
+    "window_index": 0,
+    "window_count": 1,
+    "start_s": 0,
+    "end_s": 600,
+    "actual_duration_s": 600,
+    "clock_available": true,
+    "periods": {
+      "full": {
+        "label": "当前记录（不足24小时）",
+        "nn_count": 747,
+        "coverage_s": 600,
+        "valid_nn_s": 511.015,
+        "mean_nn_ms": 684.09,
+        "sdnn_ms": 60.25,
+        "rmssd_ms": 38.28,
+        "pnn50_pct": 10.27
+      },
+      "day": {
+        "label": "日间 06:00–22:00（清醒代理）",
+        "nn_count": 747,
+        "coverage_s": 600,
+        "valid_nn_s": 511.015,
+        "mean_nn_ms": 684.09,
+        "sdnn_ms": 60.25,
+        "rmssd_ms": 38.28,
+        "pnn50_pct": 10.27
+      },
+      "night": {
+        "label": "夜间 22:00–06:00",
+        "nn_count": 0,
+        "coverage_s": 0,
+        "valid_nn_s": 0.0,
+        "mean_nn_ms": null,
+        "sdnn_ms": null,
+        "rmssd_ms": null,
+        "pnn50_pct": null
+      }
+    },
+    "hourly": [
+      {
+        "label": "08-05 07:48",
+        "nn_count": 747,
+        "coverage_s": 600,
+        "valid_nn_s": 511.015,
+        "mean_nn_ms": 684.09,
+        "sdnn_ms": 60.25,
+        "rmssd_ms": 38.28,
+        "pnn50_pct": 10.27,
+        "start_s": 0,
+        "end_s": 600,
+        "partial": true
+      }
+    ],
+    "method": "修订后连续 N-N；窗口内直接计算；缺失时段留空；日间是清醒时段代理"
+  }
+}

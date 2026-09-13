@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from .clinical_analysis import normalize_selection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -12,7 +13,7 @@ BEAT_TEMPLATE_FAMILIES = {
     "成对",
     "房速",
     "二联律",
-    "三联律(NPN)",
+    "三联律(NPN)", "三联律(NNP)", "连续三发", "连续多发", "室速",
     "三联律(NPP)",
     "四联律",
     "自定义",
@@ -46,7 +47,7 @@ DEFAULT_REPORT_COMPOSITION = {
 
 def normalize_report_composition(value: dict | None) -> dict:
     if value is None:
-        return json.loads(json.dumps(DEFAULT_REPORT_COMPOSITION, ensure_ascii=False))
+        return {**json.loads(json.dumps(DEFAULT_REPORT_COMPOSITION, ensure_ascii=False)), **normalize_selection({})}
     if not isinstance(value, dict):
         raise ValueError("composition 必须为 JSON 对象")
     raw_pages = value.get("included_pages", DEFAULT_REPORT_COMPOSITION["included_pages"])
@@ -82,6 +83,8 @@ def normalize_report_composition(value: dict | None) -> dict:
     if speed not in {"12.5 mm/s", "25 mm/s", "50 mm/s"} or gain not in {"5 mm/mV", "10 mm/mV", "20 mm/mV"}:
         raise ValueError("paper 图条设置不受支持")
     return {
+        **normalize_selection(value),
+        "hrv_window": max(0, int(value.get("hrv_window",0))),
         "template": template,
         "included_pages": pages,
         "active_page": active_page,
@@ -111,6 +114,9 @@ class Storage(ReviewWorkflowMixin):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
         self.initialize_review()
+        with self.connect() as db:
+            if "details" not in {r[1] for r in db.execute("PRAGMA table_info(annotations)")}:
+                db.execute("ALTER TABLE annotations ADD COLUMN details TEXT NOT NULL DEFAULT '{}'")
 
     def connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path, timeout=10)
@@ -254,6 +260,13 @@ class Storage(ReviewWorkflowMixin):
         samples = sorted(set(raw_samples))
         if len(samples) != len(raw_samples):
             raise ValueError("sample_indices 不能重复")
+        details = payload.get("details", {})
+        if details:
+            if not isinstance(details,dict) or details.get("kind") not in ("ST","AT","VT","AF","AFL") or details.get("status") not in ("confirmed","excluded","pending"):
+                raise ValueError("结构化发现类型或状态无效")
+            end=details.get("end_sample",sample_index)
+            if type(end) is not int or end<sample_index:raise ValueError("结束位置无效")
+            details={"kind":details["kind"],"status":details["status"],"end_sample":end,"finding":str(details.get("finding",label))[:120]}
         now = utc_now()
         values = (
             case_id,
@@ -391,7 +404,7 @@ class Storage(ReviewWorkflowMixin):
             rows = db.execute(
                 "SELECT * FROM annotations WHERE case_id=? ORDER BY sample_index,id", (case_id,)
             ).fetchall()
-        return [dict(row) for row in rows]
+        return [{**dict(row), "details":json.loads(row["details"] or "{}")} for row in rows]
 
     def create_annotation(self, case_id: str, payload: dict, actor: str) -> dict:
         if not isinstance(payload, dict):
@@ -411,6 +424,13 @@ class Storage(ReviewWorkflowMixin):
             raise ValueError("label 必须为非空文本")
         if not isinstance(note, str):
             raise ValueError("note 必须为文本")
+        details = payload.get("details", {})
+        if details:
+            if not isinstance(details,dict) or details.get("kind") not in ("ST","AT","VT","AF","AFL") or details.get("status") not in ("confirmed","excluded","pending"):
+                raise ValueError("结构化发现类型或状态无效")
+            end=details.get("end_sample",sample_index)
+            if type(end) is not int or end<sample_index:raise ValueError("结束位置无效")
+            details={"kind":details["kind"],"status":details["status"],"end_sample":end,"finding":str(details.get("finding",label))[:120]}
         now = utc_now()
         values = (
             case_id,
@@ -430,9 +450,10 @@ class Storage(ReviewWorkflowMixin):
                 VALUES(?,?,?,?,?,?,?,?,?)""",
                 values,
             )
+            db.execute("UPDATE annotations SET details=? WHERE id=?",(json.dumps(details,ensure_ascii=False),cursor.lastrowid))
             row = db.execute("SELECT * FROM annotations WHERE id=?", (cursor.lastrowid,)).fetchone()
         self.audit(actor, "annotation.create", case_id, f"#{row['id']} {row['label']}")
-        return dict(row)
+        return {**dict(row),"details":details}
 
     def delete_annotation(self, annotation_id: int, actor: str) -> bool:
         with self.connect() as db:
@@ -463,7 +484,7 @@ class Storage(ReviewWorkflowMixin):
             "composition": normalize_report_composition(None),
         }
 
-    def save_report(self, case_id: str, conclusion: str, status: str, actor: str, composition: dict | None = None) -> dict:
+    def save_report(self, case_id: str, conclusion: str, status: str, actor: str, composition: dict | None = None, expected_version=None) -> dict:
         allowed = {"draft", "reviewed", "returned"}
         if status not in allowed:
             raise ValueError("invalid report status")
@@ -471,6 +492,8 @@ class Storage(ReviewWorkflowMixin):
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             old = db.execute("SELECT * FROM report_drafts WHERE case_id=?", (case_id,)).fetchone()
+            if expected_version is not None and expected_version != (old["version"] if old else 1):
+                raise ValueError("报告版本已变更，请重新载入")
             if status == "reviewed":
                 self.assert_report_ready(db, case_id, conclusion)
             version = int(old["version"]) + 1 if old else 1

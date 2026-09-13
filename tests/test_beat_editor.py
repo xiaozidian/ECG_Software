@@ -130,7 +130,7 @@ def test_store_atomic_revision_undo_redo_survive_reopen(tmp_path):
     assert undone["document"]==original["document"]
     redone=BeatEditorStore(Storage(tmp_path/"editor.db")).commit("test",2,"test",None,"redo")
     assert redone["document"]==changed["document"]
-    assert len(storage.get_review("test")["pending_steps"])==5
+    assert len(storage.get_review("test")["pending_steps"])==2
 
 
 def test_api_preview_is_read_only_and_edited_views_share_version(client):

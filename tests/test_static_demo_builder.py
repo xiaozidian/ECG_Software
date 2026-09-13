@@ -45,7 +45,7 @@ def test_static_demo_builder(tmp_path: Path) -> None:
     assert 'id="page-stt"' in html
     assert 'id="sttWaveformCanvas"' in html
     assert 'id="sttGuidanceDialog"' in html
-    assert "定量 ST 分析尚未启用" in html
+    assert "自动筛查结果必须由医生复核" in html
     assert "不生成缺血或心肌梗死诊断" in html
     assert 'data-page="edit"' in html
     assert 'id="page-edit"' in html
@@ -142,6 +142,8 @@ global.window = {
     : new Response("not intercepted", {status: 404}),
   location: global.location,
 };
+require(process.cwd() + "/static/js/clinical-analysis.js");
+require(process.cwd() + "/static/js/beat-engine.js");
 require(process.cwd() + "/static/js/demo-api.js");
 
 (async () => {
@@ -208,13 +210,13 @@ require(process.cwd() + "/static/js/demo-api.js");
   const getWorkflow = async () => (await window.fetch(`/api/cases/${caseId}/review-workflow`)).json();
   const put = (suffix,payload) => window.fetch(`/api/cases/${caseId}/${suffix}`, {method:"PUT",body:JSON.stringify(payload)});
   let workflow = await getWorkflow();
-  if (workflow.pending_steps.length !== 5) throw new Error("navigation silently confirmed clinical steps");
+  if (workflow.pending_steps.length !== 2) throw new Error("navigation silently confirmed clinical steps");
   const blocked = await put("report", {conclusion:"回归测试，不代表临床复核",status:"reviewed"});
   if (blocked.ok) throw new Error("unreviewed demo report approved");
   const event = events.items[0];
   const retained = await put("event-reviews", {items:[event],status:"retained"});
   if (!retained.ok) throw new Error("event review failed");
-  for (const step of ["review","edit","trends","stt","events"]) {
+  for (const step of ["edit","stt"]) {
     workflow = await getWorkflow();
     const confirmed = await put("review-workflow", {step,revision:workflow.revision,confirmed:true,note:"自动化交互测试"});
     if (!confirmed.ok) throw new Error("checkpoint confirmation failed: "+step);
@@ -223,11 +225,12 @@ require(process.cwd() + "/static/js/demo-api.js");
   if (workflow.pending_steps.length || Object.values(workflow.events)[0].status !== "retained") throw new Error("workflow state missing");
   const stale = await put("review-workflow", {step:"review",revision:workflow.revision-1,confirmed:true});
   if (stale.ok) throw new Error("stale confirmation accepted");
-  const approved = await put("report",{conclusion:"回归测试，不代表临床复核",status:"reviewed"});
+  const reportIndex=await (await window.fetch(`/api/cases/${caseId}/report-events?analysis=edited`)).json();
+  const approved = await put("report",{conclusion:"回归测试，不代表临床复核",status:"reviewed",composition:{category_reviews:reportIndex.basis_versions}});
   if (!approved.ok) throw new Error("completed report could not be approved");
   await put("beat-overrides",{sample_indices:sameGroupSamples.slice(0,1),class_code:"V"});
   workflow = await getWorkflow();
-  if (workflow.pending_steps.length !== 5 || workflow.report_status !== "draft") throw new Error("upstream edit did not invalidate approval");
+  if (workflow.pending_steps.length !== 2 || workflow.report_status !== "draft") throw new Error("upstream edit did not invalidate approval");
   if (Object.values(workflow.events)[0].status !== "pending") throw new Error("upstream edit left stale evidence accepted");
   // Re-create the adapter, emulating reload with the same browser storage.
   delete require.cache[require.resolve(process.cwd()+"/static/js/demo-api.js")];

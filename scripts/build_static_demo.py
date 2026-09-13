@@ -10,7 +10,6 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 
-
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEMO_STATIC_ROOT = PROJECT_ROOT / "demo" / "static"
 DEFAULT_OUTPUT = PROJECT_ROOT / "build" / "pages"
@@ -49,7 +48,7 @@ def build(output: Path) -> Path:
         "小时 Holter 数据": "病例波形时长",
         "源报告统计": "病例数据统计",
         "原报告影像": "病例报告",
-        "导出 PDF": "下载演示说明",
+        "导出 PDF": "打印 / 保存 PDF",
         '<button class="active" data-event-type="all">全部</button>': '<button class="active" data-event-type="all">全部</button><button data-event-type="AF">房颤样候选</button>',
     }
     for source, target in replacements.items():

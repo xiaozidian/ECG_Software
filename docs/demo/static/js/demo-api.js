@@ -3,7 +3,7 @@
 /* Browser-only API for the single published ECG case. */
 (() => {
   const RATE=200,COUNT=1,STORE_KEY="cardioinsight-pages-single-case-v1";
-  const TEMPLATE_FAMILIES=new Set(["全部","单发","成对","房速","二联律","三联律(NPN)","三联律(NPP)","四联律","自定义"]),TEMPLATE_LEADS=new Set(["I","II","III","aVR","aVL","aVF","V1","V2","V3","V4","V5","V6"]);
+  const TEMPLATE_FAMILIES=new Set(["全部","单发","成对","房速","二联律","三联律(NPN)","三联律(NNP)","连续三发","连续多发","室速","三联律(NPP)","四联律","自定义"]),TEMPLATE_LEADS=new Set(["I","II","III","aVR","aVL","aVF","V1","V2","V3","V4","V5","V6"]);
   const ASSET_BASE="static/demo-data/uploaded-sim-af-001";
   const sourceCase=window.__CARDIOINSIGHT_UPLOADED_CASE__;
   if(!sourceCase)throw new Error("病例数据资源未加载");
@@ -63,7 +63,7 @@
   const candidateWindow=sourceCase.simulation_profile.rhythm_candidate_windows_s[0];
   const audit=(action,detail="")=>{invalidateWorkflow(action);saved.audit.unshift({created_at:now(),actor:"pages-demo",case_id:caseId,action,detail});saved.audit=saved.audit.slice(0,300);persist()};
 
-  const reviewSteps=["review","edit","trends","stt","events"];
+  const reviewSteps=["edit","stt"];
   function workflow(){
     const value=saved.reviews[caseId]||(saved.reviews[caseId]={case_id:caseId,revision:0,steps:{},events:{}});
     const pending=reviewSteps.filter(step=>value.steps[step]?.status!=="done");
@@ -72,14 +72,15 @@
   function invalidateWorkflow(action){
     let affected;
     if(action.startsWith("beat_override.")||action==="patient.update")affected=reviewSteps;
-    else if(action.startsWith("beat_template."))affected=reviewSteps.slice(1);
+    else if(action.startsWith("beat_template."))affected=reviewSteps;
     else if(action.startsWith("annotation."))affected=["stt","events"];
     else if(action==="event.review")affected=["events"];
     else return;
     workflow();const value=saved.reviews[caseId];value.revision++;
     affected.forEach(step=>{if(value.steps[step])Object.assign(value.steps[step],{status:"stale",reason:action})});
     if(action.startsWith("beat_override."))Object.values(value.events).forEach(item=>item.status="pending");
-    const report=saved.reports[caseId];if(report?.status==="reviewed"){report.status="draft";report.reviewed_by="";report.version++;report.updated_at=now();}
+    const report=saved.reports[caseId];if(report?.composition){if(action.startsWith("annotation."))delete report.composition.category_reviews?.ST;else if(action!=="event.review")report.composition.category_reviews={};}
+    if(report?.status==="reviewed"){report.status="draft";report.reviewed_by="";report.version++;report.updated_at=now();}
   }
   function confirmWorkflow(payload){
     const current=workflow();
@@ -97,8 +98,9 @@
     audit("event.review",`${payload.status}: ${items.length}`);return workflow();
   }
 
+  function clinicalIndex(){return ECGClinicalAnalysis.buildIndex({...editedFeed(),duration},templateList(),annotationList(),workflow())}
   function annotationList(){
-    const initial=[{id:-1,sample_index:candidateWindow[0]*RATE,lead:"II",category:"rhythm",label:"房颤候选片段",note:"直接读取已上传的源 DATA 片段",created_by:"published-case",created_at:"2026-08-12 09:00:00"}];
+    const initial=[{id:-1,sample_index:candidateWindow[0]*RATE,lead:"II",category:"rhythm",details:{kind:"AF",status:"pending",end_sample:Math.min(duration*RATE-1,candidateWindow[1]*RATE),finding:"房颤候选片段"},label:"房颤候选片段",note:"直接读取已上传的源 DATA 片段",created_by:"published-case",created_at:"2026-08-12 09:00:00"}];
     return initial.concat(saved.annotations[caseId]||[]);
   }
   function templateList(){const list=copy(saved.templates?.[caseId]||[]);if(activeEdited){const map=new Map(editedFeed().beats.map(r=>[r.id,r]));list.forEach(item=>{item.sample_indices=(item.beat_ids||item.sample_indices.map(s=>"s:"+s)).filter(id=>map.has(id)).map(id=>map.get(id).sample_index).sort((a,b)=>a-b);item.beat_count=item.sample_indices.length})}return list}
@@ -171,7 +173,7 @@
   }
   async function waveform(params,forced={}){
     const waveBeats=beats.slice(),waveMarkers=activeEdited?editedFeed().markers:[];
-    const buffer=await waveformBuffer(),view=new DataView(buffer),start=Math.max(0,Math.min(duration-1,Number(forced.start??params.get("start")??0))),windowSeconds=Math.max(.5,Math.min(120,duration-start,Number(forced.duration??params.get("duration")??10))),supported=["I","II","III","aVR","aVL","aVF","V1","V2","V3","V4","V5","V6"],leads=forced.leads||String(params.get("leads")||"II,V1,V5").split(",").filter(x=>supported.includes(x)),max=Math.max(200,Math.min(12000,Number(forced.maxPoints??params.get("max_points")??4000))),startSample=Math.floor(start*RATE),sampleCount=Math.min(Math.floor(windowSeconds*RATE),buffer.byteLength/16-startSample),stride=Math.max(1,Math.ceil(sampleCount/max)),applyFilter=(forced.filter||params.get("filter")||"display")!=="raw",data={};
+    const buffer=await waveformBuffer(),view=new DataView(buffer),start=Math.max(0,Math.min(duration-1,Number(forced.start??params.get("start")??0))),windowSeconds=Math.max(.5,Math.min(params.get("whole")==="1"?duration:120,duration-start,Number(forced.duration??params.get("duration")??10))),supported=["I","II","III","aVR","aVL","aVF","V1","V2","V3","V4","V5","V6"],leads=forced.leads||String(params.get("leads")||"II,V1,V5").split(",").filter(x=>supported.includes(x)),max=Math.max(200,Math.min(12000,Number(forced.maxPoints??params.get("max_points")??4000))),startSample=Math.floor(start*RATE),sampleCount=Math.min(Math.floor(windowSeconds*RATE),buffer.byteLength/16-startSample),stride=Math.max(1,Math.ceil(sampleCount/max)),applyFilter=(forced.filter||params.get("filter")||"display")!=="raw",data={};
     leads.forEach(lead=>{let values=Array.from({length:sampleCount},(_,offset)=>leadValue(view,startSample+offset,lead));if(applyFilter)values=displayFilter(values);data[lead]=values.filter((_,offset)=>offset%stride===0)});
     return {start_s:round(startSample/RATE,3),duration_s:round(sampleCount/RATE,3),sample_rate_hz:RATE,display_sample_rate_hz:RATE/stride,stride,units:"µV",filter:applyFilter?"0.5–40 Hz display filter":"raw",calibration_note:"已上传源 DATA 片段 · 未建立计量学溯源",leads:data,beats:waveBeats.concat(waveMarkers).filter(x=>x.time_s>=start&&x.time_s<=start+windowSeconds),annotations:annotationList().filter(x=>x.sample_index/RATE>=start&&x.sample_index/RATE<=start+windowSeconds)};
   }
@@ -205,6 +207,9 @@
     if(action.startsWith("beat-editor")){try{return response(await editorRoute(action,method,requestBody(options)))}catch(error){return failure(error.message)}}
     if(!action&&method==="GET")return response(present(true));
     if(action==="open"&&method==="POST"){audit("case.open","打开病例");return response({ok:true})}
+    if(action==="template-occurrences"||action==="report-events"){try{return response(ECGClinicalAnalysis.queryIndex(clinicalIndex(),url.searchParams,action==="template-occurrences"))}catch(error){return failure(error.message)}}
+    if(action==="event-waveform"){url.searchParams.set("whole","1");url.searchParams.set("duration",Math.max(1,Number(url.searchParams.get("end"))-Number(url.searchParams.get("start"))));url.searchParams.set("filter","raw");return response(await waveform(url.searchParams))}
+    if(action==="hrv-windows")return response(ECGClinicalAnalysis.hrvWindows({...editedFeed(),duration},sourceCase.metadata.start_iso||sourceCase.metadata.start_time,Number(url.searchParams.get("window")||0)));
     if(action==="review-workflow"&&method==="GET")return response(workflow());
     if(action==="review-workflow"&&method==="PUT"){try{return response(confirmWorkflow(requestBody(options)))}catch(error){return failure(error.message)}}
     if(action==="event-reviews"&&method==="PUT"){try{return response(reviewEvents(requestBody(options)))}catch(error){return failure(error.message)}}
@@ -217,10 +222,9 @@
     if(action==="annotations"&&method==="POST"){const item={...requestBody(options),id:Date.now(),created_by:"pages-demo",created_at:now()};(saved.annotations[caseId]||(saved.annotations[caseId]=[])).push(item);audit("annotation.create","仅保存于当前浏览器");return response(item,201)}
     if(action==="patient"&&method==="PATCH"){saved.patients[caseId]={...(saved.patients[caseId]||{}),...requestBody(options)};audit("patient.update","仅保存于当前浏览器");return response(saved.patients[caseId])}
     if(action==="report"&&method==="GET")return response(report(present()));
-    if(action==="report"&&method==="PUT"){const payload=requestBody(options);if(!["draft","reviewed","returned"].includes(payload.status||"draft"))return failure("invalid report status");if(payload.status==="reviewed"&&(workflow().pending_steps.length||!String(payload.conclusion||"").trim()))return failure("请先确认全部复核环节并填写结论");const old=report(present()),item={status:payload.status||"draft",version:old.version+1,conclusion:String(payload.conclusion||""),composition:copy(payload.composition||old.composition),updated_at:now()};saved.reports[caseId]=item;audit(`report.${item.status}`,"仅保存于当前浏览器");persist();return response(report(present()))}
+    if(action==="report"&&method==="PUT"){const payload=requestBody(options);if(!["draft","reviewed","returned"].includes(payload.status||"draft"))return failure("invalid report status");if(payload.status==="reviewed"&&(workflow().pending_steps.length||!String(payload.conclusion||"").trim()))return failure("请先确认全部复核环节并填写结论");const old=report(present());if(payload.expected_version!==undefined&&payload.expected_version!==old.version)return failure("报告版本已变更，请重新载入");try{ECGClinicalAnalysis.validateReport(clinicalIndex(),payload.composition||{},workflow(),payload.status==="reviewed")}catch(error){return failure(error.message)}const item={status:payload.status||"draft",version:old.version+1,conclusion:String(payload.conclusion||""),composition:copy(payload.composition||old.composition),updated_at:now()};saved.reports[caseId]=item;audit(`report.${item.status}`,"仅保存于当前浏览器");persist();return response(report(present()))}
     return failure("接口不存在",404);
   }
 
   window.fetch=(input,options={})=>{const raw=typeof input==="string"?input:input?.url,url=new URL(raw,location.href);if(!url.pathname.startsWith("/api/"))return nativeFetch(input,options);const run=()=>Promise.resolve().then(()=>route(url,options));return /\/beat-editor$/.test(url.pathname)&&options.method==="PUT"&&globalThis.navigator?.locks?navigator.locks.request(STORE_KEY,run):run()};
-  document.addEventListener("DOMContentLoaded",()=>document.querySelector("#downloadReport")?.addEventListener("click",event=>{event.preventDefault();event.stopImmediatePropagation();const text=`CardioInsight Holter 病例数据在线演示\n${document.querySelector("#reportCaseLabel")?.textContent||"尚未选择病例"}\n\n仅用于研究与软件功能验证，不可用于临床用途。\n`,link=document.createElement("a");link.href=URL.createObjectURL(new Blob([text],{type:"text/plain;charset=utf-8"}));link.download="CardioInsight_病例演示说明.txt";link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000)},true));
 })();
