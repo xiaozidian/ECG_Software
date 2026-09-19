@@ -28,7 +28,14 @@
       }
     }
     const valid=rows.filter(r=>r.class_code!=='X'&&r.rr_ms>0),nn=rows.filter((b,i)=>i&&rows[i-1].class_code==='N'&&b.class_code==='N'&&b.rr_ms>=opts.nn_min&&b.rr_ms<=opts.nn_max);
-    for(const [name,subset] of [['RR',valid],['NN',nn]])if(subset.length){for(const key of ['fastest','slowest']){const r=subset.reduce((a,b)=>(key==='fastest'?b.rr_ms<a.rr_ms:b.rr_ms>a.rr_ms)?b:a);make(key,name,`${name} ${Object.fromEntries(categories)[key]} ${r.hr} bpm`,[r])}}
+    // Stable IDs preserve previously selected extrema; adjacent real beats remain available.
+    for(const [name,subset] of [['RR',valid],['NN',nn]]){
+      const usable=subset.filter(r=>Number.isFinite(r.hr)&&r.hr>0&&Number.isFinite(r.rr_ms));
+      for(const [key,direction] of [['fastest',1],['slowest',-1]]){
+        const ranked=[...usable].sort((a,b)=>direction*(a.rr_ms-b.rr_ms)||a.sample_index-b.sample_index||(a.id<b.id?-1:a.id>b.id?1:0)).slice(0,200);
+        ranked.forEach((r,i)=>{make(key,name,`${name} ${Object.fromEntries(categories)[key]} ${r.hr} bpm`,[r]).candidate_rank=i+1;});
+      }
+    }
     valid.forEach(r=>{if(r.rr_ms>=opts.pause*1000)make('pause','pause',`长 RR ${(r.rr_ms/1000).toFixed(3)} s`,[r])});
     const definitions=[['rate','tachy','快心率',r=>r.class_code!=='X'&&(r.hr||0)>=opts.tachy],['rate','brady','慢心率',r=>r.class_code!=='X'&&(r.hr||0)>0&&r.hr<=opts.brady],['AF','AF','房颤',r=>['A','M'].includes(r.class_code)],['AF','AFL','房扑',r=>['C','H'].includes(r.class_code)]];
     for(const [cat,sub,label,predicate] of definitions){if(cat==='AF'&&annotations.some(a=>a.details?.rhythm_authoritative))continue;let i=0;while(i<rows.length){if(!predicate(rows[i])){i++;continue}let j=i+1;while(j<rows.length&&predicate(rows[j]))j++;make(cat,sub,label,rows.slice(i,j));i=j}}
@@ -49,12 +56,14 @@
     let items;
     if(occurrences&&mode==='all')items=index.rows.filter(r=>(code==='all'||r.class_code===code)&&(!samples||samples.has(r.sample_index))).map(r=>({event_id:'beat:'+r.id,category:code,subtype:'beat',label:r.name||r.class_code,sample_index:r.sample_index,start_sample:r.sample_index,end_sample:r.sample_index,time_s:r.sample_index/200,end_s:r.sample_index/200,target_samples:[r.sample_index],beat_count:1,hr:r.hr??null,rr_ms:r.rr_ms??null,basis_version:index.beat_version,templates:template?[{id:String(template.id),name:template.name}]:[],diagnosis_status:r.source_sample!==r.sample_index||r.class_code!==({1:'N',2:'S',3:'V',34:'X'}[r.source_group]||'OTHER')?'edited':'pending'}));
     else {items=index.events.filter(e=>ids?ids.has(e.event_id):(occurrences?e.category===(['A','M','C','H'].includes(code)?'AF':code):category==='all'||e.category===category)&&(mode!=='all'?e.subtype===mode:!e.pattern_only)&&(!['fastest','slowest'].includes(e.category)||fast==='BOTH'||e.subtype===fast));if(samples)items=items.filter(e=>e.target_samples.some(s=>samples.has(s)))}
-    items.sort((a,b)=>a.start_sample-b.start_sample||(a.event_id<b.event_id?-1:1));
+    const rateCandidates=!occurrences&&['fastest','slowest'].includes(category)&&!ids,sortOrder=rateCandidates?(params.sort||'hr_desc'):'time';
+    if(!['hr_desc','hr_asc','time'].includes(sortOrder))throw Error('无效的候选排序方式');
+    items.sort((a,b)=>(sortOrder==='time'?0:(sortOrder==='hr_desc'?1:-1)*(a.rr_ms-b.rr_ms))||a.start_sample-b.start_sample||(a.event_id<b.event_id?-1:1));
     const counts=Object.fromEntries(categories.map(([key])=>[key,index.events.filter(e=>!e.pattern_only&&e.category===key&&(!['fastest','slowest'].includes(key)||fast==='BOTH'||e.subtype===fast)).length])),subtypes={},beats={};
     index.events.forEach(e=>{if(e.category===(occurrences?(['A','M','C','H'].includes(code)?'AF':code):category)&&(!samples||e.target_samples.some(s=>samples.has(s))))subtypes[e.subtype]=(subtypes[e.subtype]||0)+1});index.rows.forEach(r=>beats[r.class_code]=(beats[r.class_code]||0)+1);
     const time_counts={};items.forEach(e=>{const h=Math.floor(e.time_s/3600);time_counts[h]=(time_counts[h]||0)+1});
     const confirmed_category_counts={},confirmed_beat_counts={};for(const [key] of categories){const rows=index.events.filter(e=>e.category===key&&!e.pattern_only&&e.diagnosis_status==='confirmed'&&(!['fastest','slowest'].includes(key)||fast==='BOTH'||e.subtype===fast));confirmed_category_counts[key]=rows.length;confirmed_beat_counts[key]=new Set(rows.flatMap(e=>e.target_samples)).size}
-    return {confirmed_category_counts,confirmed_beat_counts,time_counts,items:items.slice(offset,offset+limit),total:items.length,offset,limit,category_counts:counts,subtype_counts:subtypes,beat_counts:beats,basis_versions:index.basis_versions,data_version:index.data_version};
+    return {sort_order:sortOrder,candidate_limit:rateCandidates?200:null,confirmed_category_counts,confirmed_beat_counts,time_counts,items:items.slice(offset,offset+limit),total:items.length,offset,limit,category_counts:counts,subtype_counts:subtypes,beat_counts:beats,basis_versions:index.basis_versions,data_version:index.data_version};
   }
   const mean=a=>a.length?a.reduce((a,b)=>a+b,0)/a.length:null,sd=a=>a.length>1?Math.sqrt(a.reduce((s,x)=>s+(x-mean(a))**2,0)/(a.length-1)):null,round=x=>x===null?null:Math.round((x+Number.EPSILON)*100)/100;
   function hrvWindows(feed,startTime,window=0){

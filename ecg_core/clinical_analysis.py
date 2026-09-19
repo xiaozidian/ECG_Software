@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 
 CATEGORIES = [('fastest','最快心率'),('slowest','最慢心率'),('S','房早事件'),('V','室早事件'),('pause','停搏事件'),('rate','心率异常'),('AF','房颤事件'),('ST','ST段事件'),('other','其他事件')]
 PATTERNS = [('all','全部'),('single','单发'),('couplet','成对'),('triplet','连续三发'),('run','连续多发'),('tachycardia','心动过速'),('bigeminy','二联律'),('nnp','三联律（NNP）'),('npp','三联律（NPP）'),('quadrigeminy','四联律')]
+EXTREME_CANDIDATE_LIMIT = 200
 
 def fingerprint(text):
     value=2166136261
@@ -70,10 +71,15 @@ def build_index(feed, templates=(), annotations=(), review=None):
                 else:i+=1
     valid=[r for r in rows if r['class_code']!='X' and r.get('rr_ms',0)>0]
     nn=[b for a,b in zip(rows,rows[1:]) if a['class_code']==b['class_code']=='N' and opts['nn_min']<=b['rr_ms']<=opts['nn_max']]
+    # Keep the original event IDs, including the previous single extrema, so saved
+    # evidence remains valid. Do not manufacture candidates or suppress nearby beats.
     for name,subset in [('RR',valid),('NN',nn)]:
-        if subset:
-            for key,fn in [('fastest',min),('slowest',max)]:
-                r=fn(subset,key=lambda x:x['rr_ms']);make(key,name,name+' '+dict(CATEGORIES)[key]+f" {int(r['hr']) if float(r['hr']).is_integer() else r['hr']} bpm",[r])
+        usable=[r for r in subset if isinstance(r.get('hr'),(int,float)) and math.isfinite(r['hr']) and r['hr']>0 and math.isfinite(r['rr_ms'])]
+        for key,direction in [('fastest',1),('slowest',-1)]:
+            ranked=sorted(usable,key=lambda r:(direction*r['rr_ms'],r['sample_index'],r['id']))[:EXTREME_CANDIDATE_LIMIT]
+            for rank,r in enumerate(ranked,1):
+                item=make(key,name,name+' '+dict(CATEGORIES)[key]+f" {int(r['hr']) if float(r['hr']).is_integer() else r['hr']} bpm",[r])
+                item['candidate_rank']=rank
     for r in valid:
         if r['rr_ms']>=opts['pause']*1000:make('pause','pause',f"长 RR {r['rr_ms']/1000:.3f} s",[r])
     # Once the episode review is saved, its intervals supersede source rhythm runs.
@@ -127,7 +133,10 @@ def query_index(index,params,occurrences=False):
     else:
         items=[e for e in events if (selected_ids is not None and e['event_id'] in selected_ids) or (selected_ids is None and (e['category']==('AF' if code in ('A','M','C','H') else code) if occurrences else category=='all' or e['category']==category) and (e['subtype']==mode if mode!='all' else not e['pattern_only']) and (e['category'] not in ('fastest','slowest') or fast=='BOTH' or e['subtype']==fast))]
         if samples is not None:items=[e for e in items if any(s in samples for s in e['target_samples'])]
-    items=sorted(items,key=lambda e:(e['start_sample'],e['event_id']))
+    rate_candidates=not occurrences and category in ('fastest','slowest') and selected_ids is None
+    sort_order=params.get('sort','hr_desc') if rate_candidates else 'time'
+    if sort_order not in ('hr_desc','hr_asc','time'):raise ValueError('无效的候选排序方式')
+    items=sorted(items,key=lambda e:((e['rr_ms'] if sort_order=='hr_desc' else -e['rr_ms']),e['start_sample'],e['event_id']) if sort_order!='time' else (e['start_sample'],e['event_id']))
     counts={key:sum(not e['pattern_only'] and e['category']==key and (key not in ('fastest','slowest') or fast=='BOTH' or e['subtype']==fast) for e in events) for key,_ in CATEGORIES}
     subtypes=Counter(e['subtype'] for e in events if e['category']==(('AF' if code in ('A','M','C','H') else code) if occurrences else category) and (samples is None or any(s in samples for s in e['target_samples'])))
     beats=Counter(r['class_code'] for r in index['rows'])
@@ -135,7 +144,7 @@ def query_index(index,params,occurrences=False):
     confirmed_counts={key:len(rows) for key,rows in confirmed.items()}
     confirmed_beats={key:len({s for e in rows for s in e['target_samples']}) for key,rows in confirmed.items()}
     time_counts=Counter(int(e["time_s"]//3600) for e in items)
-    return dict(confirmed_category_counts=confirmed_counts,confirmed_beat_counts=confirmed_beats,time_counts=dict(time_counts),items=items[offset:offset+limit],total=len(items),offset=offset,limit=limit,category_counts=counts,subtype_counts=dict(subtypes),beat_counts=dict(beats),basis_versions=index['basis_versions'],data_version=index['data_version'])
+    return dict(sort_order=sort_order,candidate_limit=EXTREME_CANDIDATE_LIMIT if rate_candidates else None,confirmed_category_counts=confirmed_counts,confirmed_beat_counts=confirmed_beats,time_counts=dict(time_counts),items=items[offset:offset+limit],total=len(items),offset=offset,limit=limit,category_counts=counts,subtype_counts=dict(subtypes),beat_counts=dict(beats),basis_versions=index['basis_versions'],data_version=index['data_version'])
 
 def hrv_windows(feed,start_time,window=0):
     """NN intervals must lie wholly inside a statistical window; gaps break differences."""
