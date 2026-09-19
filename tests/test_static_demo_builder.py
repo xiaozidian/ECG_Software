@@ -91,6 +91,7 @@ def test_static_demo_builder(tmp_path: Path) -> None:
     assert 'filter:"raw"' in app_js
     assert "设备原始单位" in app_js
     assert "async function loadEdit()" in app_js
+    assert "function syncEditTimeSlider()" in app_js
     assert "CASE_WORKFLOW_STEPS" in app_js
     assert "Math.max(300, canvas.parentElement.clientWidth" not in app_js
     clinical_js = (output / "static/js/clinical-workflow.js").read_text(encoding="utf-8")
@@ -113,6 +114,25 @@ def test_static_demo_builder(tmp_path: Path) -> None:
     assert 'key:"source-X"' in app_js
     assert "HRV 时域报告" in app_js
     assert "reportFastSlowCandidates" in app_js
+    shared_ui_js = (output / "static/js/clinical-ui.js").read_text(encoding="utf-8")
+    assert "松开后读取所选时间段" in shared_ui_js
+    assert "timebar.onchange=requestEditTime" in shared_ui_js
+    assert "function enableReportDraftSelections(items)" in shared_ui_js
+    assert "待诊断确认，可先入草稿" in shared_ui_js
+    assert "function stripSettingsHtml(raw,scope)" in shared_ui_js
+    assert "selectedReportWaves" in shared_ui_js
+    assert "ECGReportPaper.render" in shared_ui_js
+    assert "全部 12 导联" in shared_ui_js
+    paper_js = (output / "static/js/report-paper.js").read_text(encoding="utf-8")
+    paper_css = (output / "static/css/report-paper.css").read_text(encoding="utf-8")
+    assert "rp-hourly-table" in paper_js and "stripSvg" in paper_js
+    assert "width:210mm;height:297mm" in paper_css
+    assert "size:A4 portrait" in paper_css
+    shared_ui_css = (output / "static/css/clinical-ui.css").read_text(encoding="utf-8")
+    assert ".v2-strip-page-grid" in shared_ui_css
+    assert "grid-template-columns:repeat(2,minmax(0,1fr))" in shared_ui_css
+    assert "grid-template-rows:repeat(3,minmax(0,1fr))" in shared_ui_css
+    assert ".v2-report-pages" in shared_ui_css
     case_data = output / "static" / "demo-data" / "uploaded-sim-af-001" / "case-data.js"
     waveform_data = output / "static" / "demo-data" / "uploaded-sim-af-001" / "waveform.bin"
     assert case_data.is_file()
@@ -143,6 +163,7 @@ global.window = {
   location: global.location,
 };
 require(process.cwd() + "/static/js/clinical-analysis.js");
+require(process.cwd() + "/static/js/report-engine.js");
 require(process.cwd() + "/static/js/beat-engine.js");
 require(process.cwd() + "/static/js/demo-api.js");
 

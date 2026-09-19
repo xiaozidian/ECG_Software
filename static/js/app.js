@@ -611,7 +611,9 @@ function renderWaveform() {
   const leadNames = Object.keys(state.waveform.leads);
   const height = state.waveformExpanded
     ? Math.max(560, scroller.clientHeight, leadNames.length * 56)
-    : Math.max(360, leadNames.length * 138);
+    : document.querySelector('#page-review.overview-workbench')
+      ? Math.max(innerHeight <= 780 && innerWidth <= 1500 ? 195 : 264, leadNames.length * (innerHeight <= 780 && innerWidth <= 1500 ? 65 : 88))
+      : Math.max(360, leadNames.length * 138);
   const {ctx, width, height: h} = canvasContext(canvas, height);
   ctx.fillStyle = "#fffefd";
   ctx.fillRect(0, 0, width, h);
@@ -1262,13 +1264,26 @@ function renderEditClasses() {
   $("#editActiveClassCount").textContent=`${fmtNumber(descriptor.count||editClassSamples(descriptor).length)} 搏 · ${descriptor.type==="custom"?"医生模板":"源 EBI"}`;
 }
 
+function editMaxStart() {
+  if(!state.caseData)return 0;
+  const total=Number(state.caseData.technical.duration_seconds_raw)||state.editDuration;
+  return Math.max(0,total-state.editDuration);
+}
+
+function syncEditTimeSlider() {
+  const slider=$("#v2EditTime");if(!slider||!state.caseData)return;
+  const max=editMaxStart(),start=Math.max(0,Math.min(Number(state.editStart)||0,max));
+  slider.max=String(max);slider.value=String(start);slider.setAttribute("aria-valuetext",`${formatElapsed(start)}–${formatElapsed(start+state.editDuration)}`);
+}
+
 function renderEditOverview() {
-  if(!state.caseData||!state.trend||!state.editRr)return;
+  if(!state.caseData)return;
+  $("#editWindowLabel").textContent=`${formatElapsed(state.editStart)}–${formatElapsed(state.editStart+state.editDuration)}`;syncEditTimeSlider();
+  if(!state.trend||!state.editRr)return;
   const trendCanvas=$("#editTrendCanvas"),trendContext=canvasContext(trendCanvas,editCanvasHeight(trendCanvas,90,48)),trendCtx=trendContext.ctx,tw=trendContext.width,th=trendContext.height,tm={l:38,r:12,t:7,b:17},plotW=tw-tm.l-tm.r,plotH=th-tm.t-tm.b,total=Math.max(1,state.caseData.technical.duration_seconds_raw),points=state.trend.points||[];
   trendCtx.clearRect(0,0,tw,th);trendCtx.fillStyle="#fff";trendCtx.fillRect(0,0,tw,th);trendCtx.strokeStyle="#e4eaed";[0,.5,1].forEach(f=>{const y=tm.t+plotH*f;trendCtx.beginPath();trendCtx.moveTo(tm.l,y);trendCtx.lineTo(tw-tm.r,y);trendCtx.stroke();});
   const hrs=points.map(point=>Number(point.hr)).filter(Number.isFinite),minHr=Math.max(20,Math.min(...hrs,50)-10),maxHr=Math.min(240,Math.max(...hrs,120)+10),range=Math.max(20,maxHr-minHr),startX=tm.l+state.editStart/total*plotW,endX=tm.l+Math.min(total,state.editStart+state.editDuration)/total*plotW;
   trendCtx.fillStyle="rgba(11,146,144,.12)";trendCtx.fillRect(startX,tm.t,Math.max(3,endX-startX),plotH);trendCtx.strokeStyle="#0b9290";trendCtx.strokeRect(startX+.5,tm.t+.5,Math.max(2,endX-startX-1),plotH-1);trendCtx.beginPath();points.forEach((point,index)=>{const x=tm.l+point.time_s/total*plotW,y=tm.t+plotH-(Number(point.hr)-minHr)/range*plotH;index?trendCtx.lineTo(x,y):trendCtx.moveTo(x,y)});trendCtx.strokeStyle="#2678b9";trendCtx.lineWidth=1.25;trendCtx.stroke();trendCtx.fillStyle="#71828c";trendCtx.font=`9px ${UI_FONT}`;trendCtx.fillText(`${Math.round(maxHr)}`,3,tm.t+5);trendCtx.fillText(`${Math.round(minHr)}`,3,tm.t+plotH);trendCtx.fillText("D1 00h",tm.l,th-5);trendCtx.fillText(formatElapsed(total),Math.max(tm.l,tw-tm.r-63),th-5);
-  $("#editWindowLabel").textContent=`${formatElapsed(state.editStart)}–${formatElapsed(state.editStart+state.editDuration)}`;
   const histogram=$("#editHistogramCanvas"),histContext=canvasContext(histogram,editCanvasHeight(histogram,90,48)),ctx=histContext.ctx,w=histContext.width,h=histContext.height,m={l:34,r:10,t:7,b:17},data=state.editRr.histogram||[],max=Math.max(1,...data.map(item=>item.count)),barW=(w-m.l-m.r)/Math.max(1,data.length),plotHeight=h-m.t-m.b;
   ctx.clearRect(0,0,w,h);ctx.fillStyle="#fff";ctx.fillRect(0,0,w,h);ctx.strokeStyle="#e4eaed";ctx.beginPath();ctx.moveTo(m.l,m.t+plotHeight+.5);ctx.lineTo(w-m.r,m.t+plotHeight+.5);ctx.stroke();data.forEach((item,index)=>{const bh=item.count/max*plotHeight;ctx.fillStyle=index%2?"#42b7b1":"#168f8b";ctx.fillRect(m.l+index*barW+1,m.t+plotHeight-bh,Math.max(1,barW-2),bh)});ctx.font=`9px ${UI_FONT}`;ctx.fillStyle="#71828c";ctx.fillText("300",m.l,h-5);ctx.fillText("2000 ms",Math.max(m.l,w-m.r-48),h-5);$("#editHistogramRange").textContent="300–2000 ms";
 }
@@ -1466,7 +1481,7 @@ async function loadEdit() {
   if(requestId!==state.editRequestId||caseId!==state.caseId)return;state.editScatterData=scatter;state.editRr=rr;state.editWaveform=waveform;state.editStart=waveform.start_s;state.editTemplates=templates.items||[];state.editBeatOverrides=new Map((overrides.items||[]).map(item=>[Number(item.sample_index),item]));if(!EDIT_SOURCE_CLASSES.some(item=>item.key===state.editSelectedClass)&&!state.editTemplates.some(item=>`custom-${item.id}`===state.editSelectedClass))state.editSelectedClass="source-N";renderEditClasses();renderEditOverview();renderEditScatter();renderEditWaveform();await loadEditTemplateStrips();
 }
 
-function setEditStart(value) {if(!state.caseData)return;const total=Number(state.caseData.technical.duration_seconds_raw)||state.editDuration;state.editStart=Math.max(0,Math.min(Number(value)||0,Math.max(0,total-state.editDuration)));loadEditWaveform().catch(handleError);}
+function setEditStart(value) {if(!state.caseData)return;state.editStart=Math.max(0,Math.min(Number(value)||0,editMaxStart()));renderEditOverview();loadEditWaveform().catch(handleError);}
 
 function selectEditClass(key) {if(key===state.editSelectedClass)return;state.editSelectedClass=key;state.editSelectedSample=null;state.editSelectedSamples=new Set();state.editSelectionAnchor=null;state.editSelection=null;state.editSelectionStrips=[];state.editMorphDraft=null;closeEditClassPopover();renderEditClasses();renderEditScatter();loadEditTemplateStrips().catch(handleError);}
 

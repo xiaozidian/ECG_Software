@@ -8,9 +8,9 @@
   function buildIndex(feed,templates=[],annotations=[],review={}){
     const rows=feed.beats,markers=feed.markers||[],opts=feed.document.settings;
     const bv=fingerprint(rows.concat(markers).map(r=>`${r.id}:${r.sample_index}:${r.class_code}`).join('|')+'|'+encode(Object.keys(opts).sort().map(k=>[k,opts[k]])));
-    const findings=annotations.filter(a=>['ST','AT','VT','AF','AFL'].includes(a.details?.kind));
+    const findings=annotations.filter(a=>['ST','AT','VT','AF','AFL','STRIP'].includes(a.details?.kind));
     const av=fingerprint(encode(findings.map(a=>[a.id,a.sample_index,a.details]))),basis=Object.fromEntries(categories.map(([key])=>[key,bv]));
-    for(const [key,kind] of [['ST','ST'],['S','AT'],['V','VT'],['AF','AF']])basis[key]=bv+'-'+fingerprint(encode(findings.filter(a=>a.details.kind===kind||(key==='AF'&&a.details.kind==='AFL')).map(a=>[a.id,a.sample_index,a.details])));
+    for(const [key,kind] of [['ST','ST'],['S','AT'],['V','VT'],['AF','AF'],['other','STRIP']])basis[key]=bv+'-'+fingerprint(encode(findings.filter(a=>a.details.kind===kind||(key==='AF'&&a.details.kind==='AFL')).map(a=>[a.id,a.sample_index,a.details])));
     const byTemplate=new Map();templates.forEach(t=>t.sample_indices.forEach(s=>{if(!byTemplate.has(s))byTemplate.set(s,[]);byTemplate.get(s).push({id:String(t.id),name:t.name})}));
     const events=[];
     function make(category,subtype,label,targets,segment=targets,pattern=false,identifier=null){
@@ -31,9 +31,14 @@
     for(const [name,subset] of [['RR',valid],['NN',nn]])if(subset.length){for(const key of ['fastest','slowest']){const r=subset.reduce((a,b)=>(key==='fastest'?b.rr_ms<a.rr_ms:b.rr_ms>a.rr_ms)?b:a);make(key,name,`${name} ${Object.fromEntries(categories)[key]} ${r.hr} bpm`,[r])}}
     valid.forEach(r=>{if(r.rr_ms>=opts.pause*1000)make('pause','pause',`长 RR ${(r.rr_ms/1000).toFixed(3)} s`,[r])});
     const definitions=[['rate','tachy','快心率',r=>r.class_code!=='X'&&(r.hr||0)>=opts.tachy],['rate','brady','慢心率',r=>r.class_code!=='X'&&(r.hr||0)>0&&r.hr<=opts.brady],['AF','AF','房颤',r=>['A','M'].includes(r.class_code)],['AF','AFL','房扑',r=>['C','H'].includes(r.class_code)]];
-    for(const [cat,sub,label,predicate] of definitions){let i=0;while(i<rows.length){if(!predicate(rows[i])){i++;continue}let j=i+1;while(j<rows.length&&predicate(rows[j]))j++;make(cat,sub,label,rows.slice(i,j));i=j}}
+    for(const [cat,sub,label,predicate] of definitions){if(cat==='AF'&&annotations.some(a=>a.details?.rhythm_authoritative))continue;let i=0;while(i<rows.length){if(!predicate(rows[i])){i++;continue}let j=i+1;while(j<rows.length&&predicate(rows[j]))j++;make(cat,sub,label,rows.slice(i,j));i=j}}
     rows.concat(markers).forEach(r=>{if(!['N','S','V','A','M','C','H'].includes(r.class_code))make('other',r.class_code,r.name||r.class_code,[r])});
-    findings.forEach(a=>{const d=a.details;if(d.status!=='confirmed'&&!['AF','AFL'].includes(d.kind)||d.status==='excluded')return;if(['AF','AFL'].includes(d.kind)&&d.status==='pending'&&findings.some(b=>b.details.kind===d.kind&&b.details.status==='confirmed'&&b.sample_index===a.sample_index&&b.details.end_sample===d.end_sample))return;const kind=d.kind,cat=['AF','AFL'].includes(kind)?'AF':kind==='ST'?'ST':kind==='AT'?'S':'V',start=a.sample_index,end=d.end_sample??start,targets=rows.filter(r=>r.sample_index>=start&&r.sample_index<=end&&(['ST','AF','AFL'].includes(kind)||r.class_code===cat));const item=make(cat,['ST','AF','AFL'].includes(kind)?kind:'tachycardia',d.finding||(kind==='AT'?'房速':'室速'),targets,[{id:`a:${a.id}:start`,sample_index:start},{id:`a:${a.id}:end`,sample_index:end}],!['ST','AF','AFL'].includes(kind),`annotation:${a.id}`);if(d.status!=='confirmed')item.diagnosis_status='pending';item.lead=a.lead||'全部';item.note=a.note||''});
+    findings.forEach(a=>{
+      const d=a.details,rhythm=['AF','AFL'].includes(d.kind);if(d.status!=='confirmed'&&!rhythm||d.status==='excluded')return;
+      if(rhythm&&d.status==='pending'&&findings.some(b=>b.details.kind===d.kind&&b.details.status==='confirmed'&&b.sample_index===a.sample_index&&b.details.end_sample===d.end_sample))return;
+      const kind=d.kind,cat=rhythm?'AF':kind==='ST'?'ST':kind==='AT'?'S':kind==='STRIP'?'other':'V',start=a.sample_index,end=d.end_sample??start,whole=['ST','AF','AFL','STRIP'].includes(kind),targets=rows.filter(r=>r.sample_index>=start&&r.sample_index<=end&&(whole||r.class_code===cat));
+      const item=make(cat,whole?kind:'tachycardia',d.finding||(kind==='AT'?'房速':'室速'),targets,[{id:`a:${a.id}:start`,sample_index:start},{id:`a:${a.id}:end`,sample_index:end}],!whole,`annotation:${a.id}`);if(d.status!=='confirmed')item.diagnosis_status='pending';item.lead=a.lead||'全部';item.note=a.note||'';
+    });
     events.sort((a,b)=>a.start_sample-b.start_sample||(a.event_id<b.event_id?-1:1));
     return {events,rows:rows.concat(markers),templates,basis_versions:basis,data_version:bv+'-'+av,beat_version:bv,duration_s:feed.duration};
   }
@@ -63,7 +68,7 @@
   }
   function validateReport(index,composition,review,approving=false){
     const lookup=new Map(index.events.map(e=>[e.event_id,e])),selected=[];
-    for(const entry of composition.selected_events||[]){const e=lookup.get(entry.event_id);if(!e||e.basis_version!==entry.basis_version){if(approving)throw Error('已选图条因诊断修订失效，请重新筛选');continue}if(approving&&['fastest','slowest'].includes(e.category)&&!['BOTH',e.subtype].includes((composition.fast_slow_mode||'rr').toUpperCase()))throw Error('极值图条与 RR/NN 选择不一致');if(approving&&e.diagnosis_status!=='confirmed')throw Error('请先完成编辑／ST-T诊断确认');selected.push({...e,caption:entry.caption||e.label})}
+    for(const entry of composition.selected_events||[]){const e=lookup.get(entry.event_id);if(!e||e.basis_version!==entry.basis_version){if(approving)throw Error('已选图条因诊断修订失效，请重新筛选');continue}if(approving&&['fastest','slowest'].includes(e.category)&&!['BOTH',e.subtype].includes((composition.fast_slow_mode||'rr').toUpperCase()))throw Error('极值图条与 RR/NN 选择不一致');if(approving&&e.diagnosis_status!=='confirmed')throw Error('请先完成编辑／ST-T诊断确认');selected.push({...e,caption:entry.caption||e.label,...(globalThis.ECGReportEngine?ECGReportEngine.settings(entry):{})})}
     if(approving){const counts=queryIndex(index,{fast_slow_mode:composition.fast_slow_mode||'rr'}).category_counts,missing=categories.filter(([k])=>counts[k]&&composition.category_reviews?.[k]!==index.basis_versions[k]);if(missing.length)throw Error('请完成报告分类筛选：'+missing.map(x=>x[1]).join('、'));if((composition.diagnosis_blocks||[]).some(b=>b.needs_review))throw Error('请核对保留的人工诊断文字')}
     return selected;
   }

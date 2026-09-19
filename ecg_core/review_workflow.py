@@ -39,6 +39,8 @@ class ReviewWorkflowMixin:
             affected = STEPS  # waveform and classifications changed, source statistics did not
         elif action.startswith("beat_template."):
             affected = STEPS
+        elif action.startswith("annotation.rhythm"):
+            affected = STEPS
         elif action.startswith("annotation."):
             affected = ("stt",)
         elif action == "patient.update":

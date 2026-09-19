@@ -146,8 +146,8 @@ def read_event_waveform(path, start_s, end_s, leads=None, max_points=2400):
     import mmap
     import struct
     total=Path(path).stat().st_size//16
-    first=max(0,min(total-1,int(start_s*SAMPLE_RATE)))
-    last=min(total,max(first+1,int(end_s*SAMPLE_RATE)))
+    first=max(0,min(total-1,int(start_s*SAMPLE_RATE+1e-7)))
+    last=min(total,max(first+1,int(end_s*SAMPLE_RATE+1e-7)))
     stride=max(1,math.ceil((last-first)/max(200,min(12000,int(max_points)))))
     channels=[[] for _ in range(8)]
     with Path(path).open('rb') as f, mmap.mmap(f.fileno(),0,access=mmap.ACCESS_READ) as raw:

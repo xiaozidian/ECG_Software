@@ -262,7 +262,7 @@ class Storage(ReviewWorkflowMixin):
             raise ValueError("sample_indices 不能重复")
         details = payload.get("details", {})
         if details:
-            if not isinstance(details,dict) or details.get("kind") not in ("ST","AT","VT","AF","AFL") or details.get("status") not in ("confirmed","excluded","pending"):
+            if not isinstance(details,dict) or details.get("kind") not in ("ST","AT","VT","AF","AFL","STRIP") or details.get("status") not in ("confirmed","excluded","pending"):
                 raise ValueError("结构化发现类型或状态无效")
             end=details.get("end_sample",sample_index)
             if type(end) is not int or end<sample_index:raise ValueError("结束位置无效")
@@ -404,7 +404,15 @@ class Storage(ReviewWorkflowMixin):
             rows = db.execute(
                 "SELECT * FROM annotations WHERE case_id=? ORDER BY sample_index,id", (case_id,)
             ).fetchall()
-        return [{**dict(row), "details":json.loads(row["details"] or "{}")} for row in rows]
+            has_rhythms = db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='rhythm_reviews'").fetchone()
+            rhythm = db.execute("SELECT document,updated_at FROM rhythm_reviews WHERE case_id=?", (case_id,)).fetchone() if has_rhythms else None
+        items = [{**dict(row), "details":json.loads(row["details"] or "{}")} for row in rows]
+        if rhythm:
+            from .overview import episode_annotations
+            items = [x for x in items if x["details"].get("kind") not in ("AF", "AFL")]
+            items += episode_annotations(json.loads(rhythm["document"]), stamp=rhythm["updated_at"])
+            items.append(dict(id="rhythm-control", sample_index=0, label="", internal=True, details={"rhythm_authoritative": True}))
+        return items
 
     def create_annotation(self, case_id: str, payload: dict, actor: str) -> dict:
         if not isinstance(payload, dict):

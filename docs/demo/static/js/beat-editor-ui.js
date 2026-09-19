@@ -130,9 +130,10 @@ const beatEditor=(()=>{
     return rows.map(r=>r.sample_index);
   }
   async function neighbor(direction,code){
-    const feed=await request("/beats"),index=feed.items.findIndex(r=>r.sample_index===context.anchor?.sample_index),target=feed.items[index+(direction==="previous"?-1:1)];
-    if(index<0||!target)throw Error("此方向没有相邻心搏");
-    selected=new Set([target.sample_index]);context.anchor=target;syncSelection();await perform("relabel",{class_code:code});
+    const feed=await request("/beats"),anchors=selected.size?selected:new Set([context.anchor?.sample_index]),targets=[],step=direction==="previous"?-1:1;
+    feed.items.forEach((row,index)=>{if(anchors.has(row.sample_index)&&feed.items[index+step])targets.push(feed.items[index+step])});
+    if(!targets.length)throw Error("此方向没有相邻心搏");
+    selected=new Set(targets.map(row=>row.sample_index));context.anchor=targets[0];syncSelection();await perform("relabel",{class_code:code});
   }
   function manual(op){
     const time=op==="move"?(context.anchor?.time_s??context.time):context.time;
@@ -215,6 +216,18 @@ const beatEditor=(()=>{
       canvas.parentElement.appendChild(bar);bar.setAttribute("aria-label","心搏修订历史");bar.querySelectorAll("button").forEach(b=>b.onclick=()=>{context={caseId:state.caseId,surface:id==="#waveformCanvas"?"review":"edit"};perform(b.dataset.history).catch(handleError)});
     });
   }
+  async function invoke(name,options={}){
+    const time=options.time??state.start;
+    context={caseId:state.caseId,surface:"review",time,x:0,y:0,canvas:$("#waveformCanvas"),waveform:state.waveform};
+    selected=new Set(options.samples||[]);
+    const feed=await request("/beats");
+    context.anchor=feed.items.find(r=>selected.has(r.sample_index))||feed.items.reduce((a,b)=>!a||Math.abs(b.time_s-time)<Math.abs(a.time_s-time)?b:a,null);
+    if(!selected.size&&context.anchor)selected.add(context.anchor.sample_index);
+    info=await request("");context.revision=info.revision;
+    if(name==="relabel")return perform(name,{class_code:options.code});
+    if(name==="previous"||name==="next")return neighbor(name,options.code);
+    return action(name);
+  }
   document.addEventListener("DOMContentLoaded",bind);
-  return {open,quickEdit,invalidate(){openToken++},restore:()=>{context={caseId:state.caseId,surface:"edit"};selected=new Set(state.editSelectedSamples);return perform("restore")},selected:sample=>context?.caseId===state.caseId&&context.surface==="review"&&selected.has(sample)};
+  return {open,quickEdit,invoke,invalidate(){openToken++},restore:()=>{context={caseId:state.caseId,surface:"edit"};selected=new Set(state.editSelectedSamples);return perform("restore")},selected:sample=>context?.caseId===state.caseId&&context.surface==="review"&&selected.has(sample)};
 })();

@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import math
 import statistics
+from .report_layout import strip_settings
 from collections import Counter
 from datetime import datetime, timedelta
 
@@ -30,10 +31,10 @@ def encode(value):
 def build_index(feed, templates=(), annotations=(), review=None):
     rows=feed.beats; markers=feed.markers; opts=feed.document['settings']; review=review or {}
     bv=fingerprint('|'.join(f"{r['id']}:{r['sample_index']}:{r['class_code']}" for r in rows+markers)+'|'+encode([[k,opts[k]] for k in sorted(opts)]))
-    findings=[a for a in annotations if a.get('details',{}).get('kind') in ('ST','AT','VT','AF','AFL')]
+    findings=[a for a in annotations if a.get('details',{}).get('kind') in ('ST','AT','VT','AF','AFL','STRIP')]
     av=fingerprint(encode([[a['id'],a['sample_index'],a.get('details')] for a in findings]))
     basis={key:bv for key,_ in CATEGORIES}
-    for key,kind in [('ST','ST'),('S','AT'),('V','VT'),('AF','AF')]:
+    for key,kind in [('ST','ST'),('S','AT'),('V','VT'),('AF','AF'),('other','STRIP')]:
         basis[key]=bv+'-'+fingerprint(encode([[a['id'],a['sample_index'],a['details']] for a in findings if a['details']['kind']==kind or (key=='AF' and a['details']['kind']=='AFL')]))
     by_template={}
     for t in templates:
@@ -75,12 +76,14 @@ def build_index(feed, templates=(), annotations=(), review=None):
                 r=fn(subset,key=lambda x:x['rr_ms']);make(key,name,name+' '+dict(CATEGORIES)[key]+f" {int(r['hr']) if float(r['hr']).is_integer() else r['hr']} bpm",[r])
     for r in valid:
         if r['rr_ms']>=opts['pause']*1000:make('pause','pause',f"长 RR {r['rr_ms']/1000:.3f} s",[r])
+    # Once the episode review is saved, its intervals supersede source rhythm runs.
+    rhythm_authoritative = any(a.get('details',{}).get('rhythm_authoritative') for a in annotations)
     # Contiguous threshold/rhythm runs; no joining across intervening beats or noise.
     for category,subtype,label,predicate in [
         ('rate','tachy','快心率',lambda r:r['class_code']!='X' and (r.get('hr') or 0)>=opts['tachy']),
         ('rate','brady','慢心率',lambda r:r['class_code']!='X' and 0<(r.get('hr') or 0)<=opts['brady']),
-        ('AF','AF','房颤',lambda r:r['class_code'] in ('A','M')),
-        ('AF','AFL','房扑',lambda r:r['class_code'] in ('C','H'))]:
+        ('AF','AF','房颤',lambda r:r['class_code'] in ('A','M') and not rhythm_authoritative),
+        ('AF','AFL','房扑',lambda r:r['class_code'] in ('C','H') and not rhythm_authoritative)]:
         i=0
         while i<len(rows):
             if not predicate(rows[i]):i+=1;continue
@@ -96,11 +99,11 @@ def build_index(feed, templates=(), annotations=(), review=None):
         if d['kind'] in ('AF','AFL') and d.get('status')=='pending' and any(b['details']['kind']==d['kind'] and b['details'].get('status')=='confirmed' and b['sample_index']==a['sample_index'] and b['details'].get('end_sample')==d.get('end_sample') for b in findings):continue
         if d.get('status')!='confirmed' and kind_not_rhythm(d):continue
         if d.get('status')=='excluded':continue
-        kind=d['kind'];cat='AF' if kind in ('AF','AFL') else 'ST' if kind=='ST' else 'S' if kind=='AT' else 'V'
+        kind=d['kind'];cat='AF' if kind in ('AF','AFL') else 'ST' if kind=='ST' else 'S' if kind=='AT' else 'other' if kind=='STRIP' else 'V'
         start=a['sample_index'];end=d.get('end_sample',start)
-        target=[r for r in rows if start<=r['sample_index']<=end and (kind in ('ST','AF','AFL') or r['class_code']==cat)]
+        target=[r for r in rows if start<=r['sample_index']<=end and (kind in ('ST','AF','AFL','STRIP') or r['class_code']==cat)]
         segment=[dict(id=f"a:{a['id']}:start",sample_index=start),dict(id=f"a:{a['id']}:end",sample_index=end)]
-        item=make(cat,kind if kind in ('ST','AF','AFL') else 'tachycardia',d.get('finding') or ('房速' if kind=='AT' else '室速'),target,segment,kind not in ('ST','AF','AFL'),f"annotation:{a['id']}")
+        item=make(cat,kind if kind in ('ST','AF','AFL','STRIP') else 'tachycardia',d.get('finding') or ('房速' if kind=='AT' else '室速'),target,segment,kind not in ('ST','AF','AFL','STRIP'),f"annotation:{a['id']}")
         if d.get('status')!='confirmed':item['diagnosis_status']='pending'
         item['lead']=a.get('lead','全部');item['note']=a.get('note','')
     events.sort(key=lambda x:(x['start_sample'],x['event_id']))
@@ -172,7 +175,8 @@ def normalize_selection(raw):
         seen.add(entry['event_id'])
         for field in ('basis_version','caption'):
             if not isinstance(entry.get(field,''),str) or len(entry.get(field,''))>500:raise ValueError('无效图条字段')
-        result['selected_events'].append({k:entry.get(k,'') for k in ('event_id','basis_version','caption')})
+        result['selected_events'].append({**{k:entry.get(k,'') for k in ('event_id','basis_version','caption')}, **strip_settings(entry)})
+    result['strip_defaults'] = strip_settings(raw.get('strip_defaults'))
     reviews=raw.get('category_reviews',{})
     if not isinstance(reviews,dict) or any(k not in dict(CATEGORIES) or not isinstance(v,str) or len(v)>100 for k,v in reviews.items()):raise ValueError('无效分类筛选状态')
     result['category_reviews']=dict(reviews)
@@ -192,7 +196,7 @@ def validate_report(index,composition,review,approving=False):
             continue
         if approving and e['category'] in ('fastest','slowest') and composition.get('fast_slow_mode','rr').upper() not in ('BOTH',e['subtype']):raise ValueError('极值图条与 RR/NN 选择不一致')
         if approving and e['diagnosis_status']!='confirmed':raise ValueError('请先完成编辑／ST-T诊断确认')
-        selected.append({**e,'caption':entry.get('caption') or e['label']})
+        selected.append({**e,'caption':entry.get('caption') or e['label'], **strip_settings(entry)})
     if approving:
         counts=query_index(index,{'fast_slow_mode':composition.get('fast_slow_mode','rr')})['category_counts']
         missing=[label for key,label in CATEGORIES if counts[key] and composition.get('category_reviews',{}).get(key)!=index['basis_versions'][key]]

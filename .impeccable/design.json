@@ -1,0 +1,666 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-19T05:39:55Z",
+  "title": "Design System: CardioInsight Holter",
+  "extensions": {
+    "colorMeta": {
+      "navy-950": {
+        "role": "neutral",
+        "displayName": "深海军蓝 · 最深",
+        "tonalRamp": [
+          "oklch(15.00% 0.0397 242.31)",
+          "oklch(26.43% 0.0397 242.31)",
+          "oklch(37.86% 0.0397 242.31)",
+          "oklch(49.29% 0.0397 242.31)",
+          "oklch(60.71% 0.0397 242.31)",
+          "oklch(72.14% 0.0397 242.31)",
+          "oklch(83.57% 0.0397 242.31)",
+          "oklch(95.00% 0.0397 242.31)"
+        ]
+      },
+      "navy-900": {
+        "role": "neutral",
+        "displayName": "深海军蓝 · 导航",
+        "tonalRamp": [
+          "oklch(15.00% 0.0449 239.91)",
+          "oklch(26.43% 0.0449 239.91)",
+          "oklch(37.86% 0.0449 239.91)",
+          "oklch(49.29% 0.0449 239.91)",
+          "oklch(60.71% 0.0449 239.91)",
+          "oklch(72.14% 0.0449 239.91)",
+          "oklch(83.57% 0.0449 239.91)",
+          "oklch(95.00% 0.0449 239.91)"
+        ]
+      },
+      "navy-800": {
+        "role": "neutral",
+        "displayName": "深海军蓝 · 悬停",
+        "tonalRamp": [
+          "oklch(15.00% 0.0541 235.90)",
+          "oklch(26.43% 0.0541 235.90)",
+          "oklch(37.86% 0.0541 235.90)",
+          "oklch(49.29% 0.0541 235.90)",
+          "oklch(60.71% 0.0541 235.90)",
+          "oklch(72.14% 0.0541 235.90)",
+          "oklch(83.57% 0.0541 235.90)",
+          "oklch(95.00% 0.0541 235.90)"
+        ]
+      },
+      "teal-700": {
+        "role": "primary",
+        "displayName": "临床青绿 · 文字",
+        "tonalRamp": [
+          "oklch(15.00% 0.0855 194.82)",
+          "oklch(26.43% 0.0855 194.82)",
+          "oklch(37.86% 0.0855 194.82)",
+          "oklch(49.29% 0.0855 194.82)",
+          "oklch(60.71% 0.0855 194.82)",
+          "oklch(72.14% 0.0855 194.82)",
+          "oklch(83.57% 0.0855 194.82)",
+          "oklch(95.00% 0.0855 194.82)"
+        ]
+      },
+      "teal-600": {
+        "role": "primary",
+        "displayName": "临床青绿 · 操作",
+        "tonalRamp": [
+          "oklch(15.00% 0.1015 192.23)",
+          "oklch(26.43% 0.1015 192.23)",
+          "oklch(37.86% 0.1015 192.23)",
+          "oklch(49.29% 0.1015 192.23)",
+          "oklch(60.71% 0.1015 192.23)",
+          "oklch(72.14% 0.1015 192.23)",
+          "oklch(83.57% 0.1015 192.23)",
+          "oklch(95.00% 0.1015 192.23)"
+        ]
+      },
+      "teal-500": {
+        "role": "primary",
+        "displayName": "临床青绿 · 标记",
+        "tonalRamp": [
+          "oklch(15.00% 0.1121 190.27)",
+          "oklch(26.43% 0.1121 190.27)",
+          "oklch(37.86% 0.1121 190.27)",
+          "oklch(49.29% 0.1121 190.27)",
+          "oklch(60.71% 0.1121 190.27)",
+          "oklch(72.14% 0.1121 190.27)",
+          "oklch(83.57% 0.1121 190.27)",
+          "oklch(95.00% 0.1121 190.27)"
+        ]
+      },
+      "teal-100": {
+        "role": "primary",
+        "displayName": "浅青绿 · 选中",
+        "tonalRamp": [
+          "oklch(15.00% 0.0253 190.66)",
+          "oklch(26.43% 0.0253 190.66)",
+          "oklch(37.86% 0.0253 190.66)",
+          "oklch(49.29% 0.0253 190.66)",
+          "oklch(60.71% 0.0253 190.66)",
+          "oklch(72.14% 0.0253 190.66)",
+          "oklch(83.57% 0.0253 190.66)",
+          "oklch(95.00% 0.0253 190.66)"
+        ]
+      },
+      "teal-50": {
+        "role": "primary",
+        "displayName": "浅青绿 · 悬停",
+        "tonalRamp": [
+          "oklch(15.00% 0.0127 190.96)",
+          "oklch(26.43% 0.0127 190.96)",
+          "oklch(37.86% 0.0127 190.96)",
+          "oklch(49.29% 0.0127 190.96)",
+          "oklch(60.71% 0.0127 190.96)",
+          "oklch(72.14% 0.0127 190.96)",
+          "oklch(83.57% 0.0127 190.96)",
+          "oklch(95.00% 0.0127 190.96)"
+        ]
+      },
+      "ink-900": {
+        "role": "neutral",
+        "displayName": "岩板主文字",
+        "tonalRamp": [
+          "oklch(15.00% 0.0335 237.58)",
+          "oklch(26.43% 0.0335 237.58)",
+          "oklch(37.86% 0.0335 237.58)",
+          "oklch(49.29% 0.0335 237.58)",
+          "oklch(60.71% 0.0335 237.58)",
+          "oklch(72.14% 0.0335 237.58)",
+          "oklch(83.57% 0.0335 237.58)",
+          "oklch(95.00% 0.0335 237.58)"
+        ]
+      },
+      "ink-700": {
+        "role": "neutral",
+        "displayName": "岩板控件文字",
+        "tonalRamp": [
+          "oklch(15.00% 0.0346 234.58)",
+          "oklch(26.43% 0.0346 234.58)",
+          "oklch(37.86% 0.0346 234.58)",
+          "oklch(49.29% 0.0346 234.58)",
+          "oklch(60.71% 0.0346 234.58)",
+          "oklch(72.14% 0.0346 234.58)",
+          "oklch(83.57% 0.0346 234.58)",
+          "oklch(95.00% 0.0346 234.58)"
+        ]
+      },
+      "ink-500": {
+        "role": "neutral",
+        "displayName": "岩板元信息",
+        "tonalRamp": [
+          "oklch(15.00% 0.0307 233.09)",
+          "oklch(26.43% 0.0307 233.09)",
+          "oklch(37.86% 0.0307 233.09)",
+          "oklch(49.29% 0.0307 233.09)",
+          "oklch(60.71% 0.0307 233.09)",
+          "oklch(72.14% 0.0307 233.09)",
+          "oklch(83.57% 0.0307 233.09)",
+          "oklch(95.00% 0.0307 233.09)"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "细边框",
+        "tonalRamp": [
+          "oklch(15.00% 0.0128 228.94)",
+          "oklch(26.43% 0.0128 228.94)",
+          "oklch(37.86% 0.0128 228.94)",
+          "oklch(49.29% 0.0128 228.94)",
+          "oklch(60.71% 0.0128 228.94)",
+          "oklch(72.14% 0.0128 228.94)",
+          "oklch(83.57% 0.0128 228.94)",
+          "oklch(95.00% 0.0128 228.94)"
+        ]
+      },
+      "line-soft": {
+        "role": "neutral",
+        "displayName": "弱分隔线",
+        "tonalRamp": [
+          "oklch(15.00% 0.0085 225.08)",
+          "oklch(26.43% 0.0085 225.08)",
+          "oklch(37.86% 0.0085 225.08)",
+          "oklch(49.29% 0.0085 225.08)",
+          "oklch(60.71% 0.0085 225.08)",
+          "oklch(72.14% 0.0085 225.08)",
+          "oklch(83.57% 0.0085 225.08)",
+          "oklch(95.00% 0.0085 225.08)"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "白色证据表面",
+        "tonalRamp": [
+          "oklch(15.00% 0.0000 0.00)",
+          "oklch(26.43% 0.0000 0.00)",
+          "oklch(37.86% 0.0000 0.00)",
+          "oklch(49.29% 0.0000 0.00)",
+          "oklch(60.71% 0.0000 0.00)",
+          "oklch(72.14% 0.0000 0.00)",
+          "oklch(83.57% 0.0000 0.00)",
+          "oklch(95.00% 0.0000 0.00)"
+        ]
+      },
+      "surface-alt": {
+        "role": "neutral",
+        "displayName": "浅岩板页面底色",
+        "tonalRamp": [
+          "oklch(15.00% 0.0035 219.53)",
+          "oklch(26.43% 0.0035 219.53)",
+          "oklch(37.86% 0.0035 219.53)",
+          "oklch(49.29% 0.0035 219.53)",
+          "oklch(60.71% 0.0035 219.53)",
+          "oklch(72.14% 0.0035 219.53)",
+          "oklch(83.57% 0.0035 219.53)",
+          "oklch(95.00% 0.0035 219.53)"
+        ]
+      },
+      "canvas": {
+        "role": "neutral",
+        "displayName": "基础画布",
+        "tonalRamp": [
+          "oklch(15.00% 0.0070 219.56)",
+          "oklch(26.43% 0.0070 219.56)",
+          "oklch(37.86% 0.0070 219.56)",
+          "oklch(49.29% 0.0070 219.56)",
+          "oklch(60.71% 0.0070 219.56)",
+          "oklch(72.14% 0.0070 219.56)",
+          "oklch(83.57% 0.0070 219.56)",
+          "oklch(95.00% 0.0070 219.56)"
+        ]
+      },
+      "ov-line": {
+        "role": "neutral",
+        "displayName": "概览细边框",
+        "tonalRamp": [
+          "oklch(15.00% 0.0146 224.51)",
+          "oklch(26.43% 0.0146 224.51)",
+          "oklch(37.86% 0.0146 224.51)",
+          "oklch(49.29% 0.0146 224.51)",
+          "oklch(60.71% 0.0146 224.51)",
+          "oklch(72.14% 0.0146 224.51)",
+          "oklch(83.57% 0.0146 224.51)",
+          "oklch(95.00% 0.0146 224.51)"
+        ]
+      },
+      "ov-ink": {
+        "role": "neutral",
+        "displayName": "概览主文字",
+        "tonalRamp": [
+          "oklch(15.00% 0.0390 228.15)",
+          "oklch(26.43% 0.0390 228.15)",
+          "oklch(37.86% 0.0390 228.15)",
+          "oklch(49.29% 0.0390 228.15)",
+          "oklch(60.71% 0.0390 228.15)",
+          "oklch(72.14% 0.0390 228.15)",
+          "oklch(83.57% 0.0390 228.15)",
+          "oklch(95.00% 0.0390 228.15)"
+        ]
+      },
+      "ov-muted": {
+        "role": "neutral",
+        "displayName": "概览坐标文字",
+        "tonalRamp": [
+          "oklch(15.00% 0.0317 233.29)",
+          "oklch(26.43% 0.0317 233.29)",
+          "oklch(37.86% 0.0317 233.29)",
+          "oklch(49.29% 0.0317 233.29)",
+          "oklch(60.71% 0.0317 233.29)",
+          "oklch(72.14% 0.0317 233.29)",
+          "oklch(83.57% 0.0317 233.29)",
+          "oklch(95.00% 0.0317 233.29)"
+        ]
+      },
+      "ov-accent": {
+        "role": "primary",
+        "displayName": "概览青绿操作",
+        "tonalRamp": [
+          "oklch(15.00% 0.0965 192.96)",
+          "oklch(26.43% 0.0965 192.96)",
+          "oklch(37.86% 0.0965 192.96)",
+          "oklch(49.29% 0.0965 192.96)",
+          "oklch(60.71% 0.0965 192.96)",
+          "oklch(72.14% 0.0965 192.96)",
+          "oklch(83.57% 0.0965 192.96)",
+          "oklch(95.00% 0.0965 192.96)"
+        ]
+      },
+      "ov-paper": {
+        "role": "neutral",
+        "displayName": "概览近白测量底",
+        "tonalRamp": [
+          "oklch(15.00% 0.0021 197.12)",
+          "oklch(26.43% 0.0021 197.12)",
+          "oklch(37.86% 0.0021 197.12)",
+          "oklch(49.29% 0.0021 197.12)",
+          "oklch(60.71% 0.0021 197.12)",
+          "oklch(72.14% 0.0021 197.12)",
+          "oklch(83.57% 0.0021 197.12)",
+          "oklch(95.00% 0.0021 197.12)"
+        ]
+      },
+      "hr-trace": {
+        "role": "secondary",
+        "displayName": "概览心率蓝",
+        "tonalRamp": [
+          "oklch(15.00% 0.1262 243.98)",
+          "oklch(26.43% 0.1262 243.98)",
+          "oklch(37.86% 0.1262 243.98)",
+          "oklch(49.29% 0.1262 243.98)",
+          "oklch(60.71% 0.1262 243.98)",
+          "oklch(72.14% 0.1262 243.98)",
+          "oklch(83.57% 0.1262 243.98)",
+          "oklch(95.00% 0.1262 243.98)"
+        ]
+      },
+      "rr-trace": {
+        "role": "secondary",
+        "displayName": "概览 RR 绿",
+        "tonalRamp": [
+          "oklch(15.00% 0.1768 137.91)",
+          "oklch(26.43% 0.1768 137.91)",
+          "oklch(37.86% 0.1768 137.91)",
+          "oklch(49.29% 0.1768 137.91)",
+          "oklch(60.71% 0.1768 137.91)",
+          "oklch(72.14% 0.1768 137.91)",
+          "oklch(83.57% 0.1768 137.91)",
+          "oklch(95.00% 0.1768 137.91)"
+        ]
+      },
+      "report-ink": {
+        "role": "neutral",
+        "displayName": "报告纸面文字与波形 · HTML／SVG",
+        "tonalRamp": [
+          "oklch(15.00% 0 0)",
+          "oklch(26.43% 0 0)",
+          "oklch(37.86% 0 0)",
+          "oklch(49.29% 0 0)",
+          "oklch(60.71% 0 0)",
+          "oklch(72.14% 0 0)",
+          "oklch(83.57% 0 0)",
+          "oklch(95.00% 0 0)"
+        ]
+      },
+      "report-rule": {
+        "role": "neutral",
+        "displayName": "报告纸内分隔线 · HTML",
+        "tonalRamp": [
+          "oklch(15.00% 0 0)",
+          "oklch(26.43% 0 0)",
+          "oklch(37.86% 0 0)",
+          "oklch(49.29% 0 0)",
+          "oklch(60.71% 0 0)",
+          "oklch(72.14% 0 0)",
+          "oklch(83.57% 0 0)",
+          "oklch(95.00% 0 0)"
+        ]
+      },
+      "report-grid-major": {
+        "role": "neutral",
+        "displayName": "报告主网格 · SVG",
+        "tonalRamp": [
+          "oklch(15.00% 0 0)",
+          "oklch(26.43% 0 0)",
+          "oklch(37.86% 0 0)",
+          "oklch(49.29% 0 0)",
+          "oklch(60.71% 0 0)",
+          "oklch(72.14% 0 0)",
+          "oklch(83.57% 0 0)",
+          "oklch(95.00% 0 0)"
+        ]
+      },
+      "report-grid-minor": {
+        "role": "neutral",
+        "displayName": "报告次网格 · SVG",
+        "tonalRamp": [
+          "oklch(15.00% 0 0)",
+          "oklch(26.43% 0 0)",
+          "oklch(37.86% 0 0)",
+          "oklch(49.29% 0 0)",
+          "oklch(60.71% 0 0)",
+          "oklch(72.14% 0 0)",
+          "oklch(83.57% 0 0)",
+          "oklch(95.00% 0 0)"
+        ]
+      },
+      "report-context": {
+        "role": "neutral",
+        "displayName": "报告上下文时间选区 · SVG",
+        "tonalRamp": [
+          "oklch(15.00% 0 0)",
+          "oklch(26.43% 0 0)",
+          "oklch(37.86% 0 0)",
+          "oklch(49.29% 0 0)",
+          "oklch(60.71% 0 0)",
+          "oklch(72.14% 0 0)",
+          "oklch(83.57% 0 0)",
+          "oklch(95.00% 0 0)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "page-title": {
+        "displayName": "功能页面标题",
+        "purpose": "既有页面标题；属于界面层级，没有独立装饰性 display 角色。"
+      },
+      "title": {
+        "displayName": "容器标题",
+        "purpose": "通用卡片标题；概览 lane 使用更紧凑局部变体。"
+      },
+      "body": {
+        "displayName": "控件与表格正文",
+        "purpose": "反复使用的 12px 内容尺度；根元素没有统一声明此字号。"
+      },
+      "label": {
+        "displayName": "动作文字",
+        "purpose": "32px 通用按钮中的短动词。"
+      },
+      "coordinate": {
+        "displayName": "坐标",
+        "purpose": "概览时间坐标；不是一般表单或长文的推荐字号。"
+      },
+      "report-body": {
+        "displayName": "报告纸面正文",
+        "purpose": "医院参考照片确定的宋体纸面变体；仅用于浏览器报告文档，编排控件仍用平台界面字体。纸面图条 SVG 使用较短的 Songti SC／SimSun／serif 栈，PDF 使用 STSong-Light。"
+      },
+      "report-title": {
+        "displayName": "报告主标题",
+        "purpose": "纸面居中报告标题与可选机构名称；不用于工作台页面标题。"
+      },
+      "report-section": {
+        "displayName": "报告节标题",
+        "purpose": "检查信息、分析统计、结论与续页的居中标题。"
+      }
+    },
+    "shadows": [
+      {
+        "name": "card-low",
+        "value": "0 1px 2px rgba(15,42,59,.05),0 6px 18px rgba(15,42,59,.05)",
+        "purpose": "通用白色卡片；来自 visual-refresh.css 的 --shadow。"
+      },
+      {
+        "name": "primary-action",
+        "value": "0 2px 8px rgba(13,148,145,.28)",
+        "purpose": "现有青绿渐变主按钮。"
+      },
+      {
+        "name": "overview-menu",
+        "value": "0 12px 36px #12313b26",
+        "purpose": "概览固定操作菜单。"
+      },
+      {
+        "name": "overview-settings",
+        "value": "0 8px 24px #102b3826",
+        "purpose": "病例信息与波形设置展开面板。"
+      },
+      {
+        "name": "overview-dialog",
+        "value": "0 16px 60px #12313b36",
+        "purpose": "概览原生 dialog。"
+      },
+      {
+        "name": "global-dialog",
+        "value": "0 24px 70px rgba(6,26,38,.3)",
+        "purpose": "通用 modal；不替换概览局部 dialog 的数值。"
+      }
+    ],
+    "motion": [
+      {
+        "name": "control-state",
+        "value": "background .14s, border-color .14s, box-shadow .14s",
+        "purpose": "通用按钮状态变化；默认 CSS ease。"
+      },
+      {
+        "name": "navigation-state",
+        "value": "background .14s, color .14s",
+        "purpose": "侧栏导航悬停与当前状态。"
+      },
+      {
+        "name": "page-entry",
+        "value": "fadeIn .18s ease",
+        "purpose": "现有页面入场 opacity .4→1、translateY(3px)→none；不是新动效要求。"
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "overview-wide",
+        "value": "1500px"
+      },
+      {
+        "name": "overview-compact-min",
+        "value": "1001px"
+      },
+      {
+        "name": "overview-single-column",
+        "value": "1000px"
+      },
+      {
+        "name": "overview-narrow",
+        "value": "680px"
+      },
+      {
+        "name": "incumbent-shell-narrow",
+        "value": "1180px"
+      },
+      {
+        "name": "incumbent-page-inset",
+        "value": "980px"
+      },
+      {
+        "name": "overview-rail-adjustment",
+        "value": "1280px"
+      },
+      {
+        "name": "report-wrap-and-paper-scroll",
+        "value": "900px"
+      },
+      {
+        "name": "report-shell-compact",
+        "value": "600px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "现有青绿渐变主动作；预览不执行保存。",
+      "html": "<button type=\"button\" class=\"ds-primary\">核对并保存片段</button>",
+      "css": ".ds-primary{font-family:-apple-system,BlinkMacSystemFont,\"SF Pro Text\",\"PingFang SC\",\"Microsoft YaHei UI\",system-ui,sans-serif;height:32px;min-height:32px;padding:0 13px;border:0;border-radius:8px;font-size:12px;font-weight:650;letter-spacing:.1px;cursor:pointer;transition:background .14s,border-color .14s,box-shadow .14s}.ds-primary:focus-visible{outline:2px solid var(--teal-600,#0d9491);outline-offset:2px}.ds-primary:active{transform:none}.ds-primary:disabled{opacity:.45;cursor:not-allowed}.ds-primary{background:linear-gradient(135deg,#0f9d99,#0b8583);color:#fff;box-shadow:0 2px 8px rgba(13,148,145,.28)}.ds-primary:hover{background:linear-gradient(135deg,#0b8a87,#097270)}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "白底、细边框的次动作。",
+      "html": "<button type=\"button\" class=\"ds-secondary\">暂不确认</button>",
+      "css": ".ds-secondary{font-family:-apple-system,BlinkMacSystemFont,\"SF Pro Text\",\"PingFang SC\",\"Microsoft YaHei UI\",system-ui,sans-serif;height:32px;min-height:32px;padding:0 13px;border:0;border-radius:8px;font-size:12px;font-weight:650;letter-spacing:.1px;cursor:pointer;transition:background .14s,border-color .14s,box-shadow .14s}.ds-secondary:focus-visible{outline:2px solid var(--teal-600,#0d9491);outline-offset:2px}.ds-secondary:active{transform:none}.ds-secondary:disabled{opacity:.45;cursor:not-allowed}.ds-secondary{background:var(--surface,#fff);border:1px solid var(--line,#d8e2e7);color:var(--ink-700,#3c525f)}.ds-secondary:hover{border-color:#7fb8b5;color:var(--teal-700,#0a7676);background:var(--teal-50,#ecf8f7)}"
+    },
+    {
+      "name": "Dark Button",
+      "kind": "button",
+      "refersTo": "button-dark",
+      "description": "既有深色动作变体。",
+      "html": "<button type=\"button\" class=\"ds-dark\">打开病例</button>",
+      "css": ".ds-dark{font-family:-apple-system,BlinkMacSystemFont,\"SF Pro Text\",\"PingFang SC\",\"Microsoft YaHei UI\",system-ui,sans-serif;height:32px;min-height:32px;padding:0 13px;border:0;border-radius:8px;font-size:12px;font-weight:650;letter-spacing:.1px;cursor:pointer;transition:background .14s,border-color .14s,box-shadow .14s}.ds-dark:focus-visible{outline:2px solid var(--teal-600,#0d9491);outline-offset:2px}.ds-dark:active{transform:none}.ds-dark:disabled{opacity:.45;cursor:not-allowed}.ds-dark{background:var(--navy-900,#102a3b);color:#fff}.ds-dark:hover{background:var(--navy-800,#173b4f)}"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "text-field",
+      "description": "通用 modal 中的有标签字段；使用真实字段样式。",
+      "html": "<label class=\"ds-field\">备注<input type=\"text\" placeholder=\"记录复核依据\"></label>",
+      "css": ".ds-field{font-family:-apple-system,BlinkMacSystemFont,\"SF Pro Text\",\"PingFang SC\",\"Microsoft YaHei UI\",system-ui,sans-serif;display:grid;gap:5px;font-size:10px;color:var(--ink-500,#687d89)}.ds-field input{font-family:-apple-system,BlinkMacSystemFont,\"SF Pro Text\",\"PingFang SC\",\"Microsoft YaHei UI\",system-ui,sans-serif;width:100%;border:1px solid var(--line,#d8e2e7);border-radius:8px;background:#fff;padding:9px 10px;font-size:12px;color:var(--ink-900,#152834)}.ds-field input:focus-visible{outline:2px solid var(--teal-600,#0d9491);outline-offset:2px}"
+    },
+    {
+      "name": "Navigation Item",
+      "kind": "nav",
+      "refersTo": "navigation-item",
+      "description": "深色导航中的 SVG 图标、文字和当前项标记；不固化流程数量。",
+      "html": "<nav class=\"ds-nav\" aria-label=\"导航预览\"><button type=\"button\" class=\"ds-nav-item\" aria-current=\"page\"><svg aria-hidden=\"true\" viewBox=\"0 0 24 24\"><path d=\"M3 14h4l2-5 3 9 2-6h7M5 5h6M8 5v3M15 5h6M18 5v3\"/></svg><em>ST‑T</em></button></nav>",
+      "css": ".ds-nav{width:76px;padding:10px 6px;background:linear-gradient(180deg,#102a3b 0%,#0d2534 100%)}.ds-nav-item{font-family:-apple-system,BlinkMacSystemFont,\"SF Pro Text\",\"PingFang SC\",\"Microsoft YaHei UI\",system-ui,sans-serif;position:relative;width:100%;min-height:50px;border:0;border-radius:9px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;background:linear-gradient(135deg,rgba(21,170,164,.24),rgba(21,170,164,.13));color:#fff;box-shadow:0 0 0 1px rgba(21,170,164,.4) inset;cursor:pointer;transition:background .14s,color .14s}.ds-nav-item:before{content:\"\";position:absolute;left:-6px;top:20%;bottom:20%;width:3px;border-radius:0 3px 3px 0;background:var(--teal-500,#15aaa4);box-shadow:0 0 8px rgba(21,170,164,.7)}.ds-nav-item svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round}.ds-nav-item em{font-style:normal;font-size:10.5px;font-weight:650;color:#c9f0ed;line-height:1.2}.ds-nav-item:hover{color:#e8f1f4}.ds-nav-item:focus-visible{outline:2px solid var(--teal-600,#0d9491);outline-offset:2px}.ds-nav-item:active{transform:none}"
+    },
+    {
+      "name": "State Pill",
+      "kind": "chip",
+      "refersTo": "status-pill",
+      "description": "既有辅助状态胶囊；文本承担含义，组件不交互。",
+      "html": "<span class=\"ds-status\">待复核</span>",
+      "css": ".ds-status{font-family:-apple-system,BlinkMacSystemFont,\"SF Pro Text\",\"PingFang SC\",\"Microsoft YaHei UI\",system-ui,sans-serif;display:inline-flex;align-items:center;white-space:nowrap;height:22px;padding:0 8px;border-radius:999px;font-size:9.5px;font-weight:700;letter-spacing:.2px;background:#fff0dc;color:#aa6414}"
+    },
+    {
+      "name": "Evidence Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "通用白色卡片的边界、标题和低层阴影；不复制概览整页布局。",
+      "html": "<section class=\"ds-card\"><header class=\"ds-card-header\"><div><h2>波形复核</h2><p>原始证据</p></div></header></section>",
+      "css": ".ds-card{font-family:-apple-system,BlinkMacSystemFont,\"SF Pro Text\",\"PingFang SC\",\"Microsoft YaHei UI\",system-ui,sans-serif;background:var(--surface,#fff);color:var(--ink-900,#152834);border:1px solid var(--line-soft,#e6edf0);border-radius:var(--radius,10px);box-shadow:var(--shadow,0 1px 2px rgba(15,42,59,.05),0 6px 18px rgba(15,42,59,.05))}.ds-card-header{display:flex;align-items:center;justify-content:space-between;padding:11px 14px 9px;gap:10px}.ds-card-header h2{font-size:13.5px;margin:0 0 2px;font-weight:700;letter-spacing:.1px}.ds-card-header p{font-size:10.5px;color:var(--ink-500,#687d89);margin:0}"
+    },
+    {
+      "name": "Overview Action",
+      "kind": "button",
+      "refersTo": "overview-action",
+      "description": "概览局部动作与 pressed 状态；保持名称明确。",
+      "html": "<div class=\"ds-overview-actions\" role=\"group\" aria-label=\"直方图类型预览\"><button type=\"button\" class=\"ds-overview-action\" aria-pressed=\"true\">全程 RR 直方图</button><button type=\"button\" class=\"ds-overview-action\" aria-pressed=\"false\">全程 R/R 直方图</button></div>",
+      "css": ".ds-overview-actions{font-family:-apple-system,BlinkMacSystemFont,\"SF Pro Text\",\"PingFang SC\",\"Microsoft YaHei UI\",system-ui,sans-serif;font-size:11px;display:flex;gap:4px;flex-wrap:wrap}.ds-overview-action{font:inherit;font-weight:600;border:1px solid var(--ov-line,#d7e3e8);background:#fff;color:var(--ov-ink,#243f4b);border-radius:5px;min-height:28px;padding:4px 9px;cursor:pointer}.ds-overview-action:hover{background:#e9f4f3;border-color:#72b3b1}.ds-overview-action[aria-pressed=true]{color:#fff;background:#078987;border-color:#078987}.ds-overview-action:focus-visible{outline:2px solid var(--ov-accent,#078987);outline-offset:2px}.ds-overview-action:disabled{opacity:.5;cursor:not-allowed}.ds-overview-action:active{transform:none}"
+    },
+    {
+      "name": "Measurement Lane",
+      "kind": "custom",
+      "refersTo": "overview-lane",
+      "description": "概览测量框的静态外壳；曲线由运行时 Canvas 绘制，预览不含病例数据。",
+      "html": "<section class=\"ds-lane\"><header><h2>全程心率趋势图</h2><button type=\"button\">操作</button></header><div class=\"ds-lane-canvas\" aria-label=\"测量绘图区\"></div></section>",
+      "css": ".ds-lane{font-family:-apple-system,BlinkMacSystemFont,\"SF Pro Text\",\"PingFang SC\",\"Microsoft YaHei UI\",system-ui,sans-serif;min-width:0;background:#fff;border:1px solid var(--ov-line,#d7e3e8);border-radius:5px;overflow:hidden}.ds-lane header{display:flex;align-items:center;justify-content:space-between;gap:10px;height:26px;padding:2px 8px;border-bottom:1px solid #e8eff1}.ds-lane h2{font-size:12px;line-height:1.4;margin:0;white-space:nowrap;color:var(--ov-ink,#243f4b)}.ds-lane button{font:inherit;font-weight:600;font-size:10px;color:#526773;background:#fff;border:0;border-radius:3px;min-height:22px;padding:1px 6px;cursor:pointer}.ds-lane button:hover{background:#e9f4f3}.ds-lane button:focus-visible{outline:2px solid var(--ov-accent,#078987);outline-offset:2px}.ds-lane button:active{transform:none}.ds-lane-canvas{height:60px;background:var(--ov-paper,#fbfdfd)}"
+    },
+    {
+      "name": "Episode Disclosure",
+      "kind": "custom",
+      "description": "最终 AF 表单的原生 details 摘要与展开方式；预览省略业务字段。",
+      "html": "<details class=\"ds-episode\"><summary>编辑选中片段 · 复核状态</summary><p>开始、结束、类型、复核状态与备注</p></details>",
+      "css": ".ds-episode{font-family:-apple-system,BlinkMacSystemFont,\"SF Pro Text\",\"PingFang SC\",\"Microsoft YaHei UI\",system-ui,sans-serif;font-size:12px;background:#f4f8f9;padding:10px;border:1px solid var(--ov-line,#d7e3e8);border-radius:6px;color:var(--ov-ink,#243f4b)}.ds-episode summary{cursor:pointer;font-weight:600;line-height:1.5}.ds-episode summary:focus-visible{outline:2px solid var(--ov-accent,#078987);outline-offset:2px}.ds-episode[open]>summary{margin-bottom:8px}.ds-episode p{font-size:12px;margin:0;color:var(--ov-muted,#526773)}"
+    },
+    {
+      "name": "Report Paper",
+      "kind": "custom",
+      "refersTo": "report-sheet",
+      "description": "用户指定的 A4 宋体单色报告外框；静态预览不含病例数据或合成波形，保留真实纸张尺寸并允许容器内横向滚动。",
+      "html": "<div class=\"ds-report-pages\"><section class=\"ds-report-sheet\" aria-label=\"A4 报告纸面结构预览\"><header class=\"ds-report-running\"><span>患者 ID：—</span><span>姓名：—</span><span>未审核 · 草稿</span></header><div class=\"ds-report-body\"><h1>动态心电图检测报告</h1><h2>检查信息</h2><div class=\"ds-report-box ds-report-exam\"><div>姓名：—</div><div>性别：—</div><div>年龄：—</div><div>起搏器：—</div></div><h2>报告结论</h2><div class=\"ds-report-box ds-report-conclusion\"></div></div><footer class=\"ds-report-footer\"><span>研究与软件验证输出 · 需医生复核，不用于临床决策</span><span>纸面结构预览</span></footer></section></div>",
+      "css": ".ds-report-pages{max-width:100%;overflow-x:auto;padding:16px 4px;background:#e9edef}.ds-report-sheet{box-sizing:border-box;width:210mm;height:297mm;padding:10mm;background:#fff;color:#111;border:1px solid #b8c1c5;font:10pt/1.45 \"Songti SC\",SimSun,\"Noto Serif CJK SC\",serif;display:flex;flex-direction:column}.ds-report-running{display:flex;justify-content:space-between;align-items:center;border-bottom:.3mm solid #333;padding-bottom:1mm;font-size:8pt;gap:4mm;min-height:6mm}.ds-report-body{flex:1;min-height:0;display:flex;flex-direction:column;padding-top:2mm}.ds-report-sheet h1{font-size:17pt;line-height:1.4;text-align:center;margin:0 0 2mm;font-weight:700;color:#111}.ds-report-sheet h2{text-align:center;font-size:12pt;line-height:1.35;margin:2mm 0 1mm;font-weight:700;color:#111}.ds-report-box{border:.25mm solid #333}.ds-report-exam{display:grid;grid-template-columns:1fr .7fr 1.5fr 1fr;padding:2mm;gap:1mm 3mm;font-size:9pt;overflow-wrap:anywhere}.ds-report-conclusion{display:flex;flex-direction:column;flex:1;min-height:35mm;padding:2mm;position:relative}.ds-report-footer{display:flex;justify-content:space-between;gap:3mm;align-items:flex-end;min-height:6mm;font-size:7pt;color:#333;padding-top:2mm}"
+    }
+  ],
+  "narrative": {
+    "northStar": "临床工作台",
+    "overview": "白色测量区、岩板灰文字、深海军蓝导航和青绿色控件构成现有视觉系统。界面为长时间复核安排紧凑的信息密度，依靠标题、边界、坐标和复核状态组织证据；原始波形与统计图是视觉主体。\n\n这是对现有实现的记录。全局规则描述壳层和可复用控件；概览、房颤／房扑和波形密度的测量配色及布局单独限定范围。医院参考截图确定了本次概览页的图表语义与操作，没有将该页组合提升为所有页面的布局模板。\n\n最终报告另有用户提供的医院纸质报告照片作为视觉依据：白色 A4 纸张、宋体文字、黑色细线与灰阶心电网格。该例外限定于报告纸面、打印与对应 PDF；报告编排控件继续使用工作台的界面字体和青绿操作语言。",
+    "keyCharacteristics": [
+      "白色证据表面与深色导航形成稳定层级。",
+      "青绿色表达操作与选择，测量颜色保留各自含义。",
+      "细边框、紧凑间距和短标题支持并排核对。",
+      "复核状态有文字，坐标有单位，原始波形保留上下文。"
+    ],
+    "rules": [
+      {
+        "name": "The Overview Measurement Key Rule",
+        "body": "概览中的蓝色与绿色分别绑定 HR 和 RR；Lorenz 分类色、ECG 心搏类型色和密度色阶各有自己的图例，不能互相替代。",
+        "section": "colors"
+      },
+      {
+        "name": "The Evidence Surface Rule",
+        "body": "白色图表和 ECG 纸张保持不透明、坐标可读；模板编辑的黑底密度是明确的数据视图例外。壳层材料不扩展到测量背景。",
+        "section": "elevation"
+      },
+      {
+        "name": "The State Has a Label Rule",
+        "body": "状态不能仅靠颜色区分；片段表、确认操作与可撤销修改保留明确状态文字和作用范围。",
+        "section": "colors"
+      },
+      {
+        "name": "The Monochrome Report Rule",
+        "body": "医院参考照片确定报告纸面使用白、黑与灰阶；青绿色保留在纸面外的操作、选择和焦点中。这是报告范围的既定变体，不扩展为全局去色规则。",
+        "section": "colors"
+      },
+      {
+        "name": "The Report Font Scope Rule",
+        "body": "宋体仅用于报告文档与纸面图条；编排字段、保存／导出动作和应用导航沿用平台界面字体。报告宋体是已确认的局部字体选择，不能据此替换整个工作台的字体。",
+        "section": "typography"
+      }
+    ],
+    "dos": [
+      "Do 保留深色导航、浅色证据表面与青绿操作的既有关系。",
+      "Do 为测量保留名称、单位、时段与选择状态，并用明确文字表达复核状态。",
+      "Do 根据所处表面使用全局令牌或已命名的概览局部令牌。",
+      "Do 给高频图表操作保留可见入口和键盘入口。",
+      "Do 让工作区通过重排、局部滚动与按需展开适应空间。",
+      "Do 在报告纸面使用已确认的宋体、灰阶网格与固定 A4 几何，纸外保留青绿操作。",
+      "Do 在报告中显示实际时间标尺、可用心搏数与幅度单位，并把长图注完整保留在编号续页。"
+    ],
+    "donts": [
+      "Don't 将医院概览截图的整页组合推广为其他产品页面的固定模板。",
+      "Don't 把 HR／RR 测量色、心搏分类色和密度次数色阶混为同一状态色。",
+      "Don't 将黑底密度图扩展为全局主题，或把壳层模糊叠到原始证据上。",
+      "Don't 把验证截图或截图中的医学数值加入前端资产或设计令牌。",
+      "Don't 继承未提取的微小装饰标签，或把本页窄屏验证解释为全产品已通过验收。",
+      "Don't 将报告宋体和单色纸面推广为应用壳层的新字体或新配色。",
+      "Don't 将未校准设备单位标为 mV，或把延长后的图条仍标为未经计算的固定走纸速度。"
+    ]
+  }
+}
