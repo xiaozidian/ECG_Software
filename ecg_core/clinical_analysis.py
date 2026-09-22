@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 import math
 import statistics
-from .report_layout import strip_settings
+from .report_layout import strip_settings, resolve_strip
 from collections import Counter
 from datetime import datetime, timedelta
 
@@ -35,6 +35,10 @@ def build_index(feed, templates=(), annotations=(), review=None):
     findings=[a for a in annotations if a.get('details',{}).get('kind') in ('ST','AT','VT','AF','AFL','STRIP')]
     av=fingerprint(encode([[a['id'],a['sample_index'],a.get('details')] for a in findings]))
     basis={key:bv for key,_ in CATEGORIES}
+    # Report long-RR screening has a fixed denominator, independent of the
+    # editor's configurable alert threshold. Changing this contract invalidates
+    # old pause selections, but leaves other evidence IDs and bases untouched.
+    basis['pause']=bv+'-rr-gt2500-v2'
     for key,kind in [('ST','ST'),('S','AT'),('V','VT'),('AF','AF'),('other','STRIP')]:
         basis[key]=bv+'-'+fingerprint(encode([[a['id'],a['sample_index'],a['details']] for a in findings if a['details']['kind']==kind or (key=='AF' and a['details']['kind']=='AFL')]))
     by_template={}
@@ -81,7 +85,7 @@ def build_index(feed, templates=(), annotations=(), review=None):
                 item=make(key,name,name+' '+dict(CATEGORIES)[key]+f" {int(r['hr']) if float(r['hr']).is_integer() else r['hr']} bpm",[r])
                 item['candidate_rank']=rank
     for r in valid:
-        if r['rr_ms']>=opts['pause']*1000:make('pause','pause',f"长 RR {r['rr_ms']/1000:.3f} s",[r])
+        if math.isfinite(r['rr_ms']) and r['rr_ms']>2500:make('pause','pause',f"长 RR {r['rr_ms']/1000:.3f} s",[r])
     # Once the episode review is saved, its intervals supersede source rhythm runs.
     rhythm_authoritative = any(a.get('details',{}).get('rhythm_authoritative') for a in annotations)
     # Contiguous threshold/rhythm runs; no joining across intervening beats or noise.
@@ -133,6 +137,12 @@ def query_index(index,params,occurrences=False):
     else:
         items=[e for e in events if (selected_ids is not None and e['event_id'] in selected_ids) or (selected_ids is None and (e['category']==('AF' if code in ('A','M','C','H') else code) if occurrences else category=='all' or e['category']==category) and (e['subtype']==mode if mode!='all' else not e['pattern_only']) and (e['category'] not in ('fastest','slowest') or fast=='BOTH' or e['subtype']==fast))]
         if samples is not None:items=[e for e in items if any(s in samples for s in e['target_samples'])]
+    pause_band=params.get('pause_band','all')
+    if pause_band not in ('all','over3','2.5to3'):raise ValueError('无效的长 RR 筛选范围')
+    pauses=[e for e in events if e['category']=='pause']
+    pause_counts={'all':len(pauses),'over3':sum(e['rr_ms']>3000 for e in pauses),'2.5to3':sum(e['rr_ms']<=3000 for e in pauses)}
+    if not occurrences and category=='pause' and selected_ids is None and pause_band!='all':
+        items=[e for e in items if (e['rr_ms']>3000 if pause_band=='over3' else e['rr_ms']<=3000)]
     rate_candidates=not occurrences and category in ('fastest','slowest') and selected_ids is None
     sort_order=params.get('sort','hr_desc') if rate_candidates else 'time'
     if sort_order not in ('hr_desc','hr_asc','time'):raise ValueError('无效的候选排序方式')
@@ -144,7 +154,7 @@ def query_index(index,params,occurrences=False):
     confirmed_counts={key:len(rows) for key,rows in confirmed.items()}
     confirmed_beats={key:len({s for e in rows for s in e['target_samples']}) for key,rows in confirmed.items()}
     time_counts=Counter(int(e["time_s"]//3600) for e in items)
-    return dict(sort_order=sort_order,candidate_limit=EXTREME_CANDIDATE_LIMIT if rate_candidates else None,confirmed_category_counts=confirmed_counts,confirmed_beat_counts=confirmed_beats,time_counts=dict(time_counts),items=items[offset:offset+limit],total=len(items),offset=offset,limit=limit,category_counts=counts,subtype_counts=dict(subtypes),beat_counts=dict(beats),basis_versions=index['basis_versions'],data_version=index['data_version'])
+    return dict(pause_counts=pause_counts,pause_band=pause_band,sort_order=sort_order,candidate_limit=EXTREME_CANDIDATE_LIMIT if rate_candidates else None,confirmed_category_counts=confirmed_counts,confirmed_beat_counts=confirmed_beats,time_counts=dict(time_counts),items=items[offset:offset+limit],total=len(items),offset=offset,limit=limit,category_counts=counts,subtype_counts=dict(subtypes),beat_counts=dict(beats),basis_versions=index['basis_versions'],data_version=index['data_version'])
 
 def hrv_windows(feed,start_time,window=0):
     """NN intervals must lie wholly inside a statistical window; gaps break differences."""
@@ -205,7 +215,9 @@ def validate_report(index,composition,review,approving=False):
             continue
         if approving and e['category'] in ('fastest','slowest') and composition.get('fast_slow_mode','rr').upper() not in ('BOTH',e['subtype']):raise ValueError('极值图条与 RR/NN 选择不一致')
         if approving and e['diagnosis_status']!='confirmed':raise ValueError('请先完成编辑／ST-T诊断确认')
-        selected.append({**e,'caption':entry.get('caption') or e['label'], **strip_settings(entry)})
+        spec=strip_settings(entry)
+        if 'range_start_s' in spec: resolve_strip(index,e,spec)
+        selected.append({**e,'caption':entry.get('caption') or e['label'], **spec})
     if approving:
         counts=query_index(index,{'fast_slow_mode':composition.get('fast_slow_mode','rr')})['category_counts']
         missing=[label for key,label in CATEGORIES if counts[key] and composition.get('category_reviews',{}).get(key)!=index['basis_versions'][key]]

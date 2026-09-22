@@ -102,6 +102,7 @@ const overviewWorkbench=(()=>{
   }
   function seek(time,keepRange=false){
     if(!keepRange)ui.range=null;
+    state.locatedTime={caseId:state.caseId,time:Number(time)||0};
     state.start=E.clamp(Number(time)||0,0,Math.max(0,duration()-state.duration));state.editStart=state.start;ui.hour=hour();draw();return run(()=>loadWaveform());
   }
   function timeAt(event,canvas){const g=geometries.get(canvas),r=canvas.getBoundingClientRect();return g?E.clamp(g.start+(event.clientX-r.left-g.l)/g.w*(g.end-g.start),g.start,g.end):state.start}
@@ -191,34 +192,6 @@ const overviewWorkbench=(()=>{
     else {const delta=points.length===2?Math.abs(points[1].time-points[0].time):0,positions=ui.ruler==='divider'&&delta>.02?Array.from({length:Math.min(120,Math.ceil(wave.duration_s/delta)+3)},(_,i)=>points[0].time+(i-Math.ceil((points[0].time-wave.start_s)/delta))*delta):points.map(p=>p.time);positions.forEach(t=>{const x=xAt(t);ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,height);ctx.stroke()})}
     if(points.length===2){const delta=Math.abs(points[1].time-points[0].time),leadCount=Object.keys(wave.leads).length,sameLead=Math.floor(points[0].y*leadCount)===Math.floor(points[1].y*leadCount),amplitude=Math.abs(points[1].y-points[0].y)*leadCount*1000/.31/(state.gain/10),text=ui.ruler==='parallel'?(sameLead?`Δ幅度 ${amplitude.toFixed(1)} 设备标度（未溯源）`:'请在同一导联内放置两条平行线'):`Δt ${(delta*1000).toFixed(0)} ms${delta>0?' · '+(60/delta).toFixed(1)+' bpm':''}`;ctx.fillStyle='#fff8ed';ctx.fillRect(40,height-28,Math.min(330,width-40),24);ctx.fillStyle='#965119';ctx.fillText(text,48,height-12)}ctx.restore();
   }
-  function densityParams(){
-    const selected=state.editSelectedClass||'source-N',params=new URLSearchParams({lead:state.editLead||'II'});
-    if(selected.startsWith('custom-'))params.set('template_id',selected.slice(7));else params.set('class_code',selected.replace('source-','')||'N');return params;
-  }
-  function drawDensity(){
-    const canvas=qs('#editDensityPrimary'),d=ui.density;if(!canvas?.getClientRects().length)return;const {ctx,width,height}=canvasContext(canvas,200);ctx.fillStyle='#020b09';ctx.fillRect(0,0,width,height);
-    if(!d){ctx.fillStyle='#bed1ca';ctx.font=`11px ${UI_FONT}`;ctx.fillText('正在统计当前类别全部心搏…',12,30);return}
-    const off=document.createElement('canvas');off.width=d.width;off.height=d.height;const context=off.getContext('2d'),pixels=context.createImageData(d.width,d.height),max=Math.max(1,...d.bins);
-    d.bins.forEach((count,i)=>{const offset=i*4;if(!count){pixels.data[offset+3]=255;return}const f=Math.log1p(count)/Math.log1p(max);pixels.data[offset]=f<.5?Math.round(f*2*235):255;pixels.data[offset+1]=f<.5?220:Math.round(240*(1-(f-.5)*2));pixels.data[offset+2]=0;pixels.data[offset+3]=255});context.putImageData(pixels,0,0);
-    const g={l:38,t:22,w:width-48,h:height-48};ctx.imageSmoothingEnabled=false;ctx.drawImage(off,g.l,g.t,g.w,g.h);ctx.strokeStyle='#e2eeb4';ctx.beginPath();ctx.moveTo(g.l+g.w/2,g.t);ctx.lineTo(g.l+g.w/2,g.t+g.h);ctx.stroke();ctx.fillStyle='#dce9e1';ctx.font=`10px ${UI_FONT}`;ctx.fillText(d.lead+' · R 峰对齐',8,13);ctx.fillText('-1 s',g.l,height-8);ctx.fillText('0',g.l+g.w/2,height-8);ctx.fillText('+1 s',width-34,height-8);ctx.fillText(Math.round(d.amplitude_limit),2,g.t+10);ctx.fillText('0',22,g.t+g.h/2);ctx.fillText('-'+Math.round(d.amplitude_limit),0,g.t+g.h-2);
-    if(ui.densityBox){const [a,b]=ui.densityBox;ctx.strokeStyle='#ffffff';ctx.strokeRect(Math.min(a.x,b.x),Math.min(a.y,b.y),Math.abs(b.x-a.x),Math.abs(b.y-a.y))}
-    geometries.set(canvas,{...g,kind:'density',limit:d.amplitude_limit});qs('#editMorphologyCount').textContent=`全集合 ${fmtNumber(d.included)} / ${fmtNumber(d.total)} 搏`;
-    qs('#editDensityPrimaryLabel').textContent=`${d.lead} · 波形密度（非 RR 散点）`;
-    const help=qs('#ovDensityHelp');if(help)help.textContent=`绿→黄→红：对数密度由低到高 · 边界不足 ${d.skipped_edges} 搏未纳入 · ${d.clipped_points} 个越界采样未绘出 · 原始设备标度，去固定基线，不逐搏归一化`;
-  }
-  async function loadDensity(force=false){
-    if(!state.caseId||state.currentPage!=='edit')return;const params=densityParams(),key=[state.caseId,state.caseData?.analysis_revision,params.toString()].join(':');
-    if(!force&&key===ui.densityKey){drawDensity();return}ui.densityKey=key;ui.density=null;ui.densityBox=null;drawDensity();const token=++ui.densityToken,id=state.caseId;
-    try{const data=await request('waveform-density?'+params);if(token!==ui.densityToken||id!==state.caseId)return;ui.density=data;drawDensity()}catch(error){if(token===ui.densityToken){ui.densityKey=null;qs('#editMorphologyCount').textContent='统计失败';qs('#ovDensityHelp').textContent='密度图读取失败：'+error.message+'；切换类别或重试';}throw error}
-  }
-  async function selectDensity(a,b){
-    const g=geometries.get(qs('#editDensityPrimary'));if(!g||!ui.density)return;const time=x=>E.clamp((x-g.l)/g.w,0,1)*2-1,amplitude=y=>(1-E.clamp((y-g.t)/g.h,0,1)*2)*g.limit,gate=[time(Math.min(a.x,b.x)),time(Math.max(a.x,b.x)),amplitude(Math.max(a.y,b.y)),amplitude(Math.min(a.y,b.y))],params=densityParams();params.set('gate',gate.join(','));
-    qs('#editMorphSelectionLabel').textContent='正在全集合精确框选…';const id=state.caseId,key=ui.densityKey,result=await request('waveform-density?'+params);if(id!==state.caseId||key!==ui.densityKey)return;
-    const samples=result.sample_indices;state.editSelection={source:'morphology',samples,x1:a.x/qs('#editDensityPrimary').clientWidth,y1:a.y/200,x2:b.x/qs('#editDensityPrimary').clientWidth,y2:b.y/200};state.editSelectedSamples=new Set(samples);qs('#editMorphSelectionLabel').textContent=`${fmtNumber(samples.length)} 搏 · 全集合匹配`;qs('#clearEditSelection').disabled=!samples.length;
-    if(samples.length){const strips=await request('waveform-strips',{method:'POST',body:JSON.stringify({sample_indices:samples.slice(0,24),pre_s:1,post_s:1,leads:[state.editLead],max_points:400,filter:'raw'})});if(id!==state.caseId||key!==ui.densityKey)return;state.editSelectionStrips=strips.items;drawEditDensityCanvas(qs('#editDensitySelection'),strips.items,'#f0c85a');}
-    else{state.editSelectionStrips=[];drawEditDensityCanvas(qs('#editDensitySelection'),[],'#f0c85a')}
-    renderEditGallery();drawDensity();toast(`框选匹配 ${fmtNumber(samples.length)} 搏${samples.length>500?'；创建模板需缩小到 500 搏以内':''}`);
-  }
   async function action(value,element){
     const [key,...tail]=value.split(':'),arg=tail.join(':');if(key.startsWith('menu-')&&key!=='menu-close')return showMenu(key.slice(5),null,element?.dataset.canvas);
     closeMenu();
@@ -266,25 +239,22 @@ const overviewWorkbench=(()=>{
       return dialog('指定心率报告图条',`<p>${label}：${formatElapsed(row.time_s)} · ${row.hr.toFixed(1)} bpm。</p><p>保存定位书签，并创建该时刻前后 10 秒的报告图条加入草稿。不修改全记录数学极值；报告仍需核对和保存。</p>`,async()=>{await saveRhythm(doc);await insertStrip(false,label,[Math.max(0,row.time_s-3),Math.min(duration(),row.time_s+7)])});
     }
     if(key==='bookmark-jump'){seek(Number(arg));return}
-    if(key==='density-retry')return loadDensity(true);
   }
   function bind(){
     const ruler=document.createElement('div');ruler.id='ovRulerStatus';ruler.className='ov-ruler-status';ruler.hidden=true;qs('#waveformCard').prepend(ruler);
-    const densityHelp=document.createElement('div');densityHelp.className='ov-density-help';densityHelp.innerHTML=`<p id="ovDensityHelp">R 峰对齐后的波形密度；颜色代表重复次数。</p>${button('重新统计','density-retry')}`;qs('.edit-density-panel').append(densityHelp);qs('#editDensityTitle').textContent='心搏波形密度 · 全集合';
     document.addEventListener('click',event=>{const button=event.target.closest('[data-ov]');if(button){event.preventDefault();run(()=>action(button.dataset.ov,button))}},true);
     qs('#ovLog').onchange=event=>{ui.log=event.target.checked;drawHistogram()};qs('#ovScatterRange').onchange=event=>run(()=>action('bound:'+event.target.value));
     let drag=null;
-    const own=target=>target.closest?.('[data-ov-plot],#ovHistogram,#ovNavigator,#editDensityPrimary');
+    const own=target=>target.closest?.('[data-ov-plot],#ovHistogram,#ovNavigator');
     document.addEventListener('pointerdown',event=>{
       if(!qs('#ovMenu').hidden&&!event.target.closest('#ovMenu'))closeMenu();
-      const canvas=own(event.target);if(!canvas||event.button!==0||!ui.rows.length&&canvas.id!=='editDensityPrimary')return;const g=geometries.get(canvas);if(!g)return;event.preventDefault();event.stopImmediatePropagation();canvas.focus({preventScroll:true});canvas.setPointerCapture(event.pointerId);
+      const canvas=own(event.target);if(!canvas||event.button!==0||!ui.rows.length)return;const g=geometries.get(canvas);if(!g)return;event.preventDefault();event.stopImmediatePropagation();canvas.focus({preventScroll:true});canvas.setPointerCapture(event.pointerId);
       const rect=canvas.getBoundingClientRect(),point={x:event.clientX-rect.left,y:event.clientY-rect.top};drag={canvas,g,point,last:point,time:g.kind==='scatter'||g.kind==='density'||g.kind==='hist'?null:timeAt(event,canvas),points:g.kind==='scatter'?[scatterAt(event,canvas)]:[]};
     },true);
     document.addEventListener('pointermove',event=>{
       const canvas=own(event.target);if(!canvas)return;const g=geometries.get(canvas);if(!g)return;const rect=canvas.getBoundingClientRect(),point={x:event.clientX-rect.left,y:event.clientY-rect.top};
       if(g.kind==='hr'||g.kind==='rr'){const time=timeAt(event,canvas),value=E.clamp(1-(point.y-g.t)/g.h,0,1)*g.maxY,output=qs(`[data-coordinate="${canvas.id}"]`);if(output)output.textContent=`${formatElapsedPrecise(time)} · ${value.toFixed(0)} ${g.kind==='hr'?'bpm':'ms'}`}
       if(!drag||drag.canvas!==canvas)return;event.preventDefault();event.stopImmediatePropagation();drag.last=point;
-      if(g.kind==='density'){ui.densityBox=[drag.point,point];drawDensity();return}
       if(g.kind==='scatter'){
         const current=scatterAt(event,canvas),first=drag.points[0];if(ui.selectionMode==='lasso')drag.points.push(current);ui.polygon=ui.selectionMode==='lasso'?drag.points:[first,[current[0],first[1]],current,[first[0],current[1]]];drawScatter(canvas);return;
       }
@@ -292,7 +262,6 @@ const overviewWorkbench=(()=>{
     },true);
     document.addEventListener('pointerup',event=>{
       if(!drag)return;const job=drag;drag=null;event.preventDefault();event.stopImmediatePropagation();const {canvas,g,point,last}=job,dist=Math.hypot(last.x-point.x,last.y-point.y);
-      if(g.kind==='density'){if(dist>4)run(()=>selectDensity(point,last));return}
       if(g.kind==='hist'){ui.bin=E.clamp(Math.floor((point.x-g.l)/g.w*ui.hist.bins.length),0,ui.hist.bins.length-1);selectSamples(ui.hist.bins[ui.bin].samples);drawHistogram();return}
       if(g.kind==='scatter'){
         if(dist<4||ui.selectionMode==='point'){const [x,y]=scatterAt(event,canvas),nearest=g.points.reduce((a,b)=>!a||Math.hypot(b.x-x,b.y-y)<Math.hypot(a.x-x,a.y-y)?b:a,null);ui.polygon=[];if(nearest){selectSamples([nearest.sample_index]);seek(nearest.time_s)}}
@@ -304,22 +273,20 @@ const overviewWorkbench=(()=>{
       const mode=event.target.closest('[data-scatter-mode]');if(mode){event.preventDefault();event.stopImmediatePropagation();run(()=>action('mode:'+mode.dataset.scatterMode))}
       if(event.target.id==='waveformCanvas'&&ui.ruler){event.preventDefault();event.stopImmediatePropagation();const r=event.target.getBoundingClientRect();if(ui.rulerPoints.length===2)ui.rulerPoints=[];ui.rulerPoints.push({time:state.waveform.start_s+(event.clientX-r.left)/r.width*state.waveform.duration_s,y:(event.clientY-r.top)/r.height});renderWaveform()}
     },true);
-    document.addEventListener('contextmenu',event=>{const canvas=own(event.target);if(!canvas)return;event.preventDefault();event.stopImmediatePropagation();if(canvas.id==='editDensityPrimary'){ui.densityBox=null;state.editSelection=null;drawDensity();return}const kind=geometries.get(canvas)?.kind;if(['hr','rr','scatter'].includes(kind))showMenu(kind,event,canvas.id)},true);
+    document.addEventListener('contextmenu',event=>{const canvas=own(event.target);if(!canvas)return;event.preventDefault();event.stopImmediatePropagation();const kind=geometries.get(canvas)?.kind;if(['hr','rr','scatter'].includes(kind))showMenu(kind,event,canvas.id)},true);
     document.addEventListener('keydown',event=>{
       if(qs('#ovDialog').open){event.stopImmediatePropagation();return}
       const menu=qs('#ovMenu');if(!menu.hidden){if(event.key==='Escape'){closeMenu();event.preventDefault();event.stopImmediatePropagation();return}if(['ArrowDown','ArrowUp'].includes(event.key)){const items=[...menu.querySelectorAll('button,summary')].filter(x=>x.getClientRects().length),index=items.indexOf(document.activeElement);items[(index+(event.key==='ArrowDown'?1:-1)+items.length)%items.length]?.focus();event.preventDefault();event.stopImmediatePropagation()}return}
       const canvas=own(event.target);if(!canvas)return;
       if(event.shiftKey&&event.key==='F10'){const g=geometries.get(canvas);if(['rr','hr','scatter'].includes(g?.kind)){showMenu(g.kind,null,canvas.id);event.preventDefault();event.stopImmediatePropagation()}return}
-      if(event.key==='Escape'){ui.range=null;ui.polygon=[];ui.densityBox=null;draw();drawDensity();return}
+      if(event.key==='Escape'){ui.range=null;ui.polygon=[];ui.densityBox=null;draw();return}
       if(['ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();event.stopImmediatePropagation();const direction=event.key==='ArrowLeft'?-1:1;if(canvas.id==='ovHistogram'){ui.bin=E.clamp((ui.bin??0)+direction,0,ui.hist.bins.length-1);selectSamples(ui.hist.bins[ui.bin].samples);drawHistogram()}else seek(state.start+direction*(event.shiftKey?60:state.duration))}
     },true);
-    qs('#applyEditRange').addEventListener('click',event=>{event.preventDefault();event.stopImmediatePropagation();const canvas=qs('#editDensityPrimary'),w=canvas.clientWidth,h=canvas.clientHeight;run(()=>selectDensity({x:Number(qs('#editRangeStart').value)/100*w,y:Number(qs('#editRangeTop').value)/100*h},{x:Number(qs('#editRangeEnd').value)/100*w,y:Number(qs('#editRangeBottom').value)/100*h}))},true);
-    qs('#clearEditSelection').addEventListener('click',()=>{ui.densityBox=null;requestAnimationFrame(drawDensity)},true);
     window.addEventListener('afterprint',()=>document.body.classList.remove('ov-print-strip'));
-    new ResizeObserver(()=>requestAnimationFrame(()=>{draw();drawDensity();run(navigatorWave)})).observe(qs('#page-review'));
+    new ResizeObserver(()=>requestAnimationFrame(()=>{draw();run(navigatorWave)})).observe(qs('#page-review'));
     new ResizeObserver(()=>requestAnimationFrame(()=>drawScatter())).observe(qs('.scatter-canvas-wrap'));
   }
-  const previousCase=loadCase,previousWave=renderWaveform,previousAnnotations=renderAnnotations,previousDensity=renderEditDensity;
+  const previousCase=loadCase,previousWave=renderWaveform,previousAnnotations=renderAnnotations;
   loadCase=async(...args)=>{const result=await previousCase(...args);if(result)await load(true);return result};
   renderOverview=()=>{draw();run(navigatorWave)};
   renderScatter=()=>drawScatter();
@@ -327,7 +294,6 @@ const overviewWorkbench=(()=>{
   applyScatterSelectionPolygon=async polygon=>{ui.polygon=polygon;selectSamples(E.pairs(ui.rows,ui.mode,ui.hour).filter(r=>inside(r.x,r.y,polygon)).map(r=>r.sample_index))};
   renderWaveform=()=>{previousWave();waveformOverlay()};
   renderAnnotations=items=>{previousAnnotations(items.filter(x=>!x.internal).map(x=>String(x.id).startsWith('af:')?{...x,note:(x.note||'')+'（在房颤分析页编辑）'}:x));qs('#annotationList').querySelectorAll('[data-delete-annotation]').forEach(b=>{if(b.dataset.deleteAnnotation.startsWith('af:'))b.remove()})};
-  renderEditDensity=()=>{previousDensity();run(()=>loadDensity())};
   document.addEventListener('DOMContentLoaded',mount);
-  return {load,draw,loadDensity};
+  return {load,draw};
 })();

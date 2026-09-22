@@ -4,12 +4,19 @@ const clinicalUI=(()=>{
   const A=ECGClinicalAnalysis,esc=escapeHtml,qs=s=>document.querySelector(s);
   const copy=x=>JSON.parse(JSON.stringify(x));
   const tabs=[...A.categories,['tables','数据表格'],['strips','报告图条'],['final','报告']];
-  let occurrenceToken=0,reportToken=0,waveToken=0,editCase=null,occurrence=null,editMode='all',template='all',type='N',pageCache=new Map(),waveCache=new Map(),tileWidth=150,editTimeTimer=0;
+  let occurrenceToken=0,reportToken=0,waveToken=0,editCase=null,occurrence=null,editMode='all',template='all',type='N',pageCache=new Map(),tileWidth=150,editTimeTimer=0;
+  const reportWaveCache=new Map();
+  const thumbnailCache=ECGWaveformLoader.create(async(group,ranges)=>{
+    const [id,leads]=JSON.parse(group);
+    const result=await api(`/api/cases/${id}/event-waveforms`,{method:'POST',body:JSON.stringify({ranges,leads:leads.split(','),max_points:1200})});
+    return result.items;
+  });
   let reportCase=null,reportVersion=null,category='fastest',reportOffset=0,reportMode='all',reportSort='hr_desc',reportData=null,selectedLookup=new Map(),active=null,hrv=null,hrvToken=0;
   const run=fn=>Promise.resolve().then(fn).catch(handleError);
   const endpoint=(kind,params={},id=state.caseId)=>api(`/api/cases/${id}/${kind}?${new URLSearchParams(params)}`);
   const selected=()=>state.reportComposition?.selected_events||[];
   let reportRenderToken=0;
+  let pauseBand='all';
   function composition(){
     const source=state.reportComposition||state.report?.composition||{};
     return {...source,schema_version:2,selected_events:source.selected_events||[],category_reviews:source.category_reviews||{},diagnosis_blocks:source.diagnosis_blocks||[],fast_slow_mode:source.fast_slow_mode||'rr',paper:{...(source.paper||{}),size:'A4',orientation:'portrait'},strip_defaults:ECGReportEngine.settings(source.strip_defaults)};
@@ -17,13 +24,11 @@ const clinicalUI=(()=>{
   function dirty(){state.reportDirty=true;if(qs('#reportSaveState'))qs('#reportSaveState').textContent='有未保存修改';}
   function svg(wave,event=null,compact=false){
     const leads=Object.entries(wave.leads||{}),width=1000,row=compact?70:125,height=Math.max(1,leads.length)*row;
-    return `<svg viewBox="0 0 ${width} ${height}" ${compact?'preserveAspectRatio="none"':''} role="img" aria-label="${esc(event?.label||'心电波形')}，${wave.duration_s}秒"><defs><pattern id="grid-${compact?'s':'l'}" width="25" height="25" patternUnits="userSpaceOnUse"><path d="M 25 0 L 0 0 0 25" fill="none" stroke="#d9e4e6" stroke-width=".5"/></pattern></defs><rect width="100%" height="100%" fill="url(#grid-${compact?'s':'l'})"/>${leads.map(([name,values],j)=>{const mid=j*row+row/2,max=Math.max(50,...values.map(v=>Math.abs(v))),scale=(row*.4)/max;return `<text x="4" y="${j*row+14}" font-size="13">${esc(name)}</text><polyline fill="none" stroke="#244f59" stroke-width="1.2" points="${values.map((v,i)=>`${(i/(values.length-1||1)*width).toFixed(2)},${(mid-v*scale).toFixed(2)}`).join(' ')}"/>`}).join('')}${(event?.target_samples||[]).map(s=>{const x=(s/200-wave.start_s)/wave.duration_s*width;return x>=0&&x<=width?`<path d="M${x.toFixed(2)} 0 V${height}" stroke="#bd663d" stroke-opacity=".35"/>`:''}).join('')}</svg>`;
+    return `<svg viewBox="0 0 ${width} ${height}" ${compact?'preserveAspectRatio="none"':''} role="img" aria-label="${esc(event?.label||'心电波形')}，${wave.duration_s}秒"><rect width="100%" height="100%" fill="#fff"/>${leads.map(([name,values],j)=>{const mid=j*row+row/2,max=Math.max(50,...values.map(v=>Math.abs(v))),scale=(row*.4)/max;return `<text x="4" y="${j*row+14}" font-size="13">${esc(name)}</text><polyline fill="none" stroke="#244f59" stroke-width="1.2" points="${values.map((v,i)=>`${(i/(values.length-1||1)*width).toFixed(2)},${(mid-v*scale).toFixed(2)}`).join(' ')}"/>`}).join('')}${(wave.beats||[]).map(beat=>{const x=(beat.sample_index/200-wave.start_s)/wave.duration_s*width;if(x<0||x>width)return '';return (event?.target_samples||[]).includes(beat.sample_index)?ECGReviewTools.markSvg(x,height,beat.class_code):compact?'':`<text x="${x}" y="13" fill="#536b74" font-size="10">${esc(beat.class_code)}</text>`}).join('')}</svg>`;
   }
   async function eventWave(e,id=state.caseId,leads='II,V1,V5'){
     const start=Math.max(0,e.start_sample/200-.8),end=e.end_sample/200+1.6,key=[id,e.basis_version,e.event_id,leads].join('|');
-    if(waveCache.size>200)waveCache.delete(waveCache.keys().next().value);
-    if(!waveCache.has(key))waveCache.set(key,endpoint('event-waveform',{start,end,leads,max_points:1200},id).catch(error=>{waveCache.delete(key);throw error}));
-    return waveCache.get(key);
+    return thumbnailCache.get(key,JSON.stringify([id,leads]),{start,end});
   }
   const typeNames={N:'正常搏',S:'房早',V:'室早'};
   let openType=null;
@@ -85,13 +90,17 @@ const clinicalUI=(()=>{
   function editParams(offset=0){return {class_code:type,mode:editMode,template_id:template,offset,limit:48}}
   async function loadOccurrences(){
     if(!state.caseId)return;
-    if(editCase!==state.caseId){editCase=state.caseId;editMode='all';template='all';pageCache.clear();waveCache.clear();}
+    if(editCase!==state.caseId){editCase=state.caseId;editMode='all';template='all';pageCache.clear();thumbnailCache.clear();reportWaveCache.clear();}
     const token=++occurrenceToken,id=state.caseId;pageCache.clear();occurrence=null;filters();
     qs('#editTemplateGallery').innerHTML='<p class="empty-state">读取完整出现记录…</p>';
-    try{const result=await endpoint('template-occurrences',editParams(),id);if(token!==occurrenceToken||id!==state.caseId)return;occurrence=result;pageCache.set(0,result.items);qs('#editTemplateGallery').scrollLeft=0;renderOccurrences();await loadMorphology(result.items,token,id);}
+    // Full-population density is independent of thumbnails; do not serialize it
+    // behind the occurrence index and an obsolete representative-strip request.
+    renderEditDensity();
+    try{const result=await endpoint('template-occurrences',editParams(),id);if(token!==occurrenceToken||id!==state.caseId)return;occurrence=result;pageCache.set(0,result.items);qs('#editTemplateGallery').scrollTop=0;renderOccurrences();if(typeof morphologyWorkbench==='undefined')await loadMorphology(result.items,token,id);}
     catch(error){if(token===occurrenceToken)qs('#editTemplateGallery').innerHTML=`<p class="empty-state">加载失败：${esc(error.message)}。请重新选择筛选条件重试。</p>`;throw error;}
   }
   async function loadMorphology(items,token,id){
+    if(typeof morphologyWorkbench!=='undefined')return;
     const samples=[...new Set(items.flatMap(e=>e.target_samples))].slice(0,24);
     if(!samples.length){state.editTemplateStrips=[];renderEditDensity();return;}
     const result=await api(`/api/cases/${id}/waveform-strips`,{method:'POST',body:JSON.stringify({sample_indices:samples,leads:[state.editLead||'II'],pre_s:.4,post_s:.8,max_points:240,filter:'display'})});
@@ -101,26 +110,29 @@ const clinicalUI=(()=>{
   }
   function renderOccurrences(){
     const host=qs('#editTemplateGallery');if(!host||!occurrence)return;
-    host.classList.add('occurrence-viewport');const total=occurrence.total;const previousWidth=tileWidth;tileWidth=Math.max(90,host.clientWidth/6);if(previousWidth!==tileWidth&&host.scrollLeft)host.scrollLeft=Math.floor((host.scrollLeft+1)/previousWidth)*tileWidth;
-    const first=Math.max(0,Math.floor((host.scrollLeft+1)/tileWidth)*2),last=Math.min(total,first+14),token=occurrenceToken,id=state.caseId;
+    host.classList.add('occurrence-viewport');host.tabIndex=0;host.setAttribute('aria-label','心搏出现记录，向下滚动连续浏览');host.removeAttribute('aria-live');
+    const total=occurrence.total,g=ECGReviewTools.virtualGrid(total,host.clientWidth,host.scrollTop),{first,last}=g,token=occurrenceToken,id=state.caseId;
+    tileWidth=g.width;host.style.setProperty('--occ-height',g.height+'px');host.scrollLeft=0;
+    const focused=host.contains(document.activeElement)?document.activeElement.closest('[data-occ-index]')?.dataset.occIndex:null,focusInput=document.activeElement?.tagName==='INPUT';
     syncEditTimeSlider();
     qs('#editGalleryTitle').textContent=`${type} · ${modeLabel()} · 全部出现记录`;
     qs('#editGalleryDescription').textContent='勾选审核目标心搏；报告入选在报告页单独完成';
-    qs('#editGalleryCount').textContent=`${total?first+1:0}–${Math.min(total,Math.ceil((host.scrollLeft+host.clientWidth-1)/tileWidth)*2)} / ${total}`;
+    qs('#editGalleryCount').textContent=`${g.visibleFirst}–${g.visibleLast} / ${total}`;
     if(!total){host.innerHTML='<p class="empty-state">0 条匹配记录</p>';return;}
     let lane=host.querySelector('.occurrence-lane');if(!lane){host.innerHTML='<div class="occurrence-lane"></div>';lane=host.firstElementChild;}
-    lane.style.width=Math.ceil(total/2)*tileWidth+'px';lane.innerHTML='';
+    lane.style.width='100%';lane.style.height=g.contentHeight+'px';lane.innerHTML='';
     for(let n=first;n<last;n++){
       const offset=Math.floor(n/48)*48,items=pageCache.get(offset);
       if(!items){if(!pageCache.has(offset)){pageCache.set(offset,null);endpoint('template-occurrences',editParams(offset),id).then(result=>{if(token!==occurrenceToken||id!==state.caseId)return;if(result.data_version!==occurrence.data_version){loadOccurrences().catch(handleError);return;}pageCache.set(offset,result.items);renderOccurrences();loadMorphology(result.items,token,id).catch(handleError)}).catch(error=>{if(token===occurrenceToken){pageCache.delete(offset);qs('#editGalleryCount').textContent='加载失败，请重试';handleError(error)}});}continue;}
       const e=items[n-offset];if(!e)continue;
-      const card=document.createElement('div');card.className='occurrence-tile';card.style.cssText=`left:${Math.floor(n/2)*tileWidth}px;top:${n%2*126}px;width:${tileWidth-6}px`;
+      const card=document.createElement('div');card.className='occurrence-tile';card.dataset.occIndex=n;card.style.cssText=`left:${n%g.columns*tileWidth}px;top:${Math.floor(n/g.columns)*g.row}px;width:${tileWidth-6}px`;
       card.innerHTML=`<button type="button" class="occurrence-open" aria-label="定位第${n+1}条 ${esc(e.label)}"><strong>${formatElapsed(e.time_s)}</strong><span class="occurrence-wave">读取波形…</span></button><label><input type="checkbox" aria-label="选择第${n+1}条审核目标" ${e.target_samples.every(s=>state.editSelectedSamples.has(s))?'checked':''}>${esc(e.templates.map(t=>t.name).join('/')||type)} · ${e.beat_count}搏</label><small>${esc(e.label)} · ${e.diagnosis_status==='edited'?'已修订':e.diagnosis_status==='confirmed'?'已确认':'待审核'}</small>`;
       card.querySelector('button').onclick=()=>{state.editSelectedSample=e.sample_index;setEditStart(Math.max(0,e.time_s-2));renderEditScatter();};
       card.querySelector('input').onchange=ev=>{e.target_samples.forEach(s=>ev.target.checked?state.editSelectedSamples.add(s):state.editSelectedSamples.delete(s));state.editSelectedSample=e.sample_index;renderEditScatter();};
-      card.onkeydown=ev=>{if([' ','ArrowLeft','ArrowRight'].includes(ev.key)){ev.stopPropagation();if(ev.key!==' '){ev.preventDefault();host.scrollLeft+=(ev.key==='ArrowLeft'?-1:1)*tileWidth;}}};lane.appendChild(card);
+      card.onkeydown=ev=>{if([' ','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(ev.key)){ev.stopPropagation();if(ev.key!==' '){ev.preventDefault();const next=Math.max(0,Math.min(total-1,n+({ArrowLeft:-1,ArrowRight:1,ArrowUp:-g.columns,ArrowDown:g.columns}[ev.key])));host.scrollTop=Math.floor(next/g.columns)*g.row;renderOccurrences();host.querySelector(`[data-occ-index="${next}"] button`)?.focus({preventScroll:true});}}};lane.appendChild(card);
       eventWave(e,id,[state.editLead||'II',...['II','V1','V5'].filter(l=>l!==(state.editLead||'II'))].slice(0,3).join(',')).then(w=>{if(token===occurrenceToken&&card.isConnected)card.querySelector('.occurrence-wave').innerHTML=svg(w,e,true)}).catch(()=>{if(card.isConnected)card.querySelector('.occurrence-wave').textContent='波形读取失败';});
     }
+    if(focused!==undefined&&focused!==null)host.querySelector(`[data-occ-index="${focused}"] ${focusInput?'input':'button'}`)?.focus({preventScroll:true});
   }
   async function refreshReport(){
     if(!state.caseId||!state.report)return;
@@ -131,7 +143,7 @@ const clinicalUI=(()=>{
     state.reportComposition=composition();renderReportShell();
     qs('#reportV2Content').innerHTML='<p class="empty-state">读取已确认结果…</p>';
     try{
-      const data=await endpoint('report-events',{category:A.categories.some(([k])=>k===category)?category:'all',mode:reportMode,offset:reportOffset,limit:50,sort:reportSort,fast_slow_mode:composition().fast_slow_mode},id);
+      const data=await endpoint('report-events',{category:A.categories.some(([k])=>k===category)?category:'all',mode:reportMode,offset:reportOffset,limit:50,sort:reportSort,pause_band:pauseBand,fast_slow_mode:composition().fast_slow_mode},id);
       if(token!==reportToken||id!==state.caseId)return;
       reportData=data;data.items.forEach(e=>selectedLookup.set(e.event_id,e));
       for(let i=0;i<selected().length;i+=100){const result=await endpoint('report-events',{ids:selected().slice(i,i+100).map(e=>e.event_id).join('|'),limit:200},id);if(token!==reportToken||id!==state.caseId)return;result.items.forEach(e=>selectedLookup.set(e.event_id,e));}
@@ -144,10 +156,10 @@ const clinicalUI=(()=>{
     const blocks=[];for(const b of c.diagnosis_blocks||[]){if(keys.has(b.key)){blocks.push(b);keys.delete(b.key);}else if(b.manual)blocks.push({...b,needs_review:!b.acknowledged});}
     keys.forEach((text,key)=>blocks.push({key,text,manual:false,needs_review:false,acknowledged:false}));c.diagnosis_blocks=blocks;
   }
-  function selectEvent(e,checked){
+  function selectEvent(e,checked,settings=null){
     const c=state.reportComposition;selectedLookup.set(e.event_id,e);
     c.selected_events=c.selected_events.filter(s=>s.event_id!==e.event_id);
-    if(checked)c.selected_events.push({event_id:e.event_id,basis_version:e.basis_version,caption:e.label,...ECGReportEngine.settings(c.strip_defaults)});
+    if(checked)c.selected_events.push({event_id:e.event_id,basis_version:e.basis_version,caption:e.label,...ECGReportEngine.settings(settings||c.strip_defaults)});
     delete c.category_reviews[e.category];c.diagnosis_blocks.forEach(b=>{if(b.key===e.category+':'+e.subtype)b.acknowledged=false});syncText();dirty();renderReportShell();run(renderReportBody);
   }
   function enableReportDraftSelections(items){
@@ -180,13 +192,13 @@ const clinicalUI=(()=>{
       const token=++reportRenderToken,id=state.caseId;
       if(category==='final'){
         host.innerHTML='<div class="rp-entry-settings"><strong>A4 纵向报告</strong>'+gainHtml()+'<span>三导联每页三张；4–6 导联占两行；7–12 导联独占一页。修改导联与时间请到“报告图条”。</span></div><div id="rpFinalPages" class="rp-pages" aria-live="polite">正在排版报告…</div>';
-        try{const [statistics,entries]=await Promise.all([endpoint('report-statistics',{},id),selectedReportWaves(id)]);
+        try{const [statistics,entries,hrvData]=await Promise.all([endpoint('report-statistics',{},id),selectedReportWaves(id),hrvForReport(id)]);
           if(token!==reportRenderToken||id!==state.caseId)return;
-          const target=qs('#rpFinalPages');if(!target)return;target.innerHTML=ECGReportPaper.render(paperModel(statistics),entries);ECGReportPaper.number(target);
+          const target=qs('#rpFinalPages');if(!target)return;target.innerHTML=ECGReportPaper.render(paperModel(statistics,hrvData),entries);ECGReportPaper.number(target);
         }catch(error){if(token===reportRenderToken&&qs('#rpFinalPages'))qs('#rpFinalPages').innerHTML='<p class="rp-load-error">报告读取失败：'+esc(error.message)+'。请重新打开报告重试，当前不可据此导出。</p>';throw error;}return;
       }
       host.innerHTML=stripSettingsHtml(composition().strip_defaults,'default')+'<div id="v2TextBlocks">'+diagnosisBlocksHtml()+'</div>'+selected().map((s,i)=>{const e=selectedLookup.get(s.event_id),valid=e&&e.basis_version===s.basis_version;return `<article class="rp-editor-strip"><header><strong>${i+1}. ${esc(e?.label||s.event_id)}${valid?'':'（已失效）'}</strong><div><button data-back-event="${i}">回看</button><button data-move="${i}" data-delta="-1" aria-label="图条上移" ${i===0?'disabled':''}>上移</button><button data-move="${i}" data-delta="1" aria-label="图条下移" ${i===selected().length-1?'disabled':''}>下移</button><button data-remove="${i}">移除</button></div></header><label>图注<input data-caption="${i}" value="${esc(s.caption)}" maxlength="500"></label>${stripSettingsHtml(s,String(i))}<div data-selected-wave="${i}">${valid?'读取波形…':'图条已失效，请重新筛选'}</div><p class="rp-strip-status" data-strip-status="${i}" aria-live="polite"></p></article>`}).join('')+(selected().length?'':'<p class="empty-state">尚未选择图条。在事件列表设置导联后勾选“入报”；也可以在这里修改每条图的导联与时长。</p>');
-      await Promise.all(selected().map(async(s,i)=>{const e=selectedLookup.get(s.event_id),target=host.querySelector(`[data-selected-wave="${i}"]`);if(!e||e.basis_version!==s.basis_version)return;try{const entry=await reportStrip(e,s,id);if(token===reportRenderToken&&target?.isConnected){target.innerHTML=ECGReportPaper.stripSvg(entry,composition().paper,s.leads?.length>6?880:s.leads?.length>3?520:276);host.querySelector(`[data-strip-status="${i}"]`).textContent=`${formatElapsed(entry.waveform.start_s)}–${formatElapsed(entry.waveform.start_s+entry.waveform.duration_s)} · ${entry.strip.visible_beat_count} 搏 · ${entry.strip.warning||'时间窗满足至少 5 搏'}`;}}catch(error){if(target?.isConnected)target.textContent='读取失败：'+error.message;}}));return;
+      await Promise.all(selected().map(async(s,i)=>{const e=selectedLookup.get(s.event_id),target=host.querySelector(`[data-selected-wave="${i}"]`);if(!e||e.basis_version!==s.basis_version)return;try{const entry=await reportStrip(e,s,id);if(token===reportRenderToken&&target?.isConnected){target.innerHTML=ECGReportPaper.stripSvg(entry,composition().paper,s.leads?.length>6?880:s.leads?.length>3?520:276);host.querySelector(`[data-strip-status="${i}"]`).textContent=`${formatElapsed(entry.waveform.start_s)}–${formatElapsed(entry.waveform.start_s+entry.waveform.duration_s)} · ${entry.strip.visible_beat_count} 搏 · ${entry.strip.warning||'时间窗满足至少 5 搏'}`;await mountRange(target,e,entry,id);}}catch(error){if(target?.isConnected)target.textContent='读取失败：'+error.message;}}));return;
     }
     const complete=composition().category_reviews[category]===reportData.basis_versions[category],items=reportData.items,rateCandidates=['fastest','slowest'].includes(category);
     const pageCount=Math.max(1,Math.ceil(reportData.total/50));
@@ -199,6 +211,15 @@ const clinicalUI=(()=>{
       <footer><button id="v2Prev" ${reportOffset===0?'disabled':''}>上一页</button><span>${reportData.total?reportOffset+1:0}–${reportOffset+items.length} / ${reportData.total}</span>${rateCandidates?`<label>页码<select id="v2ReportPage" aria-label="候选页码">${Array.from({length:pageCount},(_,i)=>`<option value="${i}" ${i===Math.floor(reportOffset/50)?'selected':''}>${i+1} / ${pageCount}</option>`).join('')}</select></label>`:''}<button id="v2Next" ${reportOffset+items.length>=reportData.total?'disabled':''}>下一页</button></footer></div>
       <div class="v2-event-detail"><div class="v2-distribution">${Object.entries(reportData.subtype_counts).map(([k,n])=>`<span>${esc(Object.fromEntries(A.patterns)[k]||k)} <b>${n}</b></span>`).join('')}<small>${rateCandidates?'RR：有效相邻心搏间期；NN：连续正常心搏且在设置范围内。这里只提供选图候选，不替代医生确认。':'连续搏数与重复节律为重叠标签，不能相加'}</small></div><div id="v2TimeDistribution"></div><div id="v2EventWave"><p class="empty-state">点击左侧事件查看完整波形</p></div><input id="v2Time" type="range" min="0" max="${state.caseData.technical.duration_seconds_raw}" step=".1" aria-label="事件连续波形时间导航"><small id="v2WaveLabel"></small></div></div>`;
     host.insertAdjacentHTML('afterbegin',stripSettingsHtml(composition().strip_defaults,'default'));
+    if(category==='pause'){
+      const counts=reportData.pause_counts;
+      qs('#v2Subtype').closest('label').hidden=true;
+      qs('.v2-category-bar strong').textContent=`停搏事件 · 长 RR 候选 ${reportData.total} 条`;
+      qs('.v2-category-bar').insertAdjacentHTML('beforeend',`<label>RR 范围<select id="v2PauseBand"><option value="all">全部 &gt;2.5 秒 · ${counts.all} 次</option><option value="over3">仅 &gt;3 秒 · ${counts.over3} 次</option><option value="2.5to3">2.5 秒&lt;RR≤3 秒 · ${counts['2.5to3']} 次</option></select></label>`);
+      qs('#v2PauseBand').value=pauseBand;
+      qs('#v2PauseBand').onchange=e=>{pauseBand=e.target.value;reportOffset=0;run(refreshReport)};
+      qs('.v2-distribution').innerHTML=`<span>RR &gt;2.5 秒 <b>${counts.all} 次</b></span><span>其中 RR &gt;3 秒 <b>${counts.over3} 次</b></span><small>按每个有效相邻 R-R 间期计 1 次，不合并为连续事件。等于 2.5 秒不计入；等于 3 秒属于 ≤3 秒组。筛选和入图不改变全记录统计；长 RR 不等同确诊停搏。</small>`;
+    }
     enableReportDraftSelections(items);
     qs('#v2Subtype').onchange=e=>{reportMode=e.target.value;reportOffset=0;run(refreshReport)};
     if(qs('#v2Fast')){qs('#v2Fast').value=composition().fast_slow_mode;qs('#v2Fast').onchange=e=>{reportOffset=0;reportMode='all';state.reportComposition.fast_slow_mode=e.target.value;state.reportComposition.selected_events=selected().filter(s=>{const item=selectedLookup.get(s.event_id);return !item||!['fastest','slowest'].includes(item.category)||e.target.value==='both'||item.subtype===e.target.value.toUpperCase()});syncText();delete state.reportComposition.category_reviews.fastest;delete state.reportComposition.category_reviews.slowest;dirty();run(refreshReport)}}
@@ -214,11 +235,12 @@ const clinicalUI=(()=>{
     active=e;const token=++waveToken,id=state.caseId,rateCandidates=['fastest','slowest'].includes(e.category);
     document.querySelectorAll('[data-locate]').forEach(button=>{const current=reportData.items[Number(button.dataset.locate)]?.event_id===e.event_id;button.setAttribute('aria-current',String(current));button.closest('tr').dataset.preview=String(current)});
     qs('#v2EventWave').textContent='读取完整事件…';
-    const entry=rateCandidates?await reportStrip(e,selected().find(s=>s.event_id===e.event_id)||composition().strip_defaults,id):null;
+    const entry=await reportStrip(e,selected().find(s=>s.event_id===e.event_id)||composition().strip_defaults,id);
     const wave=entry?entry.waveform:await eventWave(e,id);
     if(token!==waveToken||id!==state.caseId||!qs('#v2EventWave'))return;
     qs('#v2EventWave').innerHTML=svg(wave,e);qs('#v2Time').value=wave.start_s;
     qs('#v2WaveLabel').textContent=`${e.label} · ${formatElapsed(wave.start_s)}–${formatElapsed(wave.start_s+wave.duration_s)} · ${entry?`${entry.strip.visible_beat_count} 搏 · ${entry.strip.warning||'按入报导联和时长预览'}`:`目标 ${e.beat_count} 搏 · 完整事件概览`}`;
+    await mountRange(qs('#v2EventWave'),e,entry,id);
   }
   async function detailWindow(start){const token=++waveToken,id=state.caseId,wave=await endpoint('waveform',{start,duration:10,leads:'II,V1,V5',max_points:2400},id);if(token!==waveToken||id!==state.caseId||!qs('#v2EventWave'))return;qs('#v2EventWave').innerHTML=svg(wave,active);qs('#v2WaveLabel').textContent=`连续波形 ${formatElapsed(wave.start_s)} · 10 秒`;}
   function statsTable(){return `<table class="v2-stats"><caption>全部已确认结果统计（图条选择不改变统计）</caption><thead><tr><th>分类</th><th>事件次数</th><th>心搏数量</th></tr></thead><tbody>${A.categories.map(([k,label])=>`<tr><td>${label}</td><td>${reportData?.confirmed_category_counts[k]??'—'}</td><td>${reportData?.confirmed_beat_counts[k]??'—'}</td></tr>`).join('')}</tbody></table><details class="v2-source-summary"><summary>源报告独立对照</summary><p>有效心搏 ${state.caseData.summary.total_beats??'—'} · 平均心率 ${state.caseData.summary.avg_hr??'—'} bpm · SDNN ${state.caseData.summary.sdnn_ms??'—'} ms</p></details>`;}
@@ -231,7 +253,16 @@ const clinicalUI=(()=>{
     for(let offset=0;offset<Math.max(1,rows.length);offset+=pageCapacity){const subset=rows.slice(offset,offset+pageCapacity),intro=offset===0?`<div class="v2-hrv-intro"><p>${esc(data.method)} · 实际覆盖 ${(data.actual_duration_s/3600).toFixed(2)} 小时</p>${hrvWindowControl(data)}</div>${hrvTrendSvg(data)}`:'';pages.push(paperShell(offset?'HRV 时域对照（续）':'HRV 时域对照',intro+hrvRowsTable(subset),'v2-hrv-paper'))}
     return pages.join('');
   }
-  async function loadHrv(selector,windowIndex=composition().hrv_window||0){const token=++hrvToken,id=state.caseId,data=await endpoint('hrv-windows',{window:windowIndex},id);if(token!==hrvToken||id!==state.caseId||!qs(selector))return;hrv=data;const target=qs(selector),paperPreview=selector==='#finalHrvV2';target.innerHTML=paperPreview?hrvReportPages(data):hrvHtml(data);target.querySelector('select').onchange=e=>{state.reportComposition=composition();state.reportComposition.hrv_window=Number(e.target.value);if(state.currentPage==='report')dirty();run(()=>loadHrv(selector,Number(e.target.value)))};if(paperPreview){updateReportPaper(qs('#reportV2Content'));renumberReportPapers(qs('#reportV2Content'))}}
+  async function loadHrv(selector,windowIndex){
+    if(reportCase!==state.caseId){state.reportComposition={...copy(state.report?.composition||{}),schema_version:2};reportCase=state.caseId;reportVersion=state.report?.version;}
+    windowIndex=windowIndex??composition().hrv_window??0;const token=++hrvToken,id=state.caseId,target=qs(selector);if(!target)return;
+    target.innerHTML='<p class="empty-state">计算 HRV 分段、频谱及趋势证据…</p>';
+    try{const data=await endpoint('hrv-analysis',{window:windowIndex},id);if(token!==hrvToken||id!==state.caseId||!target.isConnected)return;hrv=data;const model=paperModel({},data);model.report.status='draft';target.innerHTML=ECGHrvReport.ui(model,data,composition().include_hrv);ECGReportPaper.number(target);
+      target.querySelector('.v2-hrv-window').onchange=e=>{state.reportComposition=composition();state.reportComposition.hrv_window=Number(e.target.value);dirty();run(()=>loadHrv(selector,Number(e.target.value)))};
+      target.querySelector('[data-hrv-include]').onchange=e=>{state.reportComposition=composition();state.reportComposition.include_hrv=e.target.checked;dirty();toast(e.target.checked?'已加入主报告，请在报告页保存草稿':'已取消加入主报告，请保存草稿')};
+      target.querySelector('[data-hrv-export]').onclick=()=>run(async()=>{if(!state.demoReadonly){window.location.href=`/api/cases/${id}/hrv-report.pdf?window=${data.window_index}`;return;}const model=paperModel({},data);model.report.status='draft';await printHtml(ECGHrvReport.pages(model,data),'HRV 分析报告')});
+    }catch(error){if(token===hrvToken)target.innerHTML=`<p class="rp-load-error">HRV 读取失败：${esc(error.message)}</p><button type="button" class="button secondary" data-hrv-retry>重试</button>`;target.querySelector('[data-hrv-retry]')?.addEventListener('click',()=>run(()=>loadHrv(selector,windowIndex)));throw error;}
+  }
   async function save(status='draft'){
     if(!clinicalWorkflow.writable())throw Error('当前服务为只读');
     if(status==='reviewed'&&state.reportDirty)throw Error('请先保存草稿，再审核当前版本');
@@ -250,29 +281,48 @@ const clinicalUI=(()=>{
       if(el.value==='custom'){holder.querySelector('fieldset').hidden=false;return true;}
       spec.leads=el.value==='all'?[...ECGReportEngine.leads]:[...ECGReportEngine.defaults];
     }else if(el.dataset.stripLead!==undefined)spec.leads=[...holder.querySelectorAll('[data-strip-lead]:checked')].map(x=>x.value);
-    else spec.duration_s=Number(el.value);
+    else {spec.duration_s=Number(el.value);delete spec.range_start_s;delete spec.range_end_s;}
     try{ECGReportEngine.settings(spec);}catch(error){if(el.type==='checkbox')el.checked=!el.checked;else el.value=old.duration_s||7;handleError(error);return true;}
-    if(scope==='default')state.reportComposition.strip_defaults=spec;else Object.assign(selected()[Number(scope)],spec);
+    if(scope==='default')state.reportComposition.strip_defaults=spec;else {if(el.dataset.stripDuration!==undefined){delete old.range_start_s;delete old.range_end_s;}Object.assign(selected()[Number(scope)],spec);}
     dirty();if(scope==='default')holder.outerHTML=stripSettingsHtml(spec,scope);else run(renderReportBody);return true;
   }
   async function reportStrip(e,selection,id=state.caseId){
-    const spec=ECGReportEngine.settings(selection),key=['report',id,e.event_id,e.basis_version,spec.leads.join(','),spec.duration_s].join('|');
-    if(waveCache.size>200)waveCache.delete(waveCache.keys().next().value);
-    if(!waveCache.has(key))waveCache.set(key,endpoint('report-strip',{event_id:e.event_id,basis_version:e.basis_version,leads:spec.leads.join(','),duration:spec.duration_s},id).catch(error=>{waveCache.delete(key);throw error}));
-    return {...await waveCache.get(key),caption:selection.caption||e.label};
+    const spec=ECGReportEngine.settings(selection),key=['report',id,e.event_id,e.basis_version,JSON.stringify(spec)].join('|');
+    if(reportWaveCache.size>200)reportWaveCache.delete(reportWaveCache.keys().next().value);
+    if(!reportWaveCache.has(key))reportWaveCache.set(key,endpoint('report-strip',{event_id:e.event_id,basis_version:e.basis_version,leads:spec.leads.join(','),duration:spec.duration_s,...('range_start_s' in spec?{range_start_s:spec.range_start_s,range_end_s:spec.range_end_s}:{})},id).catch(error=>{reportWaveCache.delete(key);throw error}));
+    return {...await reportWaveCache.get(key),caption:selection.caption||e.label};
   }
   async function selectedReportWaves(id){
     const picks=copy(selected()),results=[];let next=0;
     await Promise.all(Array.from({length:Math.min(4,picks.length)},async()=>{while(next<picks.length){const i=next++,s=picks[i],e=selectedLookup.get(s.event_id);if(!e||e.basis_version!==s.basis_version)throw Error('请处理失效图条后再导出');results[i]=await reportStrip(e,s,id);}}));return results;
   }
-  function paperModel(statistics){return {case:state.caseData,statistics,report:{...state.report,conclusion:qs('#conclusionEditor')?.value??state.report.conclusion,composition:composition()}};}
+  async function mountRange(target,e,entry,id=state.caseId){
+    const holder=document.createElement('section');target.appendChild(holder);
+    const total=state.caseData.technical.duration_seconds_raw,padding=Math.min(10,(120-entry.strip.actual_duration_s)/2),start=Math.max(0,Math.min(entry.strip.start_s-padding,total-30)),duration=Math.min(120,total-start,Math.max(30,entry.strip.end_s-start+padding));
+    const wave=await endpoint('waveform',{start,duration,leads:entry.strip.leads.join(','),filter:'raw',max_points:6000},id);
+    if(!holder.isConnected||state.caseId!==id)return;
+    target.replaceChildren(holder);
+    async function apply(range){
+      const existing=selected().find(s=>s.event_id===e.event_id),spec={...ECGReportEngine.settings(existing||entry.strip)};
+      delete spec.range_start_s;delete spec.range_end_s;if(range)Object.assign(spec,range);else spec.duration_s=7;
+      await reportStrip(e,spec,id);if(state.caseId!==id||!holder.isConnected)return;
+      if(existing){delete existing.range_start_s;delete existing.range_end_s;Object.assign(existing,spec);dirty();await renderReportBody();}
+      else selectEvent(e,true,spec);
+    }
+    ECGReportRange.mount(holder,{...entry,inReport:selected().some(s=>s.event_id===e.event_id)},wave,range=>apply(range),()=>apply(null));
+  }
+  function hrvForReport(id){return composition().include_hrv?endpoint('hrv-analysis',{window:composition().hrv_window||0},id):Promise.resolve(null)}
+  function paperModel(statistics,hrvData=null){return {case:state.caseData,statistics,hrv:hrvData,report:{...state.report,conclusion:qs('#conclusionEditor')?.value??state.report?.conclusion,composition:composition()}};}
   async function print(){
     if(state.reportDirty)throw Error('请先保存草稿再导出');
-    const id=state.caseId,version=state.report.version,[statistics,entries]=await Promise.all([endpoint('report-statistics',{},id),selectedReportWaves(id)]);
+    const id=state.caseId,version=state.report.version,[statistics,entries,hrvData]=await Promise.all([endpoint('report-statistics',{},id),selectedReportWaves(id),hrvForReport(id)]);
     if(id!==state.caseId||state.reportDirty||version!==state.report.version)throw Error('报告已变化，请重新保存后打印');
+    await printHtml(ECGReportPaper.render(paperModel(statistics,hrvData),entries),id+' 心电报告');
+  }
+  async function printHtml(html,title){
     let frame=qs('#v2PrintFrame');if(frame)frame.remove();frame=document.createElement('iframe');frame.id='v2PrintFrame';frame.title='A4 报告打印预览';document.body.appendChild(frame);
     const doc=frame.contentDocument,css=new URL('static/css/report-paper.css',location.href).href;
-    doc.open();doc.write(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>${esc(id)} 心电报告</title><link rel="stylesheet" href="${esc(css)}"></head><body><main class="rp-pages">${ECGReportPaper.render(paperModel(statistics),entries)}</main></body></html>`);doc.close();
+    doc.open();doc.write(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>${esc(title)}</title><link rel="stylesheet" href="${esc(css)}"></head><body><main class="rp-pages">${html}</main></body></html>`);doc.close();
     await new Promise((resolve,reject)=>{const link=doc.querySelector('link');link.onload=resolve;link.onerror=()=>reject(Error('打印样式读取失败，请刷新重试'));if(link.sheet)resolve();});await doc.fonts.ready;ECGReportPaper.number(doc.body);frame.contentWindow.focus();frame.contentWindow.print();
   }
   function bind(){
@@ -288,8 +338,8 @@ const clinicalUI=(()=>{
     };
     menu.addEventListener('toggle',e=>{if(e.newState==='closed'&&openType)closeTypeMenu();});
     window.addEventListener('resize',()=>closeTypeMenu());
-    const arrows=document.createElement('div');arrows.className='occurrence-actions';arrows.innerHTML='<button id="occLeft" aria-label="向左浏览波形">←</button><button id="occRight" aria-label="向右浏览波形">→</button><label>跳至第 <input id="occJump" type="number" min="1" value="1" aria-label="跳至波形序号"></label><button id="occGo">定位</button><button id="occRestore">恢复选中目标</button><button id="occDisease">确认所选节律</button>';qs('#editTemplateGallery').before(arrows);
-    qs('#occLeft').onclick=()=>qs('#editTemplateGallery').scrollLeft-=tileWidth*6;qs('#occRight').onclick=()=>qs('#editTemplateGallery').scrollLeft+=tileWidth*6;qs('#occGo').onclick=()=>{qs('#editTemplateGallery').scrollLeft=Math.floor(Math.max(0,Math.min((occurrence?.total||1)-1,Number(qs('#occJump').value)-1))/2)*tileWidth;renderOccurrences()};qs('#occRestore').onclick=()=>run(()=>beatEditor.restore());
+    const arrows=document.createElement('div');arrows.className='occurrence-actions';arrows.innerHTML='<label>跳至第 <input id="occJump" type="number" min="1" value="1" aria-label="跳至波形序号"></label><button id="occGo">定位</button><button id="occRestore">恢复选中目标</button><button id="occDisease">确认所选节律</button><span class="occ-scroll-help">上下滚动连续浏览 · 方向键选择位置</span>';qs('#editTemplateGallery').before(arrows);
+    qs('#occGo').onclick=()=>{const h=qs('#editTemplateGallery'),g=ECGReviewTools.virtualGrid(occurrence?.total||0,h.clientWidth);h.scrollTop=Math.floor(Math.max(0,Math.min((occurrence?.total||1)-1,Number(qs('#occJump').value)-1))/g.columns)*g.row;renderOccurrences();h.focus({preventScroll:true})};qs('#occRestore').onclick=()=>run(()=>beatEditor.restore());
     qs('#occDisease').onclick=()=>run(async()=>{if(!['S','V','A','C'].includes(type)||!state.editSelectedSamples.size)throw Error('请先选择 S、V、房颤或房扑事件目标');const diagnosis={S:'房速',V:'室速',A:'房颤',C:'房扑'}[type],kind={S:'AT',V:'VT',A:'AF',C:'AFL'}[type];const samples=[...state.editSelectedSamples].sort((a,b)=>a-b),matched=[...pageCache.values()].filter(Boolean).flat().filter(e=>e.subtype!=='beat'&&e.target_samples.every(s=>state.editSelectedSamples.has(s))),start=Math.min(samples[0],...matched.map(e=>e.start_sample)),end=Math.max(samples.at(-1),...matched.map(e=>e.end_sample));if(!window.confirm(`将 ${samples.length} 个已选心搏所在区间确认为${diagnosis}？`))return;await api(`/api/cases/${state.caseId}/annotations`,{method:'POST',body:JSON.stringify({sample_index:start,lead:state.editLead,category:'note',label:diagnosis,details:{kind,status:'confirmed',end_sample:end,finding:diagnosis}})});await clinicalWorkflow.refresh();await loadOccurrences()});
     new ResizeObserver(()=>{if(occurrence)renderOccurrences()}).observe(qs('#editTemplateGallery'));
     let scrollFrame;qs('#editTemplateGallery').addEventListener('scroll',()=>{cancelAnimationFrame(scrollFrame);scrollFrame=requestAnimationFrame(renderOccurrences)});

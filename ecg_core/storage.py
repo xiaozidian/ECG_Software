@@ -51,6 +51,8 @@ def normalize_report_composition(value: dict | None) -> dict:
     if not isinstance(value, dict):
         raise ValueError("composition 必须为 JSON 对象")
     raw_pages = value.get("included_pages", DEFAULT_REPORT_COMPOSITION["included_pages"])
+    if not isinstance(value.get('include_hrv',False),bool):
+        raise ValueError('include_hrv 必须为布尔值')
     if not isinstance(raw_pages, list) or any(not isinstance(item, str) for item in raw_pages):
         raise ValueError("included_pages 必须为页面标识列表")
     pages = [item for item in raw_pages if item in REPORT_PAGE_KEYS]
@@ -85,6 +87,7 @@ def normalize_report_composition(value: dict | None) -> dict:
     return {
         **normalize_selection(value),
         "hrv_window": max(0, int(value.get("hrv_window",0))),
+        "include_hrv": value.get('include_hrv',False),
         "template": template,
         "included_pages": pages,
         "active_page": active_page,
@@ -253,8 +256,8 @@ class Storage(ReviewWorkflowMixin):
             raise ValueError("模板备注必须为文本")
         if not isinstance(raw_samples, list) or not raw_samples:
             raise ValueError("sample_indices 必须是非空数组")
-        if len(raw_samples) > 500:
-            raise ValueError("单个模板类别最多保存 500 个心搏")
+        if len(raw_samples) > 250000:
+            raise ValueError("单个模板类别最多保存 250000 个心搏")
         if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in raw_samples):
             raise ValueError("sample_indices 必须全部为非负整数")
         samples = sorted(set(raw_samples))

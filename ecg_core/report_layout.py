@@ -17,7 +17,13 @@ def strip_settings(raw=None):
     seconds = raw.get("duration_s", 7)
     if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or not math.isfinite(seconds) or not 1 <= seconds <= 120:
         raise ValueError("入报时长须为 1–120 秒；不足 5 搏将自动延长")
-    return {"leads": [x for x in LEADS if x in leads], "duration_s": seconds}
+    result = {"leads": [x for x in LEADS if x in leads], "duration_s": seconds}
+    if 'range_start_s' in raw or 'range_end_s' in raw:
+        a, b = raw.get('range_start_s'), raw.get('range_end_s')
+        if any(isinstance(x,bool) or not isinstance(x,(int,float)) or not math.isfinite(x) for x in (a,b)) or a<0 or not 1<=b-a<=120:
+            raise ValueError('人工入报区间须为非负起点、1–120 秒，并同时提供起止时间')
+        result.update(range_start_s=math.floor(a*200+.5)/200,range_end_s=math.floor(b*200+.5)/200)
+    return result
 
 
 def beat_rows(index):
@@ -31,11 +37,23 @@ def resolve_strip(index, event, settings=None):
     length = min(total, settings["duration_s"])
     start = max(0, min(anchor - length / 2, total - length))
     end = start + length
+    if event.get('category') == 'pause':
+        start = max(0, min(start, anchor - event['rr_ms'] / 1000 - .2))
+        end = min(total, max(end, anchor + .3))
     rows = beat_rows(index)
     times = [r["sample_index"] / 200 for r in rows]
     # Keep a little ECG on each side of each R peak, including at record edges.
     count = lambda a, b: sum(a <= t < b for t in times)
-    if count(start, end) < 5 and times:
+    manual = 'range_start_s' in settings
+    if manual:
+        start,end=settings['range_start_s'],settings['range_end_s']
+        if end>total or not start<=anchor<end:
+            raise ValueError('人工区间须在记录范围内，并包含当前事件定位心搏')
+        if event.get('category')=='pause' and start>anchor-event['rr_ms']/1000:
+            raise ValueError('停搏候选入图须包含完整长 RR 间期的两个 R 峰')
+        if count(start,end)<min(5,len(times)):
+            raise ValueError('人工入报区间至少包含 5 个可用心搏，请向外拖动橘色边界')
+    if not manual and count(start, end) < 5 and times:
         n = min(5, len(times))
         pivot = min(len(times) - 1, bisect_left(times, anchor))
         candidates = []
@@ -49,8 +67,9 @@ def resolve_strip(index, event, settings=None):
     visible = [{k: r.get(k) for k in ("sample_index", "class_code", "hr", "rr_ms")} for r in rows if start <= r["sample_index"] / 200 < end]
     actual = round(end - start, 3)
     warning = f"记录可用心搏不足 5 个，当前仅 {len(visible)} 搏" if len(visible) < 5 else ""
-    if actual > settings["duration_s"] + .01:
-        warning = f"为包含至少 5 搏，已由 {settings['duration_s']:g} 秒延长至 {actual:g} 秒" + (f"；{warning}" if warning else "")
+    if not manual and actual > settings["duration_s"] + .01:
+        reason = '覆盖完整 RR 间期并包含至少 5 搏' if event.get('category') == 'pause' else '包含至少 5 搏'
+        warning = f"为{reason}，已由 {settings['duration_s']:g} 秒延长至 {actual:g} 秒" + (f"；{warning}" if warning else "")
     return {**settings, "start_s": start, "end_s": end, "actual_duration_s": actual,
             "visible_beats": visible, "visible_beat_count": len(visible), "warning": warning,
             "context_start_s": max(0, min(anchor - max(30, actual * 3) / 2, total - min(total, max(30, actual * 3)))),
@@ -92,6 +111,7 @@ def report_statistics(index, start_time, settings):
                   "tachy_beats": sum(r["hr"] >= settings["tachy"] for r in rates),
                   "brady_beats": sum(r["hr"] <= settings["brady"] for r in rates),
                   "pause": sum(e["category"] == "pause" for e in events),
+                  "pause_over3": sum(e["category"] == "pause" and e["rr_ms"] > 3000 for e in events),
                   "af": sum(e["category"] == "AF" and e["diagnosis_status"] == "confirmed" for e in events)}
         for code in ("V", "S"):
             total = sum(r["class_code"] == code for r in beats)

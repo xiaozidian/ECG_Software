@@ -6,13 +6,17 @@
     const selected=raw.leads??defaults,seconds=raw.duration_s??7;
     if(!Array.isArray(selected)||!selected.length||selected.length>12||selected.some(x=>!leads.includes(x))||new Set(selected).size!==selected.length)throw Error('请选择 1–12 个不重复的有效导联');
     if(typeof seconds!=='number'||!Number.isFinite(seconds)||seconds<1||seconds>120)throw Error('入报时长须为 1–120 秒；不足 5 搏将自动延长');
-    return {leads:leads.filter(x=>selected.includes(x)),duration_s:seconds};
+    const spec={leads:leads.filter(x=>selected.includes(x)),duration_s:seconds};
+    if('range_start_s' in raw||'range_end_s' in raw){const a=raw.range_start_s,b=raw.range_end_s;if([a,b].some(x=>typeof x!=='number'||!Number.isFinite(x))||a<0||b-a<1||b-a>120)throw Error('人工入报区间须为非负起点、1–120 秒，并同时提供起止时间');Object.assign(spec,{range_start_s:Math.round(a*200)/200,range_end_s:Math.round(b*200)/200})}return spec;
   }
   const beatRows=index=>index.rows.filter(r=>!['X','O','Y','T'].includes(r.class_code)&&r.sample_index>=0&&r.sample_index<index.duration_s*200).sort((a,b)=>a.sample_index-b.sample_index);
   function resolve(index,event,raw={}){
     const spec=settings(raw),total=Math.max(.005,index.duration_s),anchor=Math.min(Math.max(0,event.start_sample/200),total),length=Math.min(total,spec.duration_s),rows=beatRows(index),times=rows.map(r=>r.sample_index/200);
     let start=Math.max(0,Math.min(anchor-length/2,total-length)),end=start+length;
-    if(times.filter(t=>t>=start&&t<end).length<5&&times.length){
+    if(event.category==='pause'){start=Math.max(0,Math.min(start,anchor-event.rr_ms/1000-.2));end=Math.min(total,Math.max(end,anchor+.3));}
+    const manual='range_start_s' in spec;
+    if(manual){start=spec.range_start_s;end=spec.range_end_s;if(end>total||!(start<=anchor&&anchor<end))throw Error('人工区间须在记录范围内，并包含当前事件定位心搏');if(event.category==='pause'&&start>anchor-event.rr_ms/1000)throw Error('停搏候选入图须包含完整长 RR 间期的两个 R 峰');if(times.filter(t=>t>=start&&t<end).length<Math.min(5,times.length))throw Error('人工入报区间至少包含 5 个可用心搏，请向外拖动橘色边界')}
+    if(!manual&&times.filter(t=>t>=start&&t<end).length<5&&times.length){
       const n=Math.min(5,times.length),found=times.findIndex(t=>t>=anchor),pivot=found<0?times.length-1:found,candidates=[];
       for(let i=Math.max(0,pivot-n);i<Math.min(pivot+1,times.length-n+1);i++){
         const lo=Math.max(0,Math.min(start,times[i]-.2)),hi=Math.min(total,Math.max(end,times[i+n-1]+.3));candidates.push([hi-lo,Math.abs((hi+lo)/2-anchor),lo,hi]);
@@ -22,7 +26,7 @@
     start=Math.floor(start*200+1e-7)/200;end=Math.min(total,Math.ceil(end*200-1e-7)/200);
     const visible=rows.filter(r=>r.sample_index/200>=start&&r.sample_index/200<end).map(r=>Object.fromEntries(['sample_index','class_code','hr','rr_ms'].map(k=>[k,r[k]??null]))),actual=Math.round((end-start)*1000)/1000;
     let warning=visible.length<5?`记录可用心搏不足 5 个，当前仅 ${visible.length} 搏`:'';
-    if(actual>spec.duration_s+.01)warning=`为包含至少 5 搏，已由 ${spec.duration_s} 秒延长至 ${actual} 秒`+(warning?`；${warning}`:'');
+    if(!manual&&actual>spec.duration_s+.01)warning=`为${event.category==='pause'?'覆盖完整 RR 间期并包含至少 5 搏':'包含至少 5 搏'}，已由 ${spec.duration_s} 秒延长至 ${actual} 秒`+(warning?`；${warning}`:'');
     return {...spec,start_s:start,end_s:end,actual_duration_s:actual,visible_beats:visible,visible_beat_count:visible.length,warning,
       context_start_s:Math.max(0,Math.min(anchor-Math.max(30,actual*3)/2,total-Math.min(total,Math.max(30,actual*3)))),context_duration_s:Math.min(total,Math.max(30,actual*3))};
   }
@@ -33,6 +37,7 @@
       const slow=rates.reduce((a,b)=>!a||b.hr<a.hr?b:a,null),fast=rates.reduce((a,b)=>!a||b.hr>a.hr?b:a,null),longest=rates.reduce((a,b)=>!a||b.rr_ms>a.rr_ms?b:a,null),point=r=>r?{hr:r.hr,time_s:r.sample_index/200,rr_ms:r.rr_ms}:null;
       const result={total:beats.length,noise:index.rows.filter(r=>r.sample_index/200>=lo&&r.sample_index/200<hi&&r.class_code==='X').length,min_hr:slow?.hr??null,max_hr:fast?.hr??null,avg_hr:rates.length?round(60000/(rates.reduce((s,r)=>s+r.rr_ms,0)/rates.length)):null,fastest:point(fast),slowest:point(slow),longest:point(longest),tachy_beats:rates.filter(r=>r.hr>=opts.tachy).length,brady_beats:rates.filter(r=>r.hr<=opts.brady).length,pause:events.filter(e=>e.category==='pause').length,af:events.filter(e=>e.category==='AF'&&e.diagnosis_status==='confirmed').length};
       for(const code of ['V','S']){const total=beats.filter(r=>r.class_code===code).length;result[code]={total,pct:beats.length?round(total/beats.length*100):0};for(const [kind,subtypes] of Object.entries({single:['single'],couplet:['couplet'],run:['triplet','run'],bigeminy:['bigeminy'],trigeminy:['nnp','npp']}))result[code][kind]=events.filter(e=>e.category===code&&subtypes.includes(e.subtype)).length;}
+      result.pause_over3=events.filter(e=>e.category==='pause'&&e.rr_ms>3000).length;
       return result;
     }
     const hourly=[];let t=0;

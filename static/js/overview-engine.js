@@ -75,18 +75,27 @@
       if(candidate){if(!run){run={id:'rr-'+i*30,start_s:i*30,end_s:Math.min(duration,(i+1)*30),kind:'AF',status:'pending',source:'rr-irregularity-v1',note:'30 秒 RR 筛查：CV≥0.12、归一化 RMSSD≥0.14、转折率 0.45–0.85；未分析 P 波，须排除伪差/早搏'};episodes.push(run)}else run.end_s=Math.min(duration,(i+1)*30)}else run=null;
     });return episodes;
   }
-  async function density(samples,count,read,lead,gate){
+  function densitySamples(source,payload={}){
+    const allowed=new Set(source),checked=name=>{const values=Object.hasOwn(payload,name)?payload[name]:[];
+      if(!Array.isArray(values)||values.length>250000||values.some(s=>!Number.isInteger(s)||!allowed.has(s)))throw Error('密度图分组包含无效或已变化的心搏，请重新加载');
+      if(new Set(values).size!==values.length)throw Error('密度图分组心搏不能重复');return new Set(values)};
+    const included=Object.hasOwn(payload,'samples')?checked('samples'):allowed,excluded=checked('exclude_samples');
+    return source.filter(s=>included.has(s)&&!excluded.has(s));
+  }
+  async function density(samples,count,read,lead,gate,amplitudeLimit=null){
+    if(!['I','II','III','aVR','aVL','aVF','V1','V2','V3','V4','V5','V6'].includes(lead))throw Error('不支持的密度图导联');
+    if(amplitudeLimit!==null&&(!Number.isFinite(amplitudeLimit)||amplitudeLimit<1||amplitudeLimit>1e7))throw Error('密度图幅度范围错误');
     const positions=samples.filter(s=>s>=200&&s<count-200),width=200,height=128,bins=new Uint32Array(width*height),magnitudes=[];
     const baseline=s=>{let v=0;for(let i=-40;i< -20;i+=2)v+=read(s+i,lead);return v/10};
     const stride=Math.max(1,Math.ceil(positions.length/1000));for(let i=0;i<positions.length;i+=stride){const s=positions[i],zero=baseline(s);for(let o=-200;o<200;o+=8)magnitudes.push(Math.abs(read(s+o,lead)-zero))}
-    magnitudes.sort((a,b)=>a-b);const limit=Math.max(100,(magnitudes[Math.min(magnitudes.length-1,Math.floor(magnitudes.length*.995))]||100)*1.15);let clipped=0;const selected=[];
+    magnitudes.sort((a,b)=>a-b);const limit=Math.round((amplitudeLimit??Math.max(100,magnitudes.length?magnitudes[Math.min(magnitudes.length-1,Math.floor(magnitudes.length*.995))]*1.15:100))*1000)/1000;let clipped=0;const selected=[];
     for(let i=0;i<positions.length;i++){
       const s=positions[i],zero=baseline(s);let matched=false;
       for(let x=0;x<200;x++){const offset=x*2-200,amp=read(s+offset,lead)-zero,y=Math.floor((limit-amp)/(2*limit)*height);if(y<0||y>=height){clipped++;continue}bins[y*width+x]++;if(gate&&offset/200>=gate[0]&&offset/200<=gate[1]&&amp>=gate[2]&&amp<=gate[3])matched=true}
       if(matched)selected.push(s);if(i%2000===1999)await new Promise(resolve=>setTimeout(resolve,0));
     }
-    return {width,height,bins:Array.from(bins),total:samples.length,included:positions.length,skipped_edges:samples.length-positions.length,clipped_points:clipped,lead,x_min_s:-1,x_max_s:1,amplitude_limit:limit,units:'设备原始标度 µV（未溯源）',sample_indices:selected,method:'R 对齐 · 全集合计数 · 10 ms 栅格 · 去固定基线 · 无逐搏增益归一化'};
+    return {width,height,bins:Array.from(bins),total:samples.length,included:positions.length,skipped_edges:samples.length-positions.length,clipped_points:clipped,lead,x_min_s:-1,x_max_s:1,amplitude_limit:limit,units:'设备原始标度 µV（未溯源）',sample_indices:selected,population_samples:[...samples],method:'R 对齐 · 全集合计数 · 10 ms 栅格 · 去固定基线 · 无逐搏增益归一化'};
   }
-  const api={clamp,code,valid,decode,pairs,histogram,stats,cut,validateDocument,annotations,initialEpisodes,screenAF,density};
+  const api={clamp,code,valid,decode,pairs,histogram,stats,cut,validateDocument,annotations,initialEpisodes,screenAF,density,densitySamples};
   root.ECGOverviewEngine=api;if(typeof module!=='undefined')module.exports=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

@@ -5,8 +5,9 @@ import copy
 import json
 import math
 import mmap
-from array import array
 from datetime import datetime, timezone
+
+import numpy as np
 
 from .waveform import ALL_LEADS
 
@@ -139,7 +140,22 @@ def initial_episodes(feed, annotations, duration):
     return dict(episodes=items, bookmarks={})
 
 
-def density(path, samples, lead="II", gate=None):
+def density_samples(source, payload):
+    """Apply explicit group membership without silently accepting stale beats."""
+    allowed = set(source)
+    def checked(name):
+        values = payload.get(name, [])
+        if not isinstance(values, list) or len(values) > 250000 or any(type(s) is not int or s not in allowed for s in values):
+            raise ValueError("密度图分组包含无效或已变化的心搏，请重新加载")
+        if len(set(values)) != len(values):
+            raise ValueError("密度图分组心搏不能重复")
+        return set(values)
+    included = checked('samples') if 'samples' in payload else allowed
+    excluded = checked('exclude_samples')
+    return [s for s in source if s in included and s not in excluded]
+
+
+def density(path, samples, lead="II", gate=None, amplitude_limit=None):
     """Count ALL selected, complete 2 s R-aligned beats; no representative sampling.
 
     Time bins are 10 ms, amplitude bins 1/128 of a symmetric robust scale.
@@ -147,42 +163,54 @@ def density(path, samples, lead="II", gate=None):
     """
     if lead not in ALL_LEADS:
         raise ValueError("不支持的密度图导联")
+    if amplitude_limit is not None and (isinstance(amplitude_limit, bool) or not isinstance(amplitude_limit, (int, float)) or not math.isfinite(amplitude_limit) or not 1 <= amplitude_limit <= 1e7):
+        raise ValueError("密度图幅度范围错误")
     width, height, pre = 200, 128, 200
     count = path.stat().st_size//16
     positions = [s for s in samples if pre <= s < count-pre]
     channel = {"I": 0, "II": 1, "V1": 2, "V2": 3, "V3": 4, "V4": 5, "V5": 6, "V6": 7}.get(lead)
-    with path.open("rb") as stream, mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as raw:
-        import struct
-        read = struct.Struct("<h").unpack_from
-        def value(s):
-            if channel is not None:
-                return read(raw, s*16+channel*2)[0]
-            a, b = read(raw, s*16)[0], read(raw, s*16+2)[0]
-            return {"III": b-a, "aVR": -(a+b)/2, "aVL": a-b/2, "aVF": b-a/2}[lead]
-        def baseline(s):
-            return sum(value(s+i) for i in range(-40, -20, 2))/10
-        # Bounded deterministic scale estimate only; EVERY beat contributes to counts.
-        magnitudes = []
-        for s in positions[::max(1, math.ceil(len(positions)/1000))]:
-            zero = baseline(s)
-            magnitudes.extend(abs(value(s+i)-zero) for i in range(-pre, pre, 8))
-        magnitudes.sort()
-        limit = max(100, magnitudes[min(len(magnitudes)-1, int(len(magnitudes)*.995))]*1.15 if magnitudes else 100)
-        bins, selected, clipped = array("I", [0])*(width*height), [], 0
-        for s in positions:
-            zero, matched = baseline(s), False
-            for x, offset in enumerate(range(-pre, pre, 2)):
-                amplitude = value(s+offset)-zero
-                y = math.floor((limit-amplitude)/(2*limit)*height)
-                if y < 0 or y >= height:
-                    clipped += 1
-                    continue
-                bins[y*width+x] += 1
-                if gate and gate[0] <= offset/200 <= gate[1] and gate[2] <= amplitude <= gate[3]:
-                    matched = True
-            if matched:
-                selected.append(s)
-    return dict(width=width, height=height, bins=list(bins), total=len(samples), included=len(positions),
+    # Bounded chunks keep memory independent of recording length. The mmap is
+    # read-only and little-endian on both macOS and Windows. Every beat and every
+    # original 10 ms bin still contributes; this is not representative sampling.
+    bins, selected, clipped = np.zeros(width*height, dtype=np.int64), [], 0
+    limit = round(amplitude_limit if amplitude_limit is not None else 100, 3)
+    if positions:
+        with path.open("rb") as stream, mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as raw:
+            values = np.frombuffer(raw, dtype="<i2", count=count*8).reshape(count, 8)
+            def read(indices):
+                if channel is not None:
+                    return values[indices, channel].astype(np.float64)
+                # Promote before subtracting/adding: derived leads may exceed int16.
+                a, b = values[indices, 0].astype(np.float64), values[indices, 1].astype(np.float64)
+                if lead == "III": return b-a
+                if lead == "aVR": return -(a+b)/2
+                if lead == "aVL": return a-b/2
+                return b-a/2
+            def baseline(anchors):
+                return read(anchors[:, None]+np.arange(-40, -20, 2)).sum(axis=1)/10
+            try:
+                anchors = np.asarray(positions, dtype=np.int64)
+                if amplitude_limit is None:
+                    estimate = anchors[::max(1, math.ceil(len(positions)/1000))]
+                    magnitudes = np.sort(np.abs(read(estimate[:, None]+np.arange(-pre, pre, 8))-baseline(estimate)[:, None]).ravel())
+                    limit = round(max(100, float(magnitudes[int(len(magnitudes)*.995)])*1.15), 3)
+                offsets = np.arange(-pre, pre, 2)
+                columns = np.arange(width)
+                gate_columns = (offsets/200 >= gate[0]) & (offsets/200 <= gate[1]) if gate else None
+                for first in range(0, len(anchors), 2048):
+                    chunk = anchors[first:first+2048]
+                    amplitude = read(chunk[:, None]+offsets)-baseline(chunk)[:, None]
+                    y = np.floor((limit-amplitude)/(2*limit)*height).astype(np.int64)
+                    visible = (y >= 0) & (y < height)
+                    clipped += int(visible.size-np.count_nonzero(visible))
+                    bins += np.bincount((y*width+columns)[visible], minlength=width*height)
+                    if gate:
+                        matched = np.any(visible & gate_columns & (amplitude >= gate[2]) & (amplitude <= gate[3]), axis=1)
+                        selected.extend(chunk[matched].tolist())
+            finally:
+                # Release exported buffer before closing the mapping (Windows too).
+                del values
+    return dict(width=width, height=height, bins=bins.tolist(), total=len(samples), included=len(positions),
                 skipped_edges=len(samples)-len(positions), clipped_points=clipped, lead=lead,
                 x_min_s=-1, x_max_s=1, amplitude_limit=round(limit, 3), units="设备原始标度 µV（未溯源）",
-                sample_indices=selected, method="R 对齐 · 全集合计数 · 10 ms 栅格 · 去固定基线 · 无逐搏增益归一化")
+                sample_indices=selected, population_samples=list(samples), method="R 对齐 · 全集合计数 · 10 ms 栅格 · 去固定基线 · 无逐搏增益归一化")

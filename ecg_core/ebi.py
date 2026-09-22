@@ -345,14 +345,13 @@ def beat_details(path: Path, sample_indices: list[int]) -> dict[int, dict]:
 
 
 def visible_beats(path: Path, start_s: float, duration_s: float) -> list[dict]:
+    from bisect import bisect_left, bisect_right
     start_sample = int(start_s * SAMPLE_RATE)
     end_sample = int((start_s + duration_s) * SAMPLE_RATE)
     result = []
-    for record in records_for(path):
-        if record[0] < start_sample:
-            continue
-        if record[0] > end_sample:
-            break
+    records = records_for(path)
+    indexes = path.record_samples if hasattr(path, "record_samples") else (tuple(r[0] for r in records) if hasattr(path, "records") else _record_sample_indexes(str(path)))
+    for record in records[bisect_left(indexes, start_sample):bisect_right(indexes, end_sample)]:
         result.append({
             "sample_index": record[0],
             "time_s": round(record[0] / SAMPLE_RATE, 3),

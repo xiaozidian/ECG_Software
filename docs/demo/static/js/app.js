@@ -435,7 +435,7 @@ async function loadCase(caseId=state.caseId, requestId=null) {
 }
 
 function goPage(name) {
-  if(name!==state.currentPage&&state.reportDirty&&!clinicalWorkflow.allowLeave())return;
+  if(ECGReviewTools.shouldConfirmNavigation(state.currentPage,name,state.reportDirty)&&!clinicalWorkflow.allowLeave())return;
   if (state.demoReadonly && ["audit", "settings"].includes(name)) name = "dashboard";
   const needsCase = ["edit", "review", "trends", "stt", "events", "report"].includes(name);
   if (needsCase && !state.caseId) {
@@ -606,6 +606,7 @@ function canvasContext(canvas, height = null) {
 
 function renderWaveform() {
   if (!state.waveform) return;
+  const located=state.locatedTime?.caseId===state.caseId&&state.locatedTime.time>=state.waveform.start_s&&state.locatedTime.time<state.waveform.start_s+state.waveform.duration_s?(state.waveform.beats||[]).reduce((a,b)=>!a||Math.abs(b.time_s-state.locatedTime.time)<Math.abs(a.time_s-state.locatedTime.time)?b:a,null):null;
   const canvas = $("#waveformCanvas");
   const scroller = $("#waveformScroller");
   const leadNames = Object.keys(state.waveform.leads);
@@ -655,20 +656,22 @@ function renderWaveform() {
     const x = (beat.time_s - state.waveform.start_s) / duration * width;
     if (x < 0 || x > width) return;
     const code=editEffectiveCode(beat),type=editBeatType(code),isNormal=code==="N";
-    ctx.strokeStyle = type.color;
-    ctx.lineWidth = isNormal ? .6 : 1.25;
-    ctx.globalAlpha = isNormal ? .28 : .68;
-    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = type.color; ctx.font = "700 9px sans-serif";
-    ctx.fillText(code, Math.min(x + 2, width - 12), 11);
-    if((typeof beatEditor!=="undefined"&&beatEditor.selected(Number(beat.sample_index)))||(state.beatRelabelTarget?.surface==="review"&&Number(state.beatRelabelTarget.sample_index)===Number(beat.sample_index))){
-      ctx.fillStyle="rgba(239,140,33,.14)";ctx.fillRect(x-8,0,16,h);ctx.strokeStyle="#ef8c21";ctx.lineWidth=1.4;ctx.strokeRect(x-8+.5,.5,15,h-1);
+    const focused=beat.sample_index===located?.sample_index||(typeof beatEditor!=="undefined"&&beatEditor.selected(Number(beat.sample_index)))||(state.beatRelabelTarget?.surface==="review"&&Number(state.beatRelabelTarget.sample_index)===Number(beat.sample_index))||(state.scatterFocusedSample!==null&&Number(beat.sample_index)===Number(state.scatterFocusedSample));
+    if(focused){
+      ECGReviewTools.markCanvas(ctx,x,0,h,code);
+    }else{
+      ctx.strokeStyle = type.color;
+      ctx.lineWidth = isNormal ? .6 : 1.25;
+      ctx.globalAlpha = isNormal ? .28 : .68;
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = type.color; ctx.font = "700 9px sans-serif";
+      ctx.fillText(code, Math.min(x + 2, width - 12), 11);
     }
   });
-  if(state.scatterFocusedSample!==null){
+  if(state.scatterFocusedSample!==null&&!(state.waveform.beats||[]).some(beat=>Number(beat.sample_index)===Number(state.scatterFocusedSample))){
     const focusedTime=state.scatterFocusedSample/200,focusedX=(focusedTime-state.waveform.start_s)/duration*width;
-    if(focusedX>=0&&focusedX<=width){ctx.fillStyle="rgba(239,140,33,.18)";ctx.fillRect(focusedX-6,0,12,h);ctx.strokeStyle="#dd7916";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(focusedX,0);ctx.lineTo(focusedX,h);ctx.stroke();ctx.fillStyle="#a95b0d";ctx.font=`700 10px ${UI_FONT}`;ctx.fillText("圈选",Math.min(focusedX+4,width-30),25);}
+    if(focusedX>=0&&focusedX<=width){const beat=(state.waveform.beats||[]).find(b=>b.sample_index===state.scatterFocusedSample);ECGReviewTools.markCanvas(ctx,focusedX,0,h,beat?editEffectiveCode(beat):'?');}
   }
   (state.waveform.annotations || []).forEach(annotation => {
     const time = annotation.sample_index / 200;
@@ -973,7 +976,7 @@ function renderStripCanvas(canvas,strip) {
   canvas.width=Math.round(width*dpr);canvas.height=Math.round(height*dpr);const ctx=canvas.getContext("2d");ctx.setTransform(dpr,0,0,dpr,0,0);ctx.fillStyle="#fff";ctx.fillRect(0,0,width,height);
   const entries=Object.entries(strip.leads||{}),leadHeight=height/Math.max(entries.length,1),duration=Math.max(strip.duration_s,.001),anchorX=strip.anchor_offset_s/duration*width;
   ctx.strokeStyle="rgba(228,141,127,.17)";ctx.lineWidth=1;for(let x=0;x<width;x+=width/20){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,height);ctx.stroke();}
-  ctx.fillStyle="rgba(239,140,33,.13)";ctx.fillRect(anchorX-3,0,6,height);ctx.strokeStyle="#dd7916";ctx.beginPath();ctx.moveTo(anchorX,0);ctx.lineTo(anchorX,height);ctx.stroke();
+  ECGReviewTools.markCanvas(ctx,anchorX,0,height,editEffectiveCode(strip));
   entries.forEach(([lead,values],leadIndex)=>{const baseline=leadHeight*(leadIndex+.55),scale=leadHeight*.27/1000;ctx.fillStyle="#087777";ctx.font=`700 8px ${UI_FONT}`;ctx.fillText(lead,3,leadHeight*leadIndex+9);ctx.strokeStyle="#1f2c32";ctx.lineWidth=.85;ctx.beginPath();values.forEach((value,index)=>{const x=index/Math.max(values.length-1,1)*width,y=baseline-Number(value)*scale;index?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();if(leadIndex<entries.length-1){ctx.strokeStyle="#e5ebed";ctx.beginPath();ctx.moveTo(0,leadHeight*(leadIndex+1));ctx.lineTo(width,leadHeight*(leadIndex+1));ctx.stroke();}});
 }
 
@@ -1158,6 +1161,8 @@ function renderSttWaveform() {
   $("#sttWaveMeta").textContent=`${leads.length} 导联 · ${waveform.sample_rate_hz} Hz · 原始波形 · 各导联自适应显示 · ${formatElapsed(waveform.start_s)}`;
   $("#sttSelectedLeadLabel").textContent=leads.map(([lead])=>lead).join(" · ");
   renderSttMeasurements();
+  const at=waveform.start_s+marks.j*waveform.duration_s,beat=(waveform.beats||[]).reduce((a,b)=>!a||Math.abs(b.time_s-at)<Math.abs(a.time_s-at)?b:a,null);
+  if(beat){const x=m.l+(beat.time_s-waveform.start_s)/waveform.duration_s*plotW;ECGReviewTools.markCanvas(ctx,x,m.t,m.t+plotH,editEffectiveCode(beat));}
 }
 
 async function loadStt() {
@@ -1299,7 +1304,7 @@ function renderEditScatter() {
 function drawEditStrip(canvas,item) {
   const height=editCanvasHeight(canvas,state.editMode==="library"?100:76,12),{ctx,width}=canvasContext(canvas,height),values=item?.leads?.[state.editLead]||Object.values(item?.leads||{})[0]||[],m={l:7,r:7,t:3,b:3},plotW=width-m.l-m.r,plotH=height-m.t-m.b;
   ctx.clearRect(0,0,width,height);ctx.fillStyle="#fbfdfd";ctx.fillRect(0,0,width,height);ctx.strokeStyle="#e3eaed";[.25,.5,.75].forEach(f=>{const y=m.t+plotH*f;ctx.beginPath();ctx.moveTo(m.l,y);ctx.lineTo(width-m.r,y);ctx.stroke();});
-  const magnitudes=values.map(value=>Math.abs(Number(value)||0)).sort((a,b)=>a-b),limit=Math.max(40,magnitudes[Math.floor(magnitudes.length*.96)]||40),scale=plotH*.42/limit,baseline=m.t+plotH*.53;ctx.strokeStyle="#263f49";ctx.lineWidth=1.05;ctx.beginPath();values.forEach((value,index)=>{const x=m.l+index/Math.max(1,values.length-1)*plotW,y=baseline-(Number(value)||0)*scale;index?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();const anchor=Math.max(0,Math.min(1,Number(item?.anchor_offset_s||.6)/Math.max(.001,Number(item?.duration_s)||1.6)));ctx.strokeStyle="#0b9290";ctx.beginPath();ctx.moveTo(m.l+anchor*plotW,m.t);ctx.lineTo(m.l+anchor*plotW,m.t+plotH);ctx.stroke();
+  const magnitudes=values.map(value=>Math.abs(Number(value)||0)).sort((a,b)=>a-b),limit=Math.max(40,magnitudes[Math.floor(magnitudes.length*.96)]||40),scale=plotH*.42/limit,baseline=m.t+plotH*.53;ctx.strokeStyle="#263f49";ctx.lineWidth=1.05;ctx.beginPath();values.forEach((value,index)=>{const x=m.l+index/Math.max(1,values.length-1)*plotW,y=baseline-(Number(value)||0)*scale;index?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();const anchor=Math.max(0,Math.min(1,Number(item?.anchor_offset_s??.6)/Math.max(.001,Number(item?.duration_s)||1.6)));ECGReviewTools.markCanvas(ctx,m.l+anchor*plotW,m.t,m.t+plotH,editEffectiveCode(item));
 }
 
 function editSourceCode(item) {return ({1:"N",2:"S",3:"V",34:"X"})[Number(item?.group)]||String(item?.label||"O").toUpperCase();}
@@ -1426,7 +1431,7 @@ function renderEditWaveform(target="#editWaveformCanvas",metaTarget="#editWaveMe
   const canvas=$(target);if(!canvas)return;const canvasData=canvasContext(canvas,editCanvasHeight(canvas,target.includes("Library")?250:320,170)),ctx=canvasData.ctx,width=canvasData.width,height=canvasData.height,g=editWaveGeometry(width,height),leads=Object.entries(waveform.leads||{}),leadHeight=g.h/Math.max(1,leads.length);
   ctx.clearRect(0,0,width,height);ctx.fillStyle="#fff";ctx.fillRect(0,0,width,height);for(let x=g.l;x<=g.l+g.w;x+=10){ctx.strokeStyle=(x-g.l)%50===0?"rgba(214,101,88,.22)":"rgba(214,101,88,.09)";ctx.beginPath();ctx.moveTo(x,g.t);ctx.lineTo(x,g.t+g.h);ctx.stroke();}for(let y=g.t;y<=g.t+g.h;y+=10){ctx.strokeStyle=(y-g.t)%50===0?"rgba(214,101,88,.22)":"rgba(214,101,88,.09)";ctx.beginPath();ctx.moveTo(g.l,y);ctx.lineTo(g.l+g.w,y);ctx.stroke();}
   leads.forEach(([lead,values],leadIndex)=>{const baseline=g.t+leadHeight*(leadIndex+.53),sampled=values.filter((_,index)=>index%Math.max(1,Math.ceil(values.length/600))===0).map(value=>Math.abs(Number(value)||0)).sort((a,b)=>a-b),limit=Math.max(60,sampled[Math.floor(sampled.length*.96)]||60),scale=leadHeight*.34/limit;ctx.strokeStyle="#d7e1e5";ctx.beginPath();ctx.moveTo(g.l,baseline);ctx.lineTo(g.l+g.w,baseline);ctx.stroke();ctx.fillStyle=lead===state.editLead?"#087777":"#405563";ctx.font=`700 10px ${UI_FONT}`;ctx.fillText(lead,14,baseline+3);ctx.strokeStyle=lead===state.editLead?"#1d3944":"#526873";ctx.lineWidth=lead===state.editLead?1.15:.95;ctx.beginPath();values.forEach((value,index)=>{const x=g.l+index/Math.max(1,values.length-1)*g.w,y=baseline-(Number(value)||0)*scale;index?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();});
-  (waveform.beats||[]).forEach(beat=>{const fraction=(beat.time_s-waveform.start_s)/Math.max(.001,waveform.duration_s);if(fraction<0||fraction>1)return;const x=g.l+fraction*g.w,code=editEffectiveCode(beat),color=EDIT_BEAT_TYPES[code]?.color||"#7b858a",selected=editSelected(beat.sample_index);ctx.fillStyle=color;ctx.fillRect(x-1,g.t,2,9);ctx.font=`700 8px ${UI_FONT}`;ctx.fillText(code,x+2,g.t+8);if(selected){ctx.fillStyle="rgba(239,140,33,.13)";ctx.fillRect(x-10,g.t,20,g.h);ctx.strokeStyle="#ef8c21";ctx.strokeRect(x-10+.5,g.t+.5,19,g.h-1);}});
+  (waveform.beats||[]).forEach(beat=>{const fraction=(beat.time_s-waveform.start_s)/Math.max(.001,waveform.duration_s);if(fraction<0||fraction>1)return;const x=g.l+fraction*g.w,code=editEffectiveCode(beat),color=EDIT_BEAT_TYPES[code]?.color||"#7b858a",selected=editSelected(beat.sample_index)||Number(beat.sample_index)===state.editSelectedSample;if(selected)ECGReviewTools.markCanvas(ctx,x,g.t,g.t+g.h,code);else{ctx.fillStyle=color;ctx.fillRect(x-1,g.t,2,9);ctx.font=`700 8px ${UI_FONT}`;ctx.fillText(code,x+2,g.t+8);}});
   ctx.fillStyle="#71828c";ctx.font=`9px ${UI_FONT}`;ctx.fillText(formatElapsedPrecise(waveform.start_s),g.l,height-6);ctx.fillText(formatElapsedPrecise(waveform.start_s+waveform.duration_s),Math.max(g.l,width-g.r-105),height-6);const meta=$(metaTarget);if(meta)meta.textContent=`${leads.length} 导联 · ${waveform.sample_rate_hz} Hz · 0.5–40 Hz 显示滤波 · ${formatElapsed(waveform.start_s)}`;
 }
 
@@ -1514,11 +1519,7 @@ function bindEditInteraction() {
     waveCanvas.addEventListener("contextmenu",event=>{event.preventDefault();(waveCanvas===canvas?tooltip:libraryTooltip).hidden=true;openBeatRelabelMenu(event,waveCanvas,state.editWaveform,"edit");waveCanvas.focus({preventScroll:true});});
   });
 
-  const morphCanvas=$("#editDensityPrimary"),morphWrap=$("#editMorphCanvasWrap"),morphTooltip=$("#editMorphTooltip");let morphPointer=null,morphStart={x:0,y:0},morphCurrent={x:0,y:0};const morphPosition=event=>{const rect=morphCanvas.getBoundingClientRect();return {x:Math.max(0,Math.min(1,(event.clientX-rect.left)/Math.max(1,rect.width))),y:Math.max(0,Math.min(1,(event.clientY-rect.top)/Math.max(1,rect.height)))};};
-  morphCanvas.addEventListener("pointerdown",event=>{if(morphPointer!==null||!state.editTemplateStrips.length||event.pointerType==="mouse"&&event.button!==0)return;event.preventDefault();morphPointer=event.pointerId;morphStart=morphCurrent=morphPosition(event);state.editMorphDraft={x1:morphStart.x,y1:morphStart.y,x2:morphStart.x,y2:morphStart.y};try{morphCanvas.setPointerCapture(event.pointerId)}catch(_){/* capture is progressive enhancement */}morphWrap.classList.add("selecting");morphTooltip.hidden=true;renderEditDensity();});
-  morphCanvas.addEventListener("pointermove",event=>{if(morphPointer===event.pointerId){event.preventDefault();morphCurrent=morphPosition(event);state.editMorphDraft={x1:morphStart.x,y1:morphStart.y,x2:morphCurrent.x,y2:morphCurrent.y};renderEditDensity();return;}const point=morphPosition(event);morphTooltip.hidden=false;morphTooltip.classList.toggle("flip",point.x>.62);morphTooltip.style.left=`${point.x*100}%`;morphTooltip.style.top=`${Math.max(5,point.y*morphCanvas.getBoundingClientRect().height-34)}px`;morphTooltip.textContent=`${editDescriptor().name} · ${state.editTemplateStrips.length} 个代表搏\n拖动框选 · 右键取消`;});
-  morphCanvas.addEventListener("contextmenu",event=>{event.preventDefault();if(morphPointer!==null){try{if(morphCanvas.hasPointerCapture(morphPointer))morphCanvas.releasePointerCapture(morphPointer)}catch(_){/* pointer capture may already be released */}morphPointer=null;}morphWrap.classList.remove("selecting");morphTooltip.hidden=true;clearEditSelection();morphCanvas.focus({preventScroll:true});});
-  const finishMorph=event=>{if(morphPointer!==event.pointerId)return;event.preventDefault();morphPointer=null;if(morphCanvas.hasPointerCapture(event.pointerId))morphCanvas.releasePointerCapture(event.pointerId);morphWrap.classList.remove("selecting");applyMorphologySelection(morphStart.x,morphStart.y,morphCurrent.x,morphCurrent.y,event.clientX,event.clientY);};morphCanvas.addEventListener("pointerup",finishMorph);morphCanvas.addEventListener("pointercancel",event=>{if(morphPointer!==event.pointerId)return;morphPointer=null;state.editMorphDraft=null;morphWrap.classList.remove("selecting");renderEditDensity();});morphCanvas.addEventListener("pointerleave",()=>{if(morphPointer===null)morphTooltip.hidden=true;});morphCanvas.addEventListener("keydown",event=>{if(event.key==="Escape"){event.preventDefault();clearEditSelection();}if(event.key==="Enter"&&state.editSelection?.samples?.length){event.preventDefault();openEditClassPopover();}});
+  // Dual-lead density gestures are owned by morphology-workbench.js.
   $("#editTrendCanvas").addEventListener("click",event=>{if(!state.caseData)return;const rect=event.currentTarget.getBoundingClientRect(),time=(event.clientX-rect.left)/rect.width*state.caseData.technical.duration_seconds_raw;setEditStart(time-state.editDuration*.45);});
   $("#editScatterCanvas").addEventListener("click",event=>{const data=state.editScatterData;if(!data)return;const rect=event.currentTarget.getBoundingClientRect(),m={l:31,r:9,t:10,b:22},w=rect.width-m.l-m.r,h=rect.height-m.t-m.b,b=data.bounds,bx=b.x_max-b.x_min,by=b.y_max-b.y_min,x=event.clientX-rect.left,y=event.clientY-rect.top;let nearest=null,distance=Infinity;for(const point of data.points||[]){const px=m.l+(point.x-b.x_min)/bx*w,py=m.t+h-(point.y-b.y_min)/by*h,d=Math.hypot(px-x,py-y);if(d<distance){distance=d;nearest=point;}}if(nearest&&distance<=14){state.editSelectedSample=nearest.sample_index;setEditStart(nearest.time_s-state.editDuration*.35);}});
 }
@@ -1821,7 +1822,7 @@ async function savePatient() {
   await api(`/api/cases/${id}/patient`,{method:"PATCH",body:JSON.stringify(payload)});$("#patientDialog").close();toast("患者本地覆盖已保存");await loadDashboard();if(state.caseId===id)await loadCase();
 }
 
-function jumpTo(time) {if(!state.caseId)return;clinicalWorkflow.sourceJump(time);state.start=Math.max(0,Math.min(Number(time)-state.duration*.35,state.caseData.technical.duration_seconds_raw-state.duration));if(state.currentPage==="review")loadWaveform().catch(handleError);else goPage("review");}
+function jumpTo(time) {if(!state.caseId)return;state.locatedTime={caseId:state.caseId,time:Number(time)};clinicalWorkflow.sourceJump(time);state.start=Math.max(0,Math.min(Number(time)-state.duration*.35,state.caseData.technical.duration_seconds_raw-state.duration));if(state.currentPage==="review")loadWaveform().catch(handleError);else goPage("review");}
 
 function focusScatterWaveform(time,sample) {
   state.scatterFocusedSample=sample;renderScatterSelectionList();renderWaveform();

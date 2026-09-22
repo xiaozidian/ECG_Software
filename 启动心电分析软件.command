@@ -4,7 +4,7 @@ set -euo pipefail
 PROJECT_ROOT="${0:A:h}"
 VENV_PYTHON="$PROJECT_ROOT/.venv/bin/python"
 
-if [[ ! -x "$VENV_PYTHON" ]]; then
+if [[ ! -x "$VENV_PYTHON" ]] || ! "$VENV_PYTHON" -c 'import flask, waitress, reportlab, numpy' >/dev/null 2>&1; then
   "$PROJECT_ROOT/scripts/setup_macos.sh"
 fi
 

@@ -98,6 +98,7 @@ class EditedRecords:
         self.beats, self.markers=materialize(source,document,legacy)
         self.by_sample={row["sample_index"]:row for row in self.beats}
         self.records=tuple((row["sample_index"],0,row["group"],0,0,0,row["rr_ms"]) for row in self.beats)
+        self.record_samples=tuple(row[0] for row in self.records)
         self.document=document
         self.duration=duration
 

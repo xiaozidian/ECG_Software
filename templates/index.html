@@ -180,18 +180,27 @@
           </aside>
 
           <aside class="card edit-density-panel" aria-labelledby="editDensityTitle">
-            <div class="edit-panel-heading"><div><h2 id="editDensityTitle">模板形态集合 · 框选分型</h2><p>在同一类别中框出方向或形态相近的波形</p></div><span id="editMorphologyCount" class="status-pill neutral">—</span></div>
-            <div class="edit-morphology-stage">
-              <figure class="edit-morphology-primary"><figcaption><span id="editDensityPrimaryLabel">当前类别</span><small>拖动框选 · 右键取消</small></figcaption><div id="editMorphCanvasWrap" class="edit-morph-canvas-wrap"><canvas id="editDensityPrimary" height="190" tabindex="0" aria-label="当前类别心搏形态集合；拖动矩形框选相似波形并创建新模板；右键或按 Escape 取消框选" title="拖动框选；右键或按 Esc 取消框选"></canvas><div id="editMorphTooltip" class="wave-tooltip" hidden></div></div></figure>
-              <figure class="edit-morphology-selection"><figcaption><span>框选结果</span><small id="editMorphSelectionLabel">尚未选择</small></figcaption><canvas id="editDensitySelection" height="92" aria-label="当前形态框选结果"></canvas></figure>
+            <div class="edit-panel-heading"><div><h2 id="editDensityTitle">双导联密度 · 剥离分型</h2><p>在任一左图框选，按 6–9 移入右侧分组</p></div><span id="editMorphologyCount" class="status-pill neutral">尚未读取</span></div>
+            <div class="morph-leads"><label>左上导联<select id="morphLeadTop" aria-label="左上密度图导联"></select></label><label>左下导联<select id="morphLeadBottom" aria-label="左下密度图导联"></select></label><label>右侧导联<select id="morphLeadGroups" aria-label="右侧分组密度图导联"></select></label></div>
+            <div class="morph-peeling-grid">
+              <div class="morph-source-stack">
+                <figure><figcaption><span id="editDensityPrimaryLabel">左上 · 剩余心搏</span><small data-morph-count="top"></small></figcaption><div id="editMorphCanvasWrap"><canvas id="editDensityPrimary" data-morph-source="top" tabindex="0" aria-label="左上导联剩余心搏密度图；拖动框选后按6至9分组"></canvas><div id="editMorphTooltip" hidden></div></div></figure>
+                <figure><figcaption><span id="morphSecondaryLabel">左下 · 剩余心搏</span><small data-morph-count="bottom"></small></figcaption><div class="morph-source-canvas"><canvas id="editDensitySelection" data-morph-source="bottom" tabindex="0" aria-label="左下导联剩余心搏密度图；拖动框选后按6至9分组"></canvas></div></figure>
+              </div>
+              <div id="morphGroups" class="morph-group-stack" aria-label="剥离分组6至9"></div>
             </div>
-            <div class="edit-morphology-foot">
-              <details class="edit-keyboard-range"><summary>键盘矩形范围</summary><div><label for="editRangeStart">横向起点<input id="editRangeStart" type="range" min="0" max="100" value="38"></label><label for="editRangeEnd">横向终点<input id="editRangeEnd" type="range" min="0" max="100" value="62"></label><label for="editRangeTop">纵向上界<input id="editRangeTop" type="range" min="0" max="100" value="18"></label><label for="editRangeBottom">纵向下界<input id="editRangeBottom" type="range" min="0" max="100" value="54"></label><output id="editRangeOutput">X 38–62% · Y 18–54%</output><button id="applyEditRange" class="button secondary" type="button">应用矩形</button></div></details>
-              <button id="clearEditSelection" class="text-button" type="button" disabled>清除框选</button>
-            </div>
+            <div id="morphGroupTools" class="morph-group-tools" aria-label="当前剥离组操作"><span id="morphActiveGroup">6 组 · 未保存模板</span><button id="morphGroupTemplate" type="button" disabled>设为模板</button><button id="morphGroupRestore" type="button" disabled>归还左侧</button></div>
+            <p id="morphStatus" class="morph-status" role="status" aria-live="polite">拖动框选 · 右键取消。框选后按 6–9 或点击“移入”；也可按 Escape 取消。</p>
+            <div class="morph-actions"><span id="editMorphSelectionLabel">尚未框选</span><button id="clearEditSelection" type="button" disabled>清除框选</button><button id="morphUndo" type="button" disabled>撤销剥离</button><button id="morphRetry" type="button">重新读取</button></div>
+            <details class="morph-keyboard-range"><summary>键盘框选范围</summary><div><label>框选导联<select id="morphRangeLead"><option value="top">左上导联</option><option value="bottom">左下导联</option></select></label><label for="editRangeStart">横向起点 %<input id="editRangeStart" type="number" min="0" max="100" value="38"></label><label for="editRangeEnd">横向终点 %<input id="editRangeEnd" type="number" min="0" max="100" value="62"></label><label for="editRangeTop">纵向上界 %<input id="editRangeTop" type="number" min="0" max="100" value="18"></label><label for="editRangeBottom">纵向下界 %<input id="editRangeBottom" type="number" min="0" max="100" value="54"></label><output id="editRangeOutput"></output><button id="applyEditRange" type="button">应用矩形</button></div></details>
+            <form id="morphTemplateForm" class="morph-template-form" hidden>
+              <strong id="morphTemplateTitle">设置分组模板</strong><p>只保存形态模板，不自动修改心搏分类。</p>
+              <label>模板名称<input id="morphTemplateName" maxlength="80" required></label><label>模板家族<select id="morphTemplateFamily"></select></label>
+              <div><button type="submit">保存模板</button><button id="morphTemplateCancel" type="button">取消</button></div>
+            </form>
+            <details class="morph-method-details"><summary>统计口径与保存说明</summary><p id="morphMethod" class="morph-method">两导联共享剩余集合；绿→黄→红为对数密度。剥离可撤回，不删除原始心搏。分组暂存于本次页面；需要保留时请保存模板。</p></details>
           </aside>
         </div>
-
         <div class="edit-main-stack">
           <section class="edit-overview-panel" aria-label="病例概览">
             <article class="card edit-trend-card"><div class="edit-panel-heading"><div><h2>全天心率定位</h2><p>点击趋势切换连续波形窗口</p></div><strong id="editWindowLabel">—</strong></div><canvas id="editTrendCanvas" height="90" aria-label="全天心率趋势；点击可切换模板编辑窗口"></canvas></article>
@@ -518,15 +527,24 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/visual-refresh.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/overview-workbench.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/report-paper.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/morphology-workbench.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/clinical-review-tools.css') }}">
+  <script src="{{ url_for('static', filename='js/clinical-review-tools.js') }}"></script>
   <script src="{{ url_for('static', filename='js/report-engine.js') }}"></script>
   <script src="{{ url_for('static', filename='js/report-paper.js') }}"></script>
   <script src="{{ url_for('static', filename='js/overview-engine.js') }}"></script>
   <script src="{{ url_for('static', filename='js/clinical-analysis.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/hrv-analysis.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/hrv-report.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/report-range-editor.js') }}"></script>
   <script src="{{ url_for('static', filename='js/beat-engine.js') }}"></script>
   <script src="{{ url_for('static', filename='js/app.js') }}"></script>
   <script src="{{ url_for('static', filename='js/clinical-workflow.js') }}"></script>
   <script src="{{ url_for('static', filename='js/beat-editor-ui.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/waveform-loader.js') }}"></script>
   <script src="{{ url_for('static', filename='js/clinical-ui.js') }}"></script>
   <script src="{{ url_for('static', filename='js/overview-workbench.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/morphology-groups.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/morphology-workbench.js') }}"></script>
 </body>
 </html>

@@ -1,0 +1,42 @@
+/* Vertical review: the spacer is data geometry, not an empty fixed-height panel. */
+#editWorkbench .edit-main-stack{align-content:start;grid-template-rows:100px auto auto}
+#editWorkbench .edit-gallery-panel{align-self:start;width:100%}
+#page-edit #editTemplateGallery.occurrence-viewport{overflow-x:hidden!important;overflow-y:auto!important;height:var(--occ-height,252px);min-height:0;flex:0 0 auto;max-height:none;scrollbar-gutter:stable;overscroll-behavior-y:contain;scroll-behavior:auto}
+#page-edit .occurrence-lane{width:100%;min-height:0}
+#page-edit .occurrence-viewport::-webkit-scrollbar{width:12px;height:0}
+#page-edit .occurrence-tile:focus-within{outline:2px solid #1760c2;outline-offset:-2px}
+#page-edit .occurrence-actions .occ-scroll-help{color:#536c76;margin-left:auto}
+.report-range-editor{margin:8px 0;border:1px solid #c8d9df;background:#fff;padding:10px}
+.report-range-editor header,.report-range-editor .range-fields{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.report-range-editor header{justify-content:space-between;margin-bottom:6px}
+.report-range-editor label{font-size:12px;display:flex;align-items:center;gap:5px}
+.report-range-editor input[type=number]{width:105px;min-height:32px;border:1px solid #bdced4;padding:5px}
+.report-range-stage{position:relative;overflow:hidden}
+.report-range-stage svg{display:block;width:100%;height:var(--range-wave-height,210px)}
+.report-range-handle{position:absolute;top:0;bottom:0;width:18px;transform:translateX(-50%);border:0!important;background:transparent!important;padding:0!important;cursor:ew-resize;touch-action:none;z-index:2}
+.report-range-handle:before{content:'';position:absolute;top:0;bottom:0;left:8px;width:2px;background:#cc6500}
+.report-range-handle:after{content:'';position:absolute;top:0;left:3px;width:12px;height:9px;border:2px solid #cc6500;background:#fff6e7}
+.report-range-editor output{display:block;font:12px/1.6 ui-monospace,monospace;margin:7px 0;color:#445d67}
+.report-range-editor .range-error{color:#a42e25}
+@media(max-width:600px){.occ-scroll-help{width:100%}}
+@media(max-width:900px){
+  html:has(#page-trends.active),body:has(#page-trends.active){min-width:0;width:100%;overflow-x:clip}
+  body:has(#page-trends.active){--sidebar:56px}
+  body:has(#page-trends.active) .main-shell{min-width:0}
+  body:has(#page-trends.active) .topbar{min-width:0;width:100%;gap:12px}
+  body:has(#page-trends.active) .brand{width:auto;flex:none}
+  body:has(#page-trends.active) .global-search{min-width:0}
+  body:has(#page-trends.active) .role-chip{display:none}
+  body:has(#page-trends.active) .safety-banner{height:auto;min-height:30px;padding:6px 10px;line-height:1.5;flex-wrap:wrap}
+  body:has(#page-trends.active) .case-workflow{min-width:0;height:auto;display:flex;flex-wrap:wrap;gap:8px;padding:8px 10px}
+  body:has(#page-trends.active) .case-workflow-context{width:100%;padding-right:0}
+  body:has(#page-trends.active) .case-workflow-steps{width:100%;height:40px;overflow-x:auto;grid-template-columns:repeat(5,minmax(90px,1fr))}
+  body:has(#page-trends.active) .workflow-next{margin-left:auto;max-width:100%}
+  body:has(#page-trends.active) .workflow-task-line{width:100%;height:auto;white-space:normal;flex-wrap:wrap}
+  body:has(#page-trends.active) .workflow-task-line>span{white-space:normal}
+  #page-trends.active,#hrvWindowPanel{min-width:0;max-width:100%}
+  #page-trends .chart-grid{grid-template-columns:minmax(0,1fr)}
+  #page-trends .chart-grid .wide{grid-column:auto}
+  #page-trends .metric-grid,#page-trends .comparison-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:600px){body:has(#page-trends.active) .global-search{display:none}body:has(#page-trends.active) .top-actions{margin-left:auto}body:has(#page-trends.active) .brand span{display:none}.hrv-evidence-toolbar{padding:10px}.hrv-evidence-notice{padding:0 10px}.hrv-evidence-toolbar>div{width:100%}}

@@ -32,6 +32,7 @@ from ecg_core.ebi import (
     visible_beats,
 )
 from ecg_core.report_pdf import build_report_pdf
+from ecg_core.hrv_analysis import analyze_hrv
 from ecg_core.report_layout import prepare_strip, report_statistics
 from ecg_core.clinical_analysis import build_index, query_index, hrv_windows, validate_report
 from ecg_core.storage import normalize_report_composition
@@ -44,7 +45,7 @@ from ecg_core.waveform import read_event_waveform, ALL_LEADS, read_waveform, rea
 from ecg_core.overview import RhythmReviewStore, initial_episodes, density
 
 ACTOR = "演示分析医生"
-READONLY_POST_ENDPOINTS = frozenset({"case_open", "scatter_selection_endpoint", "waveform_strips_endpoint"})
+READONLY_POST_ENDPOINTS = frozenset({"case_open", "scatter_selection_endpoint", "waveform_strips_endpoint", "event_waveforms", "waveform_density"})
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -422,7 +423,36 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         case=case_or_404(case_id)
         start=_number_arg("start",0,float,0)
         end=_number_arg("end",start+4,float,start+1)
-        return jsonify(read_event_waveform(case["paths"]["data"],start,end,request.args.get("leads","II,V1,V5").split(","),_number_arg("max_points",2400,int,200,12000)))
+        payload=read_event_waveform(case["paths"]["data"],start,end,request.args.get("leads","II,V1,V5").split(","),_number_arg("max_points",2400,int,200,12000))
+        payload['beats']=visible_beats(analysis_path(case),payload['start_s'],payload['duration_s'])
+        return jsonify(payload)
+
+    @app.post("/api/cases/<case_id>/event-waveforms")
+    def event_waveforms(case_id):
+        """One revision-consistent beat read for a viewport of thumbnail ranges."""
+        case = case_or_404(case_id)
+        body = _json_object()
+        ranges = body.get("ranges")
+        if not isinstance(ranges, list) or not 1 <= len(ranges) <= 32:
+            raise ValueError("每批需包含 1–32 个波形区间")
+        leads = body.get("leads", ["II", "V1", "V5"])
+        if not isinstance(leads, list) or not 1 <= len(leads) <= 12 or any(lead not in ALL_LEADS for lead in leads) or len(set(leads)) != len(leads):
+            raise ValueError("导联包含不支持或重复的值")
+        points = _json_number(body, "max_points", 1200, 200, 1200, integer=True)
+        checked = []
+        for item in ranges:
+            if not isinstance(item, dict):
+                raise ValueError("波形区间格式错误")
+            start = _coerce_json_number(item.get("start"), "区间起点", 0, 2_678_400)
+            end = _coerce_json_number(item.get("end"), "区间终点", start+1, 2_678_400)
+            checked.append((start, end))
+        feed = analysis_path(case)
+        items = []
+        for start, end in checked:
+            wave = read_event_waveform(case["paths"]["data"], start, end, leads, points)
+            wave["beats"] = visible_beats(feed, wave["start_s"], wave["duration_s"])
+            items.append(wave)
+        return jsonify(items=items)
 
     @app.get("/api/cases/<case_id>/report-strip")
     def report_strip(case_id):
@@ -433,6 +463,8 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
             return jsonify(error='图条依据已变化，请重新选择事件'), 409
         settings = {'leads': request.args.get('leads', 'II,V1,V5').split(','),
                     'duration_s': _number_arg('duration', 7, float, 1, 120)}
+        if 'range_start_s' in request.args or 'range_end_s' in request.args:
+            settings.update(range_start_s=_number_arg('range_start_s',-1,float,0),range_end_s=_number_arg('range_end_s',-1,float,0))
         return jsonify(prepare_strip(index, event, settings, lambda a, b, leads, points: read_event_waveform(case['paths']['data'], a, b, leads, points)))
 
     @app.get("/api/cases/<case_id>/report-statistics")
@@ -447,6 +479,42 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
     def hrv_window_endpoint(case_id):
         case=case_or_404(case_id)
         return jsonify(hrv_windows(edited_feed(case),case["metadata"].get("start_iso") or case["metadata"].get("start_time"),request.args.get("window",0)))
+
+    def hrv_evidence(case, window=0):
+        feed=edited_feed(case)
+        data=analyze_hrv(feed,case['metadata'].get('start_iso') or case['metadata'].get('start_time'),window)
+        # Use the already-versioned ST research engine; never label device units mV.
+        review=stt_review(case['case_id']).get_json()
+        data['st_trends']=(review.get('analysis') or {}).get('trends',{}).get('leads',{})
+        index=clinical_index(case)
+        data['event_statistics']=report_statistics(index,case['metadata'].get('start_iso') or case['metadata'].get('start_time'),feed.document['settings'])
+        representatives=[]
+        for category in ('fastest','slowest','V','S','pause'):
+            candidates=[e for e in index['events'] if e['category']==category and data['start_s']<=e['time_s']<data['end_s'] and (category not in ('fastest','slowest') or e['subtype']=='RR')]
+            if category in ('fastest','slowest'): candidates.sort(key=lambda e: ((-1 if category=='fastest' else 1)*(e.get('hr') or 0),e['time_s']))
+            event=next(iter(candidates),None)
+            if event:
+                entry=prepare_strip(index,event,{'leads':['II']},lambda a,b,leads,points:read_event_waveform(case['paths']['data'],a,b,leads,min(points,1000)))
+                representatives.append(entry)
+        data['representatives']=representatives
+        return data
+
+    @app.get('/api/cases/<case_id>/hrv-analysis')
+    def hrv_analysis_endpoint(case_id):
+        return jsonify(hrv_evidence(case_or_404(case_id),request.args.get('window',0)))
+
+    @app.get('/api/cases/<case_id>/hrv-report.pdf')
+    def hrv_pdf(case_id):
+        case=case_or_404(case_id)
+        include_phi=include_phi_authorized()
+        visible=case_with_overrides(case)
+        if not include_phi: visible=_masked_report_case(visible)
+        report=storage.get_report(case_id,case['conclusion'])
+        report.update(hrv_only=True,status='draft',selected_waveforms=[],hrv_analysis=hrv_evidence(case,request.args.get('window',0)))
+        storage.audit(ACTOR,'hrv.export_pdf',case_id,'HRV standalone research draft')
+        response=send_file(build_report_pdf(visible,{},report),mimetype='application/pdf',as_attachment=True,download_name=f'{case_id}_HRV分析报告.pdf')
+        response.headers['X-Privacy-Mode']='phi-visible' if include_phi else 'masked'
+        return response
 
     @app.get("/api/cases/<case_id>/hrv")
     def hrv_endpoint(case_id: str):
@@ -581,10 +649,13 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         result = rhythms.commit(case_id, _json_object(), duration, initial, ACTOR, revision)
         return jsonify(**result, beat_revision=revision)
 
-    @app.get("/api/cases/<case_id>/waveform-density")
+    @app.route("/api/cases/<case_id>/waveform-density", methods=["GET", "POST"])
     def waveform_density(case_id):
         case = case_or_404(case_id)
         snapshot = editor.read(case_id)
+        payload = _json_object() if request.method == "POST" else {}
+        if "revision" in payload and (type(payload["revision"]) is not int or payload["revision"] != snapshot["revision"]):
+            raise ValueError("编辑版本已变化，请重新加载密度图")
         feed = edited_feed(case, snapshot["document"])
         code = request.args.get("class_code", "N")
         template_id = request.args.get("template_id")
@@ -608,8 +679,10 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
                 raise ValueError("形态框选范围错误")
             if len(gate) != 4 or not all(math.isfinite(x) for x in gate) or gate[0] > gate[1] or gate[2] > gate[3]:
                 raise ValueError("形态框选范围错误")
-        result = density(Path(case["paths"]["data"]), samples, request.args.get("lead", "II"), gate)
-        return jsonify(**result, revision=snapshot["revision"])
+        from ecg_core.overview import density_samples
+        selected_samples = density_samples(samples, payload)
+        result = density(Path(case["paths"]["data"]), selected_samples, request.args.get("lead", "II"), gate, payload.get("amplitude_limit"))
+        return jsonify(**result, source_total=len(samples), revision=snapshot["revision"])
 
     @app.post("/api/cases/<case_id>/beat-editor/preview")
     def beat_editor_preview(case_id):
@@ -702,24 +775,27 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         raw_samples = payload.get("sample_indices")
         if not isinstance(raw_samples, list) or not raw_samples:
             raise ValueError("sample_indices 必须是非空数组")
-        if len(raw_samples) > 500:
-            raise ValueError("单个模板类别最多保存 500 个心搏")
+        if len(raw_samples) > 250000:
+            raise ValueError("单个模板类别最多保存 250000 个心搏")
+        if "revision" in payload and (type(payload["revision"]) is not int or payload["revision"] != editor.read(case_id)["revision"]):
+            raise ValueError("编辑版本已变化，请重新加载密度图")
         if any(isinstance(value, bool) or not isinstance(value, int) for value in raw_samples):
             raise ValueError("sample_indices 必须全部为整数")
         max_sample = int(case["technical"]["duration_seconds_raw"] * SAMPLE_RATE)
         if any(value < 0 or value >= max_sample for value in raw_samples):
             raise ValueError("sample_indices 超出记录范围")
-        details = beat_details(analysis_path(case), raw_samples)
+        feed = edited_feed(case)
+        details = {s: feed.by_sample[s] for s in set(raw_samples) if s in feed.by_sample}
         if len(details) != len(raw_samples):
             raise ValueError("sample_indices 必须对应现有心搏位置")
         source_class = payload.get("source_class", "")
         if not isinstance(source_class, str):
             raise ValueError("父类别标识不合法")
         if source_class:
-            source_groups = {"source-N": 1, "source-S": 2, "source-V": 3, "source-X": 34}
-            if source_class in source_groups:
-                expected_group = source_groups[source_class]
-                if any(details[sample]["group"] != expected_group for sample in raw_samples):
+            source_classes = {"source-"+code: code for code in TYPES}
+            if source_class in source_classes:
+                expected_class = source_classes[source_class]
+                if any(details[sample]["class_code"] != expected_class for sample in raw_samples):
                     raise ValueError("选中心搏不属于指定的源类别")
             else:
                 if not source_class.startswith("custom-"):
@@ -731,7 +807,11 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
                 parent = storage.get_beat_template(parent_id)
                 if parent is None or parent["case_id"] != case_id:
                     raise ValueError("父类别不存在或不属于当前病例")
-                if not set(raw_samples) <= set(parent["sample_indices"]):
+                with storage.connect() as db:
+                    refs = db.execute("SELECT beat_ids FROM beat_edit_template_refs WHERE template_id=? AND case_id=?", (parent_id, case_id)).fetchone()
+                parent_ids = set(json.loads(refs[0]) if refs else [f"s:{s}" for s in parent["sample_indices"]])
+                parent_samples = {r["sample_index"] for r in feed.beats if r["id"] in parent_ids}
+                if not set(raw_samples) <= parent_samples:
                     raise ValueError("选中心搏不属于指定的父模板")
         item=storage.create_beat_template(case_id, payload, ACTOR)
         feed=edited_feed(case);by_sample=feed.by_sample
@@ -867,6 +947,8 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         report['paper_statistics']['hrv']=hrv(edited_feed(case))
         report['event_statistics']=query_index(index,{'fast_slow_mode':report['composition'].get('fast_slow_mode','rr')})
         report['hrv_windows']=hrv_windows(edited_feed(case),case['metadata'].get('start_iso') or case['metadata'].get('start_time'),report['composition'].get('hrv_window',0))
+        if report['composition'].get('include_hrv'):
+            report['hrv_analysis']=hrv_evidence(case,report['composition'].get('hrv_window',0))
         privacy_mode = "phi-visible" if include_phi else "masked"
         storage.audit(ACTOR, "report.export_pdf", case_id, f"version={report['version']} privacy={privacy_mode}")
         response = send_file(build_report_pdf(report_case, calculated, report), mimetype="application/pdf", as_attachment=True, download_name=f"{case_id}_心电分析复核报告.pdf")

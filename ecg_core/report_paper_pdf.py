@@ -106,7 +106,7 @@ def build_paper_pdf(case, report, font):
         line(0,137,190,137)
         hr = lambda p: f"{number(p['hr'])} 次/分（{clock(meta,p['time_s'])[5:]}）" if p else '—'
         text(2,68,'概要',10)
-        pairs(2,74,[('总心搏数',str(s.get('total','—'))+' 搏'),('伪差',str(s.get('noise','—'))+' 个'),('室性/室上性心搏',f"{s.get('V',{}).get('total','—')} / {s.get('S',{}).get('total','—')} 搏"),('最长 RR',f"{number(s['longest']['rr_ms']/1000)} 秒" if s.get('longest') else '—'),('发生时间',clock(meta,s['longest']['time_s'])[5:] if s.get('longest') else '—'),('长 RR 候选',f"{s.get('pause','—')} 次（≥{opts.get('pause','—')} s）")],28)
+        pairs(2,74,[('总心搏数',str(s.get('total','—'))+' 搏'),('伪差',str(s.get('noise','—'))+' 个'),('室性/室上性心搏',f"{s.get('V',{}).get('total','—')} / {s.get('S',{}).get('total','—')} 搏"),('最长 RR',f"{number(s['longest']['rr_ms']/1000)} 秒" if s.get('longest') else '—'),('发生时间',clock(meta,s['longest']['time_s'])[5:] if s.get('longest') else '—'),('长 RR 候选',f"{s.get('pause','—')} 次 >2.5s；其中 {s.get('pause_over3','—')} 次 >3s")],28)
         text(97,68,'心率',10)
         pairs(97,74,[('最慢心率',hr(s.get('slowest'))),('平均心率',str(s.get('avg_hr','—'))+' 次/分'),('最快心率',hr(s.get('fastest'))),('快心率心搏',f"{s.get('tachy_beats','—')} 搏（≥{opts.get('tachy','—')} bpm）"),('慢心率心搏',f"{s.get('brady_beats','—')} 搏（≤{opts.get('brady','—')} bpm）"),('已确认房颤/房扑',str(s.get('af','—'))+' 段')],30)
         for code, x, title in [('V',2,'室性心搏'),('S',97,'室上性心搏')]:
@@ -148,7 +148,7 @@ def build_paper_pdf(case, report, font):
         line(0,19,190,19)
         for label,a,b in [('时间',0,1),('心搏数',1,2),('心率 bpm',2,5),('室性心搏',5,12),('室上性心搏',12,19),('房颤/扑',19,20),('长RR',20,21)]:
             text((xs[a]+xs[b])/2,20,label,7,'center')
-        names=['','', '最慢','平均','最快']+['单发','成对','短阵','二联律','三联律','总计','%']*2+['段','候选']
+        names=['','', '最慢','平均','最快']+['单发','成对','短阵','二联律','三联律','总计','%']*2+['段','>2.5/>3s']
         for i,label in enumerate(names):text((xs[i]+xs[i+1])/2,25,label,6.5,'center')
         line(0,30,190,30)
         for ri,r in enumerate(rows+([dict(summary,label='总计')] if final else [])):
@@ -156,7 +156,7 @@ def build_paper_pdf(case, report, font):
             if ri==len(rows):line(0,y-1,190,y-1)
             values=[r.get('label',''),r.get('total'),r.get('min_hr'),r.get('avg_hr'),r.get('max_hr')]
             for code in ['V','S']:values.extend(r.get(code,{}).get(k) for k in ['single','couplet','run','bigeminy','trigeminy','total','pct'])
-            values.extend([r.get('af'),r.get('pause')])
+            values.extend([r.get('af'),f"{r.get('pause','—')}/{r.get('pause_over3','—')}"])
             for col,v in enumerate(values):
                 if col==0 and ' ' in str(v):
                     date,hour=str(v).split(' ',1)
@@ -252,6 +252,11 @@ def build_paper_pdf(case, report, font):
     for offset in range(0,len(caption_notes),44):
         part=caption_notes[offset:offset+44]
         pages.append(lambda part=part:caption_page(part))
+    if report.get('hrv_analysis'):
+        from .hrv_report_pdf import make_hrv_pages
+        hrv_pages=make_hrv_pages(c,font,report['hrv_analysis'])
+        if report.get('hrv_only'):pages=hrv_pages
+        elif report.get('composition',{}).get('include_hrv'):pages.extend(hrv_pages)
     for i,draw in enumerate(pages):
         text(0,0,'患者 ID：'+str(meta.get('patient_id') or case['case_id']),8)
         text(90,0,'姓名：'+str(meta.get('name') or '—'),8)
