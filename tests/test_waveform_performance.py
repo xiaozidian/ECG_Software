@@ -60,14 +60,14 @@ def test_empty_density_and_chunk_boundary_are_complete(tmp_path):
     assert sum(actual['bins'])==len(samples)*200 and max(actual['bins'])==len(samples)
 
 
-def test_batch_waveforms_match_single_requests_and_materialize_once(client,monkeypatch):
+def test_batch_waveforms_match_single_requests_and_reuse_materialization(client,monkeypatch):
     import app as server
     case=client.get('/api/cases').json['items'][0]['case_id'];base=f'/api/cases/{case}'
     ranges=[dict(start=0,end=2.4),dict(start=20.125,end=23.325),dict(start=200,end=380)]
-    expected=[client.get(base+'/event-waveform',query_string={**r,'analysis':'edited','leads':'II,III,V1','max_points':1200}).json for r in ranges]
     original=server.EditedRecords;calls=[]
     def counted(*args): calls.append(1);return original(*args)
     monkeypatch.setattr(server,'EditedRecords',counted)
+    expected=[client.get(base+'/event-waveform',query_string={**r,'analysis':'edited','leads':'II,III,V1','max_points':1200}).json for r in ranges]
     actual=client.post(base+'/event-waveforms?analysis=edited',json=dict(ranges=ranges,leads=['II','III','V1'],max_points=1200))
     assert actual.status_code==200 and actual.json['items']==expected
     assert len(calls)==1

@@ -40,7 +40,10 @@ def test_pause_strict_boundaries_fixed_denominator_and_filter_before_pagination(
     assert query_index(index,{'category':'pause','pause_band':'over3','ids':saved['event_id']})['items']==[saved]
     with pytest.raises(ValueError):query_index(index,{'pause_band':'invalid'})
     feed=pause_feed();feed.beats[3]['class_code']='X'
-    assert query_index(build_index(feed),{'category':'pause'})['total']==3
+    # A noisy R endpoint invalidates its preceding AND following interval.
+    remaining=query_index(build_index(feed),{'category':'pause'})
+    assert remaining['total']==2
+    assert [r['rr_ms'] for r in remaining['items']]==[3005,11000]
 
 
 def test_long_pause_strip_includes_both_r_peaks_and_five_beats():

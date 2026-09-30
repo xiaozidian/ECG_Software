@@ -1,0 +1,4 @@
+# Offline public-dataset audit only. Do not add these to the clinical app bundle.
+wfdb==4.3.1
+numpy==2.5.3
+scipy==1.18.1

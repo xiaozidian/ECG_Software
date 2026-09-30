@@ -46,6 +46,12 @@ def test_short_invalid_noise_nn_and_deterministic_ties():
     feed.beats[5].update(class_code='S')
     feed.beats[7].update(hr=60,rr_ms=1000)
     feed.beats[8].update(hr=60,rr_ms=1000)
+    # Keep the tie fixture physically consistent with its edited RR values.
+    sample=0
+    for r in feed.beats:
+        sample+=r['rr_ms']/5
+        r.update(sample_index=sample,id=f's:{sample}')
+    feed.duration=sample/200+1
     index=build_index(feed)
     rr=query_index(index,{'category':'fastest'})
     assert rr['total']==5
@@ -101,5 +107,5 @@ def test_api_rate_candidates_and_report_strip(client):
 
 def test_rate_controls_are_wired_to_backend_sort_and_pagination():
     text=(Path(__file__).parents[1]/'static/js/clinical-ui.js').read_text()
-    for expected in ('sort:reportSort','id="v2RateSort"','id="v2ReportPage"','从快到慢','从慢到快','candidate-rate','reportStrip(e,selected().find'):
+    for expected in ('sort:reportSort','id="v2RateSort"','id="v2ReportPage"','从快到慢','从慢到快','candidate-rate','reportStrip(e,returnedRhythmSettings(e)||selected().find'):
         assert expected in text

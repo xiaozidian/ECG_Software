@@ -3,6 +3,7 @@
  * The Python implementation is ecg_core/beat_editor.py; parity tests cover both.
  * No automatic disease diagnosis; QRS proposals require physician confirmation. */
 (() => {
+  const quality=globalThis.ECGRRQuality||(typeof require==='function'?require('./rr-quality.js'):null);
   const rows=[
     ["N","正常",1,"beat"],["S","房性早搏",2,"beat"],["V","室性早搏",3,"beat"],
     ["J","交界性早搏",2,"beat"],["G","交界性逸搏",4,"beat"],
@@ -81,23 +82,22 @@
     return {document:doc,affected:chosen.length};
   }
   const mean=a=>a.length?a.reduce((s,x)=>s+x,0)/a.length:null;
-  const deviation=a=>a.length>1?Math.sqrt(a.reduce((s,x)=>s+(x-mean(a))**2,0)/(a.length-1)):null;
+  const deviation=a=>{if(a.length<2)return null;const m=mean(a);return Math.sqrt(a.reduce((s,x)=>s+(x-m)**2,0)/(a.length-1))};
   const round=(v,d=2)=>v===null||!Number.isFinite(v)?null:Math.round((v+Number.EPSILON)*10**d)/10**d;
   const median=a=>{const s=a.slice().sort((a,b)=>a-b),i=Math.floor(s.length/2);return s.length%2?s[i]:(s[i-1]+s[i])/2};
   function hrv(feed,duration){
-    const nn=[],opts=feed.document.settings;
-    for(let i=1;i<feed.beats.length;i++){const a=feed.beats[i-1],b=feed.beats[i];if(a.class_code==="N"&&b.class_code==="N"&&b.rr_ms>=opts.nn_min&&b.rr_ms<=opts.nn_max)nn.push([i,b.sample_index,b.rr_ms])}
+    const intervals=quality.nnIntervals({...feed,duration}),nn=intervals.map(([i,a,b,rr])=>[i,b*200,rr]);
     if(nn.length<3)return {nn_count:nn.length,method:"修订版严格相邻 N-N；样本不足"};
-    const values=nn.map(r=>r[2]),diffs=[],blocks={},hist={};
+    const values=nn.map(r=>r[2]),diffs=[],hist={};
     for(let i=1;i<nn.length;i++)if(nn[i][0]===nn[i-1][0]+1)diffs.push(nn[i][2]-nn[i-1][2]);
-    nn.forEach(([,sample,value])=>{const k=Math.floor(sample/60000);if((k+1)*300<=duration)(blocks[k]||(blocks[k]=[])).push(value);const bin=Math.floor(value/7.8125);hist[bin]=(hist[bin]||0)+1});
-    const groups=Object.values(blocks).filter(x=>x.length>=30);
-    return {nn_count:nn.length,successive_nn_pairs:diffs.length,mean_nn_ms:round(mean(values)),sdnn_ms:round(deviation(values)),sdann_ms:round(deviation(groups.map(mean))),sdnn_index_ms:round(mean(groups.map(deviation))),rmssd_ms:round(diffs.length?Math.sqrt(mean(diffs.map(x=>x*x))):null),pnn50_pct:round(diffs.length?100*diffs.filter(x=>Math.abs(x)>50).length/diffs.length:null),triangular_index:round(values.length/Math.max(...Object.values(hist))),completed_five_minute_blocks:groups.length,method:"修订版：连续 N-N，差分不跨异位/伪差；完整5分钟块且至少30个NN；7.8125ms箱宽。短记录仅供研究。"};
+    nn.forEach(([,sample,value])=>{const bin=Math.floor(value/7.8125);hist[bin]=(hist[bin]||0)+1});
+    const groups=quality.fiveMinuteBlocks(intervals,duration).map(([a,b,r])=>r.map(x=>x[3]));
+    return {nn_count:nn.length,successive_nn_pairs:diffs.length,mean_nn_ms:round(mean(values)),sdnn_ms:round(deviation(values)),sdann_ms:round(deviation(groups.map(mean))),sdnn_index_ms:round(mean(groups.map(deviation))),rmssd_ms:round(diffs.length?Math.sqrt(mean(diffs.map(x=>x*x))):null),pnn50_pct:round(diffs.length?100*diffs.filter(x=>Math.abs(x)>50).length/diffs.length:null),triangular_index:round(values.length/Math.max(...Object.values(hist))),completed_five_minute_blocks:groups.length,method:"修订版：连续 N-N，整段排除房颤/房扑确认及待复核区间，差分不跨异位/伪差；完整5分钟块、至少30个NN且覆盖≥80%；7.8125ms箱宽。短记录仅供研究。"};
   }
   function metrics(feed,duration){
-    const valid=feed.beats.filter(r=>r.group!==34),rr=valid.map(r=>r.rr_ms).filter(x=>x>=250&&x<=5000),longest=valid.reduce((a,b)=>!a||b.rr_ms>a.rr_ms?b:a,null),groups={};
-    feed.beats.forEach(r=>groups[r.group]=(groups[r.group]||0)+1);
-    return {record_count:feed.beats.length,valid_beats:valid.length,first_beat_time_s:valid[0]?.time_s??null,group_counts:groups,avg_hr_from_duration:round(valid.length*60/Math.max(1,duration)),avg_hr_from_rr:rr.length?round(60000/mean(rr)):null,longest_rr_ms:longest?.rr_ms??null,longest_rr_time_s:longest?.time_s??null,min_rr_ms:rr.length?rr.reduce((a,b)=>Math.min(a,b)):null,format_verified:true};
+    const rows=feed.beats.filter(r=>Number.isFinite(r.sample_index)&&r.sample_index>=0&&r.sample_index/200<duration&&!['O','Y','T'].includes(r.class_code)),valid=rows.filter(r=>r.class_code!=='X'),intervals=quality.validRRRows(feed.beats,duration),rr=intervals.filter(quality.consistentRate).map(r=>r.rr_ms),longest=intervals.reduce((a,b)=>!a||b.rr_ms>a.rr_ms?b:a,null),groups={};
+    rows.forEach(r=>groups[r.group]=(groups[r.group]||0)+1);
+    return {record_count:rows.length,valid_beats:valid.length,first_beat_time_s:valid.length?round(valid[0].sample_index/200,3):null,group_counts:groups,avg_hr_from_duration:round(valid.length*60/Math.max(1,duration)),avg_hr_from_rr:rr.length?round(60000/mean(rr)):null,rr_interval_count:intervals.length,rate_interval_count:rr.length,longest_rr_ms:longest?.rr_ms??null,longest_rr_time_s:longest?round(longest.sample_index/200,3):null,min_rr_ms:rr.length?rr.reduce((a,b)=>Math.min(a,b)):null,format_verified:true};
   }
   function detect(values,start,existing,options){
     const opts=settings(options),n=values.length;if(n<40||values.some(x=>!Number.isFinite(x)))return [];

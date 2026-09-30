@@ -22,7 +22,10 @@ const clinicalWorkflow = (() => {
     data=value;
     const current=state.cases.find(item=>item.case_id===caseId);
     if(current)current.review_workflow=value;
-    if(state.report){state.report.status=value.report_status;state.report.version=value.report_version;}
+    if(state.report&&!ECGReportConsistency.sameBase(state.report,{version:value.report_version,review_revision:value.revision})){
+      state.reportStale=true;
+      // Keep the version paired with the loaded conclusion until the full report is loaded.
+    }
     render();renderWorklist();
     if(state.currentPage==="events"&&state.events)renderEvents();
     if(state.currentPage==="report")renderReport();
@@ -63,7 +66,7 @@ const clinicalWorkflow = (() => {
   }
   function confirmStep() {
     if(!["edit","stt","report"].includes(state.currentPage)){browse();return;}
-    if(state.currentPage==="report"){if(data?.report_status==="reviewed"){goPage("dashboard");return;}$("#reportPreflight")?.scrollIntoView({block:"nearest"});$("#reportPreflight")?.focus();return;}
+    if(state.currentPage==="report"){if(data?.report_status==="reviewed"){goPage("dashboard");return;}const disclosure=$("#reportPreflightDisclosure");if(disclosure)disclosure.open=true;$("#reportPreflight")?.scrollIntoView({block:"nearest"});$("#reportPreflight")?.focus();return;}
     if(data?.steps?.[state.currentPage]?.status==="done"){browse();return;}
     if(!data)return;
     dialogContext={caseId:state.caseId,step:state.currentPage,revision:data.revision};
@@ -88,12 +91,15 @@ const clinicalWorkflow = (() => {
   }
   function renderPreflight() {
     const panel=$("#reportPreflight");if(!panel)return;
+    const summary=$("#reportPreflightDisclosure summary");
+    const evidenceNotice=state.reportEvidenceLoading?'报告依据核对中':state.reportEvidenceError?'报告依据读取失败':(state.reportComposition?.diagnosis_blocks||[]).some(b=>b.needs_review)?'人工诊断文字待核对':'';
+    if(summary)summary.textContent=`审核前检查 · ${pending().length?`${pending().length} 个环节待确认`:"环节已确认"}${state.reportStale?" · 依据已变化":state.reportDirty?" · 有未保存修改":""}${evidenceNotice?' · '+evidenceNotice:''}`;
     const retained=Object.values(data?.events||{}).filter(x=>x.status==="retained");
     panel.innerHTML=`<h2>审核前检查</h2><p>${pending().length?`尚有 ${pending().length} 个环节未确认`:"各环节已确认，请核对结论并保存"}</p><div class="preflight-steps">${CASE_WORKFLOW_STEPS.filter(x=>["edit","stt"].includes(x.page)).map(x=>`<button type="button" data-clinical-step="${x.page}"><span>${data?.steps?.[x.page]?.status==="done"?"✓":"○"}</span>${x.label}<small>${data?.steps?.[x.page]?.status==="stale"?"需重核":data?.steps?.[x.page]?.status==="done"?"已确认":"待确认"}</small></button>`).join("")}</div><p class="workflow-limit">RR、HRV 与候选使用当前修订；源报告摘要不改写。房颤/房扑标签是医生逐搏标记，不是自动诊断或发作负荷。请核对结论。</p><h3>医生保留的证据 · ${retained.length}</h3><div class="evidence-list">${retained.map(x=>`<button type="button" data-jump-time="${x.sample_index/200}">${escapeHtml(x.type)} · ${formatElapsed(x.sample_index/200)} ↗</button>`).join("")||"<p>尚未保留事件证据，可到事件复核中选择。</p>"}</div><small>${writable()?(state.demoReadonly?"演示修改仅存此浏览器":"确认与修改写入本地审计"):"当前服务为只读"}</small>`;
     const approve=$("#approveReport");
-    if(approve&&writable()){
-      approve.disabled=pending().length>0||state.reportDirty||!$("#conclusionEditor")?.value.trim();
-      approve.title=pending().length?"请先完成上方复核环节":state.reportDirty?"请先保存草稿":"审核当前已保存版本";
+    if(approve){
+      approve.disabled=!ECGReportConsistency.canApprove(state,$("#conclusionEditor")?.value,pending().length===0,writable());
+      approve.title=evidenceNotice|| (pending().length?"请先完成上方复核环节":state.reportDirty?"请先保存草稿":"审核当前已保存版本");
     }
     const stats=$("#reportProvenance");
     if(stats)stats.dataset.overrideCount=String(state.editBeatOverrides.size);
@@ -113,8 +119,14 @@ const clinicalWorkflow = (() => {
     if(state.currentPage!=="review"&&CASE_WORKFLOW_PAGES.has(state.currentPage))context={caseId:state.caseId,page:state.currentPage,scroll:window.scrollY,time};
   }
   function allowLeave() {
-    if(!state.reportDirty)return true;
-    if(!window.confirm("报告有未保存修改。离开会丢弃这些修改，是否继续？"))return false;
+    if(state.reportSaving){toast("正在保存报告，请等待保存结果后再离开", "error");return false;}
+    if(globalThis.ECGAdvancedAnalysis?.pending()){
+      toast('研究测量有未应用修改或正在计算，请返回报告的研究测量区计算或放弃修改后再离开病例。','error');return false;
+    }
+    const ranges=globalThis.ECGReportRange?.pending().length||0;
+    if(!state.reportDirty&&!ranges)return true;
+    if(!window.confirm(ranges?`报告有 ${ranges} 处尚未应用的游标修改${state.reportDirty?'及未保存的报告修改':''}。离开会丢弃这些修改，是否继续？`:"报告有未保存修改。离开会丢弃这些修改，是否继续？"))return false;
+    globalThis.ECGReportRange?.clear();
     state.reportDirty=false;state.reportComposition=normalizedReportComposition(state.report?.composition);return true;
   }
   function bind(){
@@ -148,7 +160,7 @@ const clinicalWorkflow = (() => {
     };
     strips.addEventListener("contextmenu",menu);
     strips.addEventListener("keydown",event=>{if(event.key==="ContextMenu"||(event.shiftKey&&event.key==="F10"))menu(event);});
-    window.addEventListener("beforeunload",event=>{if(state.reportDirty){event.preventDefault();event.returnValue="";}});
+    window.addEventListener("beforeunload",event=>{if(state.reportDirty||globalThis.ECGReportRange?.pending().length){event.preventDefault();event.returnValue="";}});
     $("#conclusionEditor").addEventListener("input",renderPreflight);
     if(state.demoReadonly&&writable()){
       ["saveReport","returnReport","approveReport"].forEach(id=>{const button=$("#"+id);button.hidden=false;button.disabled=false;});
@@ -157,7 +169,7 @@ const clinicalWorkflow = (() => {
     }
   }
   document.addEventListener("DOMContentLoaded",bind);
-  return {render,receive,refresh,confirmStep,allowLeave,sourceJump,eventCell,decision,writable,
+  return {render,renderPreflight,receive,refresh,confirmStep,allowLeave,sourceJump,eventCell,decision,writable,
     get offset(){return eventOffset;},resetEvents(){eventOffset=0;},
     updatedEvents(){const e=state.events;if(!e)return;$("#eventsPrev").disabled=eventOffset===0;$("#eventsNext").disabled=eventOffset+e.items.length>=e.total;$("#eventsPageLabel").textContent=`当前 ${e.total?eventOffset+1:0}–${eventOffset+e.items.length} / ${fmtNumber(e.total)} 项 · 候选基于当前修订`;},
     reset(){data=null;context=null;eventOffset=0;request++;},

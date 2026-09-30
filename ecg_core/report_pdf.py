@@ -115,7 +115,7 @@ def build_report_pdf(case: dict, calculated: dict, report: dict) -> BytesIO:
             "已选页面：" + ("、".join(included_pages) if included_pages else "默认首页报告")
             + f"<br/>页面设置：{html.escape(str(paper.get('size', 'A4')))} / "
             + ("横向" if paper.get("orientation") == "landscape" else "纵向")
-            + f" / {html.escape(str(paper.get('speed', '25 mm/s')))} / {html.escape(str(paper.get('gain', '10 mm/mV')))}",
+            + " / 图条幅度采用设备单位，电压未校准；走纸速度以实际图条标注为准",
             body,
         ),
         Paragraph("复核结论", heading),

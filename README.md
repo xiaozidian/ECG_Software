@@ -370,6 +370,10 @@ GitHub Actions 的 `desktop-builds.yml` 会在 macOS 与 Windows runner 上分�
 - 频域是**合格 5 分钟段的平均短时谱**，不是把日夜/24 小时拼接后计算的全程谱：连续 N-N 按配置范围筛选；完整 5 分钟段至少 30 个 NN、NN 时长覆盖 ≥80%；4 Hz 插值、1024 点 Hann 窗、去均值 FFT，超过 5 秒缺口不插值。总功率 0.0033–0.40 Hz，VLF 0.0033–0.04、LF 0.04–0.15、HF 0.15–0.40 Hz。VLF 仅探索性估计，不提供 ULF。频带定义参考 [ESC/NASPE HRV 标准](https://www.escardio.org/static-file/Escardio/Guidelines/Scientific-Statements/guidelines-Heart-Rate-Variability-FT-1996.pdf)；覆盖阈值及缺口规则是本软件显式工程参数，不代表临床验证。
 - 10 分钟 Demo 没有夜间记录；不足两个合格 5 分钟段时 SDANN 留空，频谱条件不足也留空。旧“源报告对照”保留在下方，与新报告的质量门控重算分开；日夜仅为钟点代理，不代表睡眠分期。SDNN 不自动给出高/中/低风险诊断，报告保留医生解释栏。
 
+### 已保存工作的本机备份
+
+设置页可创建、重新校验已保存的修订／选图／报告备份；不包含原始心电、未保存修改、配置或 PDF。恢复仅写入一个新应用数据目录，不覆盖旧库，且要求重新复核报告。备份含未加密的健康信息，请使用机构批准的受控保管方式。操作、命令及限制见 [备份与恢复说明](docs/backup-recovery.md)。
+
 ## 隐私与仓库边界
 
 仓库不包含原始病例、报告影像、本地 SQLite、完整性清单、导出报告、虚拟环境或应用构建产物。项目根目录的 `config.json` 也被忽略，避免把本机病例路径提交到版本控制或上传到 GitHub。

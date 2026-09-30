@@ -92,7 +92,8 @@ def test_static_demo_builder(tmp_path: Path) -> None:
     assert "async function loadStt()" in app_js
     assert 'filter:"raw"' in app_js
     assert "设备原始单位" in app_js
-    assert "async function loadEdit()" in app_js
+    assert "async function loadEdit(occurrenceBookmark=null)" in app_js
+    assert "await loadEditTemplateStrips(occurrenceBookmark)" in app_js
     assert "function syncEditTimeSlider()" in app_js
     assert "CASE_WORKFLOW_STEPS" in app_js
     assert "Math.max(300, canvas.parentElement.clientWidth" not in app_js
@@ -199,6 +200,8 @@ require(process.cwd() + "/static/js/demo-api.js");
   if (stt.clinical_safety.diagnosis_generated !== false) throw new Error("ST-T diagnosis boundary missing");
 
   const reportBefore = await (await window.fetch(`/api/cases/${caseId}/report`)).json();
+  const initialBasis = await (await window.fetch(`/api/cases/${caseId}/analysis-basis`)).json();
+  if (reportBefore.review_revision !== initialBasis.analysis_revision || reportBefore.current_analysis_basis?.digest !== initialBasis.analysis_basis) throw new Error("demo report evidence identity missing");
   if (!reportBefore.composition.included_pages.includes("event_strips")) throw new Error("report composition defaults missing");
   const reportAfter = await (await window.fetch(`/api/cases/${caseId}/report`, {method: "PUT", body: JSON.stringify({conclusion: reportBefore.conclusion, status: "draft", composition: {...reportBefore.composition, active_page: "event_strips", fast_slow_mode: "both"}})})).json();
   if (reportAfter.composition.active_page !== "event_strips" || reportAfter.composition.fast_slow_mode !== "both") throw new Error("report composition persistence missing");
@@ -250,6 +253,10 @@ require(process.cwd() + "/static/js/demo-api.js");
   const stale = await put("review-workflow", {step:"review",revision:workflow.revision-1,confirmed:true});
   if (stale.ok) throw new Error("stale confirmation accepted");
   const reportIndex=await (await window.fetch(`/api/cases/${caseId}/report-events?analysis=edited`)).json();
+  const currentReport=await (await window.fetch(`/api/cases/${caseId}/report`)).json();
+  if (currentReport.review_revision !== reportIndex.analysis_revision || currentReport.current_analysis_basis?.digest !== reportIndex.analysis_basis) throw new Error("demo report identity stale after editing");
+  const staleReportRead=await window.fetch(`/api/cases/${caseId}/report?analysis_revision=${initialBasis.analysis_revision}`);
+  if (staleReportRead.status !== 409) throw new Error("demo stale report evidence read accepted");
   const approved = await put("report",{conclusion:"回归测试，不代表临床复核",status:"reviewed",composition:{category_reviews:reportIndex.basis_versions}});
   if (!approved.ok) throw new Error("completed report could not be approved");
   await put("beat-overrides",{sample_indices:sameGroupSamples.slice(0,1),class_code:"V"});

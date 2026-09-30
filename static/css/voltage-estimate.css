@@ -1,0 +1,21 @@
+.voltage-controls{display:flex;align-items:center;gap:4px;flex-shrink:0}
+.voltage-controls button{min-height:36px;padding:6px 10px;border:1px solid #687d89;border-radius:5px;background:#102a3b;color:#fff;font-size:12px}
+.voltage-controls [aria-checked="true"]{background:#d9f1ef;color:#152834;border-color:#d9f1ef}
+.voltage-controls button:hover{border-color:#fff}
+.voltage-controls button:focus-visible,.voltage-panel :focus-visible{outline:2px solid #15aaa4;outline-offset:3px}
+.voltage-panel{position:fixed;z-index:60;inset:calc(var(--topbar) + 8px) 12px auto auto;width:min(440px,calc(100vw - 24px));max-height:calc(100dvh - var(--topbar) - 24px);overflow:auto;background:#fff;color:#152834;border:1px solid #687d89;border-radius:8px;padding:16px;font-size:14px;line-height:1.55;box-sizing:border-box}
+.voltage-panel[hidden]{display:none}
+.voltage-panel header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.voltage-panel h2{font-size:17px;margin:0}
+.voltage-panel p{margin:12px 0;overflow-wrap:anywhere}
+.voltage-panel label{display:block;font-weight:600}
+.voltage-panel input{width:100%;margin-block:6px;padding:8px;font-size:16px;box-sizing:border-box;border:1px solid #687d89;border-radius:5px}
+.voltage-panel button{min-height:40px;border:1px solid #687d89;border-radius:5px;background:#fff;color:#173b4f;padding:8px 12px;font-size:14px}
+.voltage-panel button[type=submit]{background:#0a7676;color:#fff;border-color:#0a7676}
+.voltage-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.voltage-panel [role=status]{color:#0a7676;min-height:22px;margin-bottom:0}
+.voltage-panel [data-voltage-report]{width:100%;margin-top:4px}
+@media(max-width:1100px){.topbar .global-search{max-width:260px}.topbar .role-chip{display:none}}
+@media(max-width:680px){body .topbar{min-width:0;width:100%;padding-inline:8px;gap:6px}.topbar .global-search,.topbar .role-chip,.topbar .brand span,.topbar .brand-mark{display:none}.topbar .brand{width:auto;min-width:0;flex:1}.topbar .brand strong{font-size:14px}.topbar .top-actions{width:auto;gap:4px;margin-left:auto}.voltage-controls button{min-height:44px;padding:6px;font-size:12px}.voltage-panel button{min-height:44px}.voltage-panel{font-size:16px}}
+@media print{.voltage-controls,.voltage-panel{display:none!important}}
+@media(max-width:480px){.topbar .brand-mark{display:grid;width:30px;height:30px}.topbar .brand strong{display:none}.voltage-controls button{font-size:14px}.topbar .brand{flex:0 0 30px}.topbar .top-actions{min-width:0}.voltage-controls #voltageToggle{max-width:calc(100vw - 146px);overflow-wrap:anywhere}}

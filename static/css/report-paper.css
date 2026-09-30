@@ -1,4 +1,5 @@
 /* Printed document is intentionally monochrome; editing chrome stays in the app. */
+.rp-supplement-chart{break-inside:avoid;border-bottom:.2mm solid #999;padding:1mm 0}.rp-supplement-chart h3{font-size:9pt;margin:1mm 0}.rp-supplement-chart svg{display:block;width:100%;height:46mm}.rp-supplement-chart svg[aria-label^="相邻"]{height:165mm}.rp-supplement-rows{font-size:9pt;line-height:1.5}.rp-supplement-rows p{margin:1.5mm 0;overflow-wrap:anywhere}
 .hrv-evidence-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:12px}.hrv-evidence-toolbar>div{margin-right:auto}.hrv-evidence-toolbar h2{margin:0;font-size:19px}.hrv-evidence-toolbar p,.hrv-evidence-notice{font-size:12px;color:#526873}.hrv-evidence-toolbar label{display:flex;gap:6px;align-items:center;font-size:13px}.hrv-evidence-toolbar select{min-height:34px;padding:5px;border:1px solid #bccfd6}.hrv-evidence-toolbar input{accent-color:#0b8583}
 .rp-hrv .hrvp-periods{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border:1px solid #333}.hrvp-periods>section{padding:2mm;min-width:0}.hrvp-periods>section+section{border-left:1px solid #333}.rp-hrv h3{font-size:8pt;text-align:center}.rp-hrv svg{display:block;width:100%;height:auto}.rp-hrv p{font-size:7pt;line-height:1.35;margin:1mm 0}.hrvp-periods dl{font-size:7pt;margin:1mm 0}.hrvp-periods dl>div{display:flex;justify-content:space-between}.hrvp-periods dd{margin:0}.hrvp-table{border-collapse:collapse;width:100%;font-size:7pt;text-align:center;margin:2mm 0}.hrvp-table th,.hrvp-table td{padding:1mm .4mm;border-bottom:.2mm solid #bbb;color:#111;background:none}.hrvp-table th{border-block:.3mm solid #333;font-weight:bold}.hrvp-analysis-bottom{display:grid;grid-template-columns:1.3fr 1fr;border:1px solid #333;border-top:0}.hrvp-analysis-bottom>section{padding:2mm}.hrvp-analysis-bottom>section+section{border-left:1px solid #333}.hrvp-reference{font-size:24pt;text-align:center;border-block:1px solid #999;margin:3mm 0;padding:2mm}.hrvp-reference small{font-size:9pt}.hrvp-trends{border:1px solid #333}.hrvp-trend-row{display:grid;grid-template-columns:28mm minmax(0,1fr) 43mm;align-items:center;min-height:17mm;border-bottom:.2mm solid #777}.hrvp-trend-row:last-child{border:0}.hrvp-trend-row>strong{font-size:7pt;padding:1mm;font-weight:normal}.hrvp-trend-row>aside{align-self:stretch;border-left:.2mm solid #777;padding:.5mm;min-width:0}.hrvp-trend-row aside p{font-size:6pt;margin:0}.hrvp-trend-row aside svg{height:12mm}.hrvp-trend-row:first-child aside svg{height:7mm}.hrvp-hourly{font-size:6.3pt;margin:1mm 0}.hrvp-hourly th,.hrvp-hourly td{padding:.7mm .15mm;line-height:1.1}.rp-hrv>.rp-body{gap:0}.rp-sheet.rp-hrv{padding:10mm;font-size:9pt}
 .rp-pages{overflow-x:auto;padding:16px 4px;background:#e9edef;display:flex;flex-direction:column;align-items:center;gap:20px}
@@ -26,14 +27,24 @@
 .rp-hourly-table th{background:none;color:#111;white-space:normal;padding:1.5mm .3mm;line-height:1.35;border-bottom:.2mm solid #333}
 .rp-hourly-table td{padding:1.6mm .3mm;border:0;line-height:1.15}.rp-hourly-table thead{border-top:.3mm solid #333}
 .rp-hourly-table tfoot{border-block:.3mm solid #333;font-weight:700}.rp-hourly-table th:first-child{width:14mm}
-.rp-strips{height:100%;display:grid;grid-template-rows:repeat(3,minmax(0,1fr));gap:4mm}
+.rp-strips{display:grid;grid-template-rows:repeat(3,79mm);gap:4mm}
 .rp-strip{grid-row:span var(--rp-span);min-height:0;display:flex;flex-direction:column;break-inside:avoid}
-.rp-strip>header{display:grid;grid-template-columns:1fr auto;align-items:end;gap:1mm;font-size:8pt;line-height:1.3;min-height:9mm}
-.rp-strip>header strong{grid-column:1/-1;grid-row:2;text-align:center;font-size:9pt;overflow-wrap:anywhere}.rp-strip svg{display:block;width:100%;height:calc(100% - 13mm);min-height:0;flex:1;font-family:"Songti SC",SimSun,serif}
-.rp-strip-note{font-size:7pt;line-height:1.3;margin:0;min-height:4mm}
+.rp-strip>header{display:grid;grid-template-columns:1fr auto;align-items:end;gap:1mm;font-size:8pt;line-height:1.3;height:9mm;flex:none}
+.rp-strip>header strong{grid-column:1/-1;grid-row:2;text-align:center;font-size:9pt;overflow-wrap:anywhere}
+/* 760 units / 190 mm = exactly four units per mm. Never flex-fit the
+   measurement plane; paper chrome must not change gain or time scale. */
+.rp-sheet.rp-waveforms{border:0;outline:1px solid #b8c1c5}
+.rp-waveforms>.rp-body{padding-top:4mm}
+.rp-strip>svg{display:block;width:190mm;height:auto;min-height:0;flex:none;font-family:"Songti SC",SimSun,serif}
+.rp-strip-note{font-size:7pt;line-height:1.3;margin:0;height:4mm;flex:none}
+.rp-paper-settings{width:100%;border-top:1px solid #c9d6dc;padding-top:12px;display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.rp-paper-settings>strong,.rp-paper-settings>p{width:100%;margin:0}
+.rp-paper-settings>p{font-size:14px;color:#455d68;line-height:1.5}
+.rp-paper-settings input[type=checkbox]{min-height:18px;width:18px;accent-color:#0b7777}
 .rp-entry-settings{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:10px 12px;border:1px solid #c9d6dc;background:#f7f9fa;margin-bottom:10px}
 .rp-entry-settings>span{color:#455d68;font-size:12px}.rp-entry-settings label{display:flex;gap:6px;align-items:center;font-size:12px;color:#233d49}
 .rp-entry-settings select,.rp-entry-settings input{min-height:32px;border:1px solid #b8ccd5;background:#fff;border-radius:5px;padding:4px 7px;color:#183540}
+@media(max-width:600px){.rp-entry-settings .rp-paper-settings label{font-size:14px;min-height:44px;flex-wrap:wrap;min-width:0;max-width:100%}.rp-entry-settings .rp-paper-settings select{font-size:16px;min-height:44px;max-width:100%}}
 .rp-leads{display:flex;flex-wrap:wrap;gap:5px 10px;width:100%;border:0;padding:4px 0;margin:0}.rp-leads legend{font-size:12px;color:#233d49}.rp-leads input{min-height:16px;accent-color:#0b7777}
 .rp-leads[hidden]{display:none}
 .rp-entry-settings [type=number]{width:75px}.rp-entry-settings button,.rp-editor-strip button{min-height:30px;background:#fff;border:1px solid #b8ccd5;border-radius:5px;padding:4px 9px;color:#164a54;cursor:pointer}
@@ -76,4 +87,6 @@
   .rp-pages{display:block;padding:0;background:#fff;overflow:visible}
   .rp-sheet{margin:0!important;border:0;break-after:page;page-break-after:always;print-color-adjust:exact;-webkit-print-color-adjust:exact}
   .rp-sheet:last-child{break-after:auto;page-break-after:auto}
+  .rp-sheet.rp-waveforms{outline:0}
 }
+.rp-vector-chart svg{width:55mm!important;height:55mm!important;display:block;margin-inline:auto}.rp-vector-chart{break-inside:avoid}

@@ -4,6 +4,7 @@ import re
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
+from .source_identity import SourceInvalid, source_read
 
 
 def _after_label(texts: list[str], label: str) -> str:
@@ -47,10 +48,17 @@ def _duration_seconds(text: str) -> int | None:
     return int(match.group(1) or 0) * 3600 + int(match.group(2) or 0) * 60
 
 
+@source_read
 def parse_lps(path: Path) -> dict:
-    tree = ET.parse(path)
+    try:
+        with Path(path).open('rb') as stream:
+            tree = ET.parse(stream)
+    except ET.ParseError as error:
+        raise SourceInvalid('LPS 源报告 XML 不完整或格式损坏，请重新复制完整病例。') from error
     shapes = [node for node in tree.getroot().iter("PShape")]
     texts = [(node.text or "").strip() for node in shapes if (node.text or "").strip()]
+    if not texts:
+        raise SourceInvalid('LPS 不包含可识别的源报告文字，不能将缺失指标解释为正常。')
 
     conclusion_parts: list[tuple[int, int, str]] = []
     for node in shapes:
@@ -66,11 +74,10 @@ def parse_lps(path: Path) -> dict:
 
     start_text = _after_label(texts, "记录时间")
     start_iso = ""
-    if start_text:
-        try:
-            start_iso = datetime.strptime(start_text, "%Y-%m-%d %H:%M:%S").isoformat()
-        except ValueError:
-            start_iso = start_text
+    try:
+        start_iso = datetime.strptime(start_text, "%Y-%m-%d %H:%M:%S").isoformat()
+    except ValueError as error:
+        raise SourceInvalid('LPS 记录时间缺失或格式无效，无法可靠定位事件时间；请核对原始病例。') from error
 
     duration_text = _after_label(texts, "记录时长")
     metadata = {
@@ -90,15 +97,15 @@ def parse_lps(path: Path) -> dict:
     }
 
     summary = {
-        "total_beats": _first_match(texts, r"总心搏数\s*[:：]\s*(\d+)", int, 0),
-        "ventricular_beats": _first_match(texts, r"室性心搏\s*[:：]\s*(\d+)", int, 0),
-        "supraventricular_beats": _first_match(texts, r"室上性心搏\s*[:：]\s*(\d+)", int, 0),
+        "total_beats": _first_match(texts, r"总心搏数\s*[:：]\s*(\d+)", int),
+        "ventricular_beats": _first_match(texts, r"室性心搏\s*[:：]\s*(\d+)", int),
+        "supraventricular_beats": _first_match(texts, r"室上性心搏\s*[:：]\s*(\d+)", int),
         "min_hr": _first_match(texts, r"最慢心率\s*[:：]\s*(\d+)", int),
         "avg_hr": _first_match(texts, r"平均心率\s*[:：]\s*(\d+)", int),
         "max_hr": _first_match(texts, r"最快心率\s*[:：]\s*(\d+)", int),
         "longest_rr_s": _first_match(texts, r"最长RR间期\s*[:：]\s*([0-9.]+)", float),
-        "tachy_beats": _first_match(texts, r"心动过速中的心搏总和\s*[:：]\s*(\d+)", int, 0),
-        "brady_beats": _first_match(texts, r"心动过缓中的心搏总和\s*[:：]\s*(\d+)", int, 0),
+        "tachy_beats": _first_match(texts, r"心动过速中的心搏总和\s*[:：]\s*(\d+)", int),
+        "brady_beats": _first_match(texts, r"心动过缓中的心搏总和\s*[:：]\s*(\d+)", int),
         "sdnn_ms": _first_match(texts, r"SDNN\s*[:：]\s*([0-9.]+)\s*ms", float),
         "sdann_ms": _first_match(texts, r"SDANN\s*[:：]\s*([0-9.]+)\s*ms", float),
         "sdnn_index_ms": _first_match(texts, r"SDNNIndex\s*[:：]\s*([0-9.]+)\s*ms", float),

@@ -1,6 +1,40 @@
 /* Clinical workstation: legible controls, task ownership and explicit review state. */
 :root{--case-workflow-height:100px;--ink-500:#586f7b;--ink-300:#637986}
 html{scroll-behavior:auto}
+#trendsAnalysisStatus,#sttAnalysisStatus{margin:12px 0;padding:12px 14px;background:var(--surface);color:var(--ink-900);border:1px solid var(--line);border-radius:8px;font-size:14px;line-height:1.6;overflow-wrap:anywhere}
+#trendsAnalysisStatus[hidden],#sttAnalysisStatus[hidden]{display:none}
+#trendsAnalysisStatus button,#sttAnalysisStatus button{margin-inline-start:12px}
+.source-issues{border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:14px;background:var(--surface);color:var(--ink-900);font-size:13px;line-height:1.6;overflow-wrap:anywhere}
+.source-issues[hidden]{display:none}
+.source-issues>p{margin:0 0 8px;font-weight:650}
+.source-issues details{margin-bottom:10px}
+.source-issues summary{cursor:pointer;color:var(--teal-700)}
+.source-issues ul{margin:8px 0;padding-left:20px}
+.source-issues li+li{margin-top:10px}
+.source-issues li p{margin:2px 0;color:var(--ink-700)}
+#page-dashboard .table-tools{flex-wrap:wrap;gap:8px}
+#resetWorklistFilters[hidden]{display:none}
+#page-dashboard .heading-actions button:disabled{opacity:1;background:var(--line-soft);color:var(--ink-700);cursor:default}
+@media(max-width:680px){
+  html:has(#page-dashboard.active),body:has(#page-dashboard.active){min-width:0;width:100%}
+  body:has(#page-dashboard.active){--sidebar:56px}
+  body:has(#page-dashboard.active) .topbar{min-width:0;width:100%;gap:12px}
+  body:has(#page-dashboard.active) .brand{width:auto;flex:none}
+  body:has(#page-dashboard.active) .global-search,body:has(#page-dashboard.active) .role-chip,body:has(#page-dashboard.active) .brand span{display:none}
+  body:has(#page-dashboard.active) .top-actions{width:auto;margin-left:auto}
+  body:has(#page-dashboard.active) .safety-banner{height:auto;padding:6px 10px;line-height:1.5;flex-wrap:wrap}
+  body:has(#page-dashboard.active) .main-shell,#page-dashboard .dashboard-layout{min-width:0}
+  #page-dashboard .dashboard-layout{grid-template-columns:minmax(0,1fr)}
+  #page-dashboard .dashboard-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+  #page-dashboard .metric-icon{display:none}
+  #page-dashboard .card-header{flex-wrap:wrap}
+  #page-dashboard .data-table{min-width:700px}
+  #page-dashboard .source-issues{font-size:16px;padding:12px;line-height:1.6}
+  #page-dashboard .source-issues button{font-size:14px;min-height:44px}
+  #page-dashboard .heading-actions button{font-size:14px;min-height:44px}
+  #page-dashboard .table-tools button,#page-dashboard .table-tools select{font-size:16px;min-height:44px}
+  #page-dashboard #worklistStatus{font-size:14px;line-height:1.6;overflow-wrap:anywhere}
+}
 .card,.metric-card{box-shadow:none;border-radius:8px}
 .page-heading .eyebrow,.report-page-heading .eyebrow{display:none}
 .button{min-height:34px;font-size:12px}
@@ -39,6 +73,18 @@ button:focus-visible,a:focus-visible,select:focus-visible,textarea:focus-visible
 .report-preflight h2{font-size:15px;margin:0 0 8px}
 .report-preflight h3{font-size:13px;margin:16px 0 6px}
 .report-preflight p{margin:6px 0 10px;line-height:1.5}
+#reportPreflightDisclosure{margin:10px 0;border:1px solid var(--line,#d8e2e7);border-radius:6px;background:var(--surface,#fff)}
+#reportPreflightDisclosure>summary{padding:10px 12px;cursor:pointer;font-size:13px;font-weight:650;color:var(--ink-900,#152834)}
+#reportPreflightDisclosure>summary:focus-visible{outline:2px solid #087777;outline-offset:2px}
+#reportPreflightDisclosure .report-preflight{margin:0;border:0}
+.case-loading-panel{max-width:720px;margin:32px auto;padding:24px;background:var(--surface,#fff);border:1px solid var(--line,#d8e2e7);border-radius:8px}
+.case-loading-panel[hidden]{display:none}
+.case-loading-panel h1{font-size:20px;margin:0 0 12px}
+.case-loading-panel p{font-size:14px;line-height:1.6;margin:0 0 20px}
+.report-reload-dialog{width:min(540px,calc(100vw - 32px))}
+.report-reload-dialog p{font-size:14px;line-height:1.6;color:var(--ink-900,#152834)}
+.report-reload-dialog .modal-actions{flex-wrap:wrap}
+.report-reload-dialog button{white-space:normal;min-height:36px}
 .preflight-steps{display:grid}
 .preflight-steps button{display:flex;gap:7px;align-items:center;min-height:32px;text-align:left;font-size:12px;border:0;border-bottom:1px solid #e4eaed;background:white}
 .preflight-steps button:hover{background:#edf7f6}
@@ -103,4 +149,66 @@ button:focus-visible,a:focus-visible,select:focus-visible,textarea:focus-visible
 @media print{.workflow-task-line,.clinical-beat-toolbar,.report-preflight{display:none!important}}
 /* Keep desktop clinical controls usable on smaller screens; never hide overflow. */
 @media(max-width:859px){html,body{overflow-x:auto}.topbar{min-width:860px}.case-workflow{min-width:790px}}
+@media(max-width:680px){
+  html:has(#page-stt.active),body:has(#page-stt.active){min-width:0;width:100%}
+  body:has(#page-stt.active){--sidebar:56px}
+  body:has(#page-stt.active) .topbar{min-width:0;width:100%;gap:12px}
+  body:has(#page-stt.active) .brand{width:auto;flex:none}
+  body:has(#page-stt.active) .global-search,body:has(#page-stt.active) .role-chip,body:has(#page-stt.active) .brand span{display:none}
+  body:has(#page-stt.active) .top-actions{width:auto;margin-left:auto}
+  body:has(#page-stt.active) .main-shell{min-width:0}
+  body:has(#page-stt.active) .safety-banner{height:auto;padding:6px 10px;line-height:1.5;flex-wrap:wrap}
+  body:has(#page-stt.active) .case-workflow{min-width:0;height:auto;display:flex;flex-wrap:wrap;gap:8px;padding:8px 10px}
+  body:has(#page-stt.active) .case-workflow-context{width:100%;padding-right:0}
+  body:has(#page-stt.active) .case-workflow-steps{width:100%;height:40px;overflow-x:auto;grid-template-columns:repeat(5,minmax(90px,1fr))}
+  body:has(#page-stt.active) .workflow-next{margin-left:auto;max-width:100%}
+  body:has(#page-stt.active) .workflow-task-line{width:100%;height:auto;flex-wrap:wrap}
+  body:has(#page-stt.active) .workflow-task-line>span{white-space:normal}
+  #page-stt .stt-page-heading,#page-stt .stt-heading-actions,#page-stt .stt-panel-header{flex-wrap:wrap}
+  #page-stt .stt-heading-actions{max-width:100%}
+  #page-stt .stt-waveform-toolbar>div:first-child small{white-space:normal;overflow-wrap:anywhere}
+  #page-stt .stt-waveform-foot{flex-wrap:wrap}
+  #sttAnalysisStatus{font-size:16px}
+  #sttAnalysisStatus button{display:block;margin:8px 0 0;min-height:44px;font-size:14px}
+}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important}}
+.backup-content{min-width:0;width:100%;color:var(--ink-700);font-size:14px;line-height:1.6}
+#workspaceBackup h2{color:var(--ink-900);font-size:18px}
+#workspaceBackup p{max-width:75ch;overflow-wrap:anywhere;font-size:inherit;color:var(--ink-700)}
+#workspaceBackup .button{font-size:14px}
+.backup-content .backup-ack{display:flex;align-items:flex-start;gap:8px;margin:14px 0}
+.backup-ack input{flex:none;margin-top:5px}
+.backup-actions{display:flex;flex-wrap:wrap;gap:8px}
+.backup-actions .button,.backup-content li .button{min-height:40px}
+.backup-content #backupStatus{margin:12px 0;white-space:pre-wrap;overflow-wrap:anywhere}
+#workspaceBackup .backup-error{color:#a52f2f}
+.backup-content ul{list-style:none;padding:0;margin:0}
+.backup-content li{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid var(--line);padding:8px 0}
+.backup-content li span{min-width:0;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.backup-content details{margin-top:14px}
+.backup-content summary{cursor:pointer;font-weight:650;color:var(--teal-700)}
+@media(max-width:680px){
+ html:has(#page-settings.active),body:has(#page-settings.active){min-width:0;width:100%}
+ body:has(#page-settings.active){--sidebar:52px}
+ body:has(#page-settings.active) .topbar{min-width:0;padding-inline:10px}
+ body:has(#page-settings.active) .topbar .global-search,body:has(#page-settings.active) .brand span,body:has(#page-settings.active) .role-chip{display:none}
+ body:has(#page-settings.active) .brand{width:auto;flex:none}
+ body:has(#page-settings.active) .top-actions{width:auto;margin-left:auto}
+ body:has(#page-settings.active) .main-shell{min-width:0}
+ body:has(#page-settings.active) .safety-banner{height:auto;flex-wrap:wrap;line-height:1.5;padding:6px 10px}
+ #page-settings{padding-inline:10px;min-width:0}
+ #page-settings .settings-grid{grid-template-columns:minmax(0,1fr)}
+ #page-settings .settings-card{min-width:0;padding:14px}
+ #page-settings .settings-card>div{min-width:0}
+ #page-settings .settings-card p,#page-settings dd{overflow-wrap:anywhere}
+ #page-settings .page-heading{flex-wrap:wrap}
+ .backup-content{font-size:16px}
+ .backup-actions .button,.backup-content li .button{min-height:44px}
+ .backup-content li{align-items:flex-start;flex-wrap:wrap}
+}
+/* Display zoom is not calibrated voltage gain. Keep the explanation legible. */
+@media (max-width: 600px) {
+  #page-review #gainSelect { font-size: 16px; min-height: 44px; }
+  #page-review label[for="gainSelect"] { font-size: 14px; }
+  #page-review #calibrationNote { font-size: 14px; line-height: 1.5; }
+}

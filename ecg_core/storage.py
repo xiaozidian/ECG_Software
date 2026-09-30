@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from .review_workflow import ReportConflict
 from .clinical_analysis import normalize_selection
 from datetime import datetime, timezone
 from pathlib import Path
@@ -40,12 +41,15 @@ DEFAULT_REPORT_COMPOSITION = {
         "show_grid": True,
         "show_labels": True,
         "speed": "25 mm/s",
+        "time_scale": "fit",
         "gain": "10 mm/mV",
     },
 }
 
 
 def normalize_report_composition(value: dict | None) -> dict:
+    from .advanced_analysis import normalize_options
+    from .signal_profile import normalize_voltage_estimate
     if value is None:
         return {**json.loads(json.dumps(DEFAULT_REPORT_COMPOSITION, ensure_ascii=False)), **normalize_selection({})}
     if not isinstance(value, dict):
@@ -57,13 +61,13 @@ def normalize_report_composition(value: dict | None) -> dict:
         raise ValueError("included_pages 必须为页面标识列表")
     pages = [item for item in raw_pages if item in REPORT_PAGE_KEYS]
     pages = list(dict.fromkeys(pages))
-    if not pages:
+    if not pages and value.get('page_selection_version')!=1:
         pages = ["summary"]
-    active_page = value.get("active_page", pages[0])
+    active_page = value.get("active_page", pages[0] if pages else 'summary')
     if not isinstance(active_page, str) or active_page not in REPORT_PAGE_KEYS:
         raise ValueError("active_page 不受支持")
     if active_page not in pages:
-        active_page = pages[0]
+        active_page = pages[0] if pages else 'summary'
     template = value.get("template", "custom")
     preview_mode = value.get("preview_mode", "compose")
     fast_slow_mode = value.get("fast_slow_mode", "rr")
@@ -81,15 +85,23 @@ def normalize_report_composition(value: dict | None) -> dict:
     if size not in {"A4", "A3"} or orientation not in {"portrait", "landscape"}:
         raise ValueError("paper 页面设置不受支持")
     speed = raw_paper.get("speed", "25 mm/s")
+    time_scale = raw_paper.get("time_scale", "fit")
+    if not isinstance(time_scale, str) or time_scale not in {'fit', 'fixed'}:
+        raise ValueError('paper 时间标尺须为 fit 或 fixed')
+    for key in ('show_grid', 'show_labels'):
+        if key in raw_paper and not isinstance(raw_paper[key], bool):
+            raise ValueError(f'paper {key} 必须为布尔值')
     gain = raw_paper.get("gain", "10 mm/mV")
     if speed not in {"12.5 mm/s", "25 mm/s", "50 mm/s"} or gain not in {"5 mm/mV", "10 mm/mV", "20 mm/mV"}:
         raise ValueError("paper 图条设置不受支持")
     return {
         **normalize_selection(value),
+        "advanced_options": normalize_options(value.get('advanced_options')),
         "hrv_window": max(0, int(value.get("hrv_window",0))),
         "include_hrv": value.get('include_hrv',False),
         "template": template,
         "included_pages": pages,
+        "page_selection_version": 1 if value.get('page_selection_version')==1 else 0,
         "active_page": active_page,
         "preview_mode": preview_mode,
         "fast_slow_mode": fast_slow_mode,
@@ -99,7 +111,9 @@ def normalize_report_composition(value: dict | None) -> dict:
             "show_grid": bool(raw_paper.get("show_grid", True)),
             "show_labels": bool(raw_paper.get("show_labels", True)),
             "speed": speed,
+            "time_scale": time_scale,
             "gain": gain,
+            "voltage_estimate": normalize_voltage_estimate(raw_paper.get('voltage_estimate')),
         },
     }
 
@@ -155,6 +169,11 @@ class Storage(ReviewWorkflowMixin):
                     reviewed_by TEXT NOT NULL DEFAULT '',
                     updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS case_analysis_basis (
+                    case_id TEXT PRIMARY KEY,
+                    basis TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS patient_overrides (
                     case_id TEXT PRIMARY KEY,
                     payload TEXT NOT NULL,
@@ -206,6 +225,8 @@ class Storage(ReviewWorkflowMixin):
             report_columns = {row[1] for row in db.execute("PRAGMA table_info(report_drafts)")}
             if "composition" not in report_columns:
                 db.execute("ALTER TABLE report_drafts ADD COLUMN composition TEXT NOT NULL DEFAULT '{}'")
+            if "analysis_provenance" not in report_columns:
+                db.execute("ALTER TABLE report_drafts ADD COLUMN analysis_provenance TEXT NOT NULL DEFAULT '{}'")
 
     @staticmethod
     def _beat_template_row(row: sqlite3.Row | None) -> dict | None:
@@ -293,8 +314,8 @@ class Storage(ReviewWorkflowMixin):
                 values,
             )
             row = db.execute("SELECT * FROM beat_templates WHERE id=?", (cursor.lastrowid,)).fetchone()
+            self._audit(db, actor, "beat_template.create", case_id, f"#{row['id']} beats={len(samples)}")
         item = self._beat_template_row(row)
-        self.audit(actor, "beat_template.create", case_id, f"#{item['id']} {item['name']} beats={item['beat_count']}")
         return item
 
     def update_beat_template(self, template_id: int, payload: dict, actor: str) -> dict | None:
@@ -321,8 +342,8 @@ class Storage(ReviewWorkflowMixin):
                 (name.strip()[:80], rhythm_family, note.strip()[:1200], utc_now(), template_id),
             )
             row = db.execute("SELECT * FROM beat_templates WHERE id=?", (template_id,)).fetchone()
+            self._audit(db, actor, "beat_template.update", row["case_id"], f"#{template_id}")
         item = self._beat_template_row(row)
-        self.audit(actor, "beat_template.update", item["case_id"], f"#{template_id} {item['name']}")
         return item
 
     def delete_beat_template(self, template_id: int, actor: str) -> dict | None:
@@ -331,7 +352,7 @@ class Storage(ReviewWorkflowMixin):
             return None
         with self.connect() as db:
             db.execute("DELETE FROM beat_templates WHERE id=?", (template_id,))
-        self.audit(actor, "beat_template.delete", existing["case_id"], f"#{template_id} {existing['name']}")
+            self._audit(db, actor, "beat_template.delete", existing["case_id"], f"#{template_id}")
         return existing
 
     def list_beat_overrides(self, case_id: str) -> list[dict]:
@@ -369,7 +390,7 @@ class Storage(ReviewWorkflowMixin):
                 f"SELECT * FROM beat_overrides WHERE case_id=? AND sample_index IN ({placeholders}) ORDER BY sample_index",
                 (case_id, *samples),
             ).fetchall()
-        self.audit(actor, "beat_override.reclassify", case_id, f"class={class_code} beats={len(samples)}")
+            self._audit(db, actor, "beat_override.reclassify", case_id, f"class={class_code} beats={len(samples)}")
         return [dict(row) for row in rows]
 
     def clear_beat_overrides(self, case_id: str, samples: list[int], actor: str) -> int:
@@ -384,16 +405,18 @@ class Storage(ReviewWorkflowMixin):
                 (case_id, *samples),
             )
             changed = cursor.rowcount
-        self.audit(actor, "beat_override.restore", case_id, f"beats={changed}")
+            self._audit(db, actor, "beat_override.restore", case_id, f"beats={changed}")
         return changed
 
     def audit(self, actor: str, action: str, case_id: str = "", detail: str = "") -> None:
         with self.connect() as db:
-            self.invalidate_review(db, case_id, action)
-            db.execute(
-                "INSERT INTO audit_log(case_id,actor,action,detail,created_at) VALUES(?,?,?,?,?)",
-                (case_id, actor, action, detail, utc_now()),
-            )
+            self._audit(db, actor, action, case_id, detail)
+
+    def _audit(self, db, actor, action, case_id="", detail=""):
+        # Data, invalidation and its audit receipt must commit or roll back together.
+        self.invalidate_review(db, case_id, action)
+        db.execute("INSERT INTO audit_log(case_id,actor,action,detail,created_at) VALUES(?,?,?,?,?)",
+                   (case_id, actor, action, detail, utc_now()))
 
     def list_audit(self, limit: int = 200) -> list[dict]:
         with self.connect() as db:
@@ -463,7 +486,7 @@ class Storage(ReviewWorkflowMixin):
             )
             db.execute("UPDATE annotations SET details=? WHERE id=?",(json.dumps(details,ensure_ascii=False),cursor.lastrowid))
             row = db.execute("SELECT * FROM annotations WHERE id=?", (cursor.lastrowid,)).fetchone()
-        self.audit(actor, "annotation.create", case_id, f"#{row['id']} {row['label']}")
+            self._audit(db, actor, "annotation.create", case_id, f"#{row['id']} {row['label']}")
         return {**dict(row),"details":details}
 
     def delete_annotation(self, annotation_id: int, actor: str) -> bool:
@@ -472,14 +495,48 @@ class Storage(ReviewWorkflowMixin):
             if not row:
                 return False
             db.execute("DELETE FROM annotations WHERE id=?", (annotation_id,))
-        self.audit(actor, "annotation.delete", row["case_id"], f"#{annotation_id} {row['label']}")
+            self._audit(db, actor, "annotation.delete", row["case_id"], f"#{annotation_id} {row['label']}")
         return True
+
+    def sync_analysis_basis(self, case_id, basis, actor, readonly=False):
+        """Idempotent, atomic invalidation; keep text and selected evidence intact."""
+        encoded = json.dumps(basis, sort_keys=True, ensure_ascii=False)
+        with self.connect() as db:
+            old = db.execute('SELECT basis FROM case_analysis_basis WHERE case_id=?', (case_id,)).fetchone()
+            if old and old['basis'] == encoded:
+                return False
+            if readonly:
+                legacy = db.execute('SELECT 1 FROM case_review WHERE case_id=? UNION SELECT 1 FROM report_drafts WHERE case_id=?', (case_id, case_id)).fetchone()
+                if old or legacy:
+                    raise ReportConflict('计算依据已变化或缺少记录；只读服务不能重新审核，请在本地可写工作站核对')
+                return False
+            db.execute('BEGIN IMMEDIATE')
+            old = db.execute('SELECT basis FROM case_analysis_basis WHERE case_id=?', (case_id,)).fetchone()
+            if old and old['basis'] == encoded:
+                return False
+            legacy = db.execute('SELECT 1 FROM case_review WHERE case_id=? UNION SELECT 1 FROM report_drafts WHERE case_id=?', (case_id, case_id)).fetchone()
+            changed = bool(old or legacy)
+            db.execute('''INSERT INTO case_analysis_basis VALUES(?,?,?) ON CONFLICT(case_id)
+                DO UPDATE SET basis=excluded.basis, updated_at=excluded.updated_at''', (case_id, encoded, utc_now()))
+            previous = json.loads(old['basis']).get('digest', 'legacy') if old else 'legacy'
+            self._audit(db, actor, 'analysis.basis_changed' if changed else 'analysis.basis_initialized',
+                        case_id, f"{previous} -> {basis['digest']}")
+        return changed
+
+    def get_analysis_basis(self, case_id):
+        with self.connect() as db:
+            row = db.execute('SELECT basis FROM case_analysis_basis WHERE case_id=?', (case_id,)).fetchone()
+        return json.loads(row['basis']) if row else None
 
     def get_report(self, case_id: str, source_conclusion: str) -> dict:
         with self.connect() as db:
+            db.execute("BEGIN")
             row = db.execute("SELECT * FROM report_drafts WHERE case_id=?", (case_id,)).fetchone()
+            review_revision = self._review(db, case_id)["revision"]
         if row:
             item = dict(row)
+            item["review_revision"] = review_revision
+            item['analysis_provenance'] = json.loads(item.get('analysis_provenance') or '{}')
             try:
                 item["composition"] = normalize_report_composition(json.loads(item.get("composition") or "{}"))
             except (TypeError, ValueError, json.JSONDecodeError):
@@ -490,40 +547,59 @@ class Storage(ReviewWorkflowMixin):
             "conclusion": source_conclusion,
             "status": "draft",
             "version": 1,
+            "review_revision": review_revision,
             "reviewed_by": "",
             "updated_at": "",
             "composition": normalize_report_composition(None),
+            "analysis_provenance": {},
         }
 
-    def save_report(self, case_id: str, conclusion: str, status: str, actor: str, composition: dict | None = None, expected_version=None) -> dict:
+    def save_report(self, case_id: str, conclusion: str, status: str, actor: str, composition: dict | None = None, expected_version=None, expected_review_revision=None, expected_analysis_basis=None, check_source=None) -> dict:
         allowed = {"draft", "reviewed", "returned"}
         if status not in allowed:
             raise ValueError("invalid report status")
+        if expected_version is not None and (type(expected_version) is not int or expected_version < 1):
+            raise ValueError("报告版本必须为正整数")
+        if not isinstance(conclusion, str) or len(conclusion) > 12000:
+            raise ValueError("报告结论必须为 12000 字以内的文本")
         now = utc_now()
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             old = db.execute("SELECT * FROM report_drafts WHERE case_id=?", (case_id,)).fetchone()
             if expected_version is not None and expected_version != (old["version"] if old else 1):
-                raise ValueError("报告版本已变更，请重新载入")
+                raise ReportConflict("报告版本已变更，未覆盖最新报告；请重新载入后核对")
+            if expected_review_revision is not None and self._review(db, case_id)["revision"] != expected_review_revision:
+                raise ReportConflict("保存期间病例已变化，报告未保存；请重新载入后核对")
+            source = db.execute('SELECT basis FROM case_analysis_basis WHERE case_id=?', (case_id,)).fetchone()
+            basis = json.loads(source['basis']) if source else {}
+            if expected_analysis_basis is not None and basis.get('digest') != expected_analysis_basis:
+                raise ReportConflict('保存期间计算依据已变化，报告未保存；请重新复核')
+            if check_source is not None:
+                check_source()
             if status == "reviewed":
                 self.assert_report_ready(db, case_id, conclusion)
-            version = int(old["version"]) + 1 if old else 1
+            version = (int(old["version"]) if old else 1) + 1
             old_composition = normalize_report_composition(json.loads(old["composition"] or "{}")) if old else normalize_report_composition(None)
-            next_composition = normalize_report_composition(composition) if composition is not None else old_composition
+            next_composition = normalize_report_composition(composition if composition is not None else old_composition)
             if old and (old["conclusion"] != conclusion or old_composition != next_composition) and status == "reviewed":
                 status = "draft"
             reviewed_by = actor if status == "reviewed" else ""
+            from .analysis_provenance import digest
+            provenance = {'basis': basis, 'composition_sha256': digest(next_composition)} if basis else {}
             db.execute(
-                """INSERT INTO report_drafts(case_id,conclusion,composition,status,version,reviewed_by,updated_at)
-                VALUES(?,?,?,?,?,?,?)
+                """INSERT INTO report_drafts(case_id,conclusion,composition,status,version,reviewed_by,updated_at,analysis_provenance)
+                VALUES(?,?,?,?,?,?,?,?)
                 ON CONFLICT(case_id) DO UPDATE SET conclusion=excluded.conclusion,
                 composition=excluded.composition,status=excluded.status,version=excluded.version,reviewed_by=excluded.reviewed_by,
-                updated_at=excluded.updated_at""",
-                (case_id, conclusion[:12000], json.dumps(next_composition, ensure_ascii=False), status, version, reviewed_by, now),
+                updated_at=excluded.updated_at,analysis_provenance=excluded.analysis_provenance""",
+                (case_id, conclusion, json.dumps(next_composition, ensure_ascii=False), status, version, reviewed_by, now, json.dumps(provenance,ensure_ascii=False)),
             )
             row = db.execute("SELECT * FROM report_drafts WHERE case_id=?", (case_id,)).fetchone()
-        self.audit(actor, f"report.{status}", case_id, f"version={version}")
+            review_revision = self._review(db, case_id)["revision"]
+            self._audit(db, actor, f"report.{status}", case_id, f"version={version}")
         item = dict(row)
+        item["review_revision"] = review_revision
+        item['analysis_provenance'] = json.loads(item['analysis_provenance'])
         item["composition"] = normalize_report_composition(json.loads(item.pop("composition") or "{}"))
         return item
 
@@ -578,6 +654,6 @@ class Storage(ReviewWorkflowMixin):
                 active=excluded.active,updated_at=excluded.updated_at""",
                 (case_id, json.dumps(clean, ensure_ascii=False), active, now),
             )
-        self.audit(actor, "patient.update", case_id, f"active={bool(active)} fields={','.join(sorted(payload.keys() & allowed))}")
+            self._audit(db, actor, "patient.update", case_id, f"active={bool(active)} fields={','.join(sorted(payload.keys() & allowed))}")
         clean["active"] = bool(active)
         return clean

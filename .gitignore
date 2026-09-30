@@ -21,6 +21,7 @@ data/**
 *.sqlite3
 *.sqlite3-*
 *.sqlite-*
+*.ecgbackup
 *.log
 data/case_manifest.json
 output/**

@@ -36,11 +36,12 @@ def test_edit_invalidates_checkpoints_and_previously_approved_report(client):
     retained = client.put(base + "/event-reviews", json={"items": [event], "status": "retained"})
     assert retained.status_code == 200
     complete_all(client, case_id)
-    assert client.put(base + "/report", json={"conclusion": "复核测试", "status": "draft"}).status_code == 200
+    draft = client.put(base + "/report", json={"expected_version":1,"conclusion": "复核测试", "status": "draft"})
+    assert draft.status_code == 200
     index = client.get(base + "/report-events").json
     composition={"category_reviews":index["basis_versions"]}
-    client.put(base + "/report", json={"conclusion":"复核测试","status":"draft","composition":composition})
-    approved = client.put(base + "/report", json={"conclusion": "复核测试", "status": "reviewed", "composition":composition})
+    draft = client.put(base + "/report", json={"expected_version":draft.json["version"],"conclusion":"复核测试","status":"draft","composition":composition})
+    approved = client.put(base + "/report", json={"expected_version":draft.json["version"],"conclusion": "复核测试", "status": "reviewed", "composition":composition})
     assert approved.json["status"] == "reviewed"
     changed = client.put(base + "/beat-overrides", json={"sample_indices": [event["sample_index"]], "class_code": "N"})
     assert changed.status_code == 200

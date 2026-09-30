@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 import json
 import math
+import sqlite3
 import statistics
 from collections import Counter
 from bisect import bisect_left
@@ -11,6 +12,7 @@ from datetime import datetime, timezone
 
 from . import ebi
 from .config import SAMPLE_RATE
+from .rr_quality import nn_intervals, five_minute_blocks
 
 # UI shortcuts follow the supplied hospital screenshot, NOT WFDB symbols.
 TYPE_ROWS = [
@@ -231,20 +233,13 @@ def propose_qrs(values, start_sample, existing, options):
 
 
 def edited_hrv(feed):
-    opts=feed.document["settings"];nn=[]
-    for i in range(1,len(feed.beats)):
-        a,b=feed.beats[i-1:i+1]
-        if a["class_code"]==b["class_code"]=="N" and opts["nn_min"]<=b["rr_ms"]<=opts["nn_max"]:
-            nn.append((i,b["sample_index"],b["rr_ms"]))
+    intervals=nn_intervals(feed)
+    nn=[(i,b*200,rr) for i,a,b,rr in intervals]
     values=[x[2] for x in nn]
     if len(values)<3:return dict(nn_count=len(values),method="修订版严格相邻 N-N；样本不足")
     # Never subtract NN intervals separated by an ectopic beat or excluded gap.
     diffs=[b[2]-a[2] for a,b in zip(nn,nn[1:]) if b[0]==a[0]+1]
-    blocks={}
-    for _,sample,value in nn:
-        key=int(sample//60000)
-        if (key+1)*300<=feed.duration:blocks.setdefault(key,[]).append(value)
-    groups=[g for g in blocks.values() if len(g)>=30]
+    groups=[[r[3] for r in chosen] for _,_,chosen in five_minute_blocks(intervals,feed.duration)]
     means=[statistics.mean(g) for g in groups];hist=Counter(math.floor(x/7.8125) for x in values)
     return dict(nn_count=len(values),successive_nn_pairs=len(diffs),mean_nn_ms=round(statistics.mean(values),2),
         sdnn_ms=round(statistics.stdev(values),2),sdann_ms=round(statistics.stdev(means),2) if len(means)>1 else None,
@@ -252,7 +247,7 @@ def edited_hrv(feed):
         rmssd_ms=round(math.sqrt(statistics.mean(x*x for x in diffs)),2) if diffs else None,
         pnn50_pct=round(100*sum(abs(x)>50 for x in diffs)/len(diffs),2) if diffs else None,
         triangular_index=round(len(values)/max(hist.values()),2),
-        method="修订版：连续 N-N，差分不跨异位/伪差；完整5分钟块且至少30个NN；7.8125ms箱宽。短记录仅供研究。",
+        method="修订版：连续 N-N，整段排除房颤/房扑确认及待复核区间，差分不跨异位/伪差；完整5分钟块、至少30个NN且覆盖≥80%；7.8125ms箱宽。短记录仅供研究。",
         completed_five_minute_blocks=len(groups))
 
 
@@ -293,6 +288,33 @@ class BeatEditorStore:
             with self.storage.connect() as connection:return self.read(case_id,connection)
         row=db.execute("SELECT * FROM beat_edit_documents WHERE case_id=?",(case_id,)).fetchone()
         return dict(revision=row["revision"],document=json.loads(row["document"]),undo=json.loads(row["undo"]),redo=json.loads(row["redo"])) if row else dict(revision=0,document=blank(),undo=[],redo=[])
+
+    def snapshot(self, case_id, db=None):
+        """Detached current revision without transporting/decoding past documents.
+
+        SQLite counts the JSON arrays in the same row/statement as the document.
+        Full histories are still read inside the commit transaction for undo/redo;
+        this is not a cache and cannot be used as a writable history document.
+        """
+        if db is None:
+            with self.storage.connect() as connection:
+                return self.snapshot(case_id, connection)
+        try:
+            row = db.execute("""SELECT revision, document,
+                json_array_length(undo) AS undo_count, json_array_length(redo) AS redo_count
+                FROM beat_edit_documents WHERE case_id=?""", (case_id,)).fetchone()
+        except sqlite3.OperationalError as error:
+            # Older packaged SQLite builds may omit JSON support. Preserve the
+            # established read path there; do not mask corruption or I/O errors.
+            if str(error) != 'no such function: json_array_length':
+                raise
+            value = self.read(case_id, db)
+            return dict(revision=value['revision'], document=value['document'],
+                        can_undo=bool(value['undo']), can_redo=bool(value['redo']))
+        if row is None:
+            return dict(revision=0, document=blank(), can_undo=False, can_redo=False)
+        return dict(revision=row['revision'], document=json.loads(row['document']),
+                    can_undo=bool(row['undo_count']), can_redo=bool(row['redo_count']))
 
     def commit(self, case_id, revision, actor, transform, action):
         integer(revision,"编辑版本")

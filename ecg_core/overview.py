@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 import numpy as np
 
 from .waveform import ALL_LEADS
+from .source_identity import require_waveform_file, source_read
+from .review_workflow import ReportConflict
 
 
 def validate_document(value, duration):
@@ -55,10 +57,12 @@ def validate_document(value, duration):
 
 
 def episode_annotations(document, actor="房颤复核", stamp=""):
+    # Validated episode times have millisecond precision. Convert via integer
+    # milliseconds: ceil(10.005 * 200) can spuriously include one extra sample.
     return [dict(id="af:"+x["id"], sample_index=round(x["start_s"]*200), lead="全部", category="note",
                  label=("房颤" if x["kind"] == "AF" else "房扑")+" · "+{"confirmed": "医生确认", "excluded": "已排除", "pending": "待复核"}[x["status"]],
                  note=x.get("note", ""), created_by=actor, created_at=stamp,
-                 details=dict(kind=x["kind"], status=x["status"], end_sample=max(round(x["start_s"]*200), math.ceil(x["end_s"]*200)-1), finding="房颤/房扑片段复核"))
+                 details=dict(kind=x["kind"], status=x["status"], end_sample=max(round(x["start_s"]*200), (round(x["end_s"]*1000)+4)//5-1), finding="房颤/房扑片段复核"))
             for x in document.get("episodes", [])]
 
 
@@ -83,13 +87,17 @@ class RhythmReviewStore:
     def public(value):
         return {key: value[key] for key in ("revision", "document", "updated_at")} | dict(can_undo=bool(value["undo"]), can_redo=bool(value["redo"]))
 
-    def commit(self, case_id, payload, duration, initial, actor, beat_revision):
+    def commit(self, case_id, payload, duration, initial, actor, beat_revision, *, analysis_revision=None):
         if payload.get("confirmed") is not True:
             raise ValueError("请核对修改并确认保存")
         if type(payload.get("revision")) is not int or type(payload.get("beat_revision")) is not int:
             raise ValueError("缺少复核版本")
         with self.storage.connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            # Legacy overrides/annotations can change evidence without changing
+            # the beat-editor revision. Check the broader review under the lock.
+            if analysis_revision is not None and self.storage._review(db, case_id)['revision'] != analysis_revision:
+                raise ReportConflict("病例依据已变化，未保存片段；请重新加载后核对")
             value = self.read(case_id, initial, db)
             row = db.execute("SELECT revision FROM beat_edit_documents WHERE case_id=?", (case_id,)).fetchone()
             current_beat = row[0] if row else 0
@@ -155,18 +163,20 @@ def density_samples(source, payload):
     return [s for s in source if s in included and s not in excluded]
 
 
+@source_read
 def density(path, samples, lead="II", gate=None, amplitude_limit=None):
     """Count ALL selected, complete 2 s R-aligned beats; no representative sampling.
 
     Time bins are 10 ms, amplitude bins 1/128 of a symmetric robust scale.
     Only a pre-QRS constant baseline is subtracted; no per-beat gain normalization.
     """
+    info = require_waveform_file(path)
     if lead not in ALL_LEADS:
         raise ValueError("不支持的密度图导联")
     if amplitude_limit is not None and (isinstance(amplitude_limit, bool) or not isinstance(amplitude_limit, (int, float)) or not math.isfinite(amplitude_limit) or not 1 <= amplitude_limit <= 1e7):
         raise ValueError("密度图幅度范围错误")
     width, height, pre = 200, 128, 200
-    count = path.stat().st_size//16
+    count = info.st_size//16
     positions = [s for s in samples if pre <= s < count-pre]
     channel = {"I": 0, "II": 1, "V1": 2, "V2": 3, "V3": 4, "V4": 5, "V5": 6, "V6": 7}.get(lead)
     # Bounded chunks keep memory independent of recording length. The mmap is
@@ -212,5 +222,5 @@ def density(path, samples, lead="II", gate=None, amplitude_limit=None):
                 del values
     return dict(width=width, height=height, bins=bins.tolist(), total=len(samples), included=len(positions),
                 skipped_edges=len(samples)-len(positions), clipped_points=clipped, lead=lead,
-                x_min_s=-1, x_max_s=1, amplitude_limit=round(limit, 3), units="设备原始标度 µV（未溯源）",
+                x_min_s=-1, x_max_s=1, amplitude_limit=round(limit, 3), units="device_unit", unit_label="设备单位", calibration_verified=False,
                 sample_indices=selected, population_samples=list(samples), method="R 对齐 · 全集合计数 · 10 ms 栅格 · 去固定基线 · 无逐搏增益归一化")

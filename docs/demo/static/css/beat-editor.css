@@ -39,4 +39,14 @@
 .qrs-candidate-list small{margin-left:auto;color:#657d86}
 .beat-edit-history{position:absolute;right:8px;bottom:4px;display:flex;align-items:center;gap:6px;background:#fffffff0;border:1px solid #d4e3e7;border-radius:4px;padding:3px 7px;z-index:3;font-size:10px;color:#546f7c}
 .beat-edit-history button{padding:3px 8px;border:0;border-left:1px solid #d5e2e7;background:transparent;color:#087d80;cursor:pointer;font:inherit}
-@media(max-width:580px){.editor-settings{grid-template-columns:1fr}.full-beat-menu .editor-types{grid-template-columns:1fr}.editor-dialog-body{padding:12px}.beat-editor-dialog h2{font-size:16px}}
+@media(max-width:580px){
+  .editor-settings{grid-template-columns:1fr}
+  .full-beat-menu .editor-types{grid-template-columns:1fr}
+  .editor-dialog-body{padding:12px;font-size:16px}
+  .editor-dialog-body label,.editor-dialog-body input,.editor-dialog-body select,.editor-dialog-body textarea{font-size:16px}
+  .beat-editor-dialog h2{font-size:16px}
+  .beat-editor-dialog button{min-width:44px;min-height:44px}
+  .beat-editor-dialog footer{flex-wrap:wrap;padding:12px}
+  .beat-editor-dialog footer button{font-size:16px}
+  .editor-error{padding-inline:12px;overflow-wrap:anywhere;font-size:16px}
+}

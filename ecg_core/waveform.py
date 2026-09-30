@@ -6,6 +6,8 @@ from array import array
 from pathlib import Path
 
 from .config import CHANNEL_COUNT, SAMPLE_RATE
+from .signal_profile import raw_signal_metadata
+from .source_identity import require_waveform_file, source_read, SourceInvalid
 
 ALL_LEADS = ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
 
@@ -41,6 +43,7 @@ def _derive(channels: list[list[int]]) -> dict[str, list[float]]:
     return result
 
 
+@source_read
 def read_waveform(
     path: Path,
     start_s: float,
@@ -51,7 +54,7 @@ def read_waveform(
 ) -> dict:
     start_s = max(0.0, float(start_s))
     duration_s = max(1.0, min(float(duration_s), 120.0))
-    total_samples = path.stat().st_size // (CHANNEL_COUNT * 2)
+    total_samples = require_waveform_file(path).st_size // (CHANNEL_COUNT * 2)
     start_sample = min(int(start_s * SAMPLE_RATE), max(total_samples - 1, 0))
     requested = int(duration_s * SAMPLE_RATE)
     sample_count = min(requested, total_samples - start_sample)
@@ -59,6 +62,8 @@ def read_waveform(
     with path.open("rb") as stream:
         stream.seek(start_sample * CHANNEL_COUNT * 2)
         raw = stream.read(byte_count)
+    if len(raw) != byte_count:
+        raise SourceInvalid('DATA 波形读取不完整，请核对原始文件与存储设备后重试。')
     samples = array("h")
     samples.frombytes(raw)
     if sys.byteorder != "little":
@@ -81,14 +86,14 @@ def read_waveform(
         "sample_rate_hz": SAMPLE_RATE,
         "display_sample_rate_hz": SAMPLE_RATE / stride,
         "stride": stride,
-        "units": "µV",
+        **raw_signal_metadata(),
         "leads": output,
         "total_duration_s": round(total_samples / SAMPLE_RATE, 3),
         "filter": "0.5–40 Hz display filter" if apply_filter else "raw",
-        "calibration_note": "设备原始标度；本演示版未建立计量学溯源",
     }
 
 
+@source_read
 def read_waveform_strips(
     path: Path,
     sample_indices: list[int],
@@ -104,7 +109,7 @@ def read_waveform_strips(
         raise ValueError("片段导联包含不支持的值")
     if len(set(selected)) != len(selected):
         raise ValueError("片段导联不能重复")
-    total_samples = path.stat().st_size // (CHANNEL_COUNT * 2)
+    total_samples = require_waveform_file(path).st_size // (CHANNEL_COUNT * 2)
     result = []
     for sample_index in sample_indices:
         if isinstance(sample_index, bool) or not isinstance(sample_index, int):
@@ -123,6 +128,8 @@ def read_waveform_strips(
             apply_filter,
         )
         result.append({
+            **raw_signal_metadata(),
+            "sample_rate_hz": SAMPLE_RATE,
             "sample_index": sample_index,
             "time_s": round(anchor_s, 3),
             "start_s": payload["start_s"],
@@ -134,24 +141,26 @@ def read_waveform_strips(
         })
     return {
         "sample_rate_hz": SAMPLE_RATE,
-        "units": "µV",
+        **raw_signal_metadata(),
         "filter": "0.5–40 Hz display filter" if apply_filter else "raw",
         "leads": selected,
         "items": result,
     }
 
 
+@source_read
 def read_event_waveform(path, start_s, end_s, leads=None, max_points=2400):
     """Whole event overview. Directly sample bounded positions; no 120 s truncation."""
     import mmap
     import struct
-    total=Path(path).stat().st_size//16
+    frame_bytes=CHANNEL_COUNT*2
+    total=require_waveform_file(path).st_size//frame_bytes
     first=max(0,min(total-1,int(start_s*SAMPLE_RATE+1e-7)))
     last=min(total,max(first+1,int(end_s*SAMPLE_RATE+1e-7)))
     stride=max(1,math.ceil((last-first)/max(200,min(12000,int(max_points)))))
-    channels=[[] for _ in range(8)]
+    channels=[[] for _ in range(CHANNEL_COUNT)]
     with Path(path).open('rb') as f, mmap.mmap(f.fileno(),0,access=mmap.ACCESS_READ) as raw:
         for sample in range(first,last,stride):
-            for i,value in enumerate(struct.unpack_from('<8h',raw,sample*16)):channels[i].append(value)
+            for i,value in enumerate(struct.unpack_from(f'<{CHANNEL_COUNT}h',raw,sample*frame_bytes)):channels[i].append(value)
     derived=_derive(channels)
-    return dict(start_s=first/200,duration_s=(last-first)/200,sample_rate_hz=200,display_sample_rate_hz=200/stride,stride=stride,units='µV',filter='raw overview',leads={k:derived[k] for k in (leads or ['II','V1','V5']) if k in derived},beats=[],annotations=[])
+    return dict(start_s=first/SAMPLE_RATE,duration_s=(last-first)/SAMPLE_RATE,sample_rate_hz=SAMPLE_RATE,display_sample_rate_hz=SAMPLE_RATE/stride,stride=stride,**raw_signal_metadata(),filter='raw overview',leads={k:derived[k] for k in (leads or ['II','V1','V5']) if k in derived},beats=[],annotations=[])

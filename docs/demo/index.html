@@ -9,8 +9,8 @@
   <title>CardioInsight Holter｜病例数据在线演示</title>
   <link rel="icon" href="static/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="static/css/app.css?v=e4dc18e4daec">
-  <link rel="stylesheet" href="static/css/clinical-workflow.css?v=f8ec17eebf79">
-  <link rel="stylesheet" href="static/css/beat-editor.css?v=2929c74830b8">
+  <link rel="stylesheet" href="static/css/clinical-workflow.css?v=d7b94e87b6c1">
+  <link rel="stylesheet" href="static/css/beat-editor.css?v=076001891641">
 </head>
 <body>
   <a class="skip-link" href="#mainContent">跳到主要内容</a>
@@ -32,12 +32,29 @@
       <kbd id="searchShortcut">Ctrl / ⌘ K</kbd>
     </div>
     <div class="top-actions">
+      <div class="voltage-controls">
+        <button id="voltageToggle" type="button" role="switch" aria-checked="false" aria-label="估算电压显示">估算电压：关</button>
+        <button id="voltageSettings" type="button" aria-controls="voltagePanel" aria-expanded="true">设置</button>
+      </div>
       <button id="privacyToggle" class="privacy-toggle" type="button" aria-pressed="false" hidden disabled aria-hidden="true">
         <span class="privacy-dot"></span><span id="privacyText">身份信息已遮蔽</span>
       </button>
       <div class="role-chip"><span class="avatar">医</span><div><strong>病例演示访客</strong><small>GitHub Pages · 纯前端</small></div></div>
     </div>
   </header>
+
+  <section id="voltagePanel" class="voltage-panel" aria-labelledby="voltageTitle">
+    <header><h2 id="voltageTitle">启动选项 · 估算电压</h2><button type="button" data-voltage-close aria-label="收起估算电压设置">收起</button></header>
+    <p>设备标定资料尚未提供。初始系数 <strong>1 u = 1 µV 仅为假设</strong>，不是识别出的设备增益，不能保证与临床标定结果一致。</p>
+    <form><label for="voltageCoefficient">假设系数（µV / 设备单位 u）</label><input id="voltageCoefficient" name="coefficient" type="number" min="0.000001" max="10000" step="any" value="1" required aria-describedby="voltageScope">
+      <div class="voltage-actions"><button type="submit">应用系数并开启</button><button type="button" data-voltage-off>关闭并继续</button></div>
+    </form>
+    <p id="voltageScope">仅转换连续波形的幅度读数，不改变波形、自动事件阈值或原始数据。采样率、导联位置与零点仍未核验；不开启额外诊断。每次启动默认关闭。</p>
+    <p data-voltage-current></p>
+    <button type="button" data-voltage-report>将当前状态用于本病例报告图条</button>
+    <p>报告采用独立快照，须显式应用并保存草稿；切换顶部开关不会改写已保存报告。VCG / TWA 可在研究测量中选用当前系数。</p>
+    <p role="status" aria-live="polite"></p>
+  </section>
 
   <aside class="sidebar" aria-label="主导航">
     <nav>
@@ -115,13 +132,23 @@
 
     <section class="page active" id="page-dashboard">
       <div class="page-heading">
-        <div><p class="eyebrow">今日工作空间</p><h1>动态心电病例工作台</h1><p>徐有德病例已建立只读索引，在线版本直接读取公开的源 DATA 片段。</p></div>
-        <div class="heading-actions"><button class="button primary" id="openFirstCase">开始复核</button></div>
+        <div><p class="eyebrow">今日工作空间</p><h1>动态心电病例工作台</h1><p id="caseIndexStatus" tabindex="-1">正在核对本地病例文件，源波形不会被修改。</p></div>
+        <div class="heading-actions"><button class="button primary" id="openFirstCase" aria-describedby="worklistStatus" disabled>正在读取病例…</button></div>
       </div>
       <article id="dataSetupPanel" class="setup-panel" hidden>
         <div class="setup-icon" aria-hidden="true">⌁</div>
         <div><p class="eyebrow">首次运行</p><h2>连接本地病例目录</h2><p>软件未找到心电数据。请按下方路径创建 <code>config.json</code>，并把 <code>data_root</code> 改为病例目录的绝对路径。</p><code id="setupConfigPath">项目根目录/config.json</code></div>
       </article>
+      <section id="dashboardLoadError" class="source-issues" aria-label="病例列表读取失败" hidden>
+        <p role="alert">病例列表未能读取，尚未加载任何病例。</p>
+        <p id="dashboardLoadErrorText"></p>
+        <button class="button secondary" id="retryDashboard" type="button">重新读取病例</button>
+      </section>
+      <section id="sourceIssues" class="source-issues" aria-label="病例文件读取问题" hidden>
+        <p id="sourceIssuesSummary" role="status"></p>
+        <details><summary>查看病例与处理方法</summary><ul id="sourceIssuesList"></ul></details>
+        <button class="button secondary" id="retrySourceScan" type="button">重新检查文件</button>
+      </section>
       <div class="metric-grid dashboard-metrics">
         <article class="metric-card"><div class="metric-icon teal">病</div><div><span>病例总数</span><strong id="metricCases">—</strong><small>当前病例</small></div></article>
         <article class="metric-card"><div class="metric-icon blue">时</div><div><span>记录总时长</span><strong id="metricHours">—</strong><small>病例波形时长</small></div></article>
@@ -130,11 +157,11 @@
       </div>
       <div class="dashboard-layout">
         <article class="card worklist-card">
-          <div class="card-header"><div><h2>病例工作列表</h2><p>点击任意病例进入多导联复核</p></div><div class="table-tools"><select id="worklistFilter"><option value="all">全部病例</option><option value="abnormal">含候选异常</option><option value="brady">平均心率偏低</option></select></div></div>
+          <div class="card-header"><div><h2>病例工作列表</h2><p id="worklistStatus" role="status" tabindex="-1">正在读取病例列表…</p></div><div class="table-tools"><button type="button" class="button secondary" id="resetWorklistFilters" hidden>清除筛选</button><select id="worklistFilter" aria-label="筛选病例"><option value="all">全部病例</option><option value="abnormal">含候选异常</option><option value="brady">平均心率偏低</option></select></div></div>
           <div class="table-wrap"><table class="data-table"><thead><tr><th>病例 / 患者</th><th>记录时间</th><th>时长</th><th>心率</th><th>V / S</th><th>源报告提示</th><th></th></tr></thead><tbody id="worklistBody"></tbody></table></div>
         </article>
         <aside class="dashboard-side">
-          <article class="card compact-card"><div class="card-header"><div><h2>数据质量</h2><p>导入格式自动核验</p></div><span id="qualityStatus" class="status-pill success">—</span></div><div class="quality-ring"><div><strong id="qualityPercent">—</strong><span>结构可读</span></div></div><ul class="check-list"><li><span>✓</span>200 Hz 采样率一致</li><li><span>✓</span>8 独立通道可派生 12 导联</li><li><span>✓</span>逐搏索引与 RR 完整</li><li><span>✓</span><em id="sourceReportPages">源报告页数待读取</em></li></ul></article>
+          <article class="card compact-card"><div class="card-header"><div><h2>文件结构检查</h2><p>不代表信号质量或临床有效性</p></div><span id="qualityStatus" class="status-pill neutral">—</span></div><div class="quality-ring"><div><strong id="qualityPercent">—</strong><span>结构可读</span></div></div><ul class="check-list"><li>当前导入格式：200 Hz / 8 通道</li><li>校验完整采样帧与心搏索引范围</li><li>RR 与信号质量须另行复核</li><li><em id="sourceReportPages">源报告页数待读取</em></li></ul></article>
           <article class="card compact-card boundary-card"><span class="boundary-kicker">产品边界</span><h3>单病例仅用于功能演示</h3><p>不能据此声明灵敏度、特异度、临床有效性或符合医疗器械注册要求。</p></article>
         </aside>
       </div>
@@ -266,7 +293,7 @@
       <div class="review-toolbar card">
         <div class="toolbar-group lead-toolbar-group"><label for="leadPickerButton">显示导联</label><button id="leadPickerButton" class="lead-picker-trigger" type="button" title="选择主界面显示的导联"><span id="selectedLeadLabel">II · V1 · V5</span><small>最多 3 条</small></button></div>
         <div class="toolbar-group"><label for="durationSelect">窗口</label><select id="durationSelect"><option value="1">1 秒</option><option value="2">2 秒</option><option value="5">5 秒</option><option value="10" selected>10 秒</option><option value="20">20 秒</option><option value="30">30 秒</option><option value="60">60 秒</option><option value="120">120 秒</option></select></div>
-        <div class="toolbar-group"><label for="gainSelect">增益</label><select id="gainSelect"><option value="5">5 mm/mV</option><option value="10" selected>10 mm/mV</option><option value="20">20 mm/mV</option></select></div>
+        <div class="toolbar-group"><label for="gainSelect">显示放大</label><select id="gainSelect" aria-describedby="calibrationNote"><option value="5">0.5×</option><option value="10" selected>1×</option><option value="20">2×</option></select></div>
         <div class="toolbar-group"><label for="filterSelect">显示滤波</label><select id="filterSelect"><option value="display">0.5–40 Hz</option><option value="raw">原始波形</option></select></div>
         <div class="toolbar-group waveform-zoom-group"><label>时间缩放</label><div class="zoom-controls" role="group" aria-label="波形时间轴缩放"><button id="zoomOut" type="button" title="缩小波形（-）" aria-label="缩小波形">−</button><button id="zoomReset" type="button" title="复位到 10 秒（0）" aria-label="复位到 10 秒"><span id="zoomWindowLabel">10 s</span></button><button id="zoomIn" type="button" title="放大波形（+）" aria-label="放大波形">＋</button></div></div>
         <div class="toolbar-spacer"></div>
@@ -283,8 +310,8 @@
                 <button id="toggleWaveformFullscreen" class="waveform-mode-button" type="button" aria-keyshortcuts="F" aria-label="全屏查看全部十二导联"><span aria-hidden="true">⛶</span><em>全屏多导联</em></button>
               </div>
             </div>
-            <div id="waveformScroller" class="waveform-scroller"><canvas id="waveformCanvas" tabindex="0" aria-keyshortcuts="F Shift+F10" aria-label="三导联连续心电波形；右键最近心搏可重标注，双击全屏查看全部十二导联，滚轮缩放时间轴，按住 Shift 滚轮缩放电压增益，移动指针可查看时间、导联和电压坐标"></canvas><div id="waveCursor" class="wave-cursor" hidden aria-hidden="true"><span class="wave-cursor-x"></span><span class="wave-cursor-y"></span><i></i></div><div id="waveTooltip" class="wave-tooltip" hidden></div></div>
-            <div class="waveform-foot"><span id="waveInteractionHint">右键最近心搏重标注 · 双击全屏查看全部 12 导联 · 滚轮缩放 · 拖动平移 · 悬停查坐标</span><span id="calibrationNote">设备原始标度 · 未做计量学溯源</span></div>
+            <div id="waveformScroller" class="waveform-scroller"><canvas id="waveformCanvas" tabindex="0" aria-keyshortcuts="F Shift+F10" aria-label="三导联连续心电波形；右键最近心搏可重标注，双击全屏查看全部十二导联，滚轮缩放时间轴，按住 Shift 滚轮缩放显示幅度，移动指针可查看时间、导联和设备单位幅度"></canvas><div id="waveCursor" class="wave-cursor" hidden aria-hidden="true"><span class="wave-cursor-x"></span><span class="wave-cursor-y"></span><i></i></div><div id="waveTooltip" class="wave-tooltip" hidden></div></div>
+            <div class="waveform-foot"><span id="waveInteractionHint">右键最近心搏重标注 · 双击全屏查看全部 12 导联 · 滚轮缩放 · 拖动平移 · 悬停查坐标</span><span id="calibrationNote">u = 设备单位，电压未校准；显示放大不等于 mm/mV 标定。</span></div>
             <dialog id="leadPickerDialog" class="lead-picker-dialog" aria-labelledby="leadPickerTitle">
               <form method="dialog">
                 <div class="lead-picker-header"><div><span>分析通道</span><h2 id="leadPickerTitle">选择主界面显示导联</h2></div><button value="cancel" aria-label="关闭导联选择">×</button></div>
@@ -348,6 +375,7 @@
 
     <section class="page" id="page-trends">
       <div class="page-heading compact"><div><p class="eyebrow">全天统计</p><h1>趋势、RR 与 HRV</h1><p id="trendCaseLabel">请选择病例</p></div><span class="status-pill warning">研究算法 · 待复核</span></div>
+      <div id="trendsAnalysisStatus" role="status" hidden></div>
       <div class="metric-grid" id="trendMetrics"></div>
       <div class="chart-grid">
         <article class="card chart-card wide"><div class="card-header"><div><h2>全天心率趋势</h2><p>60 秒分箱；点击图表跳转波形</p></div></div><canvas id="trendCanvas" height="250"></canvas></article>
@@ -358,6 +386,7 @@
     </section>
 
     <section class="page" id="page-stt">
+      <div id="sttAnalysisStatus" role="status" hidden></div>
       <div class="page-heading compact stt-page-heading">
         <div><p class="eyebrow">复极候选筛查</p><h1>ST‑T 医生复核工作台</h1><p id="sttCaseLabel">请选择病例</p></div>
         <div class="stt-heading-actions"><span id="sttCapabilityBadge" class="status-pill warning">读取筛查能力…</span><button id="openSttGuidance" class="button secondary" type="button">判读边界与依据</button></div>
@@ -479,7 +508,7 @@
         </aside>
       </div>
 
-      <dialog id="reportSettingsDialog" class="modal report-settings-dialog" aria-labelledby="reportSettingsTitle"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">报告页面设置</p><h2 id="reportSettingsTitle">打印与图条参数</h2></div><button value="cancel" aria-label="关闭">×</button></div><div class="report-settings-grid"><label>纸张<select id="reportPaperSize"><option>A4</option><option>A3</option></select></label><label>方向<select id="reportPaperOrientation"><option value="portrait">纵向</option><option value="landscape">横向</option></select></label><label>走纸速度<select id="reportPaperSpeed"><option>25 mm/s</option><option>12.5 mm/s</option><option>50 mm/s</option></select></label><label>增益<select id="reportPaperGain"><option>10 mm/mV</option><option>5 mm/mV</option><option>20 mm/mV</option></select></label><label class="report-setting-check"><input id="reportShowGrid" type="checkbox" checked> 显示心电网格</label><label class="report-setting-check"><input id="reportShowLabels" type="checkbox" checked> 显示导联与时间标记</label></div><p class="modal-note">页面设置影响编排与打印预览；正式 PDF 仍保留研究演示与人工复核边界说明。</p><div class="modal-actions"><button value="cancel" class="button secondary">取消</button><button id="applyReportSettings" type="button" class="button primary">应用设置</button></div></form></dialog>
+      <dialog id="reportSettingsDialog" class="modal report-settings-dialog" aria-labelledby="reportSettingsTitle"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">报告页面设置</p><h2 id="reportSettingsTitle">打印与图条参数</h2></div><button value="cancel" aria-label="关闭">×</button></div><div class="report-settings-grid"><label>纸张<select id="reportPaperSize"><option>A4</option><option>A3</option></select></label><label>方向<select id="reportPaperOrientation"><option value="portrait">纵向</option><option value="landscape">横向</option></select></label><label>走纸速度<select id="reportPaperSpeed"><option>25 mm/s</option><option>12.5 mm/s</option><option>50 mm/s</option></select></label><label>电压增益（未校准，不应用）<select id="reportPaperGain" disabled aria-describedby="reportAmplitudeNote"><option>10 mm/mV</option><option>5 mm/mV</option><option>20 mm/mV</option></select></label><label class="report-setting-check"><input id="reportShowGrid" type="checkbox" checked> 显示心电网格</label><label class="report-setting-check"><input id="reportShowLabels" type="checkbox" checked> 显示导联与时间标记</label></div><p class="modal-note" id="reportAmplitudeNote">当前 DATA 电压未校准，图条按逐导联自适应幅度显示；增益选项不参与缩放。实际走纸速度以导出图条标注为准。PDF 保留人工复核边界说明。</p><div class="modal-actions"><button value="cancel" class="button secondary">取消</button><button id="applyReportSettings" type="button" class="button primary">应用设置</button></div></form></dialog>
 
       <dialog id="sourceReportDialog" class="modal source-report-dialog" aria-labelledby="sourceReportTitle"><form method="dialog"><div class="modal-header"><div><p class="eyebrow">人工复核依据</p><h2 id="sourceReportTitle">病例报告</h2></div><div class="source-report-dialog-actions"><select id="reportPageSelect"></select><button value="cancel" aria-label="关闭">×</button></div></div><div class="source-report-view"><div id="sourceReportPrivacy" class="source-report-privacy"><span>▧</span><strong>病例报告已遮蔽</strong><p>公网演示不提供包含可识别健康信息的原报告页面。</p></div><img id="sourceReportImage" alt="原报告页面" loading="lazy" hidden></div><div class="source-report-foot"><button id="openReportImage" type="button" class="text-button" hidden disabled>在新窗口查看原图 ↗</button><small>原始报告可能包含可识别健康信息</small></div></form></dialog>
     </section>
@@ -511,28 +540,40 @@
   <div id="toastStack" class="toast-stack" aria-live="polite"></div>
   <link rel="stylesheet" href="static/css/clinical-ui.css?v=a512a1edb0ce">
   <link rel="stylesheet" href="static/css/visual-refresh.css?v=ee2f7e825594">
-  <link rel="stylesheet" href="static/css/overview-workbench.css?v=35f19f8427cd">
-  <link rel="stylesheet" href="static/css/report-paper.css?v=4efbe4864184">
+  <link rel="stylesheet" href="static/css/overview-workbench.css?v=c53b9a800150">
+  <link rel="stylesheet" href="static/css/report-paper.css?v=8a3c2e57f32b">
+  <link rel="stylesheet" href="static/css/report-workspace.css?v=affc7e3b4dfb">
+  <link rel="stylesheet" href="static/css/advanced-analysis.css?v=e6058993e7a9">
   <link rel="stylesheet" href="static/css/morphology-workbench.css?v=a62deccd70b5">
-  <link rel="stylesheet" href="static/css/clinical-review-tools.css?v=17db8d0259b0">
+  <link rel="stylesheet" href="static/css/clinical-review-tools.css?v=d5a82f03bd53">
   <script src="static/js/clinical-review-tools.js?v=a42e187bd1d1"></script>
-  <script src="static/js/report-engine.js?v=27358d387132"></script>
-  <script src="static/js/report-paper.js?v=3993b3cce5bf"></script>
-  <script src="static/js/overview-engine.js?v=363485d09c7a"></script>
-  <script src="static/js/clinical-analysis.js?v=ca5d78e41d44"></script>
-  <script src="static/js/hrv-analysis.js?v=fd5a27f8c4c1"></script>
-  <script src="static/js/hrv-report.js?v=2862cd9456ff"></script>
-  <script src="static/js/report-range-editor.js?v=83a66ecf4a67"></script>
-  <script src="static/js/beat-engine.js?v=cd1431eb9cd7"></script>
+  <script src="static/js/report-engine.js?v=424ebd775896"></script>
+  <script src="static/js/voltage-estimate.js?v=f85dc475ad5a"></script>
+  <script src="static/js/report-paper.js?v=5b36f164e73a"></script>
+  <script src="static/js/rr-quality.js?v=38da7459f895"></script>
+  <script src="static/js/report-sections.js?v=cc7a1fa30953"></script>
+  <script src="static/js/overview-engine.js?v=8d2c1e17f456"></script>
+  <script src="static/js/af-coverage.js?v=343bb9127863"></script>
+  <script src="static/js/clinical-analysis.js?v=137e5ae065ff"></script>
+  <script src="static/js/hrv-analysis.js?v=9a4898e4549c"></script>
+  <script src="static/js/hrv-report.js?v=6de018c14c5b"></script>
+  <script src="static/js/report-range-editor.js?v=1546097e5021"></script>
+  <script src="static/js/beat-engine.js?v=a8aea660c1e3"></script>
   <script src="static/demo-data/uploaded-sim-af-001/case-data.js"></script>
-  <script src="static/js/demo-api.js?v=c8200d5fadde"></script>
-  <script src="static/js/app.js?v=ad7691cce2c7"></script>
-  <script src="static/js/clinical-workflow.js?v=255d5ea843af"></script>
-  <script src="static/js/beat-editor-ui.js?v=b0ad78987865"></script>
-  <script src="static/js/waveform-loader.js?v=fdd6b5a65146"></script>
-  <script src="static/js/clinical-ui.js?v=245d4aca0813"></script>
-  <script src="static/js/overview-workbench.js?v=f4c90768253c"></script>
+  <script src="static/js/demo-api.js?v=3ebec5f3aadb"></script>
+  <script src="static/js/app.js?v=4009eb9026ef"></script>
+  <script src="static/js/workspace-backup.js?v=6e44bac5c5c3"></script>
+  <script src="static/js/analysis-consistency.js?v=fb20b4aa33e0"></script>
+  <script src="static/js/report-consistency.js?v=daa1cd5b67ee"></script>
+  <script src="static/js/clinical-workflow.js?v=a2687cb4b479"></script>
+  <script src="static/js/beat-editor-ui.js?v=63d8be84106f"></script>
+  <script src="static/js/waveform-loader.js?v=ea72b3ac0d47"></script>
+  <script src="static/js/clinical-ui.js?v=775df5c1b478"></script>
+  <script src="static/js/report-workspace.js?v=501567ce9d21"></script>
+  <script src="static/js/advanced-analysis.js?v=8b30420dd41c"></script>
+  <script src="static/js/overview-workbench.js?v=b11cd42b83d9"></script>
   <script src="static/js/morphology-groups.js?v=9a179f05c75c"></script>
   <script src="static/js/morphology-workbench.js?v=1a38c85b5441"></script>
+  <link rel="stylesheet" href="static/css/voltage-estimate.css?v=1012ab83a16a">
 </body>
 </html>

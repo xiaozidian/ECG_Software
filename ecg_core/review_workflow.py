@@ -8,6 +8,10 @@ STEPS = ("edit", "stt")
 LABELS = {"edit":"模板编辑", "stt":"ST-T"}
 
 
+class ReportConflict(ValueError):
+    """A report must not silently overwrite or export a different revision."""
+
+
 def stamp():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -35,7 +39,9 @@ class ReviewWorkflowMixin:
     def invalidate_review(self, db, case_id, action):
         if not case_id:
             return
-        if action.startswith("beat_override."):
+        if action in ("analysis.basis_changed", "workspace.restored"):
+            affected = STEPS
+        elif action.startswith("beat_override."):
             affected = STEPS  # waveform and classifications changed, source statistics did not
         elif action.startswith("beat_template."):
             affected = STEPS
@@ -55,7 +61,7 @@ class ReviewWorkflowMixin:
             if step in value["steps"]:
                 value["steps"][step]["status"] = "stale"
                 value["steps"][step]["reason"] = action
-        if action.startswith("beat_override."):
+        if action.startswith("beat_override.") or action in ("analysis.basis_changed", "workspace.restored"):
             for event in value["events"].values():
                 event["status"] = "pending"
         self._write_review(db, value)
@@ -63,15 +69,21 @@ class ReviewWorkflowMixin:
         if report:
             composition=json.loads(report["composition"] or "{}")
             reviews=composition.get("category_reviews",{})
-            if action.startswith("annotation."):reviews.pop("ST",None)
+            if action.startswith("annotation.") and not action.startswith("annotation.rhythm"):reviews.pop("ST",None)
             elif action != "event.review":reviews.clear()
             composition["category_reviews"]=reviews
+            # Preserve the doctor's prose, but never carry its acknowledgement
+            # across a changed clinical basis (including undo/redo).
+            for block in composition.get("diagnosis_blocks", []):
+                if block.get("manual"):
+                    block.update(needs_review=True, acknowledged=False)
             db.execute("UPDATE report_drafts SET composition=? WHERE case_id=?",(json.dumps(composition,ensure_ascii=False),case_id))
         db.execute("""UPDATE report_drafts SET status='draft', reviewed_by='', version=version+1,
-            updated_at=? WHERE case_id=? AND status='reviewed'""", (stamp(), case_id))
+            updated_at=? WHERE case_id=?""", (stamp(), case_id))
 
     def get_review(self, case_id):
         with self.connect() as db:
+            db.execute("BEGIN")
             value = self._review(db, case_id)
             report = db.execute("SELECT status,version FROM report_drafts WHERE case_id=?", (case_id,)).fetchone()
         value["pending_steps"] = [step for step in STEPS if value["steps"].get(step, {}).get("status") != "done"]

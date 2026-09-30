@@ -17,6 +17,7 @@ from collections import OrderedDict
 from pathlib import Path
 
 from .config import CHANNEL_COUNT, SAMPLE_RATE
+from .source_identity import require_waveform_file, source_read
 
 ALGORITHM_VERSION = "stt-screening-0.1.0"
 LEADS = ("I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6")
@@ -265,12 +266,14 @@ def _merge_episodes(items: list[dict]) -> list[dict]:
     return merged
 
 
+@source_read
 def analyze_stt(waveform_path: str | Path, records, duration_s: float | None = None, *, analysis_revision=None, config=None) -> dict:
     """Analyze a recording and return automatic review candidates and trends."""
     path, settings = Path(waveform_path), {**DEFAULT_CONFIG, **(config or {})}
-    stat, normalized = path.stat(), _normalize_records(records)
+    stat, normalized = require_waveform_file(path), _normalize_records(records)
     signature = (len(normalized), normalized[0] if normalized else None, normalized[-1] if normalized else None, analysis_revision)
-    cache_key = (str(path.resolve()), stat.st_size, stat.st_mtime_ns, signature, tuple(sorted(settings.items())))
+    from .source_identity import file_signature
+    cache_key = (str(path.resolve()), file_signature(path), signature, tuple(sorted(settings.items())))
     if cache_key in _CACHE:
         _CACHE.move_to_end(cache_key); return copy.deepcopy(_CACHE[cache_key])
     total_samples = stat.st_size // (CHANNEL_COUNT * 2)
@@ -326,7 +329,7 @@ def analyze_stt(waveform_path: str | Path, records, duration_s: float | None = N
         episodes.extend(_lead_episodes(points, lead, settings)); episodes.extend(_t_episodes(points, lead, settings))
         stride = max(1, math.ceil(len(points) / settings["maximum_trend_points_per_lead"]))
         lead_points[lead] = [
-            {"time_s": point["time_s"], "deviation_units": point["deviation_units"],
+            {"time_s": point["time_s"], "deviation_units": point["deviation_units"], "t_amplitude_units": point["t_amplitude_units"],
              "eligible": point["eligible"], "quality_score": point["quality_score"],
              "axis_shift_suspected": point["axis_shift_suspected"]}
             for point in points[::stride]

@@ -117,6 +117,24 @@ body:has(#page-review.active) .case-workflow-context small,body:has(#page-review
 .ov-episode-details>summary{cursor:pointer;font-weight:600;line-height:1.5}
 .ov-episode-details>summary:focus-visible{outline:2px solid var(--ov-accent);outline-offset:2px}
 .ov-episode-details[open]>summary{margin-bottom:8px}
+.ov-episode-controls{display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12px}
+.ov-episode-controls select{min-width:0;flex:1;min-height:32px;background:#fff;border:1px solid var(--ov-line);border-radius:5px;color:var(--ov-ink)}
+.ov-episode-pages{display:flex;align-items:center;justify-content:space-between;gap:4px;margin-top:6px}
+.ov-episode-pages output{font-variant-numeric:tabular-nums;text-align:center}
+.ov-episode-navigation{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:10px 0;font-size:12px;color:var(--ov-ink);scroll-margin-top:70px}
+.ov-episode-navigation>div:first-child{display:grid;gap:4px;min-width:0;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.ov-episode-navigation span{color:var(--ov-muted)}
+.ov-episode-navigation>div:last-child{display:flex;gap:6px;flex-wrap:wrap}
+.ov-episode-navigation button{min-height:36px}
+.ov-episode-controls :focus-visible,.ov-episode-pages :focus-visible,.ov-episode-navigation:focus-visible,.ov-episode-navigation :focus-visible{outline:2px solid #0a7676;outline-offset:2px}
+#ovEpisodeDraftHint{color:var(--ov-muted);line-height:1.5;margin:6px 0}
+@media(max-width:680px){
+  .ov-episode-controls,.ov-episode-navigation{font-size:16px}
+  .ov-episode-controls select,.ov-episode-pages button,.ov-episode-navigation button,.ov-episode-table button{min-height:44px;font-size:16px}
+  .ov-episode-table table,.ov-episode-pages output{font-size:14px}
+  #ovEpisodeEditor{font-size:14px}
+  #ovEpisodeEditor input,#ovEpisodeEditor select,#ovEpisodeEditor textarea,#ovEpisodeEditor button{font-size:16px;min-height:44px}
+}
 @media(min-width:1001px) and (max-width:1500px){
   .ov-trends{grid-template-columns:repeat(2,minmax(0,1fr))}
   .ov-trends>.ov-lane:nth-child(2){grid-column:1;grid-row:2}
@@ -150,4 +168,58 @@ body:has(#page-review.active) .case-workflow-context small,body:has(#page-review
   .ov-settings>div{min-width:0}.ov-commandbar>div{gap:5px}
   .ov-commandbar #ovStatus{font-size:10px}
   .ov-lane output{max-width:32%}
+}
+
+/* Quality coverage is a read-only disclosure, not a diagnostic burden badge. */
+.ov-af-coverage{margin:8px 0;padding:10px 12px;background:#fff;border:1px solid #d7e3e8;border-radius:5px;color:#243f4b;font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+.ov-af-coverage header,.ov-coverage-actions,.ov-af-coverage footer{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ov-af-coverage header{justify-content:space-between}
+.ov-af-coverage p{margin:5px 0;font-variant-numeric:tabular-nums}
+.ov-af-coverage .ov-coverage-note{color:#526773;max-width:110ch}
+.ov-af-coverage button{min-height:36px;white-space:normal}
+.ov-af-coverage button:disabled{cursor:not-allowed;opacity:.55}
+#ovAFSummary{display:grid;gap:6px;margin:8px 0;color:var(--ov-ink,#243f4b);font-size:12px;font-variant-numeric:tabular-nums;line-height:1.45}
+#ovAFSummary>span>span{display:block}
+#ovAFSummary small{font-size:inherit;color:var(--ov-muted,#526773)}
+@media(max-width:700px){#ovAFSummary{font-size:14px}}
+.ov-af-coverage button:focus-visible,.ov-af-coverage summary:focus-visible{outline:2px solid #0a7676;outline-offset:2px}
+.ov-af-coverage summary{cursor:pointer;padding:5px 0;min-height:32px;color:#0a7676;font-weight:650}
+.ov-af-coverage ol{margin:4px 0;padding-left:26px;max-height:220px;overflow-y:auto;scrollbar-color:#687d89 #f4f7f8}
+.ov-af-coverage li{padding:6px 4px;border-bottom:1px solid #e6edf0}
+.ov-af-coverage li>span{display:inline-block;vertical-align:middle;min-width:260px;max-width:100%;margin-right:12px;font-variant-numeric:tabular-nums}
+.ov-af-coverage small{display:block;font-size:inherit;color:#526773}
+.ov-af-coverage footer{margin-top:8px}
+.ov-af-gap-nav{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;padding:8px 0;color:#243f4b;scroll-margin-top:70px;font-size:12px}
+.ov-af-gap-nav[hidden]{display:none}
+.ov-af-gap-nav>div{display:flex;flex-wrap:wrap;gap:6px}
+.ov-af-gap-nav button{min-height:36px}
+.ov-af-gap-nav button:focus-visible{outline:2px solid #0a7676;outline-offset:2px}
+.ov-af-coverage{scroll-margin-top:70px}
+.ov-window-filters,.ov-af-window-evidence header,.ov-af-window-evidence header>div{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.ov-window-filters button[aria-pressed="true"]{background:#e4f3f2;color:#075f60;border-color:#0a7676}
+#ovAFWindows{scroll-margin-top:70px;border-top:1px solid #d7e3e8;margin-top:8px}
+#ovAFWindows li[aria-current="true"]{background:#e4f3f2}
+.ov-af-window-evidence{padding:10px 12px;background:#fff;border:1px solid #d7e3e8;border-radius:5px;margin:8px 0;scroll-margin-top:70px;color:#243f4b;font-size:12px;line-height:1.6;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.ov-af-window-evidence[hidden]{display:none}
+.ov-af-window-evidence header{justify-content:space-between}
+.ov-af-window-evidence p{color:#526773;margin:6px 0;max-width:110ch}
+.ov-af-window-evidence dl{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px 16px;margin:8px 0;padding:8px 0;border-block:1px solid #e6edf0}
+.ov-af-window-evidence dt{color:#526773}
+.ov-af-window-evidence dd{margin:0;font-weight:650}
+.ov-af-window-evidence button{min-height:36px;white-space:normal}
+.ov-af-window-evidence:focus-visible,.ov-af-window-evidence button:focus-visible,.ov-af-coverage output:focus-visible{outline:2px solid #0a7676;outline-offset:2px}
+@media(max-width:700px){
+  .ov-af-window-evidence{padding:8px;font-size:14px}
+  .ov-af-window-evidence dl{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .ov-af-window-evidence button{font-size:16px;min-height:44px}
+}
+@media(max-width:680px){
+  .ov-af-coverage{padding:8px;font-size:14px}
+  .ov-af-coverage header{align-items:flex-start}
+  .ov-af-coverage button,.ov-af-coverage summary{min-height:44px;font-size:16px}
+  .ov-coverage-actions{width:100%}
+  .ov-coverage-actions button{flex:1 1 110px}
+  .ov-af-coverage li>span{min-width:0;width:100%;margin:0 0 5px}
+  .ov-af-gap-nav{font-size:14px}
+  .ov-af-gap-nav button{min-height:44px;font-size:16px;white-space:normal}
 }

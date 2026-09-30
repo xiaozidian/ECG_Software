@@ -106,7 +106,9 @@ def test_day_window_does_not_discard_nn_at_hour_boundary():
 
 def test_api_occurrences_selection_and_structured_st(client):
     case_id=client.get('/api/cases').json['items'][0]['case_id'];base=f'/api/cases/{case_id}'
-    original=client.get(base+'/template-occurrences?class_code=N&offset=32&limit=1').json
+    response=client.get(base+'/template-occurrences?class_code=N&offset=32&limit=1')
+    assert response.status_code==200, response.get_data(as_text=True)
+    original=response.json
     assert original['total']>32 and len(original['items'])==1
     assert client.get(base+'/report-events').status_code==200
     assert client.get(base+'/hrv-windows').json['actual_duration_s']<=86400

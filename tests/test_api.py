@@ -215,7 +215,7 @@ def test_annotation_patient_override_report_workflow_and_pdf(client):
     source = client.get(f"/api/cases/{case_id}/report").json
     assert source["composition"]["active_page"] == "summary"
     composition = {**source["composition"], "included_pages": ["cover", "summary", "event_strips"], "active_page": "event_strips", "fast_slow_mode": "both"}
-    draft = client.put(f"/api/cases/{case_id}/report", json={"conclusion": source["conclusion"] + "\n自动化测试。", "status": "draft", "composition": composition}).json
+    draft = client.put(f"/api/cases/{case_id}/report", json={"expected_version":source["version"],"conclusion": source["conclusion"] + "\n自动化测试。", "status": "draft", "composition": composition}).json
     assert draft["status"] == "draft"
     assert draft["composition"]["active_page"] == "event_strips"
     assert draft["composition"]["fast_slow_mode"] == "both"
@@ -225,8 +225,8 @@ def test_annotation_patient_override_report_workflow_and_pdf(client):
             "step": step, "revision": progress["revision"], "confirmed": True,
         }).status_code == 200
     composition["category_reviews"]=client.get(f"/api/cases/{case_id}/report-events").json["basis_versions"]
-    client.put(f"/api/cases/{case_id}/report",json={"conclusion":draft["conclusion"],"status":"draft","composition":composition})
-    reviewed = client.put(f"/api/cases/{case_id}/report", json={"conclusion": draft["conclusion"], "status": "reviewed"}).json
+    draft = client.put(f"/api/cases/{case_id}/report",json={"expected_version":draft["version"],"conclusion":draft["conclusion"],"status":"draft","composition":composition}).json
+    reviewed = client.put(f"/api/cases/{case_id}/report", json={"expected_version":draft["version"],"conclusion": draft["conclusion"], "status": "reviewed"}).json
     assert reviewed["status"] == "reviewed"
     assert reviewed["reviewed_by"]
     pdf = client.get(f"/api/cases/{case_id}/report.pdf")

@@ -27,5 +27,6 @@
  }
  function pages(model,d){const out=[ECGReportPaper.shell(model,analysisBody(d),'hrv')];for(let i=0;i<Math.max(1,d.hourly.length);i+=25)out.push(ECGReportPaper.shell(model,trendBody(d,d.hourly.slice(i,i+25),i>0),'hrv'));return out.join('')}
  function ui(model,d,include){return `<div class="hrv-evidence-toolbar"><div><h2>HRV 与记录趋势</h2><p>当前修订逐搏结果 · A4 分析页 + 趋势页</p></div><label>24 小时窗口<select class="v2-hrv-window">${Array.from({length:d.window_count},(_,i)=>`<option value="${i}" ${i===d.window_index?'selected':''}>第 ${i+1} 窗口</option>`).join('')}</select></label><label><input type="checkbox" data-hrv-include ${include?'checked':''}>加入主报告</label><button class="button secondary" type="button" data-hrv-export>单独导出 HRV PDF</button></div><p class="hrv-evidence-notice">${d.clock_available?'日间 06–22 点、夜间 22–06 点为钟点分段，不代表实际睡眠。':'记录起始时钟不可用，日间/夜间不计算。'} 勾选主报告后请保存草稿；独立导出为当前数据的未审核报告。</p><div class="rp-pages hrv-evidence-pages">${pages(model,d)}</div>`}
- globalThis.ECGHrvReport={plot,pages,ui,detailRows};
+ function overviewPages(model,d){let html='';for(let i=0;i<Math.max(1,d.hourly.length);i+=25)html+=ECGReportPaper.shell(model,trendBody(d,d.hourly.slice(i,i+25),i>0),'hrv');return html;}
+ globalThis.ECGHrvReport={plot,pages,ui,detailRows,overviewPages};
 })();

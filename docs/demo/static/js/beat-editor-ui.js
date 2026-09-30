@@ -3,10 +3,54 @@
 /* One command surface for review strips, continuous ECG and template editing. */
 const beatEditor=(()=>{
   const E=ECGBeatEngine,esc=escapeHtml;
-  let context=null,selected=new Set(),info=null,busy=false,openToken=0,dialog;
-  const endpoint=(suffix="")=>"/api/cases/"+encodeURIComponent(context?.caseId||state.caseId)+"/beat-editor"+suffix;
-  const request=(suffix,method="GET",body)=>api(endpoint(suffix),{method,...(body?{body:JSON.stringify(body)}:{})});
-  const selection=()=>({scope:"samples",samples:[...selected]});
+  let context=null,selected=new Set(),info=null,busy=false,openToken=0,dialog,dialogToken=0,committing=false;
+  function begin(value){context={...value,caseToken:state.caseRequestId};info=null;}
+  function owner(){
+    return {context,caseId:context?.caseId,caseToken:state.caseRequestId,token:openToken,
+      page:state.currentPage,samples:[...selected],
+      // Card clicks can change the visible selection without reopening this editor.
+      editSamples:state.currentPage==='edit'?[...state.editSelectedSamples]:null,
+      editFocus:state.editSelectedSample};
+  }
+  const sameSamples=(snapshot,live)=>snapshot.length===live.size&&snapshot.every(s=>live.has(s));
+  function currentOwner(value){
+    return value.context===context&&value.caseId===state.caseId&&value.caseToken===state.caseRequestId&&
+      context?.caseToken===state.caseRequestId&&value.token===openToken&&value.page===state.currentPage&&
+      sameSamples(value.samples,selected)&&
+      (value.editSamples===null||(sameSamples(value.editSamples,state.editSelectedSamples)&&value.editFocus===state.editSelectedSample));
+  }
+  function requireOwner(value){if(!currentOwner(value))throw Error("病例或所选心搏已变化，本次操作已停止；请重新选择并核对后修改");}
+  const occurrenceCards=new WeakMap();
+  function syncOccurrenceSelection(){
+    document.querySelectorAll('.occurrence-tile').forEach(card=>{
+      const item=occurrenceCards.get(card)?.item;if(!item)return;
+      card.querySelector('input[type=checkbox]').checked=(item.target_samples||[item.sample_index]).every(s=>state.editSelectedSamples.has(s));
+    });
+  }
+  async function occurrenceContext(card,event,menu=true,code=null){
+    const value=occurrenceCards.get(card);if(!value||busy||committing)return;
+    const {item,scope}=value,token=++openToken,rect=card.getBoundingClientRect();
+    const targets=item.target_samples||[item.sample_index];
+    selected=targets.every(s=>state.editSelectedSamples.has(s))?new Set(state.editSelectedSamples):new Set(targets);
+    begin({caseId:state.caseId,surface:'edit',anchor:{...item,class_code:item.class_code||scope.code},time:item.time_s,x:event?.clientX??rect.left+20,y:event?.clientY??rect.top+20,occurrenceScope:scope,canvas:card});
+    state.editSelectedSamples=new Set(selected);state.editSelectedSample=item.sample_index;
+    syncOccurrenceSelection();renderEditScatter();
+    const result=await request('');if(token!==openToken||context.caseId!==state.caseId)return;
+    info=result;context.revision=result.revision;
+    if(menu){renderMenu();$('#beatRelabelMenu [data-editor-code]:not(:disabled)')?.focus({preventScroll:true});}
+    else return perform('relabel',{class_code:code},true);
+  }
+  function registerOccurrence(card,item,scope){
+    occurrenceCards.set(card,{item,scope});
+    card.oncontextmenu=event=>{event.preventDefault();event.stopPropagation();occurrenceContext(card,event).catch(handleError)};
+  }
+  async function request(suffix,method="GET",body,scope=owner()){
+    requireOwner(scope);
+    const result=await api('/api/cases/'+encodeURIComponent(scope.caseId)+'/beat-editor'+suffix,{method,...(body?{body:JSON.stringify(body)}:{})});
+    // A submitted write belongs to its original case; do not retry it or refresh another case.
+    if(method!=="PUT")requireOwner(scope);
+    return result;
+  }
   const button=(label,action,extra="")=>'<button type="button" role="menuitem" data-editor-action="'+action+'" '+extra+'>'+label+"</button>";
   const codeButtons=(codes,neighbor="")=>codes.map(code=>'<button type="button" role="menuitem" data-editor-code="'+code+'" '+(neighbor?'data-editor-neighbor="'+neighbor+'"':"")+'><kbd>'+code+'</kbd><span>'+esc(E.types[code].name)+'</span></button>').join("");
   const mainCodes=["N","S","V","J","G","A","C","F","E","R","W","O","Z","M","H","Y","T","X","OTHER"];
@@ -39,13 +83,13 @@ const beatEditor=(()=>{
     refreshBeatOverrideViews();
   }
   async function open(event,canvas,waveform,surface="review",keyboard=false){
-    event.preventDefault?.();if(!state.caseId||!waveform)return;
+    event.preventDefault?.();if(!state.caseId||!waveform||busy||committing)return;
     const token=++openToken,rect=canvas.getBoundingClientRect(),x=keyboard?rect.left+rect.width/2:event.clientX,y=keyboard?rect.top+40:event.clientY;
     const anchor=nearestBeatForRelabel(canvas,waveform,x,surface,keyboard?Infinity:44);
     const g=surface==="review"?{l:0,w:rect.width}:editWaveGeometry(rect.width,rect.height);
     const time=waveform.start_s+Math.max(0,Math.min(1,(x-rect.left-g.l)/g.w))*waveform.duration_s;
     const same=context?.caseId===state.caseId&&context.surface===surface;
-    context={caseId:state.caseId,surface,anchor,time,x,y,canvas,waveform,strip:!!canvas.closest("[data-scatter-sample]")};
+    begin({caseId:state.caseId,surface,anchor,time,x,y,canvas,waveform,strip:!!canvas.closest("[data-scatter-sample]")});
     selected=surface==="edit"?new Set(state.editSelectedSamples):same?selected:new Set();
     if(anchor&&!selected.has(anchor.sample_index))selected=new Set([anchor.sample_index]);
     if(!anchor)selected.clear();
@@ -55,47 +99,55 @@ const beatEditor=(()=>{
   }
   function close(){openToken++;closeBeatRelabelMenu()}
   function showDialog(title,content,accept,acceptLabel="预览修改"){
-    close();dialog.innerHTML='<form method="dialog"><header><h2>'+esc(title)+'</h2><button type="button" data-dialog-close aria-label="关闭">×</button></header><div class="editor-dialog-body">'+content+'</div><p class="editor-error" role="alert"></p><footer><button type="button" data-dialog-close class="button secondary">取消</button><button type="submit" class="button primary">'+esc(acceptLabel)+'</button></footer></form>';
+    close();const scope=owner(),generation=++dialogToken;dialog.innerHTML='<form method="dialog"><header><h2>'+esc(title)+'</h2><button type="button" data-dialog-close aria-label="关闭">×</button></header><div class="editor-dialog-body">'+content+'</div><p class="editor-error" role="alert"></p><footer><button type="button" data-dialog-close class="button secondary">取消</button><button type="submit" class="button primary">'+esc(acceptLabel)+'</button></footer></form>';
     dialog.querySelectorAll("[data-dialog-close]").forEach(b=>b.onclick=()=>dialog.close());
     dialog.querySelector("form").onsubmit=async event=>{
-      event.preventDefault();const submit=dialog.querySelector('[type="submit"]');submit.disabled=true;
-      try{await accept(new FormData(event.target))}catch(error){dialog.querySelector(".editor-error").textContent=error.message}finally{submit.disabled=false}
+      event.preventDefault();const submit=dialog.querySelector('[type="submit"]');if(submit.disabled)return;submit.disabled=true;
+      try{if(!dialog.open||generation!==dialogToken)throw Error("确认窗口已关闭，请重新选择心搏");requireOwner(scope);await accept(new FormData(event.target))}catch(error){if(generation===dialogToken)dialog.querySelector(".editor-error").textContent=error.message}finally{if(generation===dialogToken)submit.disabled=false}
     };
     if(!dialog.open)dialog.showModal();
   }
   function contextOK(){if(!context||context.caseId!==state.caseId)throw Error("病例已切换，请重新选择心搏");if(!clinicalWorkflow.writable())throw Error("当前服务为只读")}
   async function afterCommit(value,operation){
+    const caseId=context.caseId;
+    const bookmark=typeof clinicalUI!=='undefined'?clinicalUI.occurrenceBookmark(context.occurrenceScope?(context.anchor?.start_sample??context.anchor?.sample_index):null):null;
     info=value;dialog.close();close();
     selected.clear();state.editSelectedSamples.clear();state.editSelectedSample=null;
     state.scatterStripCache.clear();state.reportComposer=null;
-    await loadCase();
-    if(state.currentPage==="edit")await loadEdit();
+    if(!await loadCase(caseId))return;
+    const caseToken=state.caseRequestId,isCurrent=()=>state.caseId===caseId&&state.caseRequestId===caseToken;
+    if(state.currentPage==="edit")await loadEdit(bookmark?{...bookmark,caseToken}:null);
+    if(!isCurrent())return;
     if(state.currentPage==="review"){clearScatterSelection();await loadScatter()}
-    await clinicalWorkflow.refresh(state.caseId);
+    if(!isCurrent())return;
+    await clinicalWorkflow.refresh(caseId);
+    if(!isCurrent())return;
     toast("已保存修订 r"+value.revision+" · RR / HRV / 候选已更新；可撤销", "success",5000);
     updateStatus(value);
   }
-  async function commit(payload){
-    contextOK();const caseId=context.caseId;
-    const value=await request("","PUT",{...payload,confirmed:true});
-    if(caseId!==state.caseId)return;
-    await afterCommit(value,payload.operation);
+  async function commit(payload,scope=owner()){
+    requireOwner(scope);contextOK();if(committing)return;committing=true;
+    try{const value=await request("","PUT",{...payload,confirmed:true},scope);
+      if(!currentOwner(scope))return;
+      await afterCommit(value,payload.operation);
+    }finally{committing=false}
   }
   function changeTable(preview){
     const a=preview.before,b=preview.after,fields=[["有效心搏",a.metrics.valid_beats,b.metrics.valid_beats],["NN 间期数",a.hrv.nn_count??0,b.hrv.nn_count??0],["最长 RR (ms)",a.metrics.longest_rr_ms,b.metrics.longest_rr_ms],["非心搏标记",a.markers.length,b.markers.length]];
     return '<table><thead><tr><th>重算项目</th><th>修改前</th><th>修改后</th></tr></thead><tbody>'+fields.map(([l,x,y])=>"<tr><th>"+l+"</th><td>"+(x??"—")+"</td><td>"+(y??"—")+"</td></tr>").join("")+"</tbody></table>";
   }
   async function perform(operation,extra={},quick=false){
-    contextOK();if(busy)return;busy=true;
+    contextOK();if(busy||committing)return;const scope=owner();requireOwner(scope);busy=true;
     try{
       const current=await request("");
       if(info&&context.revision!==undefined&&current.revision!==context.revision&&!["undo","redo"].includes(operation))throw Error("病例修订版本已变化，请重新打开菜单核对");
       info=current;
       $("#beatRelabelMenu").setAttribute("aria-busy","true");
-      const payload={operation,selection:selection(),revision:info.revision,...extra};
-      if(["undo","redo"].includes(operation)){await commit(payload);return}
+      const payload={operation,selection:{scope:"samples",samples:scope.samples.slice()},revision:info.revision,...extra};
+      if(["undo","redo"].includes(operation)){await commit(payload,scope);return}
       const preview=await request("/preview","POST",payload);
-      if(quick&&selected.size===1&&["N","S","V","X"].includes(extra.class_code)){await commit(payload);return}
+      requireOwner(scope);
+      if(quick&&scope.samples.length===1&&["N","S","V","X"].includes(extra.class_code)){await commit(payload,scope);return}
       let warning="将影响 "+preview.affected+" 个标记。修订后需重新确认相关复核环节；源 DATA / EBI 不会改写。";
       if(E.types[extra.class_code]?.kind==="nonbeat")warning+=" 该类型不是 QRS，原标记将从心搏和 NN 统计中排除。";
       if(E.types[extra.class_code]?.kind==="rhythm")warning+=" 这是医生指定的逐搏节律属性，不是自动房颤 / 房扑识别或完整发作负荷分析。";
@@ -109,11 +161,13 @@ const beatEditor=(()=>{
     }finally{busy=false;$("#beatRelabelMenu").removeAttribute("aria-busy")}
   }
   async function quickEdit(code,samples=[...state.editSelectedSamples]){
+    if(busy||committing)return;
     if(!samples.length)return toast("请先选中心搏","error");
-    context={caseId:state.caseId,surface:state.currentPage==="edit"?"edit":"review",anchor:null,time:state.editStart,x:0,y:0,canvas:$("#editWaveformCanvas"),waveform:state.editWaveform};
+    begin({caseId:state.caseId,surface:state.currentPage==="edit"?"edit":"review",anchor:null,time:state.editStart,x:0,y:0,canvas:$("#editWaveformCanvas"),waveform:state.editWaveform});
     selected=new Set(samples);return perform("relabel",{class_code:code},true);
   }
   async function universe(page=false){
+    if(context.occurrenceScope)return context.occurrenceScope.samples(page);
     if(page){
       if(context.strip)return [...document.querySelectorAll("[data-scatter-sample]")].filter(el=>{const a=el.getBoundingClientRect(),b=$("#scatterSelectionList").getBoundingClientRect();return a.bottom>b.top&&a.top<b.bottom}).map(el=>Number(el.dataset.scatterSample));
       if(context.canvas?.closest("#editLibraryMatrix"))return [...document.querySelectorAll("#editLibraryMatrix [data-edit-sample]")].map(el=>Number(el.dataset.editSample));
@@ -154,11 +208,13 @@ const beatEditor=(()=>{
       data=>{const opts={};for(const key of Object.keys(E.defaults))opts[key]=key==="lead"?data.get(key):Number(data.get(key));E.settings(opts);return perform("settings",{settings:opts})});
   }
   async function detect(direction){
+    const scope=owner();
     info=await request("");const total=state.caseData.technical.duration_seconds_raw,t=context.anchor?.time_s??context.time;
     const start=Math.max(0,direction==="before"?t-info.settings.search_seconds:t),seconds=Math.min(info.settings.search_seconds,total-start,direction==="before"?t-start:Infinity);
     if(seconds<1)throw Error("此方向剩余记录不足 1 秒");
     const result=await request("/preview","POST",{operation:"detect",revision:info.revision,start_s:start,duration_s:seconds});
     const wave=await api("/api/cases/"+context.caseId+"/waveform?start="+start+"&duration="+seconds+"&leads="+info.settings.lead+"&filter=raw&max_points=12000");
+    requireOwner(scope);
     const candidates=result.candidates;
     showDialog("漏标 QRS 候选预览",'<p>'+esc(result.method)+'</p><p>搜索 '+formatElapsedPrecise(start)+'—'+formatElapsedPrecise(start+seconds)+' · '+esc(info.settings.lead)+' · <b>'+candidates.length+'</b> 个候选。默认不勾选；核对原始波形后逐个选择。</p><canvas id="qrsCandidatePreview" height="190" aria-label="原始波形与 QRS 候选位置"></canvas><div class="qrs-candidate-list">'+
       (candidates.map(r=>'<label><input type="checkbox" name="candidates" value="'+r.sample_index+'">'+formatElapsedPrecise(r.time_s)+'<small>阈值比 '+r.score+'（非置信概率）</small></label>').join("")||"<p>未发现候选。可调整导联／阈值，或手动补标；未检测到不代表无漏搏。</p>")+'</div>',
@@ -174,7 +230,7 @@ const beatEditor=(()=>{
   async function action(name){
     if(name==="close")return close();
     if(name==="clear"){selected.clear();syncSelection();return renderMenu()}
-    if(["all","page","invert","invert-page"].includes(name)){const universeSamples=await universe(name.includes("page"));selected=new Set(name.startsWith("invert")?universeSamples.filter(s=>!selected.has(s)):universeSamples);syncSelection();return renderMenu()}
+    if(["all","page","invert","invert-page"].includes(name)){const scope=owner(),universeSamples=await universe(name.includes("page"));requireOwner(scope);selected=new Set(name.startsWith("invert")?universeSamples.filter(s=>!selected.has(s)):universeSamples);syncSelection();return renderMenu()}
     if(name==="insert"||name==="move")return manual(name);
     if(name==="settings")return settingsDialog();
     if(name.startsWith("detect-"))return detect(name.slice(7));
@@ -201,8 +257,15 @@ const beatEditor=(()=>{
         if(["ArrowDown","ArrowUp","Home","End"].includes(event.key)){event.preventDefault();event.stopImmediatePropagation();const buttons=[...menu.querySelectorAll("button:not(:disabled),summary")].filter(el=>el.getClientRects().length),i=buttons.indexOf(document.activeElement);buttons[event.key==="Home"?0:event.key==="End"?buttons.length-1:(i+(event.key==="ArrowDown"?1:-1)+buttons.length)%buttons.length]?.focus();return}
       }
       if(["INPUT","TEXTAREA","SELECT"].includes(document.activeElement.tagName))return;
+      const occurrenceCard=event.target.closest?.('[data-occ-index]');
+      if(occurrenceCard&&occurrenceCards.has(occurrenceCard)&&!event.repeat){
+        const menuKey=event.key==='ContextMenu'||event.shiftKey&&event.key==='F10',code=event.key.toUpperCase();
+        if(menuKey||(!event.ctrlKey&&!event.metaKey&&!event.altKey&&E.types[code])){
+          event.preventDefault();event.stopImmediatePropagation();occurrenceContext(occurrenceCard,null,menuKey,code).catch(handleError);return;
+        }
+      }
       if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="z"&&["review","edit"].includes(state.currentPage)){
-        event.preventDefault();event.stopImmediatePropagation();context={caseId:state.caseId,surface:state.currentPage};perform(event.shiftKey?"redo":"undo").catch(handleError);
+        event.preventDefault();event.stopImmediatePropagation();if(busy||committing)return;begin({caseId:state.caseId,surface:state.currentPage});perform(event.shiftKey?"redo":"undo").catch(handleError);
       }
     },true);
     document.addEventListener("contextmenu",event=>{
@@ -213,12 +276,13 @@ const beatEditor=(()=>{
     ["#waveformCanvas","#editWaveformCanvas","#editLibraryWaveformCanvas"].forEach(id=>{
       const canvas=$(id);if(!canvas)return;const bar=document.createElement("div");bar.className="beat-edit-history";
       bar.innerHTML='<span data-editor-status>心搏修订</span><button type="button" data-history="undo" title="⌘ / Ctrl+Z">撤销</button><button type="button" data-history="redo" title="⌘ / Ctrl+Shift+Z">重做</button>';
-      canvas.parentElement.appendChild(bar);bar.setAttribute("aria-label","心搏修订历史");bar.querySelectorAll("button").forEach(b=>b.onclick=()=>{context={caseId:state.caseId,surface:id==="#waveformCanvas"?"review":"edit"};perform(b.dataset.history).catch(handleError)});
+      canvas.parentElement.appendChild(bar);bar.setAttribute("aria-label","心搏修订历史");bar.querySelectorAll("button").forEach(b=>b.onclick=()=>{if(busy||committing)return;begin({caseId:state.caseId,surface:id==="#waveformCanvas"?"review":"edit"});perform(b.dataset.history).catch(handleError)});
     });
   }
   async function invoke(name,options={}){
+    if(busy||committing)return;
     const time=options.time??state.start;
-    context={caseId:state.caseId,surface:"review",time,x:0,y:0,canvas:$("#waveformCanvas"),waveform:state.waveform};
+    begin({caseId:state.caseId,surface:"review",time,x:0,y:0,canvas:$("#waveformCanvas"),waveform:state.waveform});
     selected=new Set(options.samples||[]);
     const feed=await request("/beats");
     context.anchor=feed.items.find(r=>selected.has(r.sample_index))||feed.items.reduce((a,b)=>!a||Math.abs(b.time_s-time)<Math.abs(a.time_s-time)?b:a,null);
@@ -229,5 +293,5 @@ const beatEditor=(()=>{
     return action(name);
   }
   document.addEventListener("DOMContentLoaded",bind);
-  return {open,quickEdit,invoke,invalidate(){openToken++},restore:()=>{context={caseId:state.caseId,surface:"edit"};selected=new Set(state.editSelectedSamples);return perform("restore")},selected:sample=>context?.caseId===state.caseId&&context.surface==="review"&&selected.has(sample)};
+  return {open,quickEdit,invoke,registerOccurrence,syncOccurrenceSelection,occurrenceMenu:(card)=>occurrenceContext(card,null),invalidate(){openToken++},restore:()=>{if(busy||committing)return;begin({caseId:state.caseId,surface:"edit"});selected=new Set(state.editSelectedSamples);return perform("restore")},selected:sample=>context?.caseId===state.caseId&&context.surface==="review"&&selected.has(sample)};
 })();

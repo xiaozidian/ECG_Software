@@ -6,7 +6,8 @@ from io import BytesIO
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.pdfgen.canvas import Canvas
-from .report_layout import DEFAULT_LEADS
+from .report_layout import DEFAULT_LEADS, paper_segments, strip_review_note
+from .signal_profile import calibrated_uv_per_unit, paper_uv_per_unit, normalize_voltage_estimate
 
 
 def number(x):
@@ -45,6 +46,7 @@ def build_paper_pdf(case, report, font):
     meta, stats = case.get('metadata', {}), report.get('paper_statistics', {})
     summary, hrv = stats.get('summary', {}), stats.get('hrv', {})
     paper = report.get('composition', {}).get('paper', {})
+    estimate = normalize_voltage_estimate(paper.get('voltage_estimate'))
     gain = float(str(paper.get('gain', '10 mm/mV')).split()[0])
     pages = []
 
@@ -52,7 +54,7 @@ def build_paper_pdf(case, report, font):
         c.setFont(font, size)
         c.setFillGray(gray)
         draw = c.drawCentredString if align == 'center' else c.drawRightString if align == 'right' else c.drawString
-        draw((10 + x) * mm, A4[1] - (10 + y) * mm - size, str(value).replace('·',' / ').replace('–','-'))
+        draw((10 + x) * mm, A4[1] - (10 + y) * mm - size, str(value).replace('·',' / ').replace('–','-').replace('µV','uV').replace('μV','uV'))
 
     def line(x1, y1, x2, y2, gray=0, thickness=.4):
         c.setStrokeGray(gray)
@@ -88,7 +90,7 @@ def build_paper_pdf(case, report, font):
             text(95, 18, '动态心电图检测报告', 14, 'center')
         heading('检查信息', 26)
         exam = [
-            [('姓名',meta.get('name')),('性别',meta.get('sex')),('年龄',str(meta.get('age','—'))+' 岁'),('起搏器',meta.get('pacemaker'))],
+            [('姓名',meta.get('name')),('性别',meta.get('sex')),('年龄',str(meta['age'])+' 岁' if meta.get('age') is not None else None),('起搏器',meta.get('pacemaker'))],
             [('ID号',meta.get('patient_id') or case['case_id']),('床位',meta.get('bed')),('记录时间',meta.get('start_time'))],
             [('申请医生',meta.get('requesting_doctor')),('申请科室',meta.get('department')),('记录时长',meta.get('duration_text'))],
             [('临床诊断',meta.get('clinical_diagnosis'))],
@@ -137,6 +139,7 @@ def build_paper_pdf(case, report, font):
             heading('报告结论（续）',10)
             lines(2,21,chunk,10,4.9)
         pages.append(continuation)
+    summary_pages=pages;pages=[]
 
     def hourly_page(rows, final):
         heading('统计表格',10)
@@ -169,58 +172,79 @@ def build_paper_pdf(case, report, font):
     for i in range(0,max(1,len(hourly)),25):
         rows=hourly[i:i+25]
         pages.append(lambda rows=rows,final=i+25>=len(hourly):hourly_page(rows,final))
+    hourly_pages=pages;pages=[]
 
     def waveform(entry, top, height):
         wave=entry['waveform'];spec=entry.get('strip',{});names=spec.get('leads') or list(wave.get('leads',{})) or DEFAULT_LEADS
-        text(12,top,clock(meta,wave['start_s']),8)
+        segment=entry.get('paper_segment',{})
+        start=segment.get('start_s',wave['start_s']);duration=segment.get('duration_s',wave['duration_s'])
+        millis=round((start-int(start))*1000)
+        text(12,top,clock(meta,start)+(f'.{millis:03}' if millis else ''),8)
         text(100,top+4.5,entry.get('display_caption') or entry.get('caption') or entry.get('label','心电图条'),9,'center')
         text(187,top,'HR: '+number(entry.get('hr'))+' bpm',8,'right')
-        left,w=12,175
-        grid_top,grid_bottom=top+18,top+height-14
+        left,w=12,segment.get('width_mm',175)
+        review_note=strip_review_note(entry)
+        note_space=4 if review_note else 0
+        grid_top,grid_bottom=top+18,top+height-14-note_space
         row=(grid_bottom-grid_top)/len(names)
-        for x in range(176):line(left+x,grid_top,left+x,grid_bottom,.72 if x%5==0 else .9,.35 if x%5==0 else .18)
-        for y in range(int(grid_bottom-grid_top)+1):line(left,grid_top+y,left+w,grid_top+y,.72 if y%5==0 else .9,.35 if y%5==0 else .18)
-        for beat in wave.get('beats',[]):
-            x=left+(beat['sample_index']/200-wave['start_s'])/wave['duration_s']*w
-            if left<=x<=left+w:
+        if paper.get('show_grid',True):
+            for x in range(int(w)+1):line(left+x,grid_top,left+x,grid_bottom,.72 if x%5==0 else .9,.35 if x%5==0 else .18)
+            for y in range(int(grid_bottom-grid_top)+1):line(left,grid_top+y,left+w,grid_top+y,.72 if y%5==0 else .9,.35 if y%5==0 else .18)
+        for beat in wave.get('beats',[]) if paper.get('show_labels',True) else []:
+            x=left+(beat['sample_index']/200-start)/duration*w
+            if start<=beat['sample_index']/200<start+duration-1e-8:
                 text(x,top+10,beat.get('class_code',''),6,'center')
                 text(x,top+12.5,number(round(beat['hr'])) if beat.get('hr') else '—',5.5,'center')
                 text(x,top+15,number(beat.get('rr_ms')),5.5,'center')
-        def trace(values,x,y,width,scale,center,half,sample_rate=None,seconds=None):
+        def trace(values,x,y,width,scale,center,half,sample_rate=None,seconds=None,offset=0):
             if not values:return False
-            path=c.beginPath();clipped=False
+            path=c.beginPath();clipped=False;started=False
+            lower,upper=half if isinstance(half,tuple) else (half,half)
             for i,v in enumerate(values):
-                dx=i/sample_rate/seconds*width if sample_rate and seconds else i/max(1,len(values)-1)*width
+                t=i/sample_rate-offset if sample_rate and seconds else None
+                if t is not None and (t < -1/sample_rate or t > seconds+1/sample_rate):continue
+                dx=t/seconds*width if t is not None else i/max(1,len(values)-1)*width
                 dy=(v-center)*scale
-                lower,upper=half if isinstance(half,tuple) else (half,half)
-                clipped |= dy>upper or dy < -lower
-                px=(10+x+dx)*mm;py=A4[1]-(10+y-max(-lower,min(upper,dy)))*mm
-                (path.moveTo if i==0 else path.lineTo)(px,py)
+                if t is None or 0<=t<seconds:clipped |= dy>upper or dy < -lower
+                px=(10+x+dx)*mm;py=A4[1]-(10+y-dy)*mm
+                (path.moveTo if not started else path.lineTo)(px,py)
+                started=True
+            # Retain every sample coordinate. True geometric clipping avoids
+            # inventing flat tops and keeps the original boundary crossings.
+            c.saveState()
+            viewport=c.beginPath()
+            viewport.rect((10+x)*mm,A4[1]-(10+y+lower)*mm,width*mm,(lower+upper)*mm)
+            c.clipPath(viewport,stroke=0,fill=0)
             c.setStrokeGray(0);c.setLineWidth(.5);c.drawPath(path)
+            c.restoreState()
             return clipped
         for j,name in enumerate(names):
             values=wave.get('leads',{}).get(name,[]);base=grid_top+(j+.65)*row
             median=sorted(values)[len(values)//2] if values else 0
             text(0,base-1,name,8)
-            calibrated=wave.get('calibration_verified') is True
-            per_unit=gain/1000 if calibrated else min(row*.62/max([1]+[v-median for v in values]),row*.32/max([1]+[median-v for v in values]))*.95
+            uv_per_unit=paper_uv_per_unit(wave, estimate)
+            calibrated=uv_per_unit is not None
+            per_unit=gain*uv_per_unit/1000 if calibrated else min(row*.62/max([1]+[v-median for v in values]),row*.32/max([1]+[median-v for v in values]))*.95
             pulse=gain if calibrated else min(5,row*.62*.8)
             for x,y,x2,y2 in [(6,base,7,base),(7,base,7,base-pulse),(7,base-pulse,9,base-pulse),(9,base-pulse,9,base),(9,base,10,base)]:line(x,y,x2,y2,0,.5)
             if not calibrated:text(0,base+2,f'{round(pulse/per_unit)}u',5)
-            clipped=trace(values,left,base,w,per_unit,median,(row*.32,row*.62),wave.get('display_sample_rate_hz',200),wave['duration_s'])
+            clipped=trace(values,left,base,w,per_unit,median,(row*.32,row*.62),wave.get('display_sample_rate_hz',200),duration,start-wave['start_s'])
             if clipped:text(187,grid_top+j*row,'幅度超框，请降低增益',6,'right')
-        amplitude=f'{gain:g} mm/mV' if wave.get('calibration_verified') is True else '逐导联自适应幅度 · u = 设备单位，电压未校准'
-        text(left,grid_bottom+.5,f"{w/wave['duration_s']:.2f} mm/s · {amplitude} · {wave['duration_s']:g} s",6.5)
+        amplitude=f'{gain:g} mm/mV' if calibrated_uv_per_unit(wave) is not None else (f"{gain:g} mm/估算mV · 1u={estimate['uv_per_unit']:g}µV · 非设备校准" if paper_uv_per_unit(wave, estimate) is not None else '逐导联自适应幅度 · u = 设备单位，电压未校准')
+        text(left,grid_bottom+.5,f"{w/duration:.2f} mm/s · {amplitude} · {duration:g} s",6.5)
         context=entry.get('context')
         if context:
             cy=grid_bottom+5
-            box(left+(wave['start_s']-context['start_s'])/context['duration_s']*w,cy,wave['duration_s']/context['duration_s']*w,5,fill=.87)
+            box(left+(start-context['start_s'])/context['duration_s']*175,cy,duration/context['duration_s']*175,5,fill=.87)
             values=context.get('leads',{}).get('II',[]);median=sorted(values)[len(values)//2] if values else 0
             amplitude=max([50]+[abs(v-median) for v in values])
-            trace(values,left,cy+2.5,w,2.2/amplitude,median,2.5)
+            trace(values,left,cy+2.5,175,2.2/amplitude,median,2.5)
             text(0,cy,'II',6)
-            line(left,cy,left+w,cy,.25)
-        text(left,top+height-3,spec.get('warning') or f"{spec.get('visible_beat_count',len(wave.get('beats',[])))} 搏 · {' / '.join(names)}",6.5)
+            line(left,cy,left+175,cy,.25)
+        note=spec.get('warning') or f"{spec.get('visible_beat_count',len(wave.get('beats',[])))} 搏 · {' / '.join(names)}"
+        if segment:note=f"连续区间 {segment['index']}/{segment['count']} · 本段 {segment['beat_count']} 搏 / 全段 {spec.get('visible_beat_count',len(wave.get('beats',[])))} 搏" + ('（区间提示见图条说明）' if spec.get('warning') else '')
+        text(left,top+height-3-note_space,note,6.5)
+        if review_note:text(left,top+height-3,review_note,7)
     batch=[];units=0
     def flush():
         nonlocal batch,units
@@ -234,6 +258,8 @@ def build_paper_pdf(case, report, font):
         pages.append(sheet);batch=[];units=0
     caption_notes=[]
     for i,original in enumerate(report.get('selected_waveforms',[])):
+        mode=report.get('composition',{}).get('fast_slow_mode','rr')
+        if original.get('category') in ('fastest','slowest') and mode!='both' and original.get('subtype')!=mode.upper():continue
         entry=dict(original)
         caption=entry.get('caption') or entry.get('label','心电图条')
         caption_lines=wrap_text(caption,46)
@@ -241,10 +267,13 @@ def build_paper_pdf(case, report, font):
             entry['display_caption']=f'[图条 {i+1}] {caption_lines[0]}…'
             caption_notes.extend(wrap_text(f'图条 {i+1}：{caption}',53)+[''])
         n=len(entry.get('strip',{}).get('leads') or entry['waveform']['leads'])
+        if paper.get('time_scale')=='fixed' and entry.get('strip',{}).get('warning'):
+            caption_notes.extend(wrap_text(f"图条 {i+1} 区间提示：{entry['strip']['warning']}",53)+[''])
         unit=1 if n<=3 else 2 if n<=6 else 3
-        if units+unit>3:flush()
-        batch.append((entry,unit));units+=unit
-        if units==3:flush()
+        for rendered in paper_segments(entry,paper):
+            if units+unit>3:flush()
+            batch.append((rendered,unit));units+=unit
+            if units==3:flush()
     flush()
     def caption_page(rows):
         heading('图条说明（完整图注）',10)
@@ -252,11 +281,26 @@ def build_paper_pdf(case, report, font):
     for offset in range(0,len(caption_notes),44):
         part=caption_notes[offset:offset+44]
         pages.append(lambda part=part:caption_page(part))
-    if report.get('hrv_analysis'):
+    strip_pages=pages;pages=[]
+    if not strip_pages and report.get('composition',{}).get('page_selection_version')==1:
+        def empty_strips():
+            heading('事件图条',10)
+            text(0,25,'本次报告未选择符合打印模式的图条。',10)
+        strip_pages=[empty_strips]
+    from .report_sections import validate_pages
+    from .report_sections_pdf import make_supplement_pages
+    for key in validate_pages(report.get('composition',{})):
+        if key=='summary':pages.extend(summary_pages)
+        elif key=='hourly':pages.extend(hourly_pages)
+        elif key=='event_strips':pages.extend(strip_pages)
+        elif key=='hrv_overview' and report.get('hrv_analysis'):
+            from .hrv_report_pdf import make_hrv_pages
+            pages.extend(make_hrv_pages(c,font,report['hrv_analysis'])[1:])
+        else:pages.extend(make_supplement_pages(c,font,case,report,[key]))
+    if report.get('hrv_only') and report.get('hrv_analysis'):
         from .hrv_report_pdf import make_hrv_pages
         hrv_pages=make_hrv_pages(c,font,report['hrv_analysis'])
-        if report.get('hrv_only'):pages=hrv_pages
-        elif report.get('composition',{}).get('include_hrv'):pages.extend(hrv_pages)
+        pages=hrv_pages
     for i,draw in enumerate(pages):
         text(0,0,'患者 ID：'+str(meta.get('patient_id') or case['case_id']),8)
         text(90,0,'姓名：'+str(meta.get('name') or '—'),8)

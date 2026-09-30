@@ -18,7 +18,12 @@
 .report-range-handle:after{content:'';position:absolute;top:0;left:3px;width:12px;height:9px;border:2px solid #cc6500;background:#fff6e7}
 .report-range-editor output{display:block;font:12px/1.6 ui-monospace,monospace;margin:7px 0;color:#445d67}
 .report-range-editor .range-error{color:#a42e25}
-@media(max-width:600px){.occ-scroll-help{width:100%}}
+@media(max-width:600px){
+  #page-edit .occurrence-actions{font-size:16px}
+  #page-edit .occurrence-actions input{width:78px;height:44px}
+  #page-edit .occurrence-actions button{min-height:44px}
+  #page-edit .occurrence-actions .occ-scroll-help{width:100%;font-size:14px}
+}
 @media(max-width:900px){
   html:has(#page-trends.active),body:has(#page-trends.active){min-width:0;width:100%;overflow-x:clip}
   body:has(#page-trends.active){--sidebar:56px}

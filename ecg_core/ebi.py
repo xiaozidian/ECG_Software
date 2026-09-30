@@ -9,6 +9,8 @@ from functools import lru_cache
 from pathlib import Path
 
 from .config import SAMPLE_RATE
+from .source_identity import file_signature, require_local_file, source_read, SourceInvalid
+from .rr_quality import valid_rr_rows, consistent_rate, finite, NONBEATS
 
 HEADER_SIZE = 32
 RECORD = struct.Struct("<IHHIIII")
@@ -25,18 +27,39 @@ SCATTER_DEFINITIONS = {
 VALID_BEAT_GROUPS = frozenset({1, 2, 3, 4, 5, 6, 7, 8})
 
 
-@lru_cache(maxsize=3)
+@source_read
 def load_records(path_text: str) -> tuple[tuple[int, int, int, int, int, int, int], ...]:
+    require_local_file(path_text)
+    return _load_records(str(path_text), file_signature(path_text))
+
+
+@lru_cache(maxsize=3)
+def _load_records(path_text, signature):
     data = Path(path_text).read_bytes()
+    if file_signature(path_text) != signature:
+        raise ValueError('EBI 文件在读取期间发生变化，请稍后重试')
+    if len(data) < HEADER_SIZE:
+        raise SourceInvalid('EBI 心搏索引头不完整，请重新复制完整病例。')
     payload = data[HEADER_SIZE:]
     if len(payload) % RECORD.size:
-        raise ValueError("EBI记录长度不是24字节的整数倍")
-    return tuple(RECORD.iter_unpack(payload))
+        raise SourceInvalid('EBI 心搏记录不完整：记录长度不是 24 字节的整数倍，请重新复制完整病例。')
+    if not payload:
+        raise SourceInvalid('EBI 没有心搏记录，不能将缺失索引解释为零心搏或无异常。')
+    records = tuple(RECORD.iter_unpack(payload))
+    if any(a[0] >= b[0] for a, b in zip(records, records[1:])):
+        raise SourceInvalid('EBI 心搏位置重复或未按时间递增，请核对原始索引；未自动排序或丢弃记录。')
+    return records
+
+
+@source_read
+def _record_sample_indexes(path_text: str) -> tuple[int, ...]:
+    require_local_file(path_text)
+    return _sample_indexes(str(path_text), file_signature(path_text))
 
 
 @lru_cache(maxsize=3)
-def _record_sample_indexes(path_text: str) -> tuple[int, ...]:
-    return tuple(record[0] for record in load_records(path_text))
+def _sample_indexes(path_text, signature):
+    return tuple(record[0] for record in _load_records(path_text, signature))
 
 
 def records_for(path):
@@ -49,19 +72,29 @@ def _valid(records):
 
 def metrics(path: Path, duration_seconds: float) -> dict:
     records = records_for(path)
-    valid = _valid(records)
-    rr = [record[6] for record in valid if 250 <= record[6] <= 5000]
-    longest = max(valid, key=lambda item: item[6]) if valid else None
-    groups = Counter(record[2] for record in records)
+    # Reuse materialized rows when available. Source-only inspection retains its
+    # stored RR values, but must satisfy the same interval consistency contract.
+    rows = path.beats if hasattr(path, 'beats') else [dict(sample_index=r[0],
+        group=r[2], class_code='X' if r[2] == 34 else 'N', rr_ms=r[6],
+        hr=round(60000/r[6], 1) if finite(r[6]) and r[6] > 0 else None) for r in records]
+    in_record = [r for r in rows if finite(r.get('sample_index'))
+                 and 0 <= r['sample_index']/SAMPLE_RATE < duration_seconds
+                 and r['class_code'] not in NONBEATS]
+    valid = [r for r in in_record if r['class_code'] != 'X']
+    intervals = valid_rr_rows(rows, duration_seconds)
+    rr = [r['rr_ms'] for r in intervals if consistent_rate(r)]
+    longest = max(intervals, key=lambda item: item['rr_ms']) if intervals else None
+    groups = Counter(r['group'] for r in in_record)
     return {
-        "record_count": len(records),
+        "record_count": len(in_record),
         "valid_beats": len(valid),
-        "first_beat_time_s": round(valid[0][0] / SAMPLE_RATE, 3) if valid else None,
+        "first_beat_time_s": round(valid[0]['sample_index'] / SAMPLE_RATE, 3) if valid else None,
         "group_counts": {str(key): value for key, value in sorted(groups.items())},
         "avg_hr_from_duration": round(len(valid) * 60 / max(duration_seconds, 1), 2),
         "avg_hr_from_rr": round(60000 / statistics.mean(rr), 2) if rr else None,
-        "longest_rr_ms": longest[6] if longest else None,
-        "longest_rr_time_s": round(longest[0] / SAMPLE_RATE, 3) if longest else None,
+        "rr_interval_count": len(intervals), "rate_interval_count": len(rr),
+        "longest_rr_ms": longest['rr_ms'] if longest else None,
+        "longest_rr_time_s": round(longest['sample_index'] / SAMPLE_RATE, 3) if longest else None,
         "min_rr_ms": min(rr) if rr else None,
         "format_verified": True,
     }

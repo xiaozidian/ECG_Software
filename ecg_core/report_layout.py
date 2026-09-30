@@ -4,9 +4,64 @@ from __future__ import annotations
 from bisect import bisect_left
 from datetime import datetime, timedelta
 import math
+from .rr_quality import qrs_rows, interval_mask, valid_rr_rows, consistent_rate, rhythm_episodes, rhythm_summary
 
 LEADS = ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
 DEFAULT_LEADS = ["II", "V1", "V5"]
+
+
+def strip_review_note(entry):
+    """Episode confirmation is independent of beat review and report approval."""
+    if entry.get('category') != 'AF':
+        return ''
+    name = '房扑' if entry.get('subtype') == 'AFL' else '房颤'
+    status = entry.get('rhythm_status')
+    if status == 'confirmed':
+        return f'{name}片段已确认 · 不代表报告已审核'
+    if status == 'excluded':
+        return f'{name}片段已排除 · 不应入报'
+    return f'{name}片段待复核 · 非确诊'
+
+
+def valid_rr_pairs(rows, duration):
+    """Project exact endpoints using the unchanged shared interval quality rules.
+
+    A cached RR can differ by up to 10 ms under that contract; it is not an
+    exact coordinate. Keep original row references and never bridge artifacts.
+    """
+    qrs = qrs_rows(rows)
+    valid = interval_mask(qrs)
+    return [(qrs[i-1], r) for i, r in enumerate(qrs)
+            if valid[i] and r['sample_index']/200 < duration]
+
+
+def paper_segments(entry, paper=None):
+    """Split only the rendered paper, never the curated event or its samples.
+
+    Half-open sample-aligned windows assign boundary beats exactly once.
+    Legacy reports retain their full-window fit until explicitly switched.
+    """
+    paper = paper or {}
+    if paper.get('time_scale', 'fit') != 'fixed':
+        return [entry]
+    speed = float(str(paper.get('speed', '25 mm/s')).split()[0])
+    if speed not in (12.5, 25, 50):
+        raise ValueError('不支持的固定纸速')
+    wave = entry['waveform']
+    first = round(wave['start_s'] * 200)
+    count = round(wave['duration_s'] * 200)
+    capacity = int(175 / speed * 200)
+    total = math.ceil(count / capacity)
+    result = []
+    for i, offset in enumerate(range(0, count, capacity)):
+        duration = min(capacity, count - offset) / 200
+        start = (first + offset) / 200
+        beats = sum(first + offset <= b['sample_index'] < first + offset + round(duration * 200)
+                    for b in wave.get('beats', []))
+        result.append({**entry, 'paper_segment': {'index': i + 1, 'count': total,
+            'start_s': start, 'duration_s': duration, 'width_mm': duration * speed,
+            'beat_count': beats}})
+    return result
 
 
 def strip_settings(raw=None):
@@ -37,8 +92,16 @@ def resolve_strip(index, event, settings=None):
     length = min(total, settings["duration_s"])
     start = max(0, min(anchor - length / 2, total - length))
     end = start + length
+    pause_start_sample = None
     if event.get('category') == 'pause':
-        start = max(0, min(start, anchor - event['rr_ms'] / 1000 - .2))
+        # Re-read the current endpoints rather than trusting a saved event's
+        # cached RR or supplied coordinates. Noise remains an interval boundary.
+        pairs = [(a,b) for a,b in valid_rr_pairs(index['rows'], index['duration_s'])
+                 if b['sample_index'] == event['start_sample'] and b['rr_ms'] > 2500]
+        if len(pairs) != 1:
+            raise ValueError('长 RR 的 R 峰依据已变化，请重新选择事件')
+        pause_start_sample = pairs[0][0]['sample_index']
+        start = max(0, min(start, pause_start_sample / 200 - .2))
         end = min(total, max(end, anchor + .3))
     rows = beat_rows(index)
     times = [r["sample_index"] / 200 for r in rows]
@@ -49,7 +112,7 @@ def resolve_strip(index, event, settings=None):
         start,end=settings['range_start_s'],settings['range_end_s']
         if end>total or not start<=anchor<end:
             raise ValueError('人工区间须在记录范围内，并包含当前事件定位心搏')
-        if event.get('category')=='pause' and start>anchor-event['rr_ms']/1000:
+        if pause_start_sample is not None and round(start*200)>pause_start_sample:
             raise ValueError('停搏候选入图须包含完整长 RR 间期的两个 R 峰')
         if count(start,end)<min(5,len(times)):
             raise ValueError('人工入报区间至少包含 5 个可用心搏，请向外拖动橘色边界')
@@ -91,20 +154,26 @@ def report_statistics(index, start_time, settings):
     automatic diagnoses. Noise never becomes a valid heartbeat or a heart rate.
     """
     rows = beat_rows(index)
+    rr_rows = valid_rr_rows(index['rows'], index['duration_s'])
+    rate_rows = [r for r in rr_rows if consistent_rate(r)]
+    episodes = rhythm_episodes(index['events'])
     try:
         clock = datetime.fromisoformat(str(start_time).replace("Z", "+00:00"))
     except (ValueError, TypeError):
         clock = None
     def aggregate(lo, hi):
         beats = [r for r in rows if lo <= r["sample_index"] / 200 < hi]
-        rates = [r for r in beats if (r.get("rr_ms") or 0) > 0 and (r.get("hr") or 0) > 0]
+        rates = [r for r in rate_rows if lo <= r['sample_index']/200 < hi]
+        intervals = [r for r in rr_rows if lo <= r['sample_index']/200 < hi]
         events = [e for e in index["events"] if lo <= e["time_s"] < hi]
         slow = min(rates, key=lambda r: r["hr"]) if rates else None
         fast = max(rates, key=lambda r: r["hr"]) if rates else None
-        longest = max(rates, key=lambda r: r["rr_ms"]) if rates else None
+        longest = max(intervals, key=lambda r: r["rr_ms"]) if intervals else None
+        rhythm = rhythm_summary(episodes, index['duration_s'], lo, hi)
         def point(r):
-            return {"hr": r["hr"], "time_s": r["sample_index"] / 200, "rr_ms": r["rr_ms"]} if r else None
+            return {"hr": r['hr'] if consistent_rate(r) else None, "time_s": r["sample_index"] / 200, "rr_ms": r["rr_ms"]} if r else None
         result = {"total": len(beats), "noise": sum(lo <= r["sample_index"] / 200 < hi and r["class_code"] == "X" for r in index["rows"]),
+                  "rr_interval_count": len(intervals), "rate_interval_count": len(rates),
                   "min_hr": slow["hr"] if slow else None, "max_hr": fast["hr"] if fast else None,
                   "avg_hr": round(60000 / (sum(r["rr_ms"] for r in rates) / len(rates)), 2) if rates else None,
                   "fastest": point(fast), "slowest": point(slow), "longest": point(longest),
@@ -112,7 +181,7 @@ def report_statistics(index, start_time, settings):
                   "brady_beats": sum(r["hr"] <= settings["brady"] for r in rates),
                   "pause": sum(e["category"] == "pause" for e in events),
                   "pause_over3": sum(e["category"] == "pause" and e["rr_ms"] > 3000 for e in events),
-                  "af": sum(e["category"] == "AF" and e["diagnosis_status"] == "confirmed" for e in events)}
+                  "af": rhythm['confirmed_any']['count'], "rhythm": rhythm}
         for code in ("V", "S"):
             total = sum(r["class_code"] == code for r in beats)
             result[code] = {"total": total, "pct": round(total / len(beats) * 100, 2) if beats else 0,

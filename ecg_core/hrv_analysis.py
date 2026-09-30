@@ -9,8 +9,9 @@ import math
 import statistics
 from datetime import datetime, timedelta
 from .clinical_analysis import hrv_windows
+from .rr_quality import nn_intervals, five_minute_blocks
 
-METHOD = ('连续 N-N；三角指数箱宽 7.8125 ms。完整 5 分钟段要求 ≥30 个 NN、NN 覆盖 ≥80%；'
+METHOD = ('连续 N-N，整段排除房颤/房扑确认及待复核区间；三角指数箱宽 7.8125 ms。完整 5 分钟段要求 ≥30 个 NN、NN 覆盖 ≥80%；'
           '频谱以 4 Hz 线性插值、1024 点 Hann 窗、去均值 FFT 估计，超过 5 秒缺口不插值。'
           '显示合格短段平均谱，不是全程 24 小时谱；VLF 仅探索性估计，无 ULF。日夜为钟点代理，非实际睡眠分期。')
 
@@ -52,10 +53,11 @@ def fft(values):
     return a
 
 
-def spectrum(nn):
+def spectrum(nn, excluded=()):
     """One 256-second periodogram wholly inside the NN observations."""
     times = [r[2] for r in nn]
-    if not times or times[-1] - times[0] < 255.75:
+    if (len(times)<2 or any(not math.isfinite(r[2]) or not math.isfinite(r[3]) for r in nn)
+            or any(b<=a for a,b in zip(times,times[1:])) or times[-1] - times[0] < 255.75):
         return None
     start = (times[0] + times[-1] - 255.75) / 2
     values = []
@@ -63,7 +65,7 @@ def spectrum(nn):
         t = start + i / 4
         k = max(1, bisect_right(times, t))
         k = min(k, len(times)-1)
-        if times[k]-times[k-1] > 5:
+        if times[k]-times[k-1] > 5 or any(a<times[k] and b>times[k-1] for a,b in excluded):
             return None
         f = (t-times[k-1])/(times[k]-times[k-1])
         values.append(nn[k-1][3]*(1-f)+nn[k][3]*f)
@@ -71,32 +73,22 @@ def spectrum(nn):
     window = [.5-.5*math.cos(2*math.pi*i/1023) for i in range(1024)]
     transformed = fft([(x-avg)*w for x,w in zip(values,window)])
     scale = 4*sum(w*w for w in window)
-    return [2*abs(transformed[k])**2/scale for k in range(129)]
+    return [(1 if k == 0 else 2)*abs(transformed[k])**2/scale for k in range(129)]
 
 
 def analyze_hrv(feed, start_time, window=0, st_trends=None):
     result = hrv_windows(feed, start_time, window)
     lo, hi = result['start_s'], result['end_s']
     rows, opts = feed.beats, feed.document['settings']
-    nn = [(i,a['sample_index']/200,b['sample_index']/200,b['rr_ms'])
-          for i,(a,b) in enumerate(zip(rows,rows[1:]))
-          if a['class_code'] == b['class_code'] == 'N' and opts['nn_min'] <= b['rr_ms'] <= opts['nn_max']]
+    nn = nn_intervals(feed)
     try:
         clock = datetime.fromisoformat(str(start_time).replace('Z','+00:00'))
     except (ValueError,TypeError):
         clock = None
-    buckets = {}
-    for r in nn:
-        bucket = math.floor((r[1]-lo)/300)
-        if bucket >= 0 and r[2] <= min(hi,lo+(bucket+1)*300):
-            buckets.setdefault(bucket,[]).append(r)
     blocks = []
-    for k, chosen in sorted(buckets.items()):
-        start, end = lo+k*300, lo+(k+1)*300
+    for start, end, chosen in five_minute_blocks(nn, hi, lo):
         values = [r[3] for r in chosen]
-        if end > hi or len(values)<30 or sum(values)/1000<240:
-            continue
-        blocks.append({'start_s':start,'end_s':end,'mean':mean(values),'sd':sd(values),'psd':spectrum(chosen)})
+        blocks.append({'start_s':start,'end_s':end,'mean':mean(values),'sd':sd(values),'psd':spectrum(chosen,getattr(feed,'excluded_rhythm_intervals',()))})
     def intervals(kind):
         if kind=='full': return [(lo,hi)]
         wanted=[]
