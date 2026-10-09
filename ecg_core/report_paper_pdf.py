@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from io import BytesIO
+import re
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.pdfgen.canvas import Canvas
@@ -14,12 +15,15 @@ def number(x):
     return '—' if x is None else f'{x:g}' if isinstance(x, (int, float)) else str(x)
 
 
-def wrap_text(text, width=53):
+def wrap_text(text, width=53, conservative=False):
     lines = []
     for source in str(text or '（未填写）').split('\n'):
         line, measure = '', 0
         for ch in source:
-            w = 1 if ord(ch) > 255 else .55
+            # Evaluation documents reserve footer/signature space. Wide ASCII
+            # glyphs need the same conservative character budget as CJK; the
+            # legacy non-evaluation paper keeps its original wrapping contract.
+            w = 1 if conservative or ord(ch) > 255 else .55
             if measure + w > width:
                 lines.append(line)
                 line, measure = '', 0
@@ -44,6 +48,8 @@ def build_paper_pdf(case, report, font):
     c.setTitle(f"{case['case_id']} 心电分析复核报告")
     c.setAuthor('CardioInsight')
     meta, stats = case.get('metadata', {}), report.get('paper_statistics', {})
+    alias = case.get('display_case_id', '')
+    alias = alias if isinstance(alias, str) and re.fullmatch(r'C\d{2,}', alias) else ''
     summary, hrv = stats.get('summary', {}), stats.get('hrv', {})
     paper = report.get('composition', {}).get('paper', {})
     estimate = normalize_voltage_estimate(paper.get('voltage_estimate'))
@@ -110,11 +116,11 @@ def build_paper_pdf(case, report, font):
         text(2,68,'概要',10)
         pairs(2,74,[('总心搏数',str(s.get('total','—'))+' 搏'),('伪差',str(s.get('noise','—'))+' 个'),('室性/室上性心搏',f"{s.get('V',{}).get('total','—')} / {s.get('S',{}).get('total','—')} 搏"),('最长 RR',f"{number(s['longest']['rr_ms']/1000)} 秒" if s.get('longest') else '—'),('发生时间',clock(meta,s['longest']['time_s'])[5:] if s.get('longest') else '—'),('长 RR 候选',f"{s.get('pause','—')} 次 >2.5s；其中 {s.get('pause_over3','—')} 次 >3s")],28)
         text(97,68,'心率',10)
-        pairs(97,74,[('最慢心率',hr(s.get('slowest'))),('平均心率',str(s.get('avg_hr','—'))+' 次/分'),('最快心率',hr(s.get('fastest'))),('快心率心搏',f"{s.get('tachy_beats','—')} 搏（≥{opts.get('tachy','—')} bpm）"),('慢心率心搏',f"{s.get('brady_beats','—')} 搏（≤{opts.get('brady','—')} bpm）"),('已确认房颤/房扑',str(s.get('af','—'))+' 段')],30)
+        pairs(97,74,[('最慢心率',hr(s.get('slowest'))),('平均心率',number(s.get('avg_hr'))+' 次/分'),('最快心率',hr(s.get('fastest'))),('快心率心搏',f"{s.get('tachy_beats','—')} 搏（≥{opts.get('tachy','—')} bpm）"),('慢心率心搏',f"{s.get('brady_beats','—')} 搏（≤{opts.get('brady','—')} bpm）"),('已确认房颤/房扑',str(s.get('af','—'))+' 段')],30)
         for code, x, title in [('V',2,'室性心搏'),('S',97,'室上性心搏')]:
             d = s.get(code,{})
             text(x,103,title,10)
-            pairs(x,109,[('总数',f"{d.get('total','—')} 搏（{d.get('pct','—')}%）"),('单发',str(d.get('single','—'))+' 次'),('成对',str(d.get('couplet','—'))+' 对'),('短阵（≥3搏）',str(d.get('run','—'))+' 阵'),('二联律',str(d.get('bigeminy','—'))+' 阵'),('三联律',str(d.get('trigeminy','—'))+' 阵')],28)
+            pairs(x,109,[('总数',f"{number(d.get('total'))} 搏（{number(d.get('pct'))}%）"),('单发',str(d.get('single','—'))+' 次'),('成对',str(d.get('couplet','—'))+' 对'),('短阵（≥3搏）',str(d.get('run','—'))+' 阵'),('二联律',str(d.get('bigeminy','—'))+' 阵'),('三联律',str(d.get('trigeminy','—'))+' 阵')],28)
         text(2,138,'心率变异性 · 当前修订 N-N',10)
         for i,(name,key,unit) in enumerate([('SDNN','sdnn_ms','ms'),('SDANN','sdann_ms','ms'),('SDNN index','sdnn_index_ms','ms'),('rMSSD','rmssd_ms','ms'),('pNN50','pnn50_pct','%'),('三角指数','triangular_index','')]):
             text(2+i%3*63,144+i//3*4,f'{name}: {number(hrv.get(key))} {unit}',8.5)
@@ -129,7 +135,7 @@ def build_paper_pdf(case, report, font):
         text(188,261,'报告日期：'+str(report.get('updated_at') or '未保存')[:10],8,'right')
 
     blocks=[b.get('text','') for b in report.get('composition',{}).get('diagnosis_blocks',[]) if b.get('text')]
-    conclusion=wrap_text((report.get('conclusion') or '（未填写）')+ ('\n图条说明（不替代诊断）：'+'；'.join(blocks) if blocks else ''))
+    conclusion=wrap_text((report.get('conclusion') or '（未填写）')+ ('\n图条说明（不替代诊断）：'+'；'.join(blocks) if blocks else ''), 53, bool(alias))
     # Signature space is reserved. Long text always continues; it is never clipped.
     first=conclusion[:15]
     pages.append(lambda first=first:summary_page(first))
@@ -262,13 +268,13 @@ def build_paper_pdf(case, report, font):
         if original.get('category') in ('fastest','slowest') and mode!='both' and original.get('subtype')!=mode.upper():continue
         entry=dict(original)
         caption=entry.get('caption') or entry.get('label','心电图条')
-        caption_lines=wrap_text(caption,46)
+        caption_lines=wrap_text(caption,46,bool(alias))
         if len(caption_lines)>1:
             entry['display_caption']=f'[图条 {i+1}] {caption_lines[0]}…'
-            caption_notes.extend(wrap_text(f'图条 {i+1}：{caption}',53)+[''])
+            caption_notes.extend(wrap_text(f'图条 {i+1}：{caption}',53,bool(alias))+[''])
         n=len(entry.get('strip',{}).get('leads') or entry['waveform']['leads'])
         if paper.get('time_scale')=='fixed' and entry.get('strip',{}).get('warning'):
-            caption_notes.extend(wrap_text(f"图条 {i+1} 区间提示：{entry['strip']['warning']}",53)+[''])
+            caption_notes.extend(wrap_text(f"图条 {i+1} 区间提示：{entry['strip']['warning']}",53,bool(alias))+[''])
         unit=1 if n<=3 else 2 if n<=6 else 3
         for rendered in paper_segments(entry,paper):
             if units+unit>3:flush()
@@ -302,12 +308,14 @@ def build_paper_pdf(case, report, font):
         hrv_pages=make_hrv_pages(c,font,report['hrv_analysis'])
         pages=hrv_pages
     for i,draw in enumerate(pages):
-        text(0,0,'患者 ID：'+str(meta.get('patient_id') or case['case_id']),8)
+        text(0,0,('病例：'+alias+' · ' if alias else '')+'患者 ID：'+str(meta.get('patient_id') or case['case_id']),8)
         text(90,0,'姓名：'+str(meta.get('name') or '—'),8)
         text(190,0,'已审核' if report.get('status')=='reviewed' else '未审核 · 草稿',8,'right')
         line(0,5.5,190,5.5)
         draw()
         text(0,272,'研究与软件验证输出 · 需医生复核，不用于临床决策',7)
+        if alias:
+            text(0,276,'采样率与导联映射待核验；电压未标定；诊断准确性未验证。',6.5)
         text(190,272,f'第 {i+1} / {len(pages)} 页',7,'right')
         c.showPage()
     c.save();output.seek(0)

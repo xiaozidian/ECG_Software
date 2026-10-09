@@ -1,4 +1,4 @@
-name: Deploy single-case demo to GitHub Pages
+name: Deploy mathematical evaluation demo to GitHub Pages
 
 on:
   workflow_dispatch:
@@ -24,10 +24,18 @@ jobs:
           python-version: "3.12"
       - name: Install static builder dependency
         run: python -m pip install "Jinja2>=3.1,<4"
-      - name: Build browser-only single-case demo
+      - name: Verify frozen evaluation source
+        run: python scripts/verify_public_release.py
+      - name: Build browser-only mathematical demo
         run: python scripts/build_static_demo.py
       - name: Check demo JavaScript
-        run: node --check build/pages/static/js/demo-api.js && node --check build/pages/static/js/app.js
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import subprocess
+          for asset in sorted(Path('build/pages/static/js').glob('*.js')):
+              subprocess.run(['node', '--check', str(asset)], check=True)
+          PY
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:

@@ -1,0 +1,433 @@
+{
+  "schema": 1,
+  "release_id": "0.12.9-doctor-evaluation.20261009+4314c977f468868f",
+  "production_source_sha256": "4314c977f468868fdd72128028f311ad27314aedef8a8a38d904af933e2750b4",
+  "production_files_verified": 94,
+  "production_files_modified": false,
+  "storage_namespace": "cardioinsight-public-math-4314-v2",
+  "mathematical_source": {
+    "release_id": "0.12.9-doctor-evaluation.20261009+4314c977f468868f",
+    "kind": "pure_mathematical",
+    "case_id": "math-4314-001",
+    "duration_seconds": 600,
+    "sample_rate_hz": 200,
+    "stored_channels": 8,
+    "beat_count": 641,
+    "seed_parameters": {
+      "base_hr": 64,
+      "phase": 0.731,
+      "case_number": 1
+    },
+    "existing_data_read": false,
+    "patient_inputs_read": false,
+    "generator_sha256": "a27dfee95c42991498cb1e3a56e55153823ff93bc1536949b677cb2f7296a3b8",
+    "payload_generator_sha256": "93941d4ab0ed9f255d913a5ebfa4f2080dc2862c75d39d7ae53e9a3141e3f685",
+    "assets": {
+      "waveform.bin": {
+        "bytes": 1920000,
+        "sha256": "758023806cf0f48eb38049e93fbcffa90c23964b086bea32ddd1318ada4bea7e"
+      },
+      "case-data.js": {
+        "bytes": 55283,
+        "sha256": "99e80021aa2abaa3807138206245ceab8caf82025e98d2d929784ce0a267a4fe"
+      }
+    }
+  },
+  "software_assets": [
+    {
+      "path": "static/css/advanced-analysis.css",
+      "production_sha256": "3e995526e6ed1671a357614e38fca002be907ca668536aae8333e36a8bf9c49a",
+      "output_sha256": "3e995526e6ed1671a357614e38fca002be907ca668536aae8333e36a8bf9c49a",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/css/app.css",
+      "production_sha256": "e4dc18e4daec856157c6b17b430e70c2f6d4e3834e810e19d80e0be79e1e1e8c",
+      "output_sha256": "e4dc18e4daec856157c6b17b430e70c2f6d4e3834e810e19d80e0be79e1e1e8c",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/css/beat-editor.css",
+      "production_sha256": "0760018916418ba7e85a8363ec25199a5418f3ae73dd450888da96b59474192d",
+      "output_sha256": "0760018916418ba7e85a8363ec25199a5418f3ae73dd450888da96b59474192d",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/css/chart-inspection.css",
+      "production_sha256": "5226e2ab702c553c139173093aed6a975ca07461d76c6edeab858468264962b3",
+      "output_sha256": "5226e2ab702c553c139173093aed6a975ca07461d76c6edeab858468264962b3",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/css/clinical-review-tools.css",
+      "production_sha256": "d5a82f03bd5397e43db99822ebe9d9dc5da11fdd3b687b5321b66c34a377d77a",
+      "output_sha256": "d5a82f03bd5397e43db99822ebe9d9dc5da11fdd3b687b5321b66c34a377d77a",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/css/clinical-ui.css",
+      "production_sha256": "7b031a3183218c53db6268cadbc293010c02f2a542bf8f436ca6313bc2faf6da",
+      "output_sha256": "7b031a3183218c53db6268cadbc293010c02f2a542bf8f436ca6313bc2faf6da",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/css/clinical-workflow.css",
+      "production_sha256": "7ec358503f2a98374658491a45a33d4933753bcd28c8cdd44c4a22ec304e875d",
+      "output_sha256": "7ec358503f2a98374658491a45a33d4933753bcd28c8cdd44c4a22ec304e875d",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/css/desktop-workspace.css",
+      "production_sha256": "7590f498b9800d632eb76471d40736c4bccfb023f3d02e9828d939c02596ddc8",
+      "output_sha256": "7590f498b9800d632eb76471d40736c4bccfb023f3d02e9828d939c02596ddc8",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/css/hrv-review-evidence.css",
+      "production_sha256": "26c2e2ba65c038d4c919b7dd2029dc857785a7cbc9f1c2b5c194882b8b3101d6",
+      "output_sha256": "26c2e2ba65c038d4c919b7dd2029dc857785a7cbc9f1c2b5c194882b8b3101d6",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/css/morphology-workbench.css",
+      "production_sha256": "4c821bf1a98c372f1c3874ec14d09d4b4818d3ee42423d2846bfca00849cfa63",
+      "output_sha256": "4c821bf1a98c372f1c3874ec14d09d4b4818d3ee42423d2846bfca00849cfa63",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/css/overview-workbench.css",
+      "production_sha256": "4e02f026051df5ddafaff5249795019a76d060750ac81f8ca1fe0d8056cc4ff9",
+      "output_sha256": "4e02f026051df5ddafaff5249795019a76d060750ac81f8ca1fe0d8056cc4ff9",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/css/report-paper.css",
+      "production_sha256": "c65249c41cc31bb2bb48d722bf49a4d61f6a5774c790ddd6d658a64332cc70d7",
+      "output_sha256": "c65249c41cc31bb2bb48d722bf49a4d61f6a5774c790ddd6d658a64332cc70d7",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/css/report-workspace.css",
+      "production_sha256": "4b5c6b4454291f16738f6d33a83208a17ef6231f4e601c844d9e0137a0172da5",
+      "output_sha256": "4b5c6b4454291f16738f6d33a83208a17ef6231f4e601c844d9e0137a0172da5",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/css/shared-ui-review.css",
+      "production_sha256": "8d802a4eae3f0b81ccff576713cdee6e0f4a0c54d0d6007c0d99606003a41025",
+      "output_sha256": "8d802a4eae3f0b81ccff576713cdee6e0f4a0c54d0d6007c0d99606003a41025",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/css/sidebar-workflow.css",
+      "production_sha256": "6a296d8454ee17f56058ab1f6a851b1adca444b9f530e86d1b6dd05152fa49de",
+      "output_sha256": "6a296d8454ee17f56058ab1f6a851b1adca444b9f530e86d1b6dd05152fa49de",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/css/stt-review-layout.css",
+      "production_sha256": "6798fa0f56fc2243fca722cd4da64bd8e0e4ec344ca6f7e0db41875f4ec7bcdc",
+      "output_sha256": "6798fa0f56fc2243fca722cd4da64bd8e0e4ec344ca6f7e0db41875f4ec7bcdc",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/css/visual-refresh.css",
+      "production_sha256": "ee2f7e825594df2311186210916c149ec32d92c93107042b43b686218f37b1fe",
+      "output_sha256": "ee2f7e825594df2311186210916c149ec32d92c93107042b43b686218f37b1fe",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/css/voltage-estimate.css",
+      "production_sha256": "1012ab83a16a362ac21e4f8c8e65da817f0744c9b5e0a2eb5365207978ded31e",
+      "output_sha256": "1012ab83a16a362ac21e4f8c8e65da817f0744c9b5e0a2eb5365207978ded31e",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/icon.svg",
+      "production_sha256": "e04d9eb149fc04433a0be582a3ead0e66736a890130d4b3aa5bb0912d1b13d2e",
+      "output_sha256": "e04d9eb149fc04433a0be582a3ead0e66736a890130d4b3aa5bb0912d1b13d2e",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/js/advanced-analysis.js",
+      "production_sha256": "8658a733d89ef7224a35af4695c14f3e52c0b90d8e84708bd37db3465bbf6c25",
+      "output_sha256": "8658a733d89ef7224a35af4695c14f3e52c0b90d8e84708bd37db3465bbf6c25",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/js/af-coverage.js",
+      "production_sha256": "343bb912786359ef9461105a60b057fc32f7d478c5171c792b85fb30fda64e36",
+      "output_sha256": "343bb912786359ef9461105a60b057fc32f7d478c5171c792b85fb30fda64e36",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/js/analysis-consistency.js",
+      "production_sha256": "fb20b4aa33e0cd2cc5fae8bf8a2a7968b22f8506cdc012ae507c465ea59da3ee",
+      "output_sha256": "fb20b4aa33e0cd2cc5fae8bf8a2a7968b22f8506cdc012ae507c465ea59da3ee",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/js/app.js",
+      "production_sha256": "d4d81e70c661140c0c0710a10428c6b6f0a8648dad099bab3512501f7360712c",
+      "output_sha256": "3722a3a412905e736119daa7075ad19c7db4e9294a045649998ed79c4955f704",
+      "copy_changed": true,
+      "transformations": [
+        "isolated browser storage namespace",
+        "ST browser-only save capability; native and print rules retained"
+      ]
+    },
+    {
+      "path": "static/js/beat-editor-ui.js",
+      "production_sha256": "863de1c85b2c29450b9265d5d65f7198e942e5ad21c0667fc1412176dffffcbc",
+      "output_sha256": "863de1c85b2c29450b9265d5d65f7198e942e5ad21c0667fc1412176dffffcbc",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/js/beat-engine.js",
+      "production_sha256": "a8aea660c1e344636e4407167935c8410e7eafeee29eb07c2a8e1f9983158b95",
+      "output_sha256": "a8aea660c1e344636e4407167935c8410e7eafeee29eb07c2a8e1f9983158b95",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/js/chart-inspection.js",
+      "production_sha256": "47f32312b1d39e805259f2af1325231b9e8ab875295a27903f315cd16c51c770",
+      "output_sha256": "47f32312b1d39e805259f2af1325231b9e8ab875295a27903f315cd16c51c770",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/js/clinical-analysis.js",
+      "production_sha256": "b0c0d5df55cba46ca70bae6c517b52b86c5361bb12e552f77abcc4d90f05e61c",
+      "output_sha256": "b0c0d5df55cba46ca70bae6c517b52b86c5361bb12e552f77abcc4d90f05e61c",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/js/clinical-review-tools.js",
+      "production_sha256": "cc4599329b51f7166758a4c5be4d74dabb2362d942fbabe5df3abb3894577618",
+      "output_sha256": "cc4599329b51f7166758a4c5be4d74dabb2362d942fbabe5df3abb3894577618",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/js/clinical-ui.js",
+      "production_sha256": "01ef344f0a15b9692c1c58c580bc408106ed0f32bd696af8cc8feecff2288585",
+      "output_sha256": "01ef344f0a15b9692c1c58c580bc408106ed0f32bd696af8cc8feecff2288585",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/js/clinical-workflow.js",
+      "production_sha256": "f3368555a0b6bff0ed66aec7c1584129a7e7a3cb5fc3c7f12ec9b5aa680a1ada",
+      "output_sha256": "07ce5c0ec72eea7c1d8bda3a97b17c9c5201e4abc63dfa5b317779286d7fdac9",
+      "copy_changed": true,
+      "transformations": [
+        "browser-only mathematical write capability"
+      ]
+    },
+    {
+      "path": "static/js/desktop-workspace.js",
+      "production_sha256": "a628b40f5c020c97731268718f1183e70e36e8467ae24d57875704d41cbac32b",
+      "output_sha256": "a628b40f5c020c97731268718f1183e70e36e8467ae24d57875704d41cbac32b",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/js/hrv-analysis.js",
+      "production_sha256": "9a4898e4549c0466e6ddc40e7b7ae111f6243c3ed5cde88bee9829dc7e39617c",
+      "output_sha256": "9a4898e4549c0466e6ddc40e7b7ae111f6243c3ed5cde88bee9829dc7e39617c",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/js/hrv-report.js",
+      "production_sha256": "3ec6d82d5537567224ca1488d0f0c76775168f6c00ab2e7e11d992878f6af2db",
+      "output_sha256": "3ec6d82d5537567224ca1488d0f0c76775168f6c00ab2e7e11d992878f6af2db",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/js/hrv-review-evidence.js",
+      "production_sha256": "65dd5e076c20ca441079b972d586fab6ee77725b866dcb45aa774c573c1f5d24",
+      "output_sha256": "65dd5e076c20ca441079b972d586fab6ee77725b866dcb45aa774c573c1f5d24",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/js/linked-selection.js",
+      "production_sha256": "0f88f4766d92a83937f5df10322a049d6d94c0cb0fff0094e7ee141d203083e9",
+      "output_sha256": "0f88f4766d92a83937f5df10322a049d6d94c0cb0fff0094e7ee141d203083e9",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/js/morphology-groups.js",
+      "production_sha256": "9a179f05c75c44034dba3c4a0f84de7dfe87a5e0e1bf00ee57dee611856b1c13",
+      "output_sha256": "9a179f05c75c44034dba3c4a0f84de7dfe87a5e0e1bf00ee57dee611856b1c13",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/js/morphology-workbench.js",
+      "production_sha256": "f214c9e96142cb4444494f673cf3ab5e7114741c6a1390d896e9176350519bec",
+      "output_sha256": "f214c9e96142cb4444494f673cf3ab5e7114741c6a1390d896e9176350519bec",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/js/occurrence-card.js",
+      "production_sha256": "c2b8ea25e2f4d86df7508160e5afe012ad2312a2f62544f84ed701d382c5538e",
+      "output_sha256": "c2b8ea25e2f4d86df7508160e5afe012ad2312a2f62544f84ed701d382c5538e",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/js/overview-engine.js",
+      "production_sha256": "8d2c1e17f456532678fe80c7732cec5d9c18e2b8f3300028a68ce2638e1a7cda",
+      "output_sha256": "8d2c1e17f456532678fe80c7732cec5d9c18e2b8f3300028a68ce2638e1a7cda",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/js/overview-linked-view.js",
+      "production_sha256": "be7d303f1d5e4423cd54f31015991d9aee717e57b6fcfd4e68801622123af019",
+      "output_sha256": "be7d303f1d5e4423cd54f31015991d9aee717e57b6fcfd4e68801622123af019",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/js/overview-workbench.js",
+      "production_sha256": "6d7cf075f26cffe8fb45a1634edb76dc6539f1c3b11e62a79a955c6366f6c998",
+      "output_sha256": "6d7cf075f26cffe8fb45a1634edb76dc6539f1c3b11e62a79a955c6366f6c998",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/js/read-requests.js",
+      "production_sha256": "3535afa898d368f398d60a2b400fb1dfa3271aa295f98c3d8da90b757a295677",
+      "output_sha256": "3535afa898d368f398d60a2b400fb1dfa3271aa295f98c3d8da90b757a295677",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/js/report-consistency.js",
+      "production_sha256": "1c5e2a055e28ef01fd9c81a3478ff49edf8ed3c74d4028ae20fd75ae1f59645c",
+      "output_sha256": "1c5e2a055e28ef01fd9c81a3478ff49edf8ed3c74d4028ae20fd75ae1f59645c",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/js/report-engine.js",
+      "production_sha256": "303af8905c6d2967a687c862d59b6cb9b49408480e0e7928c574ffc0b9c15d97",
+      "output_sha256": "303af8905c6d2967a687c862d59b6cb9b49408480e0e7928c574ffc0b9c15d97",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/js/report-paper.js",
+      "production_sha256": "532fb547dd7a1fd6bf9c838cde45e70cc9f8fe1293b38c80b1b71c86da54a632",
+      "output_sha256": "532fb547dd7a1fd6bf9c838cde45e70cc9f8fe1293b38c80b1b71c86da54a632",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/js/report-range-editor.js",
+      "production_sha256": "27221d4a5af07d3f1153258e44ae32475f390fcd7d096d5a7a260d867a582432",
+      "output_sha256": "27221d4a5af07d3f1153258e44ae32475f390fcd7d096d5a7a260d867a582432",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/js/report-sections.js",
+      "production_sha256": "0a217ee325eca3f256916be5ed61655d09899e6691c9d1422abf1141bef5f893",
+      "output_sha256": "0a217ee325eca3f256916be5ed61655d09899e6691c9d1422abf1141bef5f893",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/js/report-workspace.js",
+      "production_sha256": "b4d62108f15c7ca43cb36a4294b6c5866d52c21642c7662b7046b50ad7e4c64b",
+      "output_sha256": "b4d62108f15c7ca43cb36a4294b6c5866d52c21642c7662b7046b50ad7e4c64b",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/js/rr-quality.js",
+      "production_sha256": "38da7459f895ae109ffbef96f562156c8bc1cbfbf2d870d9cc6e518fc201c5ae",
+      "output_sha256": "38da7459f895ae109ffbef96f562156c8bc1cbfbf2d870d9cc6e518fc201c5ae",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/js/source-group-evidence.js",
+      "production_sha256": "df9a4355d52f10e96fc08fb80b20868b843107d86fa85df8d054244cc6c9ed70",
+      "output_sha256": "df9a4355d52f10e96fc08fb80b20868b843107d86fa85df8d054244cc6c9ed70",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/js/stt-review-layout.js",
+      "production_sha256": "9f7a57bf0582636f6695b04339abca8b3b2fd7135f83c28a6bad261c1a079a7c",
+      "output_sha256": "9f7a57bf0582636f6695b04339abca8b3b2fd7135f83c28a6bad261c1a079a7c",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/js/template-linked-view.js",
+      "production_sha256": "7b28dc27ff5fb38ff5b87646a0c5530980cf9fcc1d1b5828fac6ee1ce7dbbaa0",
+      "output_sha256": "7b28dc27ff5fb38ff5b87646a0c5530980cf9fcc1d1b5828fac6ee1ce7dbbaa0",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/js/voltage-estimate.js",
+      "production_sha256": "ebece9fe1e46df89508eea6ef34924d2a6aedebb57d0cc783565dd181abcf085",
+      "output_sha256": "3ae8b59697aa4fe9b431b2a8e3e2c54118a6db20934500cc6c14932b9773406c",
+      "copy_changed": true,
+      "transformations": [
+        "isolated browser storage namespace"
+      ]
+    },
+    {
+      "path": "static/js/waveform-loader.js",
+      "production_sha256": "ea72b3ac0d47f649a365edec9ec51fa7ec5aa95244b9f6444878fc5a87695472",
+      "output_sha256": "ea72b3ac0d47f649a365edec9ec51fa7ec5aa95244b9f6444878fc5a87695472",
+      "copy_changed": false,
+      "transformations": []
+    },
+    {
+      "path": "static/js/workspace-backup.js",
+      "production_sha256": "6e44bac5c5c32bd637007d82ba1a9e4f5544a74e5d2e7cebd775f0e7d82edd8b",
+      "output_sha256": "6e44bac5c5c32bd637007d82ba1a9e4f5544a74e5d2e7cebd775f0e7d82edd8b",
+      "copy_changed": false,
+      "transformations": []
+    }
+  ],
+  "demo_api_sha256": "2e5b74a4342a650ed4928265768a0c8880fae0448689c4e9af68fd1a47861e0f",
+  "legacy_demo_inputs_read": false,
+  "scope": "Browser-only mathematical interaction; no desktop database, native PDF, backup/restore, clinical or hardware validation."
+}

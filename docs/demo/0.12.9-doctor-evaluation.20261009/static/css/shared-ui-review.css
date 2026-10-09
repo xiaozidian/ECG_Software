@@ -1,0 +1,20 @@
+/* Local evidence tables and shared read states; A4 keeps its paper geometry. */
+@media screen {
+  #page-dashboard .table-wrap, #page-patients .table-wrap { max-width:100%; overflow:auto; overscroll-behavior-inline:contain; }
+  #page-dashboard .data-table, #page-patients .data-table { min-width:720px; }
+  #page-dashboard .data-table th:first-child, #page-dashboard .data-table td:first-child,
+  #page-patients .data-table th:first-child, #page-patients .data-table td:first-child { position:sticky;left:0;background:#fff;z-index:1; }
+  #page-dashboard .data-table th:nth-child(4), #page-dashboard .data-table td:nth-child(4),
+  #page-dashboard .data-table th:nth-child(5), #page-dashboard .data-table td:nth-child(5) { text-align:right;font-variant-numeric:tabular-nums; }
+  [data-read-state="loading"], [data-read-state="error"] { padding:12px 14px;border:1px solid #cbd8df;border-radius:6px;background:#f7fafb;margin-bottom:12px; }
+  [data-read-state="error"] { border-color:#cf8b76;background:#fff8f5; }
+  [data-read-state] button { margin-left:12px; }
+  .occurrence-selection-toolbar { padding:8px 12px;border-block:1px solid #d9e3e8;background:#f7fafb; }
+  .occurrence-selection-toolbar p { margin:0 0 6px;font-size:12px;color:#425763; }
+  .occurrence-selection-toolbar>div {display:flex;flex-wrap:wrap;gap:6px;}
+  .occurrence-selection-toolbar button {min-height:32px;padding:4px 10px;border:1px solid #b8cbd3;border-radius:4px;background:#fff;color:#264853;}
+  .occurrence-selection-toolbar button:disabled {opacity:.5;}
+  .settings-card dl dd {overflow-wrap:anywhere;}
+  .settings-card dl {font-variant-numeric:tabular-nums;}
+}
+@media print { .occurrence-selection-toolbar {display:none;} }

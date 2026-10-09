@@ -184,7 +184,7 @@ def report_statistics(index, start_time, settings):
                   "af": rhythm['confirmed_any']['count'], "rhythm": rhythm}
         for code in ("V", "S"):
             total = sum(r["class_code"] == code for r in beats)
-            result[code] = {"total": total, "pct": round(total / len(beats) * 100, 2) if beats else 0,
+            result[code] = {"total": total, "pct": round(total / len(beats) * 100, 2) if beats else None,
                 **{kind: sum(e["category"] == code and e["subtype"] in subtypes for e in events) for kind, subtypes in {
                     "single": ["single"], "couplet": ["couplet"], "run": ["triplet", "run"],
                     "bigeminy": ["bigeminy"], "trigeminy": ["nnp", "npp"]}.items()}}

@@ -33,6 +33,10 @@ jobs:
         run: python -m pip install -r requirements-dev.txt
       - name: Platform and synthetic ECG tests
         run: python -m pytest -q tests/test_config.py tests/test_scatter.py
+      - name: Frozen evaluation source identity
+        run: python scripts/verify_public_release.py
+      - name: Mathematical Demo source and build contract
+        run: python -m pytest -q tests/test_static_demo_builder.py
       - name: Python syntax
         run: python -m compileall -q app.py ecg_core tests
       - name: JavaScript syntax

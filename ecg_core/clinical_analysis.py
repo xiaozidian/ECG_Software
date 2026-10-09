@@ -197,7 +197,7 @@ def occurrence_item(row, index, code, template):
     sample = row['sample_index']
     edited = (row.get('source_sample') != sample or row['class_code'] !=
               {1:'N',2:'S',3:'V',34:'X'}.get(row.get('source_group'),'OTHER'))
-    return dict(event_id='beat:'+row['id'],category=code,subtype='beat',
+    return dict(event_id='beat:'+row['id'],category=code,subtype='beat',class_code=row['class_code'],
                 label=row.get('name',row['class_code']),sample_index=sample,
                 start_sample=sample,end_sample=sample,time_s=sample/200,end_s=sample/200,
                 target_samples=[sample],beat_count=1,hr=row.get('hr'),rr_ms=row.get('rr_ms'),
@@ -296,13 +296,15 @@ def hrv_windows(feed,start_time,window=0):
     except (ValueError,TypeError):clock=None
     window=max(0,min(int(window),max(0,math.ceil(duration/86400)-1))); lo=window*86400;hi=min(duration,lo+86400)
     nn=nn_intervals(feed)
+    from .rr_quality import NNWindowIndex
+    nn_windows=NNWindowIndex(nn)
     def period(name,intervals):
         merged=[]
         for a,b in intervals:
             if merged and abs(merged[-1][1]-a)<1e-6:merged[-1]=(merged[-1][0],b)
             else:merged.append((a,b))
         intervals=merged
-        chosen=[x for x in nn if any(x[1]>=a and x[2]<=b for a,b in intervals)]
+        chosen=nn_windows.contained(intervals)
         values=[x[3] for x in chosen];diffs=[b[3]-a[3] for a,b in zip(chosen,chosen[1:]) if b[0]==a[0]+1 and any(a[1]>=s and b[2]<=e for s,e in intervals)]
         rnd=lambda x:round(x,2) if x is not None else None
         return dict(label=name,nn_count=len(values),coverage_s=round(sum(b-a for a,b in intervals),3),valid_nn_s=round(sum(values)/1000,3),mean_nn_ms=rnd(statistics.mean(values)) if values else None,sdnn_ms=rnd(statistics.stdev(values)) if len(values)>=3 else None,rmssd_ms=rnd(math.sqrt(statistics.mean(v*v for v in diffs))) if diffs else None,pnn50_pct=rnd(100*sum(abs(v)>50 for v in diffs)/len(diffs)) if diffs else None)

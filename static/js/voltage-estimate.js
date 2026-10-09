@@ -32,7 +32,7 @@ globalThis.ECGVoltage=(()=>{
     }
     function disclose(open){panel.hidden=!open;settings.setAttribute('aria-expanded',String(open));}
     toggle.onclick=()=>{enabled=!enabled;update();status.textContent=enabled?'估算显示已开启。原始采样和已保存报告未改变。':'估算显示已关闭。已保存的报告系数不会自动移除。';};
-    settings.onclick=()=>disclose(panel.hidden);
+    settings.onclick=()=>{const open=panel.hidden;disclose(open);if(open)form.elements.coefficient.focus();};
     panel.querySelector('[data-voltage-close]').onclick=()=>{disclose(false);settings.focus();};
     panel.addEventListener('keydown',e=>{if(e.key==='Escape'){disclose(false);settings.focus();}});
     form.onsubmit=e=>{
@@ -46,7 +46,8 @@ globalThis.ECGVoltage=(()=>{
     panel.querySelector('[data-voltage-report]').onclick=()=>{
       try{if(!globalThis.ECGVoltage.applyToReport)throw Error('报告工作区尚未就绪');ECGVoltage.applyToReport(snapshot());status.textContent=enabled?'已把当前系数复制到本病例报告图条；请复核并保存草稿。研究指标需另行计算。':'已将本病例报告图条恢复设备单位；请保存草稿。研究指标设置未改变。';}catch(error){status.textContent=error.message;}
     };
-    update();disclose(true);
+    document.addEventListener('pointerdown',event=>{if(!panel.hidden&&!panel.contains(event.target)&&!settings.contains(event.target)&&!toggle.contains(event.target))disclose(false);});
+    update();disclose(false);
   }
   return {normalize,snapshot,amplitude,note,mount};
 })();

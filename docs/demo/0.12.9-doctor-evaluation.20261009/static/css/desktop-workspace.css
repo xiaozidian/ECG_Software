@@ -1,0 +1,259 @@
+/* Desktop slots are budgeted together. Only collections scroll inside slots. */
+/* Density-mode filters are above the workspace, rather than below its plots. */
+#page-edit:not(.workspace-library)>#occurrenceFilters{display:flex;flex-direction:row;align-items:center;flex-wrap:wrap;gap:6px 12px;margin:0;min-width:0;padding:4px 0;border:0;background:transparent}
+#page-edit:not(.workspace-library)>#occurrenceFilters .occurrence-template-tools{display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+#page-edit:not(.workspace-library)>#occurrenceFilters label{display:flex;align-items:center;gap:4px;font-size:12px}
+#page-edit:not(.workspace-library)>#occurrenceFilters input{max-width:130px}
+#page-edit:not(.workspace-library)>#occurrenceFilters select{max-width:180px}
+#page-edit #editTypeN{border-bottom:3px solid #286a75}
+#page-edit #editTypeS{border-bottom:3px solid #269766}
+#page-edit #editTypeV{border-bottom:3px solid #b6403c}
+#page-edit #editTypeother{border-bottom:3px solid #854a9b}
+@media screen and (min-width:1100px){
+  body:has(#page-edit.active:not(.workspace-library)){overflow:hidden}
+  #mainContent:has(#page-edit.active:not(.workspace-library)){height:100dvh;min-height:0;padding-top:56px;box-sizing:border-box;display:flex;flex-direction:column;overflow:hidden}
+  #mainContent:has(#page-edit.active:not(.workspace-library))>.safety-banner{flex:0 0 26px;min-height:26px;margin:0;padding:3px 12px;box-sizing:border-box;font-size:12px;line-height:18px}
+  #mainContent #page-edit.active:not(.workspace-library){flex:1;min-height:0;display:grid;grid-template-rows:28px auto minmax(0,1fr);gap:2px;padding:4px 12px}
+  #page-edit:not(.workspace-library)>.page-heading{margin:0;height:28px;min-height:0;align-items:center}
+  #page-edit:not(.workspace-library)>.edit-class-toolbar{display:none}
+  #page-edit:not(.workspace-library)>#occurrenceFilters{font-size:12px;min-height:30px;box-sizing:border-box;padding-block:0}
+  #page-edit:not(.workspace-library)>#occurrenceFilters label{white-space:nowrap}
+  #page-edit:not(.workspace-library)>#occurrenceFilters .occurrence-current-filter{margin:0;font-size:12px}
+  #page-edit:not(.workspace-library)>#occurrenceFilters .edit-type-dock{order:-1;display:flex;gap:2px;margin:0;border:0;border-radius:4px}
+  #page-edit:not(.workspace-library)>#occurrenceFilters .edit-type-dock button{height:32px;padding:3px 8px;font-size:12px}
+  #page-edit:not(.workspace-library) #editWorkbench{height:100%;min-height:0;grid-template-columns:clamp(320px,27vw,390px) minmax(0,1fr)}
+  #page-edit:not(.workspace-library) #editWorkbench .edit-left-stack{grid-template-rows:110px minmax(0,1fr)}
+  #page-edit:not(.workspace-library) #editWorkbench .edit-class-panel>.edit-panel-heading{height:28px;min-height:28px;padding:3px 8px}
+  #page-edit:not(.workspace-library) #editWorkbench .edit-class-content{flex:1;min-height:0}
+  #page-edit:not(.workspace-library) #editWorkbench .edit-class-content>#editScatterCanvas{height:100%!important;min-height:0;width:100%}
+  #page-edit:not(.workspace-library) #editWorkbench .edit-density-panel{min-height:0;overflow:auto;overscroll-behavior:contain}
+  #page-edit:not(.workspace-library) #editWorkbench .edit-density-panel .edit-panel-heading{padding-bottom:4px}
+  #page-edit:not(.workspace-library) #editWorkbench .edit-density-panel .edit-panel-heading{height:auto;min-height:0}
+  #page-edit:not(.workspace-library) #editWorkbench #editMorphologyCount{display:none}
+  #page-edit:not(.workspace-library) #editWorkbench .edit-density-panel .edit-panel-heading p{margin:2px 0;font-size:12px}
+  #page-edit:not(.workspace-library) #editWorkbench .morph-scope{font-size:12px;margin:0 0 4px;padding:3px 0}
+  #page-edit:not(.workspace-library) #editWorkbench .morph-leads{margin-bottom:4px;gap:4px}
+  #page-edit:not(.workspace-library) #editWorkbench .morph-leads label{font-size:12px;gap:2px}
+  #page-edit:not(.workspace-library) #editWorkbench .morph-peeling-grid{height:320px;min-height:320px}
+  #page-edit:not(.workspace-library) #editWorkbench .edit-main-stack{--cluster-wave-canvas-height:221px;grid-template-rows:72px var(--cluster-gallery-height,285px) minmax(0,1fr)}
+  #page-edit:not(.workspace-library) #editWorkbench .edit-gallery-panel{height:100%;overflow:auto;min-height:0;box-sizing:border-box;display:grid;grid-template-columns:minmax(240px,.9fr) minmax(0,1.3fr);grid-template-rows:28px auto 28px var(--occ-height,142px);padding-bottom:4px}
+  #page-edit:not(.workspace-library) #editWorkbench .edit-gallery-panel>.edit-panel-heading{grid-row:1;grid-column:1;padding-inline:0;gap:4px}
+  #page-edit:not(.workspace-library) #editWorkbench #occurrenceSelectionToolbar{grid-row:2;grid-column:1/-1;padding:2px 0;display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:nowrap}
+  #page-edit:not(.workspace-library) #editWorkbench #occurrenceSelectionToolbar p{margin:0;font-size:11px;line-height:16px;flex:1;min-width:0}
+  #page-edit:not(.workspace-library) #editWorkbench #occurrenceSelectionToolbar>div{display:flex;gap:4px;flex:0 0 auto}
+  #page-edit:not(.workspace-library) #editWorkbench #occurrenceSelectionToolbar button{min-height:26px;padding:2px 5px;font-size:11px}
+  #page-edit:not(.workspace-library) #editWorkbench #occurrenceViewControls{grid-row:1;grid-column:2;padding:1px 0;gap:4px;font-size:11px;min-width:0;justify-content:flex-end;flex-wrap:nowrap}
+  #page-edit:not(.workspace-library) #editWorkbench #occurrenceViewControls label{white-space:nowrap}
+  #page-edit:not(.workspace-library) #editWorkbench #occurrenceLeadNames{min-width:0;font-size:11px;line-height:13px;white-space:normal;overflow:visible}
+  #page-edit:not(.workspace-library) #editWorkbench .occurrence-actions{grid-row:3;grid-column:1/-1;padding:0;gap:4px;min-height:28px;font-size:12px;flex:none}
+  #page-edit:not(.workspace-library) #editWorkbench .occurrence-actions input{min-height:28px;height:28px;width:55px;padding:2px 4px}
+  #page-edit:not(.workspace-library) #editWorkbench #editTemplateGallery{grid-row:4;grid-column:1/-1;flex:none;min-height:142px;height:var(--occ-height,284px);max-height:100%;overflow:auto}
+  #page-edit:not(.workspace-library) #editWorkbench .edit-panel-heading{min-height:28px;height:28px;padding:3px 8px}
+  #page-edit:not(.workspace-library) #editWorkbench .edit-waveform-panel{height:100%;min-height:0;overflow:auto}
+  #page-edit:not(.workspace-library) #editWorkbench .edit-wave-toolbar{height:32px;min-height:32px;padding:1px 8px;gap:6px}
+  #page-edit:not(.workspace-library) #editWorkbench .edit-wave-toolbar strong{font-size:12px;line-height:15px}
+  #page-edit:not(.workspace-library) #editWorkbench .edit-wave-toolbar small{font-size:10px;line-height:13px;margin-top:0}
+  #page-edit:not(.workspace-library) #editWorkbench .edit-wave-canvas-wrap{height:0;min-height:0;flex:1 1 0}
+  #page-edit:not(.workspace-library) #editWorkbench .clinical-beat-toolbar{height:28px;padding:1px 8px}
+  #page-edit:not(.workspace-library) #editWorkbench #editWaveformCanvas{height:100%!important;min-height:0}
+  #page-edit:not(.workspace-library) #editWorkbench #v2EditTime{height:16px;min-height:16px;margin:0 8px;flex:0 0 16px}
+  #page-edit:not(.workspace-library) #editWorkbench .edit-wave-foot{height:22px;min-height:22px;padding:3px 8px;line-height:15px}
+  #page-edit:not(.workspace-library) #editWorkbench .edit-wave-canvas-wrap>canvas{min-height:0}
+}
+/* Keep both full source plots in view on short desktop displays. */
+@media screen and (min-width:1100px) and (max-height:800px){
+  #page-edit:not(.workspace-library) #editWorkbench .morph-peeling-grid{height:284px;min-height:284px}
+}
+.workspace-master-card{flex:0 0 184px;width:184px;min-width:184px;display:flex;flex-direction:column;border:1px solid #c6d8de;border-radius:5px;padding:4px;background:#fff;color:#25424d;text-align:left;cursor:pointer}
+.workspace-master-card[aria-pressed=true]{border:2px solid #078e8a;padding:3px;background:#f3faf9}
+.workspace-master-card header{display:flex;justify-content:space-between;gap:6px;align-items:center;height:18px}
+.workspace-master-card header strong{font:700 13px/18px system-ui,-apple-system,"PingFang SC",sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.workspace-master-card header span{font-size:12px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.workspace-master-wave{height:90px;flex:0 0 90px;display:grid;align-items:center;font-size:12px;background:#fff}
+.workspace-master-wave svg{display:block;width:100%;height:90px}
+.workspace-master-card footer{font-size:12px;line-height:18px;white-space:nowrap;color:#52707c}
+.workspace-master-retry{color:#077b79;text-decoration:underline}
+.workspace-boundary{font-size:12px;position:relative;margin-left:auto;white-space:nowrap}
+.workspace-boundary summary{cursor:pointer}
+.workspace-boundary[open] p{position:absolute;top:20px;right:0;width:min(600px,calc(100vw - 120px));background:#fff;border:1px solid #cdb88b;box-shadow:0 8px 30px #193e4530;padding:12px;white-space:normal;color:#604319;z-index:60;font-size:13px;line-height:1.7}
+.workspace-dialog{padding:0;border:1px solid #9bb7c0;border-radius:8px;width:min(980px,calc(100vw - 32px));max-height:calc(100dvh - 32px);color:#25424d}
+.workspace-dialog::backdrop{background:#15303b66}
+.workspace-dialog>header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #cbdadf;position:sticky;top:0;background:#fff;z-index:3;gap:8px}
+.workspace-dialog-body{overflow:auto;max-height:calc(100dvh - 100px);padding:10px}
+.workspace-dialog-body .edit-density-panel{height:auto;max-height:none;min-height:0}
+.workspace-dialog-body .morph-source-stack canvas{height:200px!important;min-height:200px!important}
+.workspace-dialog-body .morph-template-form{position:sticky;bottom:0;background:#fff;box-shadow:0 -4px 16px #143c4520;z-index:2}
+.workspace-evidence-tabs{display:flex;flex-direction:column;min-height:0;border:1px solid #d7e3e8;border-radius:6px;background:#fff}
+.workspace-evidence-tabs nav{display:flex;gap:4px;padding:4px;border-bottom:1px solid #d7e3e8}
+.workspace-evidence-tabs nav button{font-size:12px;border:1px solid #cbdadf;border-radius:4px;background:white;color:#284954;padding:4px 10px;min-height:28px}
+.workspace-evidence-tabs nav button[aria-selected=true]{background:#e0f1ef;color:#086e6d;border-color:#078e8a}
+.workspace-keyboard-help{position:relative;font-size:12px}
+.workspace-keyboard-help summary{cursor:pointer;border:1px solid #cbdadf;border-radius:4px;padding:6px 8px}
+.workspace-keyboard-help[open] .keyboard-card{position:absolute;right:0;top:34px;z-index:40;min-width:300px;background:#fff;box-shadow:0 8px 30px #173f4530}
+.workspace-library #occurrenceGroupEvidence:not([hidden]){position:fixed;z-index:100;top:106px;right:16px;bottom:16px;width:min(880px,calc(100vw - 108px));margin:0;overflow:auto;border:2px solid #087c7a;box-shadow:0 8px 35px #143b4540;background:#fff}
+.workspace-library #occurrenceGroupEvidence .source-group-controls{position:sticky;top:0;background:#fff;z-index:2;padding:8px}
+@media(min-width:1100px){
+  body:has(#page-edit.active.workspace-library),body:has(#page-review.active:not(.ov-af-mode)){overflow:visible}
+  #mainContent:has(#page-edit.active.workspace-library),#mainContent:has(#page-review.active:not(.ov-af-mode)){height:100dvh;min-height:0;padding-top:56px;display:flex;flex-direction:column;overflow:visible;box-sizing:border-box}
+  #mainContent:has(#page-edit.active.workspace-library)>.safety-banner,#mainContent:has(#page-review.active:not(.ov-af-mode))>.safety-banner{flex:0 0 26px;min-height:26px;height:26px;box-sizing:border-box;display:flex;align-items:center;margin:0;padding:3px 12px;font-size:12px;line-height:18px}
+  #mainContent #page-edit.active.workspace-library{flex:1;height:auto;min-height:0;max-height:none;display:grid;grid-template-rows:28px minmax(0,1fr);padding:4px 12px;gap:4px;overflow:visible}
+  #page-edit.workspace-library>.page-heading{height:28px;min-height:0;margin:0;padding:0;align-items:center}
+  #page-edit.workspace-library .page-heading h1{font-size:18px;line-height:26px}
+  #page-edit.workspace-library>.edit-class-toolbar{display:none}
+  #page-edit.workspace-library #editLibraryWorkbench{height:100%;min-height:0;max-height:none;display:grid;grid-template-columns:minmax(0,1fr) 280px;grid-template-rows:142px 360px minmax(291px,1fr);grid-template-areas:"deck analytics" "matrix analytics" "wave density";gap:6px;overflow:visible}
+  #page-edit.workspace-library #editLibraryWorkbench[hidden]{display:none}
+  #page-edit.workspace-library .edit-library-deck-panel{grid-area:deck;min-height:0;display:flex;flex-direction:column;padding:0;overflow:visible}
+  #page-edit.workspace-library .edit-library-deck-panel>.edit-panel-heading{height:24px;min-height:24px;padding:2px 8px;border-bottom:1px solid #e2eaed;display:flex;align-items:center}
+  #page-edit.workspace-library .edit-library-deck-panel .edit-panel-heading h2{font-size:13px;line-height:18px;margin:0}
+  #page-edit.workspace-library .edit-library-deck-panel .edit-panel-heading p{display:none}
+  #page-edit.workspace-library #editLibraryDeck{display:flex;gap:6px;min-height:0;flex:1;padding:3px 6px;overflow-x:auto;overflow-y:visible;align-items:flex-start}
+  #page-edit.workspace-library .workspace-master-card{padding:3px}
+  #page-edit.workspace-library .workspace-master-card[aria-pressed=true]{padding:2px}
+  #page-edit.workspace-library .workspace-master-card footer{display:none}
+  #page-edit.workspace-library .edit-library-analytics{grid-area:analytics;display:grid;grid-template-columns:1fr;grid-template-rows:1fr 1fr 1fr;gap:6px;min-height:0;height:100%}
+  #page-edit.workspace-library .edit-library-analytics>article{display:flex;flex-direction:column;min-height:0;padding:0;overflow:visible}
+  #page-edit.workspace-library .edit-library-analytics .edit-panel-heading{height:28px;min-height:28px;box-sizing:border-box;padding:2px 8px;align-items:center}
+  #page-edit.workspace-library .edit-library-analytics .edit-panel-heading h2{font-size:13px;line-height:18px}
+  #page-edit.workspace-library .edit-library-analytics .edit-panel-heading p{display:none}
+  #page-edit.workspace-library .edit-library-analytics canvas{height:calc(100% - 30px)!important;min-height:54px;width:100%;display:block}
+  #page-edit.workspace-library .edit-library-matrix-panel{grid-area:matrix;min-height:0!important;max-height:none;height:100%;display:flex;flex-direction:column;overflow:visible;padding:0}
+  #page-edit.workspace-library .edit-library-matrix-panel>.edit-panel-heading{display:none}
+  #page-edit.workspace-library .v2-library-gallery{height:100%;min-height:0;max-height:none;padding:0;border:0;display:grid;grid-template-rows:auto auto minmax(0,1fr);gap:0;overflow:visible}
+  #page-edit.workspace-library .v2-library-gallery>.edit-panel-heading{display:none}
+  #workspaceOccurrenceTools{display:flex;align-items:center;gap:8px;padding:3px 6px;min-width:0;min-height:34px;box-sizing:border-box;font-size:12px}
+  #page-edit.workspace-library #occurrenceFilters{display:flex;flex-direction:row;align-items:center;gap:6px;min-width:0;margin:0;padding:0;border:0;background:none;max-width:none;flex:1;height:auto;order:0}
+  #page-edit.workspace-library .occurrence-template-tools{display:flex;flex-direction:row;align-items:center;gap:6px;min-width:0}
+  #page-edit.workspace-library .occurrence-template-tools label{display:flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap}
+  #page-edit.workspace-library #occSearch{width:112px;min-width:0;height:28px;min-height:28px;font-size:12px;padding:2px 5px}
+  #page-edit.workspace-library #occTemplate{width:126px;min-width:0;height:28px;font-size:12px;padding:2px 5px}
+  #page-edit.workspace-library .occurrence-current-filter{display:none}
+  #page-edit.workspace-library .edit-type-dock{display:flex;flex:0 0 auto;margin:0;border:0;background:none;gap:2px}
+  #page-edit.workspace-library .edit-type-dock button{height:28px;border:1px solid #cbdadf;border-radius:4px;padding:2px 6px;font-size:12px}
+  #page-edit.workspace-library .edit-type-dock span{display:none}
+  #page-edit.workspace-library .edit-type-dock strong{font-size:13px}
+  #page-edit.workspace-library #occurrenceViewControls{padding:0;border:0;min-height:28px;margin:0;display:flex;gap:4px;flex:0 0 auto;font-size:12px;order:0}
+  #page-edit.workspace-library #occurrenceLeadNames{display:none}
+  #page-edit.workspace-library .occurrence-actions{padding:0;margin:0;min-height:28px;height:28px;gap:4px;flex:0 0 auto;font-size:12px;order:0}
+  #page-edit.workspace-library #occJump{width:50px;height:28px;min-height:28px;padding:2px 4px;font-size:12px}
+  #page-edit.workspace-library .occurrence-actions #occRestore,#page-edit.workspace-library .occurrence-actions #occDisease,#page-edit.workspace-library .occ-scroll-help{display:none}
+  #page-edit.workspace-library #occurrenceSelectionToolbar{min-height:0;padding:3px 6px;display:flex;gap:8px;align-items:center;justify-content:space-between;border-top:1px solid #d7e3e8;border-bottom:1px solid #d7e3e8;flex-wrap:nowrap}
+  #page-edit.workspace-library #occurrenceSelectionToolbar p{margin:0;font-size:12px;line-height:18px;flex:1;min-width:300px}
+  #page-edit.workspace-library #occurrenceSelectionToolbar p.workspace-collection-scope{display:flex;gap:6px;align-items:center;min-width:0;white-space:nowrap}
+  .workspace-collection-label{flex:0 1 auto;min-width:0;max-width:132px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .workspace-collection-counts{flex:0 0 auto;white-space:nowrap}
+  #page-edit.workspace-library #occurrenceSelectionToolbar>div{display:flex;gap:4px;flex:0 0 auto}
+  #page-edit.workspace-library #occurrenceSelectionToolbar button{font-size:12px;min-height:28px;padding:2px 7px}
+  #page-edit.workspace-library #editTemplateGallery{height:var(--occ-height,284px);min-height:142px;max-height:100%;flex:none;margin:0;overflow:auto;align-self:start;min-width:0}
+  #page-edit.workspace-library .edit-library-wave-panel{grid-area:wave;display:flex;flex-direction:column;min-height:0;max-height:none;height:100%;overflow:visible;padding:0}
+  #page-edit.workspace-library .edit-library-wave-panel .edit-wave-toolbar{min-height:32px;height:32px;padding:2px 8px;box-sizing:border-box;flex:0 0 32px;gap:6px}
+  #page-edit.workspace-library .edit-wave-toolbar strong{font-size:13px;line-height:18px}
+  #page-edit.workspace-library .edit-wave-toolbar small{font-size:12px;line-height:16px}
+  #page-edit.workspace-library .edit-key-legend{display:none}
+  #page-edit.workspace-library .edit-library-wave-wrap{flex:1;height:0;min-height:221px;position:relative;overflow:visible}
+  #page-edit.workspace-library #editLibraryWaveformCanvas{display:block;height:100%!important;min-height:221px;width:100%;max-height:none;flex:1}
+  #page-edit.workspace-library .edit-library-wave-wrap>.clinical-beat-toolbar[hidden]{display:none}
+  #page-edit.workspace-library .edit-library-wave-wrap .beat-edit-history{position:absolute;bottom:4px;right:6px}
+  #page-edit.workspace-library #editLibraryNavigatorCanvas{height:20px!important;min-height:20px;max-height:20px;flex:0 0 20px}
+  #page-edit.workspace-library #v2EditTime{height:16px;min-height:16px;margin:0 8px;flex:0 0 16px;width:calc(100% - 16px)}
+  #page-edit.workspace-library .edit-library-density-panel{grid-area:density;display:grid;grid-template-rows:minmax(0,1fr) minmax(0,1fr) 28px;gap:4px;min-height:0;max-height:none;height:100%;padding:4px;overflow:visible}
+  #page-edit.workspace-library .edit-library-density-panel figure{display:flex;flex-direction:column;min-height:0;margin:0}
+  #page-edit.workspace-library .edit-library-density-panel figcaption{height:20px;min-height:20px;display:flex;align-items:center;font-size:12px;padding:0 4px;gap:4px;flex-wrap:nowrap}
+  #page-edit.workspace-library .edit-library-density-panel figcaption small{font-size:12px;white-space:nowrap}
+  #page-edit.workspace-library .edit-library-density-panel canvas{height:calc(100% - 20px)!important;min-height:0;flex:1;width:100%}
+  #workspaceDensityRetry{height:28px;min-height:28px;background:#163841;color:#edf6f4;border:1px solid #55747e;border-radius:4px;font-size:12px}
+  #mainContent #page-review.active.overview-workbench:not(.ov-af-mode){flex:1;width:100%;max-width:none;margin:0;box-sizing:border-box;min-height:0;height:auto;display:grid;grid-template-rows:34px 106px minmax(0,1fr);gap:6px;padding:6px 12px;overflow:visible}
+  #page-review:not(.ov-af-mode) .ov-commandbar{height:34px;min-height:0;margin:0;flex-wrap:nowrap;gap:8px}
+  #page-review:not(.ov-af-mode) .ov-commandbar>div{flex-wrap:nowrap;gap:6px}
+  #page-review:not(.ov-af-mode) .ov-histogram{min-height:0;height:100%;margin:0;display:flex;flex-direction:column;overflow:visible}
+  #page-review:not(.ov-af-mode) .ov-histogram>header{height:28px;min-height:28px;box-sizing:border-box;flex:0 0 28px;flex-wrap:nowrap;font-size:12px}
+  #page-review:not(.ov-af-mode) #ovHistogram{height:calc(100% - 28px)!important;min-height:60px;width:100%;flex:1}
+  #page-review.overview-workbench:not(.ov-af-mode) .analysis-grid{height:100%;min-height:0;grid-template-columns:minmax(0,1fr) 360px;gap:8px;align-items:stretch;overflow:visible}
+  #page-review.overview-workbench:not(.ov-af-mode) .analysis-main{height:100%;min-height:0;display:grid;grid-template-rows:minmax(180px,.42fr) minmax(284px,.58fr);gap:6px;overflow:visible}
+  #page-review:not(.ov-af-mode) .ov-trends{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;min-height:0;gap:4px}
+  #page-review:not(.ov-af-mode) .ov-lane{display:flex;flex-direction:column;min-height:0;overflow:visible}
+  #page-review:not(.ov-af-mode) .ov-lane>header{height:26px;min-height:26px;box-sizing:border-box}
+  #page-review:not(.ov-af-mode) .ov-lane h2{font-size:13px}
+  #page-review:not(.ov-af-mode) .ov-lane canvas{height:calc(100% - 26px)!important;min-height:58px;flex:1}
+  #page-review:not(.ov-af-mode) #waveformCard{min-height:0;height:100%;max-height:none;display:flex;flex-direction:column;overflow:visible}
+  #page-review:not(.ov-af-mode) .waveform-title{flex:0 0 32px;min-height:32px;box-sizing:border-box}
+  #page-review:not(.ov-af-mode) #waveformScroller{flex:1;min-height:195px;height:0;max-height:none;overflow:visible}
+  #page-review:not(.ov-af-mode) #waveformCanvas{height:100%!important;min-height:195px;display:block}
+  #page-review:not(.ov-af-mode) .waveform-foot{flex:0 0 auto;min-height:22px;padding:2px 8px;font-size:12px;line-height:18px;box-sizing:border-box}
+  #page-review:not(.ov-af-mode) #timeSlider{height:16px;min-height:16px;flex:0 0 16px;margin:0 8px;width:calc(100% - 16px)}
+  #page-review:not(.ov-af-mode) .ov-navigator{position:absolute;right:382px;bottom:10px;z-index:20;display:none}
+  #page-review.overview-workbench:not(.ov-af-mode) .review-rail{height:100%;min-height:0;display:grid;grid-template-rows:minmax(212px,1fr) 160px minmax(78px,.28fr);gap:6px;overflow:visible}
+  #page-review.overview-workbench:not(.ov-af-mode) .scatter-review-card{min-height:0;height:100%;padding:5px;display:flex;flex-direction:column;overflow:visible}
+  #page-review:not(.ov-af-mode) .scatter-card-header{min-height:28px;padding:0}
+  #page-review:not(.ov-af-mode) .scatter-card-header p{display:none}
+  #page-review:not(.ov-af-mode) .scatter-card-header h2{font-size:13px}
+  #page-review:not(.ov-af-mode) .ov-focus-context{padding:2px 0;min-height:18px;font-size:12px;line-height:16px}
+  #page-review.overview-workbench:not(.ov-af-mode) .scatter-workspace,#page-review.overview-workbench:not(.ov-af-mode) .scatter-workspace:has(.scatter-keyboard-select[open]){flex:1;height:auto;min-height:150px;grid-template-columns:minmax(0,1fr) 1.25fr;overflow:visible;gap:4px}
+  #page-review:not(.ov-af-mode) .scatter-mode-grid{display:none}
+  #page-review:not(.ov-af-mode) .scatter-plot-pane{position:relative;overflow:visible;min-height:0}
+  #page-review:not(.ov-af-mode) .ov-scatter-options{min-height:28px;gap:4px;font-size:12px;flex:0 0 auto}
+  #page-review:not(.ov-af-mode) .scatter-canvas-wrap{flex:1;min-height:90px;max-height:none}
+  #page-review:not(.ov-af-mode) .workspace-scatter-controls{display:grid;grid-template-columns:minmax(0,1fr) 70px;gap:4px;align-items:center;flex:0 0 28px;height:28px;margin-bottom:4px}
+  #page-review:not(.ov-af-mode) .ov-scatter-mode-picker{display:flex;align-items:center;gap:4px;min-width:0;margin:0;font-size:11px}
+  #page-review:not(.ov-af-mode) .ov-scatter-mode-picker select{min-width:0;flex:1;min-height:28px;font:inherit}
+  #page-review:not(.ov-af-mode) .workspace-scatter-controls .workspace-scatter-range:not([open]){margin:0}
+  #page-review:not(.ov-af-mode) .scatter-plot-foot{display:none}
+  #page-review:not(.ov-af-mode) .workspace-scatter-range{position:relative;flex:0 0 24px;height:24px;font-size:12px}
+  #page-review:not(.ov-af-mode) .workspace-scatter-range[open]>.scatter-range-grid,#page-review:not(.ov-af-mode) .workspace-scatter-range[open]>button{position:relative;z-index:40;background:#fff;box-shadow:0 6px 20px #193e4530}
+  #page-review:not(.ov-af-mode) .workspace-scatter-range[open]{height:auto;position:absolute;right:0;top:28px;width:240px;background:#fff;border:1px solid #cbdadf;padding:6px;z-index:40}
+  #page-review:not(.ov-af-mode) .ov-statistics{height:160px;min-height:0;padding:5px 8px;box-sizing:border-box;display:flex;flex-direction:column;overflow:visible}
+  #page-review:not(.ov-af-mode) .ov-statistics h2{font-size:13px;margin:0 0 3px}
+  #page-review:not(.ov-af-mode) #ovStatistics{font-size:12px;margin:0;gap:3px;flex:1}
+  #page-review:not(.ov-af-mode) .ov-statistics details{position:relative;font-size:12px}
+  #page-review:not(.ov-af-mode) .ov-statistics details[open]>p{position:absolute;right:0;bottom:22px;width:320px;z-index:30;padding:12px;background:white;box-shadow:0 6px 24px #193e4530;border:1px solid #cbdadf}
+  #page-review:not(.ov-af-mode) .workspace-evidence-tabs{grid-column:1/-1;width:100%;min-height:0;height:100%;overflow:visible}
+  #page-review:not(.ov-af-mode) .workspace-evidence-tabs>.rail-card{height:calc(100% - 38px);min-height:0;padding:4px 6px;display:flex;flex-direction:column;border:0}
+  #page-review:not(.ov-af-mode) .workspace-evidence-tabs>.rail-card[hidden]{display:none}
+  #page-review:not(.ov-af-mode) .workspace-evidence-tabs .card-header{display:none}
+  #page-review:not(.ov-af-mode) .workspace-evidence-tabs .event-mini-list,#page-review:not(.ov-af-mode) .workspace-evidence-tabs .annotation-list{overflow:auto;min-height:0;max-height:none;flex:1;font-size:12px}
+  #page-review:not(.ov-af-mode) .workspace-evidence-tabs .empty-state{padding:4px;line-height:18px}
+}
+@media(min-width:1100px) and (max-height:780px){
+  #page-edit.workspace-library #editLibraryWorkbench{grid-template-rows:142px 214px minmax(291px,1fr);column-gap:4px;row-gap:1px}
+  #page-edit.workspace-library .edit-library-deck-panel>.edit-panel-heading{height:20px;min-height:20px}
+  #page-edit.workspace-library .workspace-master-card footer{line-height:14px}
+  #page-edit.workspace-library #occurrenceSelectionToolbar{flex-wrap:nowrap;min-height:34px;padding:2px 6px}
+  #page-edit.workspace-library #occurrenceSelectionToolbar p{min-width:0;max-width:55%;font-size:12px}
+  #page-edit.workspace-library #occurrenceSelectionToolbar button{padding:2px 5px}
+  #page-edit.workspace-library .edit-library-wave-panel .edit-wave-toolbar small{display:none}
+  #mainContent #page-review.active.overview-workbench:not(.ov-af-mode){grid-template-rows:34px 98px minmax(0,1fr)}
+  #page-review.overview-workbench:not(.ov-af-mode) .review-rail{grid-template-rows:minmax(212px,1fr) 148px minmax(74px,.26fr)}
+  #page-review:not(.ov-af-mode) .ov-statistics{height:148px}
+  #page-review:not(.ov-af-mode) .waveform-foot{flex-wrap:nowrap}
+  #page-review:not(.ov-af-mode) .waveform-foot #waveInteractionHint{max-width:52%;font-size:12px}
+  #page-review:not(.ov-af-mode) .waveform-foot #calibrationNote{max-width:48%;font-size:12px}
+}
+@media(max-width:1099px){
+  #page-edit.workspace-library{grid-template-columns:minmax(0,1fr)}
+  #page-edit.workspace-library #editLibraryWorkbench{min-width:0}
+  #page-edit.workspace-library .edit-library-analytics{grid-template-columns:minmax(0,1fr)}
+  .workspace-library #editLibraryDeck{display:flex;gap:6px;overflow:auto;padding:6px;min-height:114px}
+  .workspace-library .edit-library-deck-panel{min-height:150px}
+  .workspace-library .edit-library-analytics .edit-library-filter-panel h2{font-size:14px}
+  .workspace-evidence-tabs{min-height:160px}
+  #workspaceOccurrenceTools{display:flex;flex-direction:column;gap:6px}
+  .workspace-library #editLibraryWorkbench{min-height:0;height:auto;display:flex;flex-direction:column;gap:10px}
+  .workspace-library .edit-library-matrix-panel{min-height:0!important}
+  .workspace-library .v2-library-gallery{min-height:0}
+  .workspace-library .edit-library-wave-panel{min-height:330px}
+  .workspace-library .edit-library-wave-wrap{min-height:240px}
+  .workspace-library #editLibraryWaveformCanvas{height:240px!important;min-height:240px}
+  .workspace-library .edit-library-density-panel{display:grid;grid-template-columns:1fr;min-height:340px;height:auto}
+  .workspace-library .edit-library-density-panel canvas{height:150px!important}
+  .workspace-library #v2EditTime{width:calc(100% - 16px);margin:4px 8px}
+  .workspace-library #occurrenceGroupEvidence:not([hidden]){width:calc(100vw - 32px);right:16px;top:72px}
+}
+/* Narrow notices keep their full warning in document flow. Desktop slots are unchanged. */
+@media screen and (max-width:600px){
+  #mainContent>.safety-banner:not(.hidden){display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"badge close" "message message" "details details";width:100%;max-width:calc(100vw - var(--sidebar));height:auto;min-height:0;flex:0 0 auto;box-sizing:border-box;padding:6px 10px;gap:4px 8px;align-items:start;line-height:18px}
+  body #mainContent>.safety-banner:not(.hidden)>strong{grid-area:badge;display:block;justify-self:start;min-width:0;max-width:100%;box-sizing:border-box;white-space:normal}
+  #mainContent>.safety-banner>span{grid-area:message;display:block;min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere}
+  #mainContent>.safety-banner>.workspace-boundary{grid-area:details;min-width:0;margin:0;white-space:normal}
+  #mainContent>.safety-banner>.workspace-boundary summary{min-height:28px;display:flex;align-items:center}
+  #mainContent>.safety-banner>.workspace-boundary[open] p{position:static;width:100%;max-width:100%;box-sizing:border-box;margin:4px 0 0;overflow-wrap:anywhere}
+  #mainContent>.safety-banner>button{grid-area:close;min-width:28px;min-height:28px;padding:0;justify-self:end}
+}

@@ -3,7 +3,7 @@
 An RR belongs to its ending beat. Non-QRS markers are not RR boundaries;
 artifact beats are boundaries and must never be removed to join two intervals.
 """
-from bisect import bisect_left
+from bisect import bisect_left, bisect_right
 from math import isfinite
 
 NONBEATS = frozenset(('O', 'Y', 'T'))
@@ -103,6 +103,27 @@ def nn_intervals(feed):
             and rows[i-1]['class_code'] == r['class_code'] == 'N'
             and opts['nn_min'] <= r['rr_ms'] <= opts['nn_max']
             and r['sample_index']/200 <= feed.duration]
+
+
+class NNWindowIndex:
+    """Read-only time slicing; preserve input order and complete NN boundaries.
+
+    Malformed order and overlapping spans retain the scalar predicate. This is
+    an indexing optimization only, never a repair, sort, or quality-rule change.
+    """
+    def __init__(self, intervals):
+        self.intervals = intervals
+        self.ends = [r[2] for r in intervals]
+        self.ordered = all(a <= b for a, b in zip(self.ends, self.ends[1:]))
+
+    def contained(self, spans):
+        if (not self.ordered or any(a[1] > b[0] for a, b in zip(spans, spans[1:]))):
+            return [r for r in self.intervals if any(r[1] >= a and r[2] <= b for a, b in spans)]
+        result = []
+        for start, end in spans:
+            lo, hi = bisect_left(self.ends, start), bisect_right(self.ends, end)
+            result.extend(r for r in self.intervals[lo:hi] if r[1] >= start)
+        return result
 
 
 def valid_rr_rows(rows, duration):

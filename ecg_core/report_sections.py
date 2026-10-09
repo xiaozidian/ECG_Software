@@ -39,7 +39,7 @@ def rr_derivatives(rows, excluded=()):
         jumps.append(jumps[-1]+int(finite(prev) and prev>0 and finite(current) and abs(current/prev-1)>.2+1e-12))
     def segment(a,b):
         return bad[b]==bad[a] and jumps[b]==jumps[a+1]
-    onsets=[];tachograms=[]
+    onsets=[];tachograms=[];source_events=[]
     for i in range(5,len(rows)-21):
         if rows[i]['class_code']!='V' or not segment(i-5,i) or not segment(i+2,i+22):continue
         if rows[i+1]['class_code']!='N' or not valid[i] or not valid[i+1]:continue
@@ -53,6 +53,13 @@ def rr_derivatives(rows, excluded=()):
         before=rows[i-2]['rr_ms']+rows[i-1]['rr_ms'];after=rows[i+2]['rr_ms']+rows[i+3]['rr_ms']
         onsets.append(100*(after-before)/before)
         tachograms.append([rows[k]['rr_ms'] for k in range(i+2,i+17)])
+        # Accepted source beats only; this trace never participates in the
+        # eligibility or aggregate calculations. Use the imported 200 Hz
+        # sample contract already used by evidence(), not estimated timings.
+        source_events.append(dict(sample_index=rows[i]['sample_index'],
+            time_s=rows[i]['sample_index']/200,
+            start_sample=rows[i-5]['sample_index'],end_sample=rows[i+21]['sample_index'],
+            to_pct=round(onsets[-1],4),rr_ms=list(tachograms[-1])))
     average=[sum(x[j] for x in tachograms)/len(tachograms) for j in range(15)] if tachograms else []
     slopes=[sum((j-2)*average[i+j] for j in range(5))/10 for i in range(11)] if average else []
     anchors=[];sums=[0.0]*60
@@ -64,7 +71,7 @@ def rr_derivatives(rows, excluded=()):
         for j in range(60):sums[j]+=rows[i+j-30]['rr_ms']
     prsa=[v/len(anchors) for v in sums] if anchors else []
     return dict(
-        hrt=dict(eligible_pvc=len(onsets),to_pct=round(sum(onsets)/len(onsets),4) if len(onsets)>=5 else None,ts_ms_per_rr=round(max(slopes),4) if len(onsets)>=5 else None,tachogram=[dict(x=i+1,y=round(v,4)) for i,v in enumerate(average)],method='HRT 研究性计算：孤立 V，前 5 / 后 20 个正常间期；排除完整间期与房颤/房扑区间的交集、伪差及不连续数据；正常间期相邻差≤200 ms，恢复间期相对前5个正常间期均值偏差≤20%。TO 为逐事件均值，TS 为平均恢复序列前 15 间期内 5 点最大回归斜率。少于 5 个合格事件不报 TO/TS；不输出风险等级。'),
+        hrt=dict(source_events=source_events,eligible_pvc=len(onsets),to_pct=round(sum(onsets)/len(onsets),4) if len(onsets)>=5 else None,ts_ms_per_rr=round(max(slopes),4) if len(onsets)>=5 else None,tachogram=[dict(x=i+1,y=round(v,4)) for i,v in enumerate(average)],method='HRT 研究性计算：孤立 V，前 5 / 后 20 个正常间期；排除完整间期与房颤/房扑区间的交集、伪差及不连续数据；正常间期相邻差≤200 ms，恢复间期相对前5个正常间期均值偏差≤20%。TO 为逐事件均值，TS 为平均恢复序列前 15 间期内 5 点最大回归斜率。少于 5 个合格事件不报 TO/TS；不输出风险等级。'),
         dc=dict(anchor_count=len(anchors),dc_ms=round((prsa[30]+prsa[31]-prsa[29]-prsa[28])/4,4) if len(anchors)>=20 else None,prsa=[dict(x=i-30,y=round(v,4)) for i,v in enumerate(prsa)],method='DC 研究性 PRSA：T=1，L=30；减速锚点增幅 0–5%，只用连续正常 N-N、排除异常节律区段。DC=(X0+X1-X-1-X-2)/4；少于 20 个锚点不报告值。阈值为软件质量控制，不是诊断标准。'))
 
 def evidence(index, st=None):

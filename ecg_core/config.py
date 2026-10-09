@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "CardioInsight Holter 心电分析工作站"
-APP_VERSION = "0.12.0"
+APP_VERSION = "0.12.9-doctor-evaluation.20261009"
 SAMPLE_RATE = 200
 CHANNEL_COUNT = 8
 RAW_FOLDER_NAME = "10个病人的心电数据"
@@ -95,24 +95,28 @@ def resolve_data_root(explicit: str | os.PathLike[str] | None = None) -> Path | 
     candidates: list[Path] = []
     if explicit:
         candidates.append(Path(explicit))
-    if os.environ.get("ECG_DATA_ROOT"):
+    elif os.environ.get("ECG_DATA_ROOT"):
         candidates.append(Path(os.environ["ECG_DATA_ROOT"]))
+    else:
+        config = load_config()
+        configured = config.get("data_root")
+        if configured:
+            value = Path(configured)
+            if not value.is_absolute() and config.get("_config_path"):
+                value = Path(config["_config_path"]).parent / value
+            candidates.append(value)
 
-    config = load_config()
-    configured = config.get("data_root")
-    if configured:
-        value = Path(configured)
-        if not value.is_absolute() and config.get("_config_path"):
-            value = Path(config["_config_path"]).parent / value
-        candidates.append(value)
-
-    for base in (install_root(), runtime_root(), source_root(), Path.cwd()):
-        current = base.resolve()
-        for _ in range(5):
-            candidates.append(current / RAW_FOLDER_NAME)
-            if current.parent == current:
-                break
-            current = current.parent
+    # An explicit path, environment selection, or configured directory is
+    # authoritative. Failure must not silently connect a different case set.
+    # Automatic discovery is only for a first run with no selected directory.
+    if not candidates:
+        for base in (install_root(), runtime_root(), source_root(), Path.cwd()):
+            current = base.resolve()
+            for _ in range(5):
+                candidates.append(current / RAW_FOLDER_NAME)
+                if current.parent == current:
+                    break
+                current = current.parent
 
     seen: set[str] = set()
     for candidate in candidates:
@@ -124,8 +128,11 @@ def resolve_data_root(explicit: str | os.PathLike[str] | None = None) -> Path | 
         if key in seen:
             continue
         seen.add(key)
-        if resolved.is_dir() and any(child.is_dir() for child in resolved.iterdir()):
-            return resolved
+        try:
+            if resolved.is_dir() and any(child.is_dir() for child in resolved.iterdir()):
+                return resolved
+        except OSError:
+            continue
     return None
 
 

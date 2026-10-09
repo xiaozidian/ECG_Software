@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import re
 import xml.etree.ElementTree as ET
 from datetime import datetime
@@ -26,8 +27,11 @@ def _first_match(texts: list[str], pattern: str, cast=None, default=None):
         if cast is None:
             return value
         try:
-            return cast(value)
-        except (TypeError, ValueError):
+            parsed = cast(value)
+            # Optional source metrics remain missing when a numeric token
+            # overflows; never emit Infinity as a measured report value.
+            return default if isinstance(parsed, float) and not math.isfinite(parsed) else parsed
+        except (TypeError, ValueError, OverflowError):
             return default
     return default
 

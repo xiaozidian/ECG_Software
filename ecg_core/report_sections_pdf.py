@@ -18,9 +18,9 @@ def documents(case, report, keys):
             continue
         if key=='cover':add(key,['动态心电图检测报告',f"检查记录：{case['case_id']}",f"记录时间：{clock(meta)}",f"记录时长：{meta.get('duration_text','—')}",'研究与软件验证输出。请由医生核对分析统计、原始波形与诊断结论。'])
         if key=='scatter':
-            r=e.get('scatter',{});add(key,[f"相邻 RR 配对 {r.get('total',0)} 个；图中等间隔抽取 1/{r.get('stride',1)} 显示，统计保留全量。"],[dict(title='Lorenz RR(i) / RR(i+1) · ms',points=r.get('points',[]),scatter=True)])
+            r=e.get('scatter',{});add(key,[f"相邻 RR 配对 {number(r.get('total'))} 个；图中等间隔抽取 1/{number(r.get('stride'))} 显示，统计保留全量。"],[dict(title='Lorenz RR(i) / RR(i+1) · ms',points=r.get('points',[]),scatter=True)])
         if key=='pacing':
-            r=e.get('pacing',{});add(key,[r.get('method','无可用数据')],rows=[f'{k} 起搏标记：{n} 搏' for k,n in r.get('counts',{}).items()]+[f"起搏类型总标记数：{r.get('total',0)} 搏；0 不等同排除起搏器。"])
+            r=e.get('pacing',{});add(key,[r.get('method','无可用数据')],rows=[f'{k} 起搏标记：{number(n)} 搏' for k,n in r.get('counts',{}).items()]+[f"起搏类型总标记数：{number(r.get('total'))} 搏；0 不等同排除起搏器。"])
         if key=='af':add(key,[*rhythm_paragraphs(e.get('af_summary')),'片段确认与报告整体审核是独立状态；自动 RR 不规则筛查不等同房颤诊断。','本页仅汇总已保存片段，不证明全程已评估；无片段或未提示不能排除房颤，未评估时段须回看原始波形。'],rows=[f"{clock(meta,r['time_s'])} · {(r['end_s']-r['time_s'])/60:.2f} 分钟 · {r['label']} · {'医生确认' if r['status']=='confirmed' else '待复核'}" for r in e.get('af',[])])
         if key in ('hrt','dc'):
             r=e.get(key,{})

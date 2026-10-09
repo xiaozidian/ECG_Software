@@ -1,0 +1,70 @@
+/* Local layout only: retain the existing waveform geometry and clinical actions. */
+#page-stt.stt-review-layout .stt-workbench {
+  grid-template-columns: 220px minmax(0, 1fr);
+  grid-template-areas: "queue analysis" "review analysis";
+  gap: 12px;
+  align-items: start;
+}
+#page-stt.stt-review-layout .stt-queue-panel,
+#page-stt.stt-review-layout .stt-review-panel {position: static; min-width: 0;}
+#page-stt.stt-review-layout .stt-analysis-column {
+  display: grid;
+  grid-template-columns: 156px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+#page-stt.stt-review-layout .stt-overview-card {grid-column: 1 / -1;}
+#page-stt.stt-review-layout .stt-trend-card .stt-panel-header {flex-wrap: wrap; padding: 10px; gap: 6px;}
+#page-stt.stt-review-layout .stt-trend-rows {padding: 6px 8px 10px; gap: 4px;}
+#page-stt.stt-review-layout .stt-trend-row {grid-template-columns: 26px minmax(0, 1fr); gap: 4px;}
+#page-stt.stt-review-layout .stt-trend-row small {grid-column: 2; text-align: left;}
+#page-stt.stt-review-layout .stt-waveform-toolbar {flex-wrap: wrap; gap: 8px;}
+#page-stt.stt-review-layout .stt-waveform-actions {justify-content: flex-start; max-width: none;}
+#page-stt .stt-current-context {min-height: 132px; box-sizing: border-box; padding: 8px 12px; border-bottom: 1px solid var(--line-soft); background: var(--surface-alt, #f4f7f8); color: var(--ink-700); font-size: 12px; line-height: 1.5;}
+#page-stt .stt-context-heading,
+#page-stt .stt-context-window,
+#page-stt .stt-context-values {display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px;}
+#page-stt .stt-context-heading span {color: var(--teal-700);}
+#page-stt .stt-context-window {margin-top: 4px; font-variant-numeric: tabular-nums;}
+#page-stt .stt-context-landmarks {display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 6px 0;}
+#page-stt .stt-context-landmarks dt {font-weight: 650;}
+#page-stt .stt-context-landmarks dd {margin: 2px 0 0; font-size: 10px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere;}
+#page-stt .stt-context-values {justify-content: flex-start; border-top: 1px solid var(--line); padding-top: 6px; font-variant-numeric: tabular-nums;}
+#page-stt .stt-context-values small {font-size: 10px;}
+#page-stt .stt-context-state {margin: 0;}
+#page-stt #sttAnalysisStatus {margin: 0; padding: 7px 12px; border: 0; border-bottom: 1px solid var(--line-soft); border-radius: 0; font-size: 12px; line-height: 1.5;}
+#page-stt #sttAnalysisStatus .button {min-height: 28px; padding: 3px 9px; font-size: 12px;}
+#page-stt .stt-wave-canvas-wrap[data-stt-wave-state="loading"] {background: var(--surface-alt, #f4f7f8);}
+#page-stt .stt-wave-canvas-wrap[data-stt-wave-state="loading"]::after,
+#page-stt .stt-wave-canvas-wrap[data-stt-wave-state="cancelled"]::after,
+#page-stt .stt-wave-canvas-wrap[data-stt-wave-state="error"]::after {content: "所选波形尚未就绪"; position: absolute; inset: 0; display: grid; place-items: center; color: var(--ink-500); font-size: 13px; pointer-events: none;}
+#page-stt .stt-current-context[data-state="error"] {color: var(--ink-900); background: var(--surface); border-color: var(--coral-600, #cb5349);}
+#page-stt.stt-review-layout .stt-trend-track[role="button"] {cursor: pointer; min-height: 24px;}
+#page-stt.stt-review-layout .stt-trend-track[role="button"]:hover {border-color: var(--teal-600);}
+#page-stt.stt-review-layout .stt-trend-track[role="button"]:focus-visible {outline: 2px solid var(--teal-700); outline-offset: 2px;}
+@media (min-width: 1700px) {
+  #page-stt.stt-review-layout .stt-workbench {grid-template-columns: 240px minmax(0, 1fr) 270px; grid-template-areas: "queue analysis review";}
+  #page-stt.stt-review-layout .stt-analysis-column {grid-template-columns: 180px minmax(0, 1fr);}
+}
+@media (max-width: 1120px) {
+  #page-stt.stt-review-layout .stt-workbench {grid-template-columns: minmax(0, 1fr); grid-template-areas: "queue" "analysis" "review";}
+  #page-stt.stt-review-layout .stt-analysis-column {grid-template-columns: 156px minmax(0, 1fr);}
+  #page-stt.stt-review-layout .stt-candidate-list {max-height: 220px; overflow-y: auto;}
+}
+@media (max-width: 680px) {
+  #page-stt.stt-review-layout .stt-analysis-column {grid-template-columns: minmax(0, 1fr);}
+  #page-stt.stt-review-layout .stt-overview-card {grid-column: auto;}
+  #page-stt.stt-review-layout .stt-trend-row {grid-template-columns: 30px minmax(0, 1fr) 48px;}
+  #page-stt.stt-review-layout .stt-trend-row small {grid-column: auto; text-align: right;}
+  #page-stt .stt-current-context {font-size: 12px;}
+  #page-stt .stt-context-landmarks {grid-template-columns: minmax(0, 1fr); gap: 4px;}
+  #page-stt .stt-context-landmarks > div {display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 8px;}
+  #page-stt .stt-context-landmarks dd, #page-stt .stt-context-values small {font-size: 12px;}
+  #page-stt.stt-review-layout .stt-waveform-foot {flex-wrap: wrap; gap: 4px;}
+  #page-stt.stt-review-layout .stt-trend-track[role="button"],
+  #page-stt.stt-review-layout .stt-nudge-controls button,
+  #page-stt.stt-review-layout .stt-waveform-actions button,
+  #page-stt.stt-review-layout .stt-waveform-actions select {min-height: 44px;}
+  #page-stt.stt-review-layout .stt-waveform-actions {width: 100%; gap: 8px;}
+  #page-stt.stt-review-layout .stt-waveform-actions .lead-picker-trigger {min-width: 0;}
+}

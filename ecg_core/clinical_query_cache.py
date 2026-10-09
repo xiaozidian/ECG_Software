@@ -8,6 +8,7 @@ never leaves this cache; only a defensive copy of the small query result does.
 from collections import OrderedDict
 from concurrent.futures import Future, TimeoutError
 from copy import deepcopy
+import json
 import threading
 
 
@@ -35,6 +36,10 @@ class ClinicalQueryCache:
         return (len(index['rows']) + len(index['events'])
                 + sum(len(e['target_samples']) for e in index['events']))
 
+    @staticmethod
+    def _supersedes(old, new):
+        return old[0] == new[0]
+
     def _get(self, key, build):
         with self._lock:
             if key in self._entries:
@@ -60,7 +65,7 @@ class ClinicalQueryCache:
             with self._lock:
                 # A new successful revision supersedes retained older versions
                 # of this case; in-flight consumers retain their own reference.
-                for old in [k for k in self._entries if k[0] == key[0]]:
+                for old in [k for k in self._entries if self._supersedes(k, key)]:
                     self._units -= self._entries.pop(old)[1]
                 if weight <= self.max_units:
                     while self._entries and (len(self._entries) >= self.max_entries
@@ -109,3 +114,31 @@ class WaveformBeatCache(ClinicalQueryCache):
                 + len(feed.record_samples) + len(feed.by_sample)
                 + len(feed.document['changes'])
                 + len(getattr(feed, 'excluded_rhythm_intervals', ())))
+
+
+class ClinicalEvidenceCache(ClinicalQueryCache):
+    """Immutable, JSON-compatible read evidence with an encoded-byte bound.
+
+    Each consumer receives a fresh decoded value. Keys bind case, full source/
+    runtime basis, review revision, and selected window. A newer basis or
+    revision discards older retained windows of that case. Callers still check
+    identity before/after every hit, and before publishing every build.
+    """
+    busy_message = '当前 HRV 分析仍在计算，请稍后重新读取；未返回旧数据。'
+
+    def __init__(self, max_entries=4, max_units=16*1024*1024, wait_seconds=30):
+        super().__init__(max_entries, max_units, wait_seconds)
+
+    @staticmethod
+    def _weight(value):
+        return len(value)
+
+    @staticmethod
+    def _supersedes(old, new):
+        return old[0] == new[0] and old[1:3] != new[1:3]
+
+    def read(self, key, build):
+        def encode():
+            return json.dumps(build(), ensure_ascii=False, allow_nan=False,
+                              separators=(',', ':')).encode('utf-8')
+        return json.loads(self._get(key, encode))

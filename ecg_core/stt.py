@@ -13,13 +13,17 @@ import mmap
 import re
 import statistics
 import struct
+from hashlib import sha256
 from collections import OrderedDict
+from bisect import bisect_left, insort
 from pathlib import Path
+
+import numpy as np
 
 from .config import CHANNEL_COUNT, SAMPLE_RATE
 from .source_identity import require_waveform_file, source_read
 
-ALGORITHM_VERSION = "stt-screening-0.1.0"
+ALGORITHM_VERSION = "stt-screening-0.1.1"
 LEADS = ("I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6")
 _FRAME = struct.Struct("<8h")
 _CACHE: OrderedDict[tuple, dict] = OrderedDict()
@@ -115,14 +119,16 @@ def _evenly(values: list, limit: int) -> list:
 
 def _estimate_j_sample(buffer, beats, total_samples) -> tuple[int, float]:
     """Estimate QRS end from multi-beat, multi-lead derivative energy."""
-    energies = []
-    for offset in range(33):  # R to R+160 ms
-        changes = []
-        for beat, _group, _rr in beats:
-            current = _read_leads(buffer, beat + offset, total_samples)
-            previous = _read_leads(buffer, beat + offset - 1, total_samples)
-            changes.extend(abs(current[index] - previous[index]) for index in (1, 6, 10))
-        energies.append(_median(changes))
+    # Identical 33 offsets and II/V1/V5 observations, batched without int16
+    # overflow. No smoothing, resampling, fewer beats, or changed tie rules.
+    if beats:
+        positions = np.array([b[0] for b in beats])[:, None] + np.arange(-1, 33)
+        np.clip(positions, 0, total_samples - 1, out=positions)
+        raw = np.frombuffer(buffer, dtype='<i2').reshape(-1, CHANNEL_COUNT)
+        frames = raw[positions][..., [1, 2, 6]].astype(np.float64)
+        energies = np.median(np.abs(np.diff(frames, axis=1)), axis=(0, 2)).tolist()
+    else:
+        energies = [0.0] * 33
     peak_index = max(range(21), key=energies.__getitem__)
     peak, noise = energies[peak_index], _median(energies[-8:])
     threshold = max(2.0, noise * 2.5, peak * 0.12)
@@ -135,27 +141,38 @@ def _estimate_j_sample(buffer, beats, total_samples) -> tuple[int, float]:
     return j_sample, confidence
 
 
-def _block_measurement(buffer, beats, all_count, total_samples, config) -> dict:
+def _sample_frames(buffer, beats, offsets, total_samples):
+    positions = np.array([b[0] for b in beats])[:, None] + np.array(offsets)
+    np.clip(positions, 0, total_samples - 1, out=positions)
+    raw = np.frombuffer(buffer, dtype='<i2').reshape(-1, CHANNEL_COUNT)
+    channels = raw[positions].astype(np.float64)
+    a, b = channels[..., 0], channels[..., 1]
+    return np.stack((a, b, b-a, -(a+b)/2, a-b/2, b-a/2,
+                     *[channels[..., i] for i in range(2, 8)]), axis=-1)
+
+
+def _block_measurement(buffer, beats, all_count, total_samples, config, *, normal_count=None) -> dict:
     j_sample, landmark_confidence = _estimate_j_sample(buffer, beats, total_samples)
     st_offset = j_sample + round(config["st_measurement_ms"] * SAMPLE_RATE / 1000)
     values = {lead: {key: [] for key in ("baseline", "st", "t", "qrs", "span")} for lead in LEADS}
-    for beat, _group, rr_ms in beats:
-        baseline_frames = [_read_leads(buffer, beat + offset, total_samples) for offset in range(-40, -23, 4)]
-        st_frames = [_read_leads(buffer, beat + st_offset + offset, total_samples) for offset in range(-2, 3)]
-        qrs_frames = [_read_leads(buffer, beat + offset, total_samples) for offset in range(-8, j_sample + 1, 2)]
-        rr_samples = max(round(rr_ms * SAMPLE_RATE / 1000), round(0.45 * SAMPLE_RATE))
-        t_last = min(j_sample + 72, max(j_sample + 30, round(rr_samples * 0.62)))
-        t_frames = [_read_leads(buffer, beat + offset, total_samples) for offset in range(j_sample + 24, t_last + 1, 2)]
-        for lead_index, lead in enumerate(LEADS):
-            baseline_values = [frame[lead_index] for frame in baseline_frames]
-            baseline = _median(baseline_values)
-            qrs_values = [frame[lead_index] for frame in qrs_frames]
-            t_values = [frame[lead_index] - baseline for frame in t_frames]
-            values[lead]["baseline"].append(baseline)
-            values[lead]["st"].append(_median(frame[lead_index] for frame in st_frames) - baseline)
-            values[lead]["t"].append(max(t_values, key=abs) if t_values else 0.0)
-            values[lead]["qrs"].append(max(qrs_values) - min(qrs_values) if qrs_values else 0.0)
-            values[lead]["span"].append(max(baseline_values) - min(baseline_values))
+    if beats:
+        base_frames = _sample_frames(buffer, beats, range(-40, -23, 4), total_samples)
+        baseline = np.median(base_frames, axis=1)
+        st = np.median(_sample_frames(buffer, beats, range(st_offset-2, st_offset+3), total_samples), axis=1) - baseline
+        qrs_frames = _sample_frames(buffer, beats, range(-8, j_sample+1, 2), total_samples)
+        qrs = np.max(qrs_frames, axis=1) - np.min(qrs_frames, axis=1)
+        span = np.max(base_frames, axis=1) - np.min(base_frames, axis=1)
+        # RR-dependent T endpoints remain per beat. argmax preserves the first
+        # maximum of equal magnitudes, as Python's max(key=abs) did.
+        t = []
+        for index, beat in enumerate(beats):
+            rr_samples = max(round(beat[2] * SAMPLE_RATE / 1000), round(0.45 * SAMPLE_RATE))
+            last = min(j_sample+72, max(j_sample+30, round(rr_samples * 0.62)))
+            frames = _sample_frames(buffer, [beat], range(j_sample+24, last+1, 2), total_samples)[0] - baseline[index]
+            t.append(frames[np.argmax(np.abs(frames), axis=0), np.arange(len(LEADS))])
+        arrays = {'baseline':baseline, 'st':st, 't':np.array(t), 'qrs':qrs, 'span':span}
+        for index, lead in enumerate(LEADS):
+            values[lead] = {key:array[:, index].tolist() for key,array in arrays.items()}
 
     lead_values, lead_scores = {}, []
     for lead, lead_data in values.items():
@@ -170,12 +187,18 @@ def _block_measurement(buffer, beats, all_count, total_samples, config) -> dict:
             "t_amplitude_units": round(_median(lead_data["t"]), 2),
             "qrs_amplitude_units": round(qrs, 2), "quality_score": round(score, 3),
         }
-    normal_ratio = len(beats) / max(all_count, 1)
+    # Sampling limits measurement work; it must not reduce the actual normal
+    # beat density used by the existing quality gates.
+    has_population_count = normal_count is not None
+    normal_count = len(beats) if normal_count is None else normal_count
+    normal_ratio = normal_count / max(all_count, 1)
     overall = max(0.0, min(1.0, _median(lead_scores) * min(1.0, normal_ratio / 0.6)))
     return {
         "j_offset_ms": round(j_sample * 1000 / SAMPLE_RATE),
         "landmark_confidence": round(landmark_confidence, 3),
-        "normal_beat_count": len(beats), "normal_beat_ratio": round(normal_ratio, 3),
+        "normal_beat_count": normal_count,
+        **({"measurement_beat_count": len(beats)} if has_population_count else {}),
+        "normal_beat_ratio": round(normal_ratio, 3),
         "quality_score": round(overall, 3),
         "eligible": normal_ratio >= 0.35 and overall >= 0.42,
         "leads": lead_values,
@@ -183,11 +206,23 @@ def _block_measurement(buffer, beats, all_count, total_samples, config) -> dict:
 
 
 def _rolling_reference(values: list[dict], key: str, radius: int) -> list[float | None]:
-    result = []
+    # Retain the exact centered window and finite-value median. Incremental
+    # insertion/removal avoids re-reading and re-sorting each overlapping window.
+    eligible = []
+    for row in values:
+        value = row.get(key)
+        eligible.append(float(value) if row.get('eligible') and isinstance(value, (int, float)) and math.isfinite(value) else None)
+    ordered, left, right, result = [], 0, 0, []
     for index in range(len(values)):
-        window = values[max(0, index - radius):min(len(values), index + radius + 1)]
-        eligible = [row[key] for row in window if row.get("eligible") and row.get(key) is not None]
-        result.append(round(_median(eligible), 2) if eligible else None)
+        end = min(len(values), index+radius+1)
+        while right < end:
+            if eligible[right] is not None: insort(ordered, eligible[right])
+            right += 1
+        while left < max(0, index-radius):
+            if eligible[left] is not None: ordered.pop(bisect_left(ordered, eligible[left]))
+            left += 1
+        window_has_value = any(row.get('eligible') and row.get(key) is not None for row in values[left:right]) if not ordered else True
+        result.append(round(float(statistics.median(ordered)), 2) if ordered else 0.0 if window_has_value else None)
     return result
 
 
@@ -271,13 +306,15 @@ def analyze_stt(waveform_path: str | Path, records, duration_s: float | None = N
     """Analyze a recording and return automatic review candidates and trends."""
     path, settings = Path(waveform_path), {**DEFAULT_CONFIG, **(config or {})}
     stat, normalized = require_waveform_file(path), _normalize_records(records)
-    signature = (len(normalized), normalized[0] if normalized else None, normalized[-1] if normalized else None, analysis_revision)
-    from .source_identity import file_signature
-    cache_key = (str(path.resolve()), file_signature(path), signature, tuple(sorted(settings.items())))
-    if cache_key in _CACHE:
-        _CACHE.move_to_end(cache_key); return copy.deepcopy(_CACHE[cache_key])
     total_samples = stat.st_size // (CHANNEL_COUNT * 2)
     duration = min(float(duration_s or total_samples / SAMPLE_RATE), total_samples / SAMPLE_RATE)
+    # Revisions can be equal in separate workspaces. Bind every normalized
+    # record, including middle edits, rather than only the count and endpoints.
+    signature = (sha256(repr(normalized).encode("ascii")).hexdigest(), analysis_revision)
+    from .source_identity import file_signature
+    cache_key = (str(path.resolve()), file_signature(path), signature, duration, tuple(sorted(settings.items())))
+    if cache_key in _CACHE:
+        _CACHE.move_to_end(cache_key); return copy.deepcopy(_CACHE[cache_key])
     block_samples = int(settings["block_seconds"] * SAMPLE_RATE)
     by_block: dict[int, list[tuple[int, int, int]]] = {}
     for row in normalized:
@@ -299,10 +336,11 @@ def analyze_stt(waveform_path: str | Path, records, duration_s: float | None = N
             time_s = round(min(duration, (block_index + 0.5) * settings["block_seconds"]), 1)
             if len(selected) < settings["minimum_normal_beats"]:
                 blocks.append({"time_s": time_s, "eligible": False, "quality_score": 0.0,
-                               "normal_beat_count": len(selected), "normal_beat_ratio": round(len(selected) / max(1, all_count), 3),
+                               "normal_beat_count": len(usable), "measurement_beat_count": len(selected),
+                               "normal_beat_ratio": round(len(usable) / max(1, all_count), 3),
                                "j_offset_ms": None, "landmark_confidence": 0.0, "leads": {}})
                 continue
-            measured = _block_measurement(buffer, selected, all_count, total_samples, settings)
+            measured = _block_measurement(buffer, selected, all_count, total_samples, settings, normal_count=len(usable))
             measured["time_s"] = time_s; blocks.append(measured)
 
     radius = max(1, round(settings["reference_window_minutes"] * 60 / settings["block_seconds"] / 2))

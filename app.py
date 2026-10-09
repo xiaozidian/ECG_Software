@@ -37,7 +37,7 @@ from ecg_core.report_pdf import build_report_pdf
 from ecg_core.hrv_analysis import analyze_hrv
 from ecg_core.report_layout import prepare_strip, report_statistics
 from ecg_core.clinical_analysis import build_index, query_index, hrv_windows, validate_report
-from ecg_core.clinical_query_cache import ClinicalQueryCache, ClinicalQueryBusy, WaveformBeatCache
+from ecg_core.clinical_query_cache import ClinicalQueryCache, ClinicalQueryBusy, WaveformBeatCache, ClinicalEvidenceCache
 from ecg_core.storage import normalize_report_composition
 from ecg_core.repository import CaseNotFound, CaseRepository
 from ecg_core.storage import Storage
@@ -147,6 +147,16 @@ def _json_number(payload: dict, name: str, default, minimum: float, maximum: flo
     return _coerce_json_number(payload.get(name, default), name, minimum, maximum, integer=integer)
 
 
+def _waveform_leads_arg() -> list[str]:
+    """Never silently replace a requested lead with a different waveform."""
+    selected = [value.strip() for value in request.args.get('leads', 'II,V1,V5').split(',')]
+    if not 1 <= len(selected) <= 12 or any(value not in ALL_LEADS for value in selected):
+        raise ValueError('请指定1–12个支持的波形导联，不能留空或包含未知导联')
+    if len(set(selected)) != len(selected):
+        raise ValueError('波形导联不能重复')
+    return selected
+
+
 def _free_port(preferred: int) -> int:
     for port in range(preferred, preferred + 20):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
@@ -198,6 +208,8 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
     clinical_query_cache = ClinicalQueryCache()
     app.extensions['clinical_query_cache'] = clinical_query_cache
     waveform_beat_cache = WaveformBeatCache()
+    hrv_evidence_cache = ClinicalEvidenceCache()
+    app.extensions['hrv_evidence_cache'] = hrv_evidence_cache
     app.extensions['waveform_beat_cache'] = waveform_beat_cache
     backup_directory = storage.path.parent / 'backups'
     backup_lock = threading.Lock()
@@ -278,13 +290,38 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
     editor = BeatEditorStore(storage)
     rhythms = RhythmReviewStore(storage)
 
+    def linked_read_identity(case, expected=None):
+        """Chart projections retain both review and edited-beat provenance."""
+        basis = clinical_read_basis(case, expected)
+        revision = editor.snapshot(case['case_id'])['revision']
+        expected = expected or {}
+        for key in ('beat_revision', 'revision'):
+            if key in expected and (type(expected[key]) is not int or expected[key] != revision):
+                raise ReportConflict('心搏版本已变化，请重新读取当前图表')
+        clinical_read_basis(case, basis)
+        return {**basis, 'beat_revision': revision}
+
     def edited_feed(case, document=None):
+        # Reuse only inside one read request, and only while the complete source
+        # and review identity still matches. Never share mutable feeds across
+        # requests or a write, and keep every outer before/after identity guard.
+        identity = clinical_read_basis(case) if request.method == 'GET' else None
+        key = (case['case_id'], identity['analysis_basis'], identity['analysis_revision'],
+               provenance_digest(document) if document is not None else None) if identity else None
+        feeds = getattr(request, '_ecg_read_feeds', None)
+        if key is not None and feeds is not None and key in feeds:
+            return feeds[key]
         if document is None:
             document = editor.snapshot(case["case_id"])["document"]
         feed = EditedRecords(load_records(case["paths"]["ebi"]), document,
             storage.list_beat_overrides(case["case_id"]), case["technical"]["duration_seconds_raw"])
         from ecg_core.rr_quality import annotation_exclusions
         feed.excluded_rhythm_intervals = annotation_exclusions(storage.list_annotations(case["case_id"]))
+        if key is not None:
+            clinical_read_basis(case, identity)
+            if feeds is None:
+                feeds = request._ecg_read_feeds = {}
+            feeds[key] = feed
         return feed
 
     def analysis_path(case):
@@ -334,8 +371,11 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         if detailed:
             duration = source["technical"]["duration_seconds_raw"]
             item["calculated"] = ebi_metrics(analysis_path(source), duration)
-            item["analysis_revision"] = editor.snapshot(source["case_id"])["revision"] if request.args.get("analysis") == "edited" else None
+            editor_value = editor.snapshot(source["case_id"]) if request.args.get("analysis") == "edited" else None
+            item["analysis_revision"] = editor_value["revision"] if editor_value is not None else None
             if item["analysis_revision"] is not None:
+                item["beat_editor_history"] = {"revision": editor_value["revision"],
+                    "can_undo": editor_value["can_undo"], "can_redo": editor_value["can_redo"]}
                 feed=edited_feed(source)
                 item["beat_editor_settings"]=feed.document["settings"]
                 item["manual_longest"]=next((r for r in feed.beats if r["id"]==feed.document["longest_id"]),None)
@@ -487,7 +527,7 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         basis = clinical_read_basis(case, request.args)
         start = _number_arg("start", 0, float, 0)
         duration = _number_arg("duration", 10, float, 1, 120)
-        leads = [value.strip() for value in request.args.get("leads", "II,V1,V5").split(",") if value.strip()]
+        leads = _waveform_leads_arg()
         max_points = _number_arg("max_points", 4000, int, 200, 12000)
         filtered = request.args.get("filter", "display") != "raw"
         payload = read_waveform(Path(case["paths"]["data"]), start, duration, leads, max_points, filtered)
@@ -528,7 +568,11 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
 
     def clinical_query(case_id, occurrences=False):
         case = case_or_404(case_id)
-        basis = clinical_read_basis(case, request.args)
+        # URL query revisions are strings; the existing clinical basis contract
+        # remains unchanged. The emitted beat revision comes from a fresh read.
+        identity = linked_read_identity(case, {key: request.args[key] for key in
+            ('analysis_basis', 'analysis_revision') if key in request.args})
+        basis = {key: identity[key] for key in ('analysis_basis', 'analysis_revision')}
         key = (case_id, basis['analysis_basis'], basis['analysis_revision'])
         def build_checked():
             index = clinical_index(case)
@@ -539,10 +583,10 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         # a cached index. Each returned projection is detached from cache storage.
         result = clinical_query_cache.project(key, build_checked,
             lambda index: query_index(index, request.args, occurrences))
-        clinical_read_basis(case, basis)
+        linked_read_identity(case, identity)
         # Beat identities can remain unchanged when the raw signal is replaced.
         # Send only a digest, never local source paths, for browser cache scoping.
-        result.update(basis)
+        result.update(identity)
         return jsonify(result)
 
     @app.get("/api/cases/<case_id>/event-waveform")
@@ -551,7 +595,7 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         basis=clinical_read_basis(case,request.args)
         start=_number_arg("start",0,float,0)
         end=_number_arg("end",start+4,float,start+1)
-        payload=read_event_waveform(case["paths"]["data"],start,end,request.args.get("leads","II,V1,V5").split(","),_number_arg("max_points",2400,int,200,12000))
+        payload=read_event_waveform(case["paths"]["data"],start,end,_waveform_leads_arg(),_number_arg("max_points",2400,int,200,12000))
         payload['beats']=waveform_labels(case,basis,[(payload['start_s'],payload['duration_s'])])[0]
         clinical_read_basis(case,basis)
         return jsonify({**payload,**basis})
@@ -595,7 +639,7 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         event = next((e for e in index['events'] if e['event_id'] == request.args.get('event_id')), None)
         if not event or event['basis_version'] != request.args.get('basis_version'):
             return jsonify(error='图条依据已变化，请重新选择事件'), 409
-        settings = {'leads': request.args.get('leads', 'II,V1,V5').split(','),
+        settings = {'leads': _waveform_leads_arg(),
                     'duration_s': _number_arg('duration', 7, float, 1, 120)}
         if 'range_start_s' in request.args or 'range_end_s' in request.args:
             for key in ('range_start_s','range_end_s'):
@@ -641,7 +685,7 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         case=case_or_404(case_id)
         return clinical_response(case, lambda: hrv_windows(edited_feed(case),case["metadata"].get("start_iso") or case["metadata"].get("start_time"),request.args.get("window",0)))
 
-    def hrv_evidence(case, window=0):
+    def build_hrv_evidence(case, window=0):
         feed=edited_feed(case)
         data=analyze_hrv(feed,case['metadata'].get('start_iso') or case['metadata'].get('start_time'),window)
         # Use the already-versioned ST research engine; never label device units mV.
@@ -660,6 +704,19 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         data['representatives']=representatives
         return data
 
+    def hrv_evidence(case, window=0):
+        if request.method != 'GET':
+            return build_hrv_evidence(case, window)
+        basis = clinical_read_basis(case, request.args)
+        key = (case['case_id'], basis['analysis_basis'], basis['analysis_revision'], str(window))
+        def build_checked():
+            result = build_hrv_evidence(case, window)
+            clinical_read_basis(case, basis)
+            return result
+        result = hrv_evidence_cache.read(key, build_checked)
+        clinical_read_basis(case, basis)
+        return result
+
     @app.get('/api/cases/<case_id>/hrv-analysis')
     def hrv_analysis_endpoint(case_id):
         case = case_or_404(case_id)
@@ -673,6 +730,9 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         include_phi=include_phi_authorized()
         visible=case_with_overrides(case)
         if not include_phi: visible=_masked_report_case(visible)
+        visible['case_id']=app.config.get('REPORT_CASE_DISPLAY_IDS',{}).get(case_id,case_id)
+        if case_id in app.config.get('REPORT_CASE_DISPLAY_IDS', {}):
+            visible['display_case_id'] = visible['case_id']
         report=storage.get_report(case_id,case['conclusion'])
         report.update(hrv_only=True,status='draft',selected_waveforms=[],hrv_analysis=hrv_evidence(case,request.args.get('window',0)))
         pdf=build_report_pdf(visible,{},report)
@@ -680,7 +740,7 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
             raise ReportConflict('导出期间病例或算法依据已变化，未生成 HRV 下载；请重新核对')
         pdf_digest=sha256(pdf.getbuffer()).hexdigest()
         storage.audit(ACTOR,'hrv.export_pdf',case_id,f'HRV research draft basis={source_token[2]} sha256={pdf_digest}')
-        response=send_file(pdf,mimetype='application/pdf',as_attachment=True,download_name=f'{case_id}_HRV分析报告.pdf')
+        response=send_file(pdf,mimetype='application/pdf',as_attachment=True,download_name=f"{visible['case_id']}_HRV分析报告.pdf")
         response.headers['X-Privacy-Mode']='phi-visible' if include_phi else 'masked'
         response.headers['X-Analysis-Basis']=source_token[2]
         response.headers['X-Report-SHA256']=pdf_digest
@@ -710,6 +770,7 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
     def scatter_selection_endpoint(case_id: str):
         case = case_or_404(case_id)
         payload = _json_object()
+        identity = linked_read_identity(case, payload)
         raw_polygon = payload.get("polygon")
         if not isinstance(raw_polygon, list):
             raise ValueError("polygon 必须为坐标数组")
@@ -726,17 +787,20 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
                 _coerce_json_number(value, "polygon 坐标", -1_000_000_000, 1_000_000_000)
                 for value in point
             ))
-        return jsonify(select_scatter_points(
+        result = select_scatter_points(
             analysis_path(case),
             mode,
             polygon,
             _json_number(payload, "hour_start_s", 0, 0, 2_678_400),
-        ))
+        )
+        linked_read_identity(case, identity)
+        return jsonify({**result, **identity})
 
     @app.post("/api/cases/<case_id>/waveform-strips")
     def waveform_strips_endpoint(case_id: str):
         case = case_or_404(case_id)
         payload = _json_object()
+        identity = linked_read_identity(case, payload)
         raw_samples = payload.get("sample_indices")
         if not isinstance(raw_samples, list) or not raw_samples:
             raise ValueError("sample_indices 必须是非空数组")
@@ -774,7 +838,8 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         )
         for item in result["items"]:
             item.update(details[item["sample_index"]])
-        return jsonify(result)
+        linked_read_identity(case, identity)
+        return jsonify({**result, **identity})
 
     def editor_summary(case, value):
         feed=edited_feed(case,value["document"])
@@ -832,6 +897,9 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         payload = _json_object() if request.method == "POST" else {}
         if "revision" in payload and (type(payload["revision"]) is not int or payload["revision"] != snapshot["revision"]):
             raise ValueError("编辑版本已变化，请重新加载密度图")
+        identity = linked_read_identity(case, {**payload, 'beat_revision': snapshot['revision']})
+        if 'beat_revision' in payload and (type(payload['beat_revision']) is not int or payload['beat_revision'] != identity['beat_revision']):
+            raise ReportConflict('心搏版本已变化，请重新读取当前图表')
         feed = edited_feed(case, snapshot["document"])
         code = request.args.get("class_code", "N")
         template_id = request.args.get("template_id")
@@ -858,7 +926,8 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         from ecg_core.overview import density_samples
         selected_samples = density_samples(samples, payload)
         result = density(Path(case["paths"]["data"]), selected_samples, request.args.get("lead", "II"), gate, payload.get("amplitude_limit"))
-        return jsonify(**result, source_total=len(samples), revision=snapshot["revision"])
+        linked_read_identity(case, identity)
+        return jsonify(**result, source_total=len(samples), revision=snapshot["revision"], **identity)
 
     @app.post("/api/cases/<case_id>/beat-editor/preview")
     def beat_editor_preview(case_id):
@@ -1132,6 +1201,9 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         report_case = case_with_overrides(case)
         if not include_phi:
             report_case = _masked_report_case(report_case)
+        report_case['case_id']=app.config.get('REPORT_CASE_DISPLAY_IDS',{}).get(case_id,case_id)
+        if case_id in app.config.get('REPORT_CASE_DISPLAY_IDS', {}):
+            report_case['display_case_id'] = report_case['case_id']
         calculated = ebi_metrics(edited_feed(case), case["technical"]["duration_seconds_raw"])
         report = storage.get_report(case_id, case["conclusion"])
         if report['status']=='reviewed':
@@ -1166,7 +1238,7 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
             raise ReportConflict("导出期间病例或报告已变化，未生成下载；请核对最新版本后重试")
         pdf_digest=sha256(pdf.getbuffer()).hexdigest()
         storage.audit(ACTOR, "report.export_pdf", case_id, f"version={report['version']} review_revision={source_token[1]} privacy={privacy_mode} basis={source_token[2]} sha256={pdf_digest}")
-        response = send_file(pdf, mimetype="application/pdf", as_attachment=True, download_name=f"{case_id}_心电分析复核报告.pdf")
+        response = send_file(pdf, mimetype="application/pdf", as_attachment=True, download_name=f"{report_case['case_id']}_心电分析复核报告.pdf")
         response.headers["X-Privacy-Mode"] = privacy_mode
         response.headers["X-Report-Version"] = str(source_token[0])
         response.headers["X-Review-Revision"] = str(source_token[1])

@@ -284,13 +284,8 @@ class Storage(ReviewWorkflowMixin):
         samples = sorted(set(raw_samples))
         if len(samples) != len(raw_samples):
             raise ValueError("sample_indices 不能重复")
-        details = payload.get("details", {})
-        if details:
-            if not isinstance(details,dict) or details.get("kind") not in ("ST","AT","VT","AF","AFL","STRIP") or details.get("status") not in ("confirmed","excluded","pending"):
-                raise ValueError("结构化发现类型或状态无效")
-            end=details.get("end_sample",sample_index)
-            if type(end) is not int or end<sample_index:raise ValueError("结束位置无效")
-            details={"kind":details["kind"],"status":details["status"],"end_sample":end,"finding":str(details.get("finding",label))[:120]}
+        if payload.get("details"):
+            raise ValueError("心搏模板不支持结构化诊断发现，请使用人工标注入口")
         now = utc_now()
         values = (
             case_id,

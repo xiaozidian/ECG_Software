@@ -1,0 +1,12 @@
+/* Stage navigation lives in the sidebar; reserve no horizontal workflow height. */
+:root{--case-workflow-height:0px}
+.sidebar nav{overflow-y:auto;overflow-x:hidden;padding-bottom:32px;scrollbar-width:thin;scrollbar-color:#496573 transparent}
+.sidebar nav>.nav-item,.sidebar nav>.nav-section-label,.sidebar-workflow{flex-shrink:0}
+.sidebar-workflow{display:grid;gap:5px;padding:8px 0;margin-top:4px;border-top:1px solid #365360}
+.sidebar-workflow[hidden],.sidebar-workflow button[hidden]{display:none}
+.sidebar-workflow button{width:100%;min-height:36px;padding:6px 2px;border:1px solid #587781;border-radius:6px;background:transparent;color:#dcecef;font:inherit;font-size:11px;line-height:1.4;cursor:pointer}
+.sidebar-workflow #workflowBrowseNext{background:#147f82;border-color:#48acae;color:#fff;font-weight:650}
+.sidebar-workflow button:hover:not(:disabled){background:#285665;border-color:#8cc9cc}
+.sidebar-workflow button:focus-visible{outline:2px solid #a5eeee;outline-offset:2px}
+.sidebar-workflow button:disabled{color:#9bb0b9;border-color:#365360;cursor:default}
+@media(max-width:680px){.sidebar-workflow button{min-height:44px;font-size:10px}}

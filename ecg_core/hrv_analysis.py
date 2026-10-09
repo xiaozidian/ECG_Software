@@ -3,13 +3,13 @@
 The browser Demo implements the same contract in hrv-analysis.js. Spectra are
 averages of eligible 5-minute blocks, NOT a spectrum of a concatenated day.
 """
-from bisect import bisect_right
+from bisect import bisect_left, bisect_right
 import cmath
 import math
 import statistics
 from datetime import datetime, timedelta
 from .clinical_analysis import hrv_windows
-from .rr_quality import nn_intervals, five_minute_blocks
+from .rr_quality import nn_intervals, five_minute_blocks, NNWindowIndex
 
 METHOD = ('连续 N-N，整段排除房颤/房扑确认及待复核区间；三角指数箱宽 7.8125 ms。完整 5 分钟段要求 ≥30 个 NN、NN 覆盖 ≥80%；'
           '频谱以 4 Hz 线性插值、1024 点 Hann 窗、去均值 FFT 估计，超过 5 秒缺口不插值。'
@@ -81,6 +81,9 @@ def analyze_hrv(feed, start_time, window=0, st_trends=None):
     lo, hi = result['start_s'], result['end_s']
     rows, opts = feed.beats, feed.document['settings']
     nn = nn_intervals(feed)
+    nn_windows = NNWindowIndex(nn)
+    row_times = [r['sample_index']/200 for r in rows]
+    ordered_rows = all(a <= b for a, b in zip(row_times, row_times[1:]))
     try:
         clock = datetime.fromisoformat(str(start_time).replace('Z','+00:00'))
     except (ValueError,TypeError):
@@ -98,7 +101,7 @@ def analyze_hrv(feed, start_time, window=0, st_trends=None):
                 else: wanted.append((h['start_s'],h['end_s']))
         return wanted
     def extend(target, spans):
-        chosen = [r for r in nn if any(r[1]>=a and r[2]<=b for a,b in spans)]
+        chosen = nn_windows.contained(spans)
         valid_blocks = [b for b in blocks if any(b['start_s']>=a and b['end_s']<=z for a,z in spans)]
         # Sparse histogram keeps every NN, including configured NN bounds >2 s.
         bins={}
@@ -118,7 +121,10 @@ def analyze_hrv(feed, start_time, window=0, st_trends=None):
     for key,period in result['periods'].items(): extend(period,intervals(key))
     for hour in result['hourly']:
         extend(hour,[(hour['start_s'],hour['end_s'])])
-        selected=[r for r in rows if hour['start_s'] <= r['sample_index']/200 < hour['end_s']]
+        if ordered_rows:
+            selected=rows[bisect_left(row_times, hour['start_s']):bisect_left(row_times, hour['end_s'])]
+        else:
+            selected=[r for r in rows if hour['start_s'] <= r['sample_index']/200 < hour['end_s']]
         valid=[r for r in selected if r['class_code'] not in ('X','O','Y','T')]
         rates=[r['hr'] for r in valid if (r.get('hr') or 0)>0 and (r.get('rr_ms') or 0)>0]
         hour.update(total_beats=len(valid),v_count=sum(r['class_code']=='V' for r in valid),s_count=sum(r['class_code']=='S' for r in valid),
