@@ -43,7 +43,7 @@ def generate(output: Path, release_id: str) -> dict:
         'report_image_urls': [], 'generated_report_url': '#mathematical-demo',
     }
     js = output / 'case-data.js'
-    js.write_text('"use strict";\nwindow.__CARDIOINSIGHT_MATHEMATICAL_CASE__ = ' + json.dumps(case, ensure_ascii=False, separators=(',', ':')) + ';\n', encoding='utf-8')
+    js.write_text('"use strict";\nwindow.__CARDIOINSIGHT_MATHEMATICAL_CASE__ = ' + json.dumps(case, ensure_ascii=False, separators=(',', ':')) + ';\n', encoding='utf-8', newline='\n')
     return {'release_id': release_id, 'kind': 'pure_mathematical', 'case_id': case_id, 'duration_seconds': duration,
             'sample_rate_hz': 200, 'stored_channels': 8, 'beat_count': len(beats), 'seed_parameters': {'base_hr': 64, 'phase': .731, 'case_number': 1},
             'existing_data_read': False, 'patient_inputs_read': False,

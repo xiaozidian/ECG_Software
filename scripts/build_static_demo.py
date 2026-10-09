@@ -22,7 +22,7 @@ def build(output: Path) -> Path:
     if output.exists():
         raise ValueError('Output must be new; preserve or remove only a previous generated output explicitly.')
     verify(PROJECT_ROOT)
-    manifest = json.loads(MANIFEST.read_text())
+    manifest = json.loads(MANIFEST.read_text(encoding='utf-8'))
     output.mkdir(parents=True)
     copied = []
     for relative, row in manifest['files'].items():
@@ -72,17 +72,17 @@ def build(output: Path) -> Path:
         return f'{attribute}="{relative}?v={sha((output / relative).read_bytes())[:12]}"'
     html = re.sub(r'(src|href)="(static/(?:js|css)/[^"]+)"', asset_version, html)
     html = re.sub(r'(?m)^[ \t]+$', '', html)
-    (output / 'index.html').write_text(html, encoding='utf-8')
-    (output / '.nojekyll').write_text('')
+    (output / 'index.html').write_text(html, encoding='utf-8', newline='\n')
+    (output / '.nojekyll').write_text('', encoding='utf-8', newline='\n')
     (output / '_headers').write_text("""/*
   Content-Security-Policy: default-src 'self'; base-uri 'none'; connect-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data: blob:; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'
   Permissions-Policy: camera=(), geolocation=(), microphone=()
   Referrer-Policy: no-referrer
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
-""", encoding='utf-8')
+""", encoding='utf-8', newline='\n')
     receipt = {'schema': 1, 'release_id': manifest['release_id'], 'production_source_sha256': manifest['source_sha256'], 'production_files_verified': len(manifest['files']), 'production_files_modified': False, 'storage_namespace': NAMESPACE, 'mathematical_source': payload, 'software_assets': copied, 'demo_api_sha256': sha(api_source.read_bytes()), 'legacy_demo_inputs_read': False, 'scope': 'Browser-only mathematical interaction; no desktop database, native PDF, backup/restore, clinical or hardware validation.'}
-    (output / 'mathematical-source-manifest.json').write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + '\n')
+    (output / 'mathematical-source-manifest.json').write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + '\n', encoding='utf-8', newline='\n')
     return output
 
 
