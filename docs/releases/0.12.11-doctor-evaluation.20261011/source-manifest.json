@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "release_id": "0.12.11-doctor-evaluation.20261011+b536fff32339cc27",
-  "source_sha256": "b536fff32339cc271f408160d9186fdc088bfb7a4bf8e965a5e967cfb3afe8c7",
+  "release_id": "0.12.11-doctor-evaluation.20261011+bd0c5aba25eeacc7",
+  "source_sha256": "bd0c5aba25eeacc73aaaecedf1489ac257474f51d1421bcf39685b41c754d179",
   "production_file_count": 94,
   "clinical_acceptance": false,
   "files": {
@@ -250,8 +250,8 @@
       "bytes": 2588
     },
     "static/js/clinical-ui.js": {
-      "sha256": "5241d820fc9d150697968ec01aa6276bcd785fd97c90ea092fd76789ca3cca14",
-      "bytes": 156400
+      "sha256": "d143b9d3f34086e6c3b4634846890e779c39190fd845def92838cac22fb3acf1",
+      "bytes": 156859
     },
     "static/js/clinical-workflow.js": {
       "sha256": "f3368555a0b6bff0ed66aec7c1584129a7e7a3cb5fc3c7f12ec9b5aa680a1ada",

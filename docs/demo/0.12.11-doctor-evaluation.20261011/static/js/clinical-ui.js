@@ -4,7 +4,7 @@ const clinicalUI=(()=>{
   const A=ECGClinicalAnalysis,esc=escapeHtml,qs=s=>document.querySelector(s);
   const copy=x=>JSON.parse(JSON.stringify(x));
   const tabs=[...A.categories,['tables','数据表格'],['strips','报告图条'],['final','报告']];
-  let occurrenceToken=0,reportToken=0,waveToken=0,editCase=null,occurrence=null,editMode='all',template='all',type='N',pageCache=new Map(),tileWidth=150,editTimeTimer=0,occurrenceReadAbort=null;
+  let occurrenceToken=0,reportToken=0,waveToken=0,editCase=null,occurrence=null,occurrenceContext=null,editMode='all',template='all',type='N',pageCache=new Map(),tileWidth=150,editTimeTimer=0,occurrenceReadAbort=null;
   const reportWaveCache=new Map();
   let waveEvidenceScope='',waveEvidence={};
   const thumbnailCache=ECGWaveformLoader.create(async(group,ranges)=>{
@@ -229,7 +229,7 @@ const clinicalUI=(()=>{
     if(editCase!==state.caseId){editCase=state.caseId;editMode='all';template='all';pageCache.clear();thumbnailCache.clear();reportWaveCache.clear();}
     const draft=preserveInputs?{search:qs('#occSearch')?.value||'',ordinal:qs('#occJump')?.value||''}:null;
     occurrenceReadAbort?.abort();const controller=new AbortController();occurrenceReadAbort=controller;
-    const token=++occurrenceToken,id=state.caseId;pageCache.clear();occurrence=null;filters();
+    const token=++occurrenceToken,id=state.caseId;pageCache.clear();occurrence=null;occurrenceContext=null;filters();
     qs('[data-occurrence-page-retry]')?.remove();
     if(draft&&qs('#occSearch')){qs('#occSearch').value=draft.search;updateTemplates();}
     occurrenceFocus=null;syncOccurrenceJump(true);
@@ -245,7 +245,7 @@ const clinicalUI=(()=>{
       const params=editParams();if(resume)params.near_sample=resume.sample;
       const result=await endpoint('template-occurrences',params,id,{signal:controller.signal,readLane:'occurrence-list'});
       if(token!==occurrenceToken||id!==state.caseId||caseToken!==state.caseRequestId||state.currentPage!=='edit'||controller.signal.aborted)return;
-      syncWaveEvidence(id,result);occurrence=result;syncOccurrenceJump(true);pageCache.set(result.offset||0,result.items);
+      syncWaveEvidence(id,result);occurrence=result;occurrenceContext={id,caseToken,evidenceScope:waveEvidenceScope};syncOccurrenceJump(true);pageCache.set(result.offset||0,result.items);
       if(globalThis.ECGLinkedSelection&&result.analysis_basis!==undefined&&result.analysis_revision!==undefined&&Number.isSafeInteger(result.beat_revision)&&result.beat_revision>=0)ECGLinkedSelection.setScope({caseId:id,caseToken,analysis_basis:result.analysis_basis,analysis_revision:result.analysis_revision,beatRevision:result.beat_revision});
       occurrenceReadState('ready');
       if(typeof desktopWorkspace!=='undefined')desktopWorkspace.receiveEvidence(result);
@@ -280,10 +280,13 @@ const clinicalUI=(()=>{
     if(typeof overviewWorkbench==='undefined')qs('#editMorphologyCount').textContent=`当前批次 ${result.items.length} 搏`;
   }
   function renderOccurrences(){
-    if(state.currentPage!=='edit'){occurrenceFocus=null;releaseOccurrenceWaves();return;}
+    // Layout callbacks can run after case selection, before its fresh list arrives.
+    // Keep valid same-case DOM, but never dispatch old records under a new scope.
+    const context=occurrenceContext;
+    if(state.currentPage!=='edit'||!context||context.id!==state.caseId||context.caseToken!==state.caseRequestId||context.evidenceScope!==waveEvidenceScope){occurrenceFocus=null;releaseOccurrenceWaves();return;}
     const host=qs('#editTemplateGallery');if(!host||!occurrence)return;
     host.classList.add('occurrence-viewport');host.tabIndex=0;host.setAttribute('aria-label','心搏出现记录，向下滚动连续浏览');host.removeAttribute('aria-live');
-    const total=occurrence.total,g=occurrenceGrid(total,host.clientWidth,host.scrollTop),{first,last}=g,token=occurrenceToken,id=state.caseId;
+    const total=occurrence.total,g=occurrenceGrid(total,host.clientWidth,host.scrollTop),{first,last}=g,token=occurrenceToken,id=context.id,caseToken=context.caseToken;
     tileWidth=g.width;host.style.setProperty('--occ-height',g.height+'px');host.scrollLeft=0;
     const focused=host.contains(document.activeElement)?document.activeElement.closest('[data-occ-index]')?.dataset.occIndex:null,focusInput=document.activeElement?.tagName==='INPUT';
     syncEditTimeSlider();
@@ -333,22 +336,22 @@ const clinicalUI=(()=>{
       card.innerHTML=`<button type="button" class="occurrence-open" aria-label="第${n+1}条 ${esc(e.label)}，${e.beat_count}搏，${status}；点击定位，空格或Ctrl点击多选"><span class="occurrence-card-heading"><strong class="occurrence-code">${esc(code)}</strong>${e.beat_count>1?`<span class="occurrence-group-count">×${e.beat_count} 搏</span>`:''}</span><span class="occurrence-wave">读取波形…</span><span class="occurrence-card-footer"><time>${formatElapsed(e.time_s)}</time><span>${n+1}/${total}</span></span></button><input type="checkbox" hidden tabindex="-1" aria-hidden="true">`;
       ECGOccurrenceCard.syncSelection(card,e,state);
       let waveFailed=false;
-      const selectCard=toggle=>{if(toggle){const all=e.target_samples.every(s=>state.editSelectedSamples.has(s));e.target_samples.forEach(s=>all?state.editSelectedSamples.delete(s):state.editSelectedSamples.add(s));}else if(!e.target_samples.every(s=>state.editSelectedSamples.has(s)))state.editSelectedSamples=new Set(e.target_samples);state.editSelectedSample=e.sample_index;beatEditor.syncOccurrenceSelection();setEditStart(Math.max(0,e.time_s-2));renderEditScatter();
+      const selectCard=toggle=>{if(!isCurrent())return;if(toggle){const all=e.target_samples.every(s=>state.editSelectedSamples.has(s));e.target_samples.forEach(s=>all?state.editSelectedSamples.delete(s):state.editSelectedSamples.add(s));}else if(!e.target_samples.every(s=>state.editSelectedSamples.has(s)))state.editSelectedSamples=new Set(e.target_samples);state.editSelectedSample=e.sample_index;beatEditor.syncOccurrenceSelection();setEditStart(Math.max(0,e.time_s-2));renderEditScatter();
         const evidenceHost=qs('#occurrenceGroupEvidence');
         if(evidenceHost)globalThis.ECGSourceGroupEvidence?.mount(evidenceHost,{item:e,
-          isCurrent:()=>token===occurrenceToken&&id===state.caseId&&evidenceScope===waveEvidenceScope&&state.currentPage==='edit',
+          isCurrent:()=>isCurrent(),
           loadWave:(params,signal)=>api(`/api/cases/${id}/waveform?${new URLSearchParams({...params,...waveEvidence})}`,{signal,readLane:'source-group'}),
           onLocate:time=>setEditStart(Math.max(0,time-2))});
       };
       card.querySelector('button').onclick=ev=>{if(waveFailed){loadTileWave();return;}selectCard(Boolean(ev?.ctrlKey||ev?.metaKey));};
       beatEditor.registerOccurrence(card,e,{code:type,samples:async visible=>{
-        if(token!==occurrenceToken||id!==state.caseId)throw Error('筛选集合已变化，请重新打开菜单');
+        if(!isCurrent())throw Error('筛选集合已变化，请重新打开菜单');
         if(visible){const view=currentGrid(),samples=[];for(let i=view.visibleFirst-1;i<view.visibleLast;i++){const row=pageCache.get(Math.floor(i/48)*48)?.[i%48];if(row)samples.push(...row.target_samples)}return [...new Set(samples)];}
         const samples=[];for(let offset=0;offset<occurrence.total;offset+=200){const result=await endpoint('template-occurrences',{...editParams(offset),limit:200},id);if(token!==occurrenceToken||!sameEvidence(result,occurrence))throw Error('心搏集合已变化，请刷新后重试');samples.push(...result.items.flatMap(x=>x.target_samples))}return [...new Set(samples)];
       }});
       card.querySelector('input').onchange=ev=>{e.target_samples.forEach(s=>ev.target.checked?state.editSelectedSamples.add(s):state.editSelectedSamples.delete(s));state.editSelectedSample=e.sample_index;beatEditor.syncOccurrenceSelection();renderEditScatter();};
       card.onkeydown=ev=>{if([' ','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(ev.key)){ev.stopPropagation();ev.preventDefault();if(ev.key===' '){if(waveFailed)loadTileWave();else selectCard(true);}else{const view=currentGrid(),next=Math.max(0,Math.min(total-1,n+({ArrowLeft:-1,ArrowRight:1,ArrowUp:-view.columns,ArrowDown:view.columns}[ev.key])));focusOccurrence(next);}}};
-      const isCurrent=()=>state.currentPage==='edit'&&token===occurrenceToken&&id===state.caseId&&lane.dataset.occScope===scope&&card.isConnected;
+      const isCurrent=()=>state.currentPage==='edit'&&token===occurrenceToken&&id===state.caseId&&caseToken===state.caseRequestId&&context===occurrenceContext&&evidenceScope===waveEvidenceScope&&lane.dataset.occScope===scope&&card.isConnected;
       const loadTileWave=()=>{
         if(!isCurrent())return;
         waveFailed=false;card.querySelector('.occurrence-wave').textContent='读取波形…';

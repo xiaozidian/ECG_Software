@@ -4,8 +4,8 @@
   "input_kind": "mathematical_and_temporary_synthetic_fixtures",
   "execution_kind": "local",
   "source_identity": {
-    "release_id": "0.12.11-doctor-evaluation.20261011+b536fff32339cc27",
-    "source_sha256": "b536fff32339cc271f408160d9186fdc088bfb7a4bf8e965a5e967cfb3afe8c7",
+    "release_id": "0.12.11-doctor-evaluation.20261011+bd0c5aba25eeacc7",
+    "source_sha256": "bd0c5aba25eeacc73aaaecedf1489ac257474f51d1421bcf39685b41c754d179",
     "production_files_verified": 94,
     "clinical_acceptance": false
   },

@@ -2,7 +2,7 @@
 
 本仓库保存本机 ECG 软件源码及独立的浏览器交互 Demo。软件用于研究和工程验证，自动事件均为待医生复核的候选；本次发布不构成临床验收。
 
-当前保存的评估版为 `0.12.11-doctor-evaluation.20261011+b536fff32339cc27`。其 94 个生产文件与本机封存版本逐字节一致，完整指纹为 `b536fff32339cc271f408160d9186fdc088bfb7a4bf8e965a5e967cfb3afe8c7`。文件清单与验证方式见 [版本说明](docs/releases/0.12.11-doctor-evaluation.20261011/README.md) 和 [来源清单](docs/releases/0.12.11-doctor-evaluation.20261011/source-manifest.json)。
+当前保存的评估版为 `0.12.11-doctor-evaluation.20261011+bd0c5aba25eeacc7`。其 94 个生产文件与本机封存版本逐字节一致，完整指纹为 `bd0c5aba25eeacc73aaaecedf1489ac257474f51d1421bcf39685b41c754d179`。文件清单与验证方式见 [版本说明](docs/releases/0.12.11-doctor-evaluation.20261011/README.md) 和 [来源清单](docs/releases/0.12.11-doctor-evaluation.20261011/source-manifest.json)。
 
 ## 本次交互更新
 

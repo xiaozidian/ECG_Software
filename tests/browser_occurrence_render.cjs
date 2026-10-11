@@ -40,7 +40,7 @@ function fixture(){
   const items=Array.from({length:240},(_,n)=>({event_id:'event-'+n,basis_version:'v1',sample_index:(n+1)*200,start_sample:(n+1)*200,end_sample:(n+1)*200,time_s:n+1,target_samples:[(n+1)*200],templates:[],beat_count:1,label:'正常',diagnosis_status:'source'}));
   const wave={leads:{II:Array.from({length:480},(_,i)=>Math.sin(i)*200),V1:Array(480).fill(2),V5:Array(480).fill(3)},duration_s:2.4,start_s:0,beats:[]};
   const retained=[];
-  const context=vm.createContext({document,console,AbortController,state:{caseId:'A',currentPage:'edit',editLead:'II',editSelectedSamples:new Set()},occurrenceReadAbort:null,rhythmWrite:null,occurrenceToken:1,occurrence:{total:240},waveEvidenceScope:'A-r1',tileWidth:0,type:'N',editCase:'A',editMode:'all',template:'all',reportWaveCache:new Map(),pageCache:new Map(Array.from({length:5},(_,i)=>[i*48,items.slice(i*48,i*48+48)])),thumbnailCache:{retain:(owner,keys)=>retained.push({owner,keys}),clear(){}},
+  const context=vm.createContext({document,console,AbortController,state:{caseId:'A',caseRequestId:1,currentPage:'edit',editLead:'II',editSelectedSamples:new Set()},occurrenceContext:{id:'A',caseToken:1,evidenceScope:'A-r1'},occurrenceReadAbort:null,rhythmWrite:null,occurrenceToken:1,occurrence:{total:240},waveEvidenceScope:'A-r1',tileWidth:0,type:'N',editCase:'A',editMode:'all',template:'all',reportWaveCache:new Map(),pageCache:new Map(Array.from({length:5},(_,i)=>[i*48,items.slice(i*48,i*48+48)])),thumbnailCache:{retain:(owner,keys)=>retained.push({owner,keys}),clear(){}},
     qs:s=>{if(!nodes.has(s))nodes.set(s,new Element());return nodes.get(s)},ECGReviewTools:require('../static/js/clinical-review-tools.js'),ECGOccurrenceCard:require('../static/js/occurrence-card.js'),esc:String,formatElapsed:String,modeLabel:()=> '全部',syncEditTimeSlider(){},setEditStart(){},renderEditScatter(){},
     beatEditor:{registerOccurrence:(card,item,scope)=>scopes.set(card,{item,scope}),syncOccurrenceSelection(){}},
     eventWave:()=>{metrics.reads++;return Promise.resolve(wave)}});
@@ -190,8 +190,10 @@ async function main(which){
     host.scrollTop=284;render();await tick();assert.equal(card(6),initial);assert.equal(card(0),null);assert.equal(metrics.svg,36);assert.equal(host.querySelector('.occurrence-lane').children.length,30);
     host.scrollTop=0;render();await tick();assert.equal(card(6),initial);assert.deepEqual(host.querySelector('.occurrence-lane').children.map(n=>Number(n.dataset.occIndex)),Array.from({length:24},(_,i)=>i));
   }else if(which==='scope'){
-    c.waveEvidenceScope='A-r2';render();await tick();assert.notEqual(card(6),initial);const revised=card(6);c.occurrenceToken++;render();await tick();assert.notEqual(card(6),revised);
-    const filtered=card(6);c.state.caseId='B';render();await tick();assert.notEqual(card(6),filtered);
+    const reads=metrics.reads;c.waveEvidenceScope='A-r2';render();await tick();assert.equal(card(6),initial);assert.equal(metrics.reads,reads,'unvalidated basis dispatched old records');
+    c.occurrenceContext={id:'A',caseToken:1,evidenceScope:'A-r2'};render();await tick();assert.notEqual(card(6),initial);const revised=card(6);c.occurrenceToken++;render();await tick();assert.notEqual(card(6),revised);
+    const filtered=card(6),beforeCaseReads=metrics.reads;c.state.caseId='B';c.state.caseRequestId=2;render();await tick();assert.equal(metrics.reads,beforeCaseReads,'old case records dispatched under the new case');
+    c.waveEvidenceScope='B-r1';c.occurrenceContext={id:'B',caseToken:2,evidenceScope:'B-r1'};render();await tick();assert.notEqual(card(6),filtered);
   }else if(which==='selection'){
     c.state.editSelectedSamples.add(1400);render();assert.equal(card(6).querySelector('input').checked,true);
     host.scrollTop=142;render();await tick();const actual=await scopes.get(initial).scope.samples(true);assert.equal(actual[0],1400);assert.equal(actual.length,12);
