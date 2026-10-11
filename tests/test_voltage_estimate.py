@@ -106,14 +106,16 @@ def test_startup_toggle_and_explicit_report_snapshot():
       const node=key=>{if(!nodes.has(key))nodes.set(key,{attrs:{},hidden:false,textContent:'',
         setAttribute(k,v){this.attrs[k]=v},focus(){this.focused=true},
         addEventListener(k,fn){this[k]=fn},querySelector:node});return nodes.get(key)};
-      const form=node('form');form.elements={coefficient:{value:''}};form.reportValidity=()=>true;
+      const form=node('form');form.elements={coefficient:{value:'',focus(){this.focused=true}}};form.reportValidity=()=>true;
       const ctx=vm.createContext({document:{querySelector:node,addEventListener(){},dispatchEvent:e=>events.push(e.type)},
         CustomEvent:class{constructor(type){this.type=type}},
         localStorage:{getItem:()=> '2',setItem:(k,v)=>{if(storageFails)throw Error('disabled');writes.push(v)}}});
       vm.runInContext(fs.readFileSync('static/js/voltage-estimate.js','utf8'),ctx);
       const V=ctx.ECGVoltage;V.applyToReport=x=>reports.push(x);V.mount();
       const toggle=node('#voltageToggle'),panel=node('#voltagePanel');
-      assert.equal(V.snapshot(),null);assert.equal(panel.hidden,false);
+      assert.equal(V.snapshot(),null);assert.equal(panel.hidden,true);
+      assert.equal(node('#voltageSettings').attrs['aria-expanded'],'false');
+      node('#voltageSettings').onclick();assert.equal(panel.hidden,false);assert.equal(form.elements.coefficient.focused,true);
       assert.equal(toggle.attrs['aria-checked'],'false');assert.equal(form.elements.coefficient.value,2);
       toggle.onclick();assert.equal(V.snapshot().uv_per_unit,2);
       assert.equal(V.amplitude(500,{units:'device_unit'}),'1.000 mV（估算）');

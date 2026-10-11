@@ -1,0 +1,336 @@
+"use strict";
+
+/* Browser-only mathematical API. No uploaded or patient dataset is consumed. */
+(() => {
+  const RATE=200,COUNT=1,STORE_KEY="cardioinsight-public-math-4314-v2";
+  const rawSignalMetadata=()=>({units:'device_unit',unit_label:'设备单位',calibration_verified:false,calibration_note:'u = 设备单位，电压未校准；显示放大不等于 mm/mV 标定。',signal_profile:{id:'data-int16le-8ch-200hz-v1',sample_rate_hz:RATE,channel_count:8,sample_format:'little-endian int16',stored_leads:['I','II','V1','V2','V3','V4','V5','V6'],derived_leads:{III:'II-I',aVR:'-(I+II)/2',aVL:'I-II/2',aVF:'II-I/2'},basis:'当前支持的 DATA 导入格式；采样率与通道映射尚未经设备资料核验',device_verified:false}});
+  const TEMPLATE_FAMILIES=new Set(["全部","单发","成对","房速","二联律","三联律(NPN)","三联律(NNP)","连续三发","连续多发","室速","三联律(NPP)","四联律","自定义"]),TEMPLATE_LEADS=new Set(["I","II","III","aVR","aVL","aVF","V1","V2","V3","V4","V5","V6"]);
+  const ASSET_BASE="static/demo-data/mathematical-4314";
+  const sourceCase=window.__CARDIOINSIGHT_MATHEMATICAL_CASE__;
+  if(!sourceCase?.integrity?.mathematical_fixture||sourceCase.simulation_profile?.real_patient_inputs_read!==false)throw new Error("纯数学输入未加载或来源不符合公开演示契约");
+
+  const nativeFetch=window.fetch.bind(window),savedDefault={reports:{},annotations:{},patients:{},templates:{},beatOverrides:{},reviews:{},audit:[]};
+  const defaultComposition={template:"comprehensive",included_pages:["cover","summary","hourly","event_strips","hrv_time","hrv_overview"],active_page:"summary",preview_mode:"compose",fast_slow_mode:"rr",paper:{size:"A4",orientation:"portrait",show_grid:true,show_labels:true,speed:"25 mm/s",gain:"10 mm/mV"}};
+  let saved={...savedDefault};
+  try{saved={...savedDefault,...JSON.parse(localStorage.getItem(STORE_KEY)||"{}")} }catch(_){/* unavailable */}
+  saved.beatOverrides=saved.beatOverrides||{};
+  const persist=()=>{try{localStorage.setItem(STORE_KEY,JSON.stringify(saved))}catch(_){throw new Error("浏览器存储失败，请检查空间/隐私设置；修改未能持久保存");}};
+  const copy=value=>JSON.parse(JSON.stringify(value));
+  const round=(value,digits=2)=>{if(!Number.isFinite(value))return null;const p=10**digits;return Math.round(value*p)/p};
+  const response=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store"}});
+  const failure=(message,status=400)=>response({error:message},status);
+  const requestBody=options=>{const value=options?.body?JSON.parse(options.body):{};if(!value||Array.isArray(value)||typeof value!=="object")throw Error("请求正文必须为 JSON 对象");return value;};
+  const number=(value,label,min,max,integer=false)=>{if(typeof value!=="number"||!Number.isFinite(value)||value<min||value>max||integer&&!Number.isInteger(value))throw Error(label+" 超出支持范围");return value;};
+  const now=()=>new Date().toISOString().replace("T"," ").slice(0,19);
+  const caseId=sourceCase.case_id;
+  const duration=Number(sourceCase.technical.duration_seconds_raw);
+  let beats=copy(sourceCase.beats),activeEdited=false;
+  const engine=globalThis.ECGBeatEngine;
+  const editorValue=()=>copy(saved.beatEditor?.[caseId]||{revision:0,document:engine.blank(),undo:[],redo:[]});
+  const editedFeed=doc=>({...engine.materialize(sourceCase.beats,doc||editorValue().document,overrideList()),duration,excluded_rhythm_intervals:ECGRRQuality.annotationExclusions(annotationList())});
+  function editorSummary(value){
+    const feed=editedFeed(value.document),counts={};
+    feed.beats.forEach(r=>counts[r.class_code]=(counts[r.class_code]||0)+1);
+    return {revision:value.revision,settings:value.document.settings,can_undo:!!value.undo.length,can_redo:!!value.redo.length,types:engine.types,metrics:engine.metrics(feed,duration),hrv:engine.hrv(feed,duration),type_counts:counts,markers:feed.markers,manual_longest:feed.beats.find(r=>r.id===value.document.longest_id)||null,note:"修订位置重算 RR；不生成自动疾病诊断，数学生成心搏 保留不变"};
+  }
+  async function editorRoute(action,method,payload){
+    if(!engine)throw Error("编辑计算模块未加载，请刷新");
+    const stored=JSON.parse(localStorage.getItem(STORE_KEY)||"{}");
+    saved={...savedDefault,...stored};
+    const current=editorValue();
+    if(method==="GET")return action.endsWith("/beats")?{items:editedFeed().beats,markers:editedFeed().markers}:editorSummary(current);
+    if(!Number.isInteger(payload.revision)||payload.revision!==current.revision)throw Error("编辑版本已变化，请刷新预览");
+    const op=payload.operation;
+    if(action.endsWith("/preview")){
+      if(op==="detect"){
+        const start=Number(payload.start_s),seconds=Number(payload.duration_s);
+        if(!Number.isFinite(start)||start<0||start>=duration||!Number.isFinite(seconds)||seconds<1||seconds>60)throw Error("搜索范围必须为记录内的 1–60 秒");
+        const feed=editedFeed(),buffer=await waveformBuffer(),view=new DataView(buffer),first=Math.round(start*RATE),count=Math.min(Math.round(seconds*RATE),buffer.byteLength/16-first),values=Array.from({length:count},(_,i)=>leadValue(view,first+i,current.document.settings.lead));
+        return {revision:current.revision,requires_confirmation:true,candidates:engine.detect(values,first,feed.beats.filter(r=>r.group!==34).map(r=>r.sample_index),current.document.settings),method:"导数平方能量 / MAD 阈值 / 局部峰定位 / 不应期排重；研究候选，须逐一确认"};
+      }
+      const result=engine.apply(sourceCase.beats,current.document,overrideList(),payload,duration);
+      return {affected:result.affected,before:editorSummary(current),after:editorSummary({...current,document:result.document}),requires_confirmation:true};
+    }
+    if(method!=="PUT"||payload.confirmed!==true)throw Error("请确认预览后再提交");
+    const previous=copy(saved);
+    try{
+      if(["undo","redo"].includes(op)){if(!current[op].length)throw Error("没有可撤销／重做的操作");current[op==="undo"?"redo":"undo"].push(current.document);current.document=current[op].pop()}
+      else{const result=engine.apply(sourceCase.beats,current.document,overrideList(),payload,duration);current.undo=current.undo.concat([current.document]).slice(-20);current.redo=[];current.document=result.document}
+      current.revision++;(saved.beatEditor||(saved.beatEditor={}))[caseId]=current;
+      invalidateWorkflow("beat_override.editor");
+      saved.audit.unshift({created_at:now(),actor:"pages-demo",case_id:caseId,action:"beat_editor."+op,detail:"revision="+current.revision});saved.audit=saved.audit.slice(0,300);persist();
+      return editorSummary(current);
+    }catch(error){saved=previous;throw error}
+  }
+  // Mathematical waveforms have no pre-seeded clinical diagnoses.
+  const audit=(action,detail="")=>{invalidateWorkflow(action);saved.audit.unshift({created_at:now(),actor:"pages-demo",case_id:caseId,action,detail});saved.audit=saved.audit.slice(0,300);persist()};
+
+  const reviewSteps=["edit","stt"];
+  function workflow(){
+    const value=saved.reviews[caseId]||(saved.reviews[caseId]={case_id:caseId,revision:0,steps:{},events:{}});
+    const pending=reviewSteps.filter(step=>value.steps[step]?.status!=="done");
+    return {...copy(value),pending_steps:pending,next_step:pending[0]||"report",report_status:saved.reports[caseId]?.status||"draft",report_version:saved.reports[caseId]?.version||1};
+  }
+  function invalidateWorkflow(action){
+    let affected;
+    if(action.startsWith("beat_override.")||action==="patient.update"||action==="analysis.basis_changed")affected=reviewSteps;
+    else if(action.startsWith("beat_template."))affected=reviewSteps;
+    else if(action.startsWith("annotation.rhythm"))affected=reviewSteps;
+    else if(action.startsWith("annotation."))affected=["stt","events"];
+    else if(action==="event.review")affected=["events"];
+    else return;
+    workflow();const value=saved.reviews[caseId];value.revision++;
+    affected.forEach(step=>{if(value.steps[step])Object.assign(value.steps[step],{status:"stale",reason:action})});
+    if(action.startsWith("beat_override.")||action==="analysis.basis_changed")Object.values(value.events).forEach(item=>item.status="pending");
+    const report=saved.reports[caseId];if(report?.composition){
+      if(action.startsWith("annotation.")&&!action.startsWith("annotation.rhythm"))delete report.composition.category_reviews?.ST;else if(action!=="event.review")report.composition.category_reviews={};
+      (report.composition.diagnosis_blocks||[]).forEach(block=>{if(block.manual)Object.assign(block,{needs_review:true,acknowledged:false})});
+    }
+    if(report){report.status="draft";report.reviewed_by="";report.version++;report.updated_at=now();}
+  }
+  function confirmWorkflow(payload){
+    const current=workflow();
+    if(!reviewSteps.includes(payload.step)||payload.confirmed!==true)throw new Error("请选择复核环节并明确确认");
+    if(!Number.isInteger(payload.revision)||payload.revision!==current.revision)throw new Error("病例已发生修改，请重新核对当前环节");
+    if(typeof (payload.note??"")!=="string"||String(payload.note||"").length>1200)throw new Error("复核备注必须是 1200 字以内的文本");
+    const value=saved.reviews[caseId];value.revision++;value.steps[payload.step]={status:"done",note:String(payload.note||"").trim(),actor:"pages-demo",updated_at:now()};
+    audit("workflow.complete",payload.step);return workflow();
+  }
+  function reviewEvents(payload){
+    workflow();const types=new Set(["V","S","pause","tachy","brady","noise","AF","AFL","manual"]),valid=new Set(beats.map(x=>x.sample_index)),items=payload.items;
+    if(!["retained","excluded","pending"].includes(payload.status)||!Array.isArray(items)||!items.length||items.length>500)throw new Error("无效的事件处理请求");
+    if(items.some(x=>!x||!Number.isInteger(x.sample_index)||!valid.has(x.sample_index)||!types.has(x.type)))throw new Error("事件心搏或候选类型不存在");
+    items.forEach(x=>saved.reviews[caseId].events[`${x.type}:${x.sample_index}`]={sample_index:x.sample_index,type:x.type,status:payload.status,actor:"pages-demo",updated_at:now()});
+    audit("event.review",`${payload.status}: ${items.length}`);return workflow();
+  }
+
+  function clinicalIndex(){return {...ECGClinicalAnalysis.buildIndex({...editedFeed(),duration},templateList(),annotationList(),workflow()),start_time:sourceCase.metadata.start_iso||sourceCase.metadata.start_time}}
+  function annotationList(){
+    const initial=[];
+    const items=initial.concat(saved.annotations[caseId]||[]),rhythm=saved.rhythms?.[caseId];
+    return rhythm?items.filter(x=>!['AF','AFL'].includes(x.details?.kind)).concat(ECGOverviewEngine.annotations(rhythm.document,rhythm.updated_at)):items;
+  }
+  function templateList(){const list=copy(saved.templates?.[caseId]||[]);if(activeEdited){const map=new Map(editedFeed().beats.map(r=>[r.id,r]));list.forEach(item=>{item.sample_indices=(item.beat_ids||item.sample_indices.map(s=>"s:"+s)).filter(id=>map.has(id)).map(id=>map.get(id).sample_index).sort((a,b)=>a-b);item.beat_count=item.sample_indices.length})}return list}
+  function overrideList(){return copy(Object.values(saved.beatOverrides?.[caseId]||{}).sort((a,b)=>a.sample_index-b.sample_index))}
+  function validateOverrideSamples(payload){const samples=Array.isArray(payload.sample_indices)?payload.sample_indices:[],valid=new Map(beats.map(beat=>[beat.sample_index,beat]));if(!samples.length||samples.length>500||samples.some(sample=>!Number.isInteger(sample))||new Set(samples).size!==samples.length)throw new Error("sample_indices 必须包含 1–500 个不重复心搏");if(samples.some(sample=>!valid.has(sample)))throw new Error("sample_indices 必须对应数学生成心搏 中的心搏");return samples.map(sample=>valid.get(sample))}
+  function saveOverrides(payload){const type=String(payload.class_code||"").toUpperCase();if(!new Set(["N","S","V","X","P","O"]).has(type))throw new Error("人工心搏类型必须是 N、S、V、X、P 或 O");const selected=validateOverrideSamples(payload),bucket=saved.beatOverrides[caseId]||(saved.beatOverrides[caseId]={}),stamp=now();const items=selected.map(beat=>bucket[beat.sample_index]={case_id:caseId,sample_index:beat.sample_index,source_group:beat.group,class_code:type,created_by:"pages-demo",created_at:bucket[beat.sample_index]?.created_at||stamp,updated_at:stamp});audit("beat_override.reclassify",`class=${type} beats=${items.length}`);persist();return copy(items)}
+  function restoreOverrides(payload){const selected=validateOverrideSamples(payload),bucket=saved.beatOverrides[caseId]||(saved.beatOverrides[caseId]={});let changed=0;selected.forEach(beat=>{if(bucket[beat.sample_index]){delete bucket[beat.sample_index];changed++}});audit("beat_override.restore",`beats=${changed}`);persist();return changed}
+  function saveTemplate(payload){
+    if(Object.hasOwn(payload,"revision")&&payload.revision!==editorValue().revision)throw Error("编辑版本已变化，请重新加载密度图");
+    if(!Array.isArray(payload.sample_indices)||payload.sample_indices.some(s=>!Number.isInteger(s)||s<0)||new Set(payload.sample_indices).size!==payload.sample_indices.length)throw Error("sample_indices 必须是不重复的非负整数数组");
+    const name=String(payload.name||"").trim(),family=String(payload.rhythm_family||"自定义"),lead=String(payload.lead||"II"),sourceClass=String(payload.source_class||""),samples=[...new Set((Array.isArray(payload.sample_indices)?payload.sample_indices:[]).filter(value=>Number.isInteger(value)&&value>=0))].sort((a,b)=>a-b),validSamples=new Set(editedFeed().beats.map(beat=>beat.sample_index));if(!name)throw new Error("模板类别名称不能为空");if(!TEMPLATE_FAMILIES.has(family))throw new Error("不支持的节律家族");if(!TEMPLATE_LEADS.has(lead))throw new Error("不支持的参考导联");if(sourceClass&&!(sourceClass.startsWith("source-")&&engine.types[sourceClass.slice(7)]||/^custom-\d+$/.test(sourceClass)))throw new Error("父类别不存在");if(!samples.length)throw new Error("请先圈选心搏");if(samples.length>250000)throw new Error("单个模板类别最多包含 250000 个心搏");if(samples.some(sample=>!validSamples.has(sample)))throw new Error("模板类别只能包含数学生成心搏 中的心搏");const beatBySample=new Map(editedFeed().beats.map(beat=>[beat.sample_index,beat]));if(sourceClass.startsWith("source-")&&samples.some(sample=>beatBySample.get(sample)?.class_code!==sourceClass.slice(7)))throw new Error("选中心搏不属于指定的源类别");if(sourceClass.startsWith("custom-")){const parent=templateList().find(item=>`custom-${item.id}`===sourceClass);if(!parent)throw new Error("父类别不存在");const parentSamples=new Set(parent.sample_indices);if(samples.some(sample=>!parentSamples.has(sample)))throw new Error("选中心搏不属于指定的父模板");}
+    const item={beat_ids:samples.map(s=>activeEdited?beatBySample.get(s)?.id:"s:"+s),id:Math.max(Date.now(),1+Math.max(0,...templateList().map(t=>t.id))),case_id:caseId,name:name.slice(0,80),rhythm_family:family,lead,source_class:sourceClass,sample_indices:samples,start_sample:samples[0],end_sample:samples[samples.length-1],beat_count:samples.length,note:String(payload.note||"").slice(0,1200),created_by:"pages-demo",created_at:now(),updated_at:now()};
+    (saved.templates[caseId]||(saved.templates[caseId]=[])).unshift(item);audit("beat_template.create",`#${item.id} ${item.name} beats=${item.beat_count}`);persist();return copy(item);
+  }
+  const report=item=>{const value=copy(saved.reports[caseId]||{status:"draft",version:1,conclusion:item.conclusion,updated_at:""});value.composition={...copy(defaultComposition),...(value.composition||{}),paper:{...defaultComposition.paper,...(value.composition?.paper||{})}};value.review_revision=workflow().revision;value.current_analysis_basis={digest:'public-math-4314-v2:'+caseId,source:'browser-local-revision',verified:false};return value};
+  function present(detailed=false){
+    const item=copy(sourceCase);delete item.beats;Object.assign(item.technical,rawSignalMetadata());
+    item.review_workflow=workflow();item.analysis_revision=editorValue().revision;
+    if(saved.patients[caseId])Object.assign(item.metadata,saved.patients[caseId]);
+    if(detailed){
+      const valid=beats.filter(x=>x.group!==34),rr=valid.map(x=>x.rr_ms),groups={};
+      beats.forEach(x=>groups[x.group]=(groups[x.group]||0)+1);
+      const longest=valid.reduce((a,b)=>!a||b.rr_ms>a.rr_ms?b:a,null);
+      item.calculated={record_count:beats.length,valid_beats:valid.length,first_beat_time_s:valid[0]?.time_s??null,group_counts:Object.fromEntries(Object.entries(groups).map(([key,value])=>[String(key),value])),avg_hr_from_duration:round(valid.length*60/duration),avg_hr_from_rr:rr.length?round(60000/(rr.reduce((a,b)=>a+b,0)/rr.length)):null,longest_rr_ms:longest?.rr_ms??null,longest_rr_time_s:longest?.time_s??null,min_rr_ms:rr.length?Math.min(...rr):null,format_verified:true};
+      item.report_workflow=report(item);item.annotations=annotationList();if(activeEdited){item.calculated=engine.metrics(editedFeed(),duration);item.analysis_revision=editorValue().revision;item.beat_editor_settings=editorValue().document.settings;item.manual_longest=editorSummary(editorValue()).manual_longest}
+    }
+    return item;
+  }
+  function trend(){
+    const points=[];
+    for(let time=30;time<duration;time+=60){const count=beats.filter(x=>x.group!==34&&x.time_s>=time-30&&x.time_s<time+30).length;points.push({time_s:time,hr:count})}
+    const values=points.map(x=>x.hr);return {bin_seconds:60,points,min_hr:Math.min(...values),max_hr:Math.max(...values)};
+  }
+  const mean=values=>values.length?values.reduce((sum,value)=>sum+value,0)/values.length:null;
+  const sampleDeviation=values=>values.length>1?Math.sqrt(values.reduce((sum,value)=>sum+(value-mean(values))**2,0)/(values.length-1)):null;
+  function hrv(){
+    const isNormal=beat=>beat.group===1&&beat.rr_ms>=300&&beat.rr_ms<=2000;
+    const normalBeats=beats.filter(isNormal),nn=normalBeats.map(beat=>beat.rr_ms),successiveDifferences=[];
+    for(let index=1;index<beats.length;index++)if(isNormal(beats[index-1])&&isNormal(beats[index]))successiveDifferences.push(beats[index].rr_ms-beats[index-1].rr_ms);
+    const segmentMeans=[],segmentDeviations=[];
+    for(let start=0;start+300<=duration;start+=300){const values=normalBeats.filter(beat=>beat.time_s>=start&&beat.time_s<start+300).map(beat=>beat.rr_ms);if(values.length>1){segmentMeans.push(mean(values));segmentDeviations.push(sampleDeviation(values))}}
+    const binWidth=1000/128,histogram=new Map();nn.forEach(value=>{const bin=Math.floor(value/binWidth);histogram.set(bin,(histogram.get(bin)||0)+1)});const peak=Math.max(0,...histogram.values());
+    const source=copy(sourceCase.source_report_summary||{});source.mean_nn_ms=Number.isFinite(source.avg_hr)?round(60000/source.avg_hr):null;source.mean_nn_derived=Number.isFinite(source.avg_hr);
+    const calculated={nn_count:nn.length,mean_nn_ms:round(mean(nn)),sdnn_ms:round(sampleDeviation(nn)),sdann_ms:round(sampleDeviation(segmentMeans)),sdnn_index_ms:round(mean(segmentDeviations)),rmssd_ms:round(successiveDifferences.length?Math.sqrt(mean(successiveDifferences.map(value=>value**2))):null),pnn50_pct:round(successiveDifferences.length?successiveDifferences.filter(value=>Math.abs(value)>50).length*100/successiveDifferences.length:null),triangular_index:round(peak?nn.length/peak:null),method:"当前 10 分钟数学生成心搏 片段；5 分钟分段；三角指数箱宽 1/128 秒"};
+    return {source,calculated:activeEdited?engine.hrv(editedFeed(),duration):calculated,comparison:{source_label:"生成器参考摘要",source_duration:sourceCase.metadata.source_record_duration_text,calculated_label:"当前数学波形重算",calculated_duration:sourceCase.metadata.duration_text,warning:"统计时长不同；10 分钟 SDANN、SDNN index 与三角指数仅作演示估计，不应解释为算法误差或临床结论。"}};
+  }
+  function sttReview(){
+    const fragments=String(sourceCase.conclusion||"").split(/(?<=[。！？；!?;])\s*|\n+/).map(value=>value.trim()).filter(value=>/(?:ST段|ST[-‑–— ]?T|T波|T倒置|T低平)/i.test(value)).map(value=>value.replace(/(?:[+\-−＋－]?\s*\d+(?:\.\d+)?)\s*(?:mV|µV|μV)/gi,"【病例幅度已隐藏】"));
+    return {schema_version:"manual-stt-review-v1",review_mode:"manual_review_only",manual_review_only:true,calibration_unverified:true,measurement_protocol:{default_measurement:"J+60 ms",default_landmark:"ST60",baseline:{preferred:"PR_segment",fallback:"individual_stable_baseline",label:"PR 段/个体稳定基线",requires_manual_confirmation:true},landmarks:[{code:"J",offset_from_j_ms:0,label:"J 点"},{code:"ST60",offset_from_j_ms:60,label:"J+60 ms"},{code:"ST80",offset_from_j_ms:80,label:"J+80 ms"}],case_amplitude_output:{enabled:false,reason:"原始电压标定和分析链未独立验证，不输出病例 ST 幅度。"}},lead_system:{status:"unknown",mapping_verified:false,electrode_placement_verified:false,message:"导联体系及采集通道到标准导联的映射未经独立核验。"},calibration:{status:"unverified",voltage_gain_verified:false,filter_response_verified_for_st:false,message:"在增益、零线稳定性及 ST 分析滤波响应核验前，仅允许人工定性复核。"},automatic_candidates:{enabled:false,reason_code:"measurement_chain_not_validated",reasons:["电压增益与零线标定未独立验证","J 点、基线和 ST 复核点尚无经验证的自动定位算法","动态心电的体位变化、基线漂移与伪差需要人工排除"]},reference_thresholds:{enabled:false,reference_only:true,applied_to_case:false,title:"动态心电常用研究筛查参考（未启用）",st_depression_example:{magnitude_mV:.10,measurement_landmarks:["ST60","ST80"],minimum_duration_s:60},warning:"该参考不是病例判定规则，不得用于自动生成诊断。"},source_report:{origin:"source_report_conclusion",available:Boolean(fragments.length),fragments,is_source_excerpt:true,software_interpretation_added:false},clinical_safety:{diagnosis_generated:false,requires_physician_review:true,statement:"本界面仅用于医师人工复核，不生成缺血诊断或替代临床判断。"}};
+  }
+  function rrVisuals(){
+    const normal=beats.filter((x,i)=>x.group===1&&x.rr_ms>=300&&x.rr_ms<=2000&&(!activeEdited||(i>0&&beats[i-1].class_code==="N"))).map(x=>x.rr_ms),histogram=Array.from({length:35},(_,index)=>({start_ms:300+index*50,end_ms:350+index*50,count:0}));
+    normal.forEach(value=>histogram[Math.min(34,Math.max(0,Math.floor((value-300)/50)))].count++);
+    const step=Math.max(1,Math.floor(normal.length/900)),poincare=[];for(let index=step;index<normal.length;index+=step)poincare.push([normal[index-step],normal[index]]);
+    if(activeEdited){const pairs=[];for(let i=1;i<beats.length-1;i++){const a=beats[i-1],b=beats[i],c=beats[i+1];if([a,b,c].every(r=>r.class_code==="N")&&[b.rr_ms,c.rr_ms].every(x=>x>=300&&x<=2000))pairs.push([b.rr_ms,c.rr_ms])}return {histogram,poincare:pairs.filter((_,i)=>i%Math.max(1,Math.ceil(pairs.length/900))===0)}}return {histogram,poincare};
+  }
+
+  let waveformPromise=null;
+  async function waveformBuffer(){
+    if(!waveformPromise)waveformPromise=nativeFetch(`${ASSET_BASE}/waveform.bin`).then(result=>{if(!result.ok)throw new Error(`波形资源加载失败（${result.status}）`);return result.arrayBuffer()});
+    return waveformPromise;
+  }
+  function displayFilter(values){
+    if(!values.length)return values;
+    const highpass=Math.exp(-2*Math.PI*.5/RATE),lowpass=1-Math.exp(-2*Math.PI*40/RATE);let baseline=values[0],low=0;
+    return values.map(value=>{baseline=highpass*baseline+(1-highpass)*value;const high=value-baseline;low+=lowpass*(high-low);return round(low,2)});
+  }
+  function leadValue(view,sample,lead){
+    const offset=sample*16,read=channel=>view.getInt16(offset+channel*2,true),leadI=read(0),leadII=read(1);
+    if(lead==="I")return leadI;if(lead==="II")return leadII;if(lead==="III")return leadII-leadI;if(lead==="aVR")return-(leadI+leadII)/2;if(lead==="aVL")return leadI-leadII/2;if(lead==="aVF")return leadII-leadI/2;
+    return read({V1:2,V2:3,V3:4,V4:5,V5:6,V6:7}[lead]??1);
+  }
+  async function waveform(params,forced={}){
+    const waveBeats=beats.slice(),waveMarkers=activeEdited?editedFeed().markers:[];
+    const buffer=await waveformBuffer(),view=new DataView(buffer),start=Math.max(0,Math.min(duration-1,Number(forced.start??params.get("start")??0))),windowSeconds=Math.max(.5,Math.min(params.get("whole")==="1"?duration:120,duration-start,Number(forced.duration??params.get("duration")??10))),supported=["I","II","III","aVR","aVL","aVF","V1","V2","V3","V4","V5","V6"],leads=forced.leads||String(params.get("leads")||"II,V1,V5").split(",").filter(x=>supported.includes(x)),max=Math.max(200,Math.min(12000,Number(forced.maxPoints??params.get("max_points")??4000))),startSample=Math.floor(start*RATE+1e-7),sampleCount=Math.min(Math.floor(windowSeconds*RATE+1e-7),buffer.byteLength/16-startSample),stride=Math.max(1,Math.ceil(sampleCount/max)),applyFilter=(forced.filter||params.get("filter")||"display")!=="raw",data={};
+    leads.forEach(lead=>{let values=Array.from({length:sampleCount},(_,offset)=>leadValue(view,startSample+offset,lead));if(applyFilter)values=displayFilter(values);data[lead]=values.filter((_,offset)=>offset%stride===0)});
+    return {start_s:round(startSample/RATE,3),duration_s:round(sampleCount/RATE,3),sample_rate_hz:RATE,display_sample_rate_hz:RATE/stride,stride,...rawSignalMetadata(),filter:applyFilter?"0.5–40 Hz display filter":"raw",calibration_note:"纯数学合成波形 · "+rawSignalMetadata().calibration_note,leads:data,beats:waveBeats.concat(waveMarkers).filter(x=>x.time_s>=start&&x.time_s<=start+windowSeconds),annotations:annotationList().filter(x=>x.sample_index/RATE>=start&&x.sample_index/RATE<=start+windowSeconds)};
+  }
+  function scatter(mode="rr",hour=0,max=12000){
+    const points=[];
+    for(let index=1;index<beats.length-1;index++){const previous=beats[index-1],current=beats[index],following=beats[index+1];if(activeEdited&&([previous,current,following].some(r=>r.group===34)||current.rr_ms<=0||following.rr_ms<=0))continue;if(mode==="n"&&current.group!==1||mode==="nn"&&!(previous.group===1&&current.group===1&&following.group===1)||mode==="s"&&current.group!==2||mode==="v"&&current.group!==3)continue;if(mode==="hour"&&(current.time_s<hour||current.time_s>=hour+3600))continue;points.push({sample_index:current.sample_index,time_s:current.time_s,x:current.rr_ms,y:following.rr_ms,rr_ms:current.rr_ms,next_rr_ms:following.rr_ms,previous_group:previous.group,group:current.group,next_group:following.group,label:current.label})}
+    const stride=Math.max(1,Math.ceil(points.length/max)),shown=points.filter((_,index)=>index%stride===0).slice(0,max),upper=points.some(x=>x.x>2000||x.y>2000)?3000:2000;
+    return {mode,definition:"源逐搏 RR 配对",candidate_count:points.length,returned_count:shown.length,sampled:shown.length<points.length,sampling:"deterministic-temporal",hour_start_s:mode==="hour"?hour:null,hour_end_s:mode==="hour"?hour+3600:null,axis:{x_label:"RR(i)",y_label:"RR(i+1)",x_unit:"ms",y_unit:"ms"},bounds:{x_min:0,x_max:upper,y_min:0,y_max:upper},points:shown,_all:points};
+  }
+  function inside(x,y,polygon){let hit=false,previous=polygon.length-1;for(let index=0;index<polygon.length;index++){const a=polygon[index],b=polygon[previous];if((a[1]>y)!==(b[1]>y)&&x<=(b[0]-a[0])*(y-a[1])/(b[1]-a[1])+a[0])hit=!hit;previous=index}return hit}
+  function eventData(params){
+    if(activeEdited){const feed=editedFeed();for(const key of ["brady","tachy","pause"])if(params.has(key))feed.document.settings[key]=Number(params.get(key));engine.settings(feed.document.settings);return engine.events(feed,params.get("type")||"all",Math.max(0,Number(params.get("offset"))||0),Math.max(1,Math.min(1000,Number(params.get("limit"))||200)))}
+    const type=params.get("type")||"all",brady=Number(params.get("brady")||50),tachy=Number(params.get("tachy")||120),pause=Number(params.get("pause")||2.5),limit=Number(params.get("limit")||500),summary={AF:0,V:0,S:0,pause:0,tachy:0,brady:0,noise:0},items=[];
+    beats.forEach(beat=>{let kind,label,severity;if(activeEdited&&["A","M","C","H"].includes(beat.class_code)){kind=["A","M"].includes(beat.class_code)?"AF":"AFL";label="人工标记："+beat.name;severity="medium"}else if(beat.af_onset&&!activeEdited){kind="AF";label="房颤候选片段";severity="high"}else if(beat.group===2){kind="S";label="室上性候选心搏";severity="medium"}else if(beat.group===3){kind="V";label="室性候选心搏";severity="high"}else if(beat.group===34){kind="noise";label="噪声/待确认心搏";severity="low"}else if(beat.rr_ms>=pause*1000){kind="pause";label=`长 RR 间期 ${(beat.rr_ms/1000).toFixed(2)}s`;severity="high"}else if(beat.hr>=tachy){kind="tachy";label=`心动过速候选 ${Math.round(beat.hr)} bpm`;severity="medium"}else if(beat.hr>0&&beat.hr<=brady){kind="brady";label=`心动过缓候选 ${Math.round(beat.hr)} bpm`;severity="medium"}else if(activeEdited&&[4,5,6,7,8].includes(beat.group)){kind="manual";label="人工分类："+beat.name;severity="low"}else return;summary[kind]=(summary[kind]||0)+1;if(type==="all"||type===kind)items.push({...beat,type:kind,label,severity,review_status:"待复核"})});
+    const offset=Math.max(0,Number(params.get("offset"))||0);return {summary,total:items.length,offset,limit,items:items.slice(offset,offset+limit)};
+  }
+
+  async function route(url,options={}){
+    const path=url.pathname,method=String(options.method||"GET").toUpperCase();
+    activeEdited=!!engine&&url.searchParams.get("analysis")==="edited";beats=activeEdited?editedFeed().beats:copy(sourceCase.beats);
+    if(path==="/api/health")return response({status:"ok",version:sourceCase.software_release_id,case_count:COUNT,data_root_found:true,demo_readonly:true,allow_phi:false});
+    if(path==="/api/dashboard"){const item=present();return response({totals:{cases:1,recording_hours:round(duration/3600,2),beats:item.summary.total_beats,pending_reports:report(item).status==="reviewed"?0:1},cases:[item],privacy:{phi_visible:false}})}
+    if(path==="/api/cases")return response({items:[present()],total:1});
+    if(path==="/api/settings")return response({app_name:"CardioInsight 纯数学交互演示",version:sourceCase.software_release_id,data_root:"全新公式生成的10分钟数学输入；无患者资料",case_count:1,integrity_manifest:{available:true,case_count:1,algorithm:"SHA-256"},platform:{name:"Web",release:"Cloudflare Pages / GitHub Pages",machine:"Browser",storage_root:"localStorage（仅演示修改）",config_path:"无本地配置"},clinical_use:false});
+    if(path==="/api/audit")return response({items:saved.audit});
+    if(path==="/api/privacy/view")return failure("在线演示不提供身份信息模式切换",403);
+    let match=path.match(/^\/api\/annotations\/(\d+)$/);if(match&&method==="DELETE"){saved.annotations[caseId]=(saved.annotations[caseId]||[]).filter(x=>String(x.id)!==match[1]);audit("annotation.delete","移除本地标注");return response({ok:true})}
+    match=path.match(/^\/api\/beat-templates\/(\d+)$/);if(match){const templates=saved.templates[caseId]||[],index=templates.findIndex(item=>String(item.id)===match[1]);if(index<0)return failure("模板类别不存在",404);if(method==="PATCH"){const payload=requestBody(options);if(Object.keys(payload).some(k=>!["name","rhythm_family","note"].includes(k)))return failure("只能修改模板名称、家族和备注");const item=templates[index],name=payload.name===undefined?item.name:String(payload.name||"").trim(),family=payload.rhythm_family===undefined?item.rhythm_family:String(payload.rhythm_family);if(!name)return failure("模板类别名称不能为空");if(!TEMPLATE_FAMILIES.has(family))return failure("不支持的节律家族");item.name=name.slice(0,80);item.rhythm_family=family;if(payload.note!==undefined)item.note=String(payload.note||"").slice(0,1200);item.updated_at=now();audit("beat_template.update",`#${item.id} ${item.name}`);persist();return response(copy(item))}if(method==="DELETE"){templates.splice(index,1);audit("beat_template.delete",`#${match[1]}`);persist();return response({ok:true})}}
+    match=path.match(/^\/api\/cases\/([^/]+)(?:\/(.*))?$/);if(!match)return failure("接口不存在",404);
+    const requestedId=decodeURIComponent(match[1]),action=match[2]||"";if(requestedId!==caseId)return failure("病例不存在",404);
+    if(action.startsWith("beat-editor")){try{return response(await editorRoute(action,method,requestBody(options)))}catch(error){return failure(error.message)}}
+    if(action==="overview")return response({revision:editorValue().revision,duration_s:duration,columns:['sample_index','rr_ms','class_code'],rows:editedFeed().beats.map(r=>[r.sample_index,r.rr_ms,r.class_code]),estimated_beats:sourceCase.summary.total_beats,settings:editorValue().document.settings});
+    if(action==="rhythm-review"){
+      const previous=copy(saved);
+      try{
+        saved={...savedDefault,...JSON.parse(localStorage.getItem(STORE_KEY)||"{}")};
+        const initial=ECGOverviewEngine.initialEpisodes(editedFeed().beats,annotationList(),duration);
+        saved.rhythms ||= {};let value=copy(saved.rhythms[caseId]||{revision:0,document:initial,undo:[],redo:[],updated_at:''});
+        if(method==='PUT'){
+          const p=requestBody(options),basis={analysis_basis:'public-math-4314-v2:'+caseId,analysis_revision:workflow().revision,beat_revision:editorValue().revision};
+          if(Object.keys(basis).some(key=>p[key]!==undefined&&String(p[key])!==String(basis[key])))return failure('病例依据已变化，未保存片段；请重新载入后核对',409);
+          if(p.confirmed!==true||p.revision!==value.revision||p.beat_revision!==editorValue().revision)throw Error('病例修订版本已变化，请刷新核对');
+          if(['undo','redo'].includes(p.operation)){if(!value[p.operation].length)throw Error('没有可撤销/重做的操作');value[p.operation==='undo'?'redo':'undo'].push(value.document);value.document=value[p.operation].pop()}
+          else if(!p.operation||p.operation==='save'){const document=ECGOverviewEngine.validateDocument(p.document,duration);value.undo=(value.undo.concat([value.document])).slice(-20);value.redo=[];value.document=document}else throw Error('不支持的复核操作');
+          value.revision++;value.updated_at=now();saved.rhythms[caseId]=value;invalidateWorkflow('beat_override.rhythm');audit('annotation.rhythm_review','r'+value.revision);persist();
+        }
+        return response({revision:value.revision,document:value.document,can_undo:!!value.undo.length,can_redo:!!value.redo.length,updated_at:value.updated_at,beat_revision:editorValue().revision});
+      }catch(error){saved=previous;return failure(error.message)}
+    }
+    if(action==='waveform-density'){
+      try{const params=url.searchParams,feed=editedFeed(),template=params.get('template_id'),item=template?templateList().find(t=>String(t.id)===template):null,type=params.get('class_code')||'N',payload=method==='POST'?requestBody(options):{},revision=editorValue().revision;
+        if(template&&!item)throw Error('模板不存在');
+        if(!template&&type!=='all'&&!engine.types[type])throw Error('不支持的心搏类型');
+        if(Object.hasOwn(payload,'revision')&&payload.revision!==revision)throw Error('编辑版本已变化，请重新加载密度图');
+        const allowed=item?new Set(item.sample_indices):null,source=feed.beats.filter(r=>allowed?allowed.has(r.sample_index):type==='all'||r.class_code===type).map(r=>r.sample_index),samples=ECGOverviewEngine.densitySamples(source,payload),buffer=await waveformBuffer(),view=new DataView(buffer),lead=params.get('lead')||'II',gate=params.has('gate')?params.get('gate').split(',').map(Number):null;
+        if(gate&&(gate.length!==4||gate.some(x=>!Number.isFinite(x))||gate[0]>gate[1]||gate[2]>gate[3]))throw Error('形态框选范围错误');
+        const result=await ECGOverviewEngine.density(samples,buffer.byteLength/16,(s,l)=>leadValue(view,s,l),lead,gate,payload.amplitude_limit??null);
+        if(revision!==editorValue().revision)throw Error('编辑版本已变化，请重新加载密度图');
+        return response({...result,source_total:source.length,revision});
+      }catch(error){return failure(error.message)}
+    }
+    if(!action&&method==="GET")return response(present(true));
+    if(action==="open"&&method==="POST"){audit("case.open","打开病例");return response({ok:true})}
+    if(action==="template-occurrences"||action==="report-events"){try{return response(ECGClinicalAnalysis.queryIndex(clinicalIndex(),url.searchParams,action==="template-occurrences"))}catch(error){return failure(error.message)}}
+    if(action==="event-waveform"){url.searchParams.set("whole","1");url.searchParams.set("duration",Math.max(1,Number(url.searchParams.get("end"))-Number(url.searchParams.get("start"))));url.searchParams.set("filter","raw");return response(await waveform(url.searchParams))}
+    if(action==='event-waveforms'&&method==='POST'){
+      try{const p=requestBody(options);
+        if(!Array.isArray(p.ranges)||!p.ranges.length||p.ranges.length>32)throw Error('每批需包含 1–32 个波形区间');
+        const leads=p.leads||['II','V1','V5'],maxPoints=p.max_points??1200;
+        if(!Array.isArray(leads)||!leads.length||leads.length>12||leads.some(l=>!TEMPLATE_LEADS.has(l))||new Set(leads).size!==leads.length)throw Error('导联包含不支持或重复的值');
+        if(!Number.isInteger(maxPoints)||maxPoints<200||maxPoints>1200)throw Error('波形采样点数错误');
+        if(p.ranges.some(r=>!r||![r.start,r.end].every(x=>typeof x==='number'&&Number.isFinite(x))||r.start<0||r.end<r.start+1||r.end>2678400))throw Error('波形区间格式错误');
+        const items=[];for(const r of p.ranges)items.push(await waveform(new URLSearchParams({whole:'1',filter:'raw'}),{start:r.start,duration:r.end-r.start,leads,maxPoints,filter:'raw'}));
+        return response({items});
+      }catch(error){return failure(error.message)}
+    }
+    if(action==="report-statistics"){const feed={...editedFeed(),duration},result=ECGReportEngine.statistics(clinicalIndex(),sourceCase.metadata.start_iso||sourceCase.metadata.start_time,feed.document.settings);result.hrv=engine.hrv(feed,duration);return response(result)}
+    if(action==="report-sections")return response(ECGReportSections.evidence(clinicalIndex(),sttReview()));
+    if(action==="report-strip"){
+      const index=clinicalIndex(),event=index.events.find(e=>e.event_id===url.searchParams.get('event_id'));
+      if(!event||event.basis_version!==url.searchParams.get('basis_version'))return failure('图条依据已变化，请重新选择事件',409);
+      try{const manual=url.searchParams.has('range_start_s')||url.searchParams.has('range_end_s')?{range_start_s:Number(url.searchParams.get('range_start_s')),range_end_s:Number(url.searchParams.get('range_end_s'))}:{};const spec=ECGReportEngine.resolve(index,event,{leads:String(url.searchParams.get('leads')||'II,V1,V5').split(','),duration_s:Number(url.searchParams.get('duration')||7),...manual}),params=new URLSearchParams({whole:'1',filter:'raw'});
+        const wave=await waveform(params,{start:spec.start_s,duration:spec.actual_duration_s,leads:spec.leads,maxPoints:12000,filter:'raw'});wave.beats=spec.visible_beats;
+        const context=await waveform(params,{start:spec.context_start_s,duration:spec.context_duration_s,leads:['II'],maxPoints:1600,filter:'raw'});
+        return response({...event,strip:spec,waveform:wave,context});
+      }catch(error){return failure(error.message)}
+    }
+    if(action==="hrv-windows")return response(ECGClinicalAnalysis.hrvWindows({...editedFeed(),duration},sourceCase.metadata.start_iso||sourceCase.metadata.start_time,Number(url.searchParams.get("window")||0)));
+    if(action==='hrv-analysis'){
+      const data=ECGHrvAnalysis.analyze({...editedFeed(),duration},sourceCase.metadata.start_iso||sourceCase.metadata.start_time,Number(url.searchParams.get('window')||0));
+      data.representatives=[];const index=clinicalIndex();data.event_statistics=ECGReportEngine.statistics(index,sourceCase.metadata.start_iso||sourceCase.metadata.start_time,editedFeed().document.settings);
+      for(const category of ['fastest','slowest','V','S','pause']){const candidates=index.events.filter(e=>e.category===category&&e.time_s>=data.start_s&&e.time_s<data.end_s&&(!['fastest','slowest'].includes(category)||e.subtype==='RR'));if(['fastest','slowest'].includes(category))candidates.sort((a,b)=>(category==='fastest'?-1:1)*(a.hr-b.hr)||a.time_s-b.time_s);const event=candidates[0];if(!event)continue;const spec=ECGReportEngine.resolve(index,event,{leads:['II']});const wave=await waveform(new URLSearchParams({whole:'1',filter:'raw'}),{start:spec.start_s,duration:spec.actual_duration_s,leads:['II'],maxPoints:1000,filter:'raw'});data.representatives.push({...event,strip:spec,waveform:wave})}
+      return response(data);
+    }
+    if(action==="review-workflow"&&method==="GET")return response(workflow());
+    if(action==="review-workflow"&&method==="PUT"){try{return response(confirmWorkflow(requestBody(options)))}catch(error){return failure(error.message)}}
+    if(action==="event-reviews"&&method==="PUT"){try{return response(reviewEvents(requestBody(options)))}catch(error){return failure(error.message)}}
+    if(action==="trend")return response(trend());if(action==="hrv")return response(hrv());if(action==="stt-review")return response(sttReview());if(action==="rr-visuals")return response(rrVisuals());if(action==="waveform")return response(await waveform(url.searchParams));if(action==="beat-templates"&&method==="GET")return response({items:templateList()});if(action==="beat-templates"&&method==="POST"){try{return response(saveTemplate(requestBody(options)),201)}catch(error){return failure(error.message)}}if(action==="beat-overrides"&&method==="GET")return response({items:overrideList()});if(action==="beat-overrides"&&method==="PUT"){try{const items=saveOverrides(requestBody(options));return response({items,changed:items.length})}catch(error){return failure(error.message)}}if(action==="beat-overrides"&&method==="DELETE"){try{return response({ok:true,changed:restoreOverrides(requestBody(options))})}catch(error){return failure(error.message)}}
+    if(action==="scatter"){const data=scatter(url.searchParams.get("mode")||"rr",Math.floor(Number(url.searchParams.get("hour_start_s")||0)/3600)*3600,Number(url.searchParams.get("max_points")||12000));delete data._all;return response(data)}
+    if(action==="scatter-selection"&&method==="POST"){
+      const payload=requestBody(options),mode=payload.mode||"rr",polygon=payload.polygon,hour=number(payload.hour_start_s??0,"小时起点",0,2678400);
+      if(!["rr","n","nn","s","v","hour"].includes(mode))throw Error("不支持的散点模式");
+      if(!Array.isArray(polygon)||polygon.length<3||polygon.length>128||polygon.some(p=>!Array.isArray(p)||p.length!==2||p.some(v=>typeof v!=="number"||!Number.isFinite(v)||Math.abs(v)>1e9)))throw Error("圈选边界必须包含 3–128 个有限坐标点");
+      const data=scatter(mode,hour,1e9),chosen=data._all.filter(point=>inside(point.x,point.y,polygon));return response({mode,total:chosen.length,sample_indices:chosen.map(x=>x.sample_index),group_counts:chosen.reduce((result,x)=>(result[x.group]=(result[x.group]||0)+1,result),{}),exact:true,hour_start_s:mode==="hour"?hour:null,hour_end_s:mode==="hour"?hour+3600:null});
+    }
+    if(action==="waveform-strips"&&method==="POST"){
+      const payload=requestBody(options),samples=payload.sample_indices,leads=payload.leads||["II","V1","V5"],pre=number(payload.pre_s??1.5,"片段前时长",.2,3),post=number(payload.post_s??2.5,"片段后时长",.4,5),maxPoints=number(payload.max_points??800,"采样点数",200,1200,true),filter=payload.filter||"display",bySample=new Map(beats.map(b=>[b.sample_index,b]));
+      if(!Array.isArray(samples)||!samples.length||samples.length>32||samples.some(s=>!Number.isInteger(s)||!bySample.has(s))||new Set(samples).size!==samples.length)throw Error("每批须为 1–32 个不重复的现有心搏位置");
+      if(!Array.isArray(leads)||!leads.length||leads.length>6||leads.some(l=>!TEMPLATE_LEADS.has(l))||new Set(leads).size!==leads.length)throw Error("导联包含不支持或重复的值");
+      if(pre+post>6||!["display","raw"].includes(filter))throw Error("片段时长或滤波参数错误");
+      const items=await Promise.all(samples.map(async sample=>{const beat=bySample.get(sample),wave=await waveform(new URLSearchParams(),{start:sample/RATE-pre,duration:pre+post,leads,maxPoints,filter});return {...wave,...beat,sample_index:sample,time_s:sample/RATE,start_s:wave.start_s,duration_s:wave.duration_s,anchor_offset_s:sample/RATE-wave.start_s,display_sample_rate_hz:wave.display_sample_rate_hz,leads:wave.leads};}));return response({sample_rate_hz:RATE,...rawSignalMetadata(),items});
+    }
+    if(action==="events")return response(eventData(url.searchParams));
+    if(action==="annotations"&&method==="GET")return response({items:annotationList()});
+    if(action==="annotations"&&method==="POST"){const item={...requestBody(options),id:Date.now(),created_by:"pages-demo",created_at:now()};(saved.annotations[caseId]||(saved.annotations[caseId]=[])).push(item);audit("annotation.create","仅保存于当前浏览器");return response(item,201)}
+    if(action==="patient"&&method==="PATCH"){saved.patients[caseId]={...(saved.patients[caseId]||{}),...requestBody(options)};audit("patient.update","仅保存于当前浏览器");return response(saved.patients[caseId])}
+    if(action==="report"&&method==="GET")return response(report(present()));
+    if(action==="report"&&method==="PUT"){const payload=requestBody(options);if(!["draft","reviewed","returned"].includes(payload.status||"draft"))return failure("invalid report status");if(payload.status==="reviewed"&&(workflow().pending_steps.length||!String(payload.conclusion||"").trim()))return failure("请先确认全部复核环节并填写结论");const old=report(present());if(!Number.isInteger(payload.expected_version)||payload.expected_version!==old.version)return failure("报告版本已变更，请重新载入",409);if(!Number.isInteger(payload.expected_review_revision)||payload.expected_review_revision!==workflow().revision)return failure("报告复核依据已变更，请重新载入",409);try{if(payload.composition){payload.composition.strip_defaults=ECGReportEngine.settings(payload.composition.strip_defaults);payload.composition.selected_events=(payload.composition.selected_events||[]).map(s=>({...s,...ECGReportEngine.settings(s)}));}ECGClinicalAnalysis.validateReport(clinicalIndex(),payload.composition||{},workflow(),payload.status==="reviewed")}catch(error){return failure(error.message)}const item={status:payload.status||"draft",version:old.version+1,conclusion:String(payload.conclusion||""),composition:copy(payload.composition||old.composition),updated_at:now()};saved.reports[caseId]=item;audit(`report.${item.status}`,"仅保存于当前浏览器");persist();return response(report(present()))}
+    return failure("接口不存在",404);
+  }
+
+  // Browser demo identity is a local revision, not a verified raw-file fingerprint.
+  const clinicalReads=new Set(['','analysis-basis','report','overview','rhythm-review','trend','rr-visuals','scatter','hrv','hrv-windows','hrv-analysis','stt-review','report-statistics','report-sections','template-occurrences','report-events','waveform','event-waveform','event-waveforms','report-strip','waveform-density','scatter-selection','waveform-strips']);
+  async function clinicalRoute(url,options){
+    const match=url.pathname.match(/^\/api\/cases\/([^/]+)(?:\/(.*))?$/),action=match?.[2]||'',method=String(options.method||'GET').toUpperCase();
+    if(!match||decodeURIComponent(match[1])!==caseId||!clinicalReads.has(action)||(method!=='GET'&&!(['event-waveforms','waveform-density','scatter-selection','waveform-strips'].includes(action)&&method==='POST')))return route(url,options);
+    const stored=localStorage.getItem(STORE_KEY);
+    saved={...copy(savedDefault),...JSON.parse(stored||'{}')};
+    const basis={analysis_basis:'public-math-4314-v2:'+caseId,analysis_revision:workflow().revision,beat_revision:editorValue().revision};
+    const expected=method==='POST'?requestBody(options):Object.fromEntries(url.searchParams);
+    if(Object.keys(basis).some(key=>expected[key]!==undefined&&String(expected[key])!==String(basis[key])))return failure('分析依据已变化，请重新读取后复核',409);
+    const result=action==='analysis-basis'?response(basis):await route(url,options);
+    if(!result.ok)return result;
+    if(stored!==localStorage.getItem(STORE_KEY)||basis.analysis_revision!==workflow().revision)return failure('分析期间病例已变化，请重新读取后复核',409);
+    const payload=await result.json();
+    if(['event-waveforms','waveform-strips'].includes(action))payload.items=payload.items.map(item=>({...item,...basis}));
+    return response({...payload,...(action?basis:{clinical_identity:basis})},result.status);
+  }
+  window.fetch=(input,options={})=>{
+    const raw=typeof input==="string"?input:input?.url,url=new URL(raw,location.href),signal=options.signal||input?.signal;
+    if(!url.pathname.startsWith("/api/"))return nativeFetch(input,options);
+    const abort=()=>{if(signal?.aborted)throw new DOMException('读取已取消','AbortError');};
+    const method=String(options.method||'GET').toUpperCase(),readPost=/\/(event-waveforms|waveform-density|scatter-selection|waveform-strips|preview)$/.test(url.pathname),mutation=method!=='GET'&&!readPost;
+    const run=async()=>{
+      abort();saved={...copy(savedDefault),...JSON.parse(localStorage.getItem(STORE_KEY)||'{}')};const previous=copy(saved);
+      try{const result=await clinicalRoute(url,options);if(!mutation)abort();if(!result.ok&&mutation)saved=previous;return result;}
+      catch(error){if(mutation)saved=previous;if(error.name==='AbortError')throw error;return failure(error.message);}
+    };
+    return mutation&&globalThis.navigator?.locks?navigator.locks.request(STORE_KEY,{signal},run):Promise.resolve().then(run);
+  };
+})();

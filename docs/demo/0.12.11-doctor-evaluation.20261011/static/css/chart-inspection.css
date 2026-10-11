@@ -1,0 +1,31 @@
+/* Screen evidence inspection. Paper retains its existing type and dimensions. */
+@media screen {
+  [data-gesture-surface]:focus-visible,.chart-inspection-dialog :is(button,select,.chart-inspection-scroll):focus-visible{outline:2px solid #087e7e;outline-offset:2px}
+  #toggleWaveformFullscreen[hidden],#sttOpenTwelveLead[hidden]{display:none!important}
+  .chart-inspection-dialog{box-sizing:border-box;width:calc(100vw - 32px);max-width:calc(100vw - 32px);height:calc(100dvh - 32px);max-height:calc(100dvh - 32px);margin:auto;padding:16px;border:1px solid #b8cbd3;border-radius:8px;color:#152834;background:#fff;box-shadow:0 14px 48px #102b3833}
+  .chart-inspection-dialog[open]{display:flex;flex-direction:column;gap:0;min-height:0}
+  .chart-inspection-dialog::backdrop{background:#102b3870}
+  .chart-inspection-dialog header{display:flex;align-items:start;justify-content:space-between;gap:16px}
+  .chart-inspection-dialog h2{margin:0;font-size:18px;line-height:1.4}.chart-inspection-dialog header p{margin:4px 0 12px;color:#3c525f;font-size:13px}
+  .chart-inspection-dialog button,.chart-inspection-dialog select{min-height:36px;padding:6px 12px;background:#fff;border:1px solid #aec4cc;border-radius:4px;color:#165562;font:inherit;white-space:nowrap}
+  .chart-inspection-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:8px 16px;margin-bottom:12px;font-size:13px}.chart-inspection-toolbar label{white-space:nowrap}.chart-inspection-toolbar span{color:#3c525f}
+  .chart-inspection-scroll{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;border:1px solid #d8e2e7;scrollbar-color:#6c8c98 #f4f7f8;cursor:grab}.chart-inspection-scroll.panning{cursor:grabbing}.chart-inspection-copy{min-width:0}.chart-inspection-copy svg{background:#fff}
+  .hrvr-plots figcaption{display:flex;align-items:center;gap:8px;min-height:24px}
+  #page-stt.stt-review-layout .stt-analysis-column{grid-template-columns:220px minmax(0,1fr)}
+  #page-stt.stt-review-layout .stt-trend-row{grid-template-columns:30px minmax(0,1fr);gap:4px}
+  #page-stt.stt-review-layout .stt-trend-row strong,#page-stt.stt-review-layout .stt-trend-row small{font-size:12px;color:#3c525f}
+  #page-stt.stt-review-layout .stt-trend-row small{grid-column:2;grid-row:2}
+  #page-stt.stt-review-layout .stt-trend-track{min-height:32px}
+  #page-stt .stt-context-landmarks dd,#page-stt .stt-context-values small{font-size:12px}
+  #page-edit .edit-panel-heading h2,#page-review .ov-lane h2{font-size:13px}
+  #page-edit .edit-library-deck-card small,#page-edit .edit-library-deck-card em,#page-edit .edit-library-density-panel figcaption small,#page-edit .edit-library-density-panel p{font-size:12px}
+  #page-edit .edit-library-deck-card strong,#page-edit .edit-library-density-panel figcaption{font-size:13px}
+  #page-edit .edit-library-deck-card{grid-template-rows:minmax(38px,1fr) 18px;min-height:64px}
+}
+@media screen and (max-width:680px){
+  .chart-inspection-dialog{padding:12px;max-height:calc(100dvh - 16px);width:calc(100vw - 16px);max-width:calc(100vw - 16px)}.chart-inspection-dialog header{flex-wrap:wrap;gap:4px}.chart-inspection-dialog :is(button,select){min-height:44px}
+  #page-stt.stt-review-layout .stt-analysis-column{grid-template-columns:minmax(0,1fr)}
+  #page-stt.stt-review-layout .stt-trend-row{grid-template-columns:30px minmax(0,1fr)}
+  #page-edit .occurrence-selection-toolbar button,#page-report #v2Prev,#page-report #v2Next,#page-report .v2-filter-reset{min-height:44px}
+}
+@media print{.chart-inspection-button,.chart-inspection-dialog{display:none!important}}

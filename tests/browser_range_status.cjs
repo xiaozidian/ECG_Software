@@ -1,0 +1,20 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const ctx=vm.createContext({document:{dispatchEvent(){}},CustomEvent:class{constructor(t){this.type=t;}},ECGReviewTools:{markSvg:()=>''}});
+vm.runInContext(fs.readFileSync('static/js/report-range-editor.js','utf8'),ctx);
+function host(){const nodes=new Map();const node=s=>{if(!nodes.has(s))nodes.set(s,{value:'',textContent:'',innerHTML:'',style:{},dataset:{bound:s.includes('start')?'start':'end'},addEventListener(){},focus(){}});return nodes.get(s);};return {style:{setProperty(){}},addEventListener(){},querySelector:node,querySelectorAll:s=>s==='[data-bound]'?[node('[data-bound=start]'),node('[data-bound=end]')]:s==='button,input'?[]:[node(s)]};}
+const R=ctx.ECGReportRange,h=host(),entry={sample_index:2000,inReport:true,strip:{start_s:7,end_s:14}},wave={start_s:0,duration_s:30,leads:{II:[0,1,0]},beats:Array.from({length:8},(_,i)=>({sample_index:(7+i)*200,class_code:'N'}))};
+R.mount(h,entry,wave,async()=>{},async()=>{},{context:'A:2',basis:'raw-A:r4',event:{event_id:'e0',category:'V',subtype:'single'}});
+assert.match(h.querySelector('output').innerHTML,/当前已应用区间/);assert.doesNotMatch(h.querySelector('output').innerHTML,/待应用区间/);
+h.querySelector('[data-bound=start]').value='8';h.querySelector('[data-bound=start]').onchange();
+const status=h.querySelector('output').innerHTML;assert.match(status,/data-range-current-status/);assert.match(status,/待应用区间.*00:00:08.000.*00:00:14.000/);assert.match(status,/data-range-applied-status.*当前已应用区间.*00:00:07.000.*00:00:14.000/);
+assert.equal(R.pending()[0].applied.a,7);assert.equal(R.pending()[0].applied.b,14);assert.equal(R.pending()[0].applied.inReport,true);assert.throws(()=>R.assertApplied(),/尚未应用/);
+const notice=host();ctx.qs=s=>s==='#reportRangeDraftNotice'?notice:{};ctx.run=f=>f();ctx.renderReportBody=()=>{};
+const ui=fs.readFileSync('static/js/clinical-ui.js','utf8');vm.runInContext(ui.slice(ui.indexOf('  function renderRangeDraftNotice('),ui.indexOf('  function hrvForReport(')),ctx);ctx.renderRangeDraftNotice();
+assert.equal(notice.className,'v2-range-draft-bar');assert.match(notice.innerHTML,/1 处待应用区间/);assert.match(notice.innerHTML,/当前已应用区间.*00:00:07.000/);assert.match(notice.innerHTML,/保存、预览、导出前须处理/);assert.match(notice.innerHTML,/data-range-resume>回到草稿/);assert.match(notice.innerHTML,/data-range-discard>放弃修改/);
+notice.querySelector('[data-range-discard]').onclick();notice.querySelector('[data-range-keep]').onclick();assert.equal(R.pending().length,1);
+notice.querySelector('[data-range-discard]').onclick();notice.querySelector('[data-range-confirm-discard]').onclick();assert.equal(R.pending().length,0);
+assert.equal(R.formatTime(86399.9996),'D2 00:00:00.000','millisecond rollover must carry into the next day');
+entry.inReport=false;R.mount(h,entry,wave,async()=>{},async()=>{},{context:'A:2',basis:'raw-A:r4',event:{event_id:'e0'}});h.querySelector('[data-bound=start]').value='8';h.querySelector('[data-bound=start]').onchange();assert.match(h.querySelector('output').innerHTML,/当前已应用区间.*此事件尚未入报/);
+h._rangeSetMembership(true);assert.equal(R.pending()[0].applied.inReport,true);assert.match(h.querySelector('output').innerHTML,/当前已应用区间.*00:00:07.000/);
+console.log('Range status: explicit draft/applied times, report membership, compact notice, discard and day rollover passed');

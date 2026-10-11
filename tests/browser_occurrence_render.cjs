@@ -7,7 +7,7 @@ function fixture(){
   const metrics={cards:0,svg:0,reads:0},scopes=new WeakMap(),document={activeElement:null};
   class Element{
     constructor(tag='div'){this.tagName=tag.toUpperCase();this.children=[];this.dataset={};this.style={setProperty(){}};this.classList={add(){}};this.scrollTop=0;this.clientWidth=1020;this.attributes={};}
-    set scrollTop(value){this._scrollTop=this.html?.includes('读取完整出现记录')?0:value}
+    set scrollTop(value){this._scrollTop=this.dataset.readState==='loading'?0:value}
     get scrollTop(){return this._scrollTop||0}
     get isConnected(){return this===host||Boolean(this.parentElement?.isConnected)}
     get firstElementChild(){return this.children[0]||null}
@@ -20,6 +20,8 @@ function fixture(){
     remove(){if(this.contains(document.activeElement))document.activeElement=null;const p=this.parentElement;if(p)p.children.splice(p.children.indexOf(this),1);this.parentElement=null;}
     insertBefore(child,before){if(child===before)return child;child.remove();child.parentElement=this;const i=this.children.indexOf(before);this.children.splice(i<0?this.children.length:i,0,child);return child}
     appendChild(child){return this.insertBefore(child,null)}
+    replaceChildren(...children){this.innerHTML='';children.forEach(child=>this.appendChild(child))}
+    after(child){this.parentElement?.insertBefore(child,this.nextElementSibling)}
     set innerHTML(value){for(const child of [...this.children])child.remove();this.html=value;
       if(value.includes('class="occurrence-lane"')){const n=new Element();n.className='occurrence-lane';this.appendChild(n)}
       if(value.includes('class="occurrence-open"')){metrics.cards++;const button=new Element('button'),wave=new Element('span'),input=new Element('input');wave.className='occurrence-wave';input.checked=value.includes("'checked'")||value.includes(' checked>');button.appendChild(wave);this.appendChild(button);this.appendChild(input)}
@@ -38,12 +40,13 @@ function fixture(){
   const items=Array.from({length:240},(_,n)=>({event_id:'event-'+n,basis_version:'v1',sample_index:(n+1)*200,start_sample:(n+1)*200,end_sample:(n+1)*200,time_s:n+1,target_samples:[(n+1)*200],templates:[],beat_count:1,label:'正常',diagnosis_status:'source'}));
   const wave={leads:{II:Array.from({length:480},(_,i)=>Math.sin(i)*200),V1:Array(480).fill(2),V5:Array(480).fill(3)},duration_s:2.4,start_s:0,beats:[]};
   const retained=[];
-  const context=vm.createContext({document,console,state:{caseId:'A',currentPage:'edit',editLead:'II',editSelectedSamples:new Set()},occurrenceToken:1,occurrence:{total:240},waveEvidenceScope:'A-r1',tileWidth:0,type:'N',editCase:'A',editMode:'all',template:'all',reportWaveCache:new Map(),pageCache:new Map(Array.from({length:5},(_,i)=>[i*48,items.slice(i*48,i*48+48)])),thumbnailCache:{retain:(owner,keys)=>retained.push({owner,keys}),clear(){}},
-    qs:s=>{if(!nodes.has(s))nodes.set(s,new Element());return nodes.get(s)},ECGReviewTools:require('../static/js/clinical-review-tools.js'),esc:String,formatElapsed:String,modeLabel:()=> '全部',syncEditTimeSlider(){},setEditStart(){},renderEditScatter(){},
+  const context=vm.createContext({document,console,AbortController,state:{caseId:'A',currentPage:'edit',editLead:'II',editSelectedSamples:new Set()},occurrenceReadAbort:null,rhythmWrite:null,occurrenceToken:1,occurrence:{total:240},waveEvidenceScope:'A-r1',tileWidth:0,type:'N',editCase:'A',editMode:'all',template:'all',reportWaveCache:new Map(),pageCache:new Map(Array.from({length:5},(_,i)=>[i*48,items.slice(i*48,i*48+48)])),thumbnailCache:{retain:(owner,keys)=>retained.push({owner,keys}),clear(){}},
+    qs:s=>{if(!nodes.has(s))nodes.set(s,new Element());return nodes.get(s)},ECGReviewTools:require('../static/js/clinical-review-tools.js'),ECGOccurrenceCard:require('../static/js/occurrence-card.js'),esc:String,formatElapsed:String,modeLabel:()=> '全部',syncEditTimeSlider(){},setEditStart(){},renderEditScatter(){},
     beatEditor:{registerOccurrence:(card,item,scope)=>scopes.set(card,{item,scope}),syncOccurrenceSelection(){}},
     eventWave:()=>{metrics.reads++;return Promise.resolve(wave)}});
   context.filters=()=>{};context.renderEditDensity=()=>{};context.syncWaveEvidence=()=>{};context.morphologyWorkbench={};context.loadMorphology=async()=>{};context.handleError=error=>{throw error};
   context.updateTemplates=()=>{};
+  context.run=fn=>Promise.resolve().then(fn).catch(context.handleError);
   vm.runInContext(source.slice(source.indexOf('  function sameEvidence('),source.indexOf('  let reportCase=')),context);
   vm.runInContext(source.slice(source.indexOf('  function editParams('),source.indexOf('  async function loadMorphology(')),context);
   vm.runInContext(source.slice(source.indexOf('  function svg('),source.indexOf('  async function eventWave(')),context);
@@ -55,7 +58,28 @@ function fixture(){
 }
 async function main(which){
   const f=fixture(),{context:c,host,metrics,render,card,document,scopes}=f;
+  if(which==='viewport-rows'){
+    c.innerWidth=1280;c.state.editMode='cluster';host.dataset.workspaceRows='1';render();await tick();
+    assert.equal(c.qs('#editGalleryCount').textContent,'1–6 / 240');
+    const samples=await scopes.get(card(0)).scope.samples(true);
+    assert.deepEqual([...samples],[200,400,600,800,1000,1200]);
+    assert(host.querySelector('.occurrence-lane').children.length>6,'test must include loaded off-screen rows');
+    host.scrollTop=142;render();await tick();assert.equal(c.qs('#editGalleryCount').textContent,'7–12 / 240');
+    assert.deepEqual([...(await scopes.get(card(6)).scope.samples(true))],[1400,1600,1800,2000,2200,2400]);return;
+  }
   const input=c.qs('#occJump'),go=c.qs('#occGo'),response=(total=20)=>({total,items:f.items.slice(0,total)});
+  if(which.startsWith('read-')){
+    const pending=gate(),signals=[];c.endpoint=(_,params,id,options)=>{signals.push(options.signal);return pending.promise};
+    const first=c.loadOccurrences(),cancel=host.children.find(x=>x.dataset.occurrenceRead==='cancel');assert(cancel);assert.equal(host.dataset.readState,'loading');assert.equal(signals[0].aborted,false);
+    if(which==='read-retry'){
+      pending.reject(Error('503'));await assert.rejects(first,/503/);assert.equal(host.dataset.readState,'error');const retry=host.children.find(x=>x.dataset.occurrenceRead==='retry');assert(retry);c.qs('#occSearch').value='保留输入';c.endpoint=async()=>response(5);retry.onclick();await tick();await tick();assert.equal(c.occurrence.total,5);assert.equal(c.qs('#occSearch').value,'保留输入');assert.equal(input.value,'1');assert.equal(input.disabled,false);return;
+    }
+    if(which==='read-superseded'){
+      const next=gate();c.endpoint=(_,params,id,options)=>{signals.push(options.signal);return next.promise};const second=c.loadOccurrences();assert.equal(signals[0].aborted,true);cancel.onclick();assert.equal(signals[1].aborted,false,'obsolete cancel stopped the current request');next.resolve(response(5));await second;pending.resolve(response(200));await first;assert.equal(c.occurrence.total,5);assert.equal(host.dataset.readState,'ready');return;
+    }
+    if(which==='read-leave'){c.state.currentPage='report';c.releaseOccurrenceWaves();assert.equal(signals[0].aborted,true);pending.resolve(response());await first;assert.equal(c.occurrence,null);return;}
+    cancel.onclick();assert.equal(signals[0].aborted,true);assert.equal(host.dataset.readState,'cancelled');pending.resolve(response());await first;assert.equal(c.occurrence,null);assert.equal(metrics.cards,0);assert(host.children.some(x=>x.dataset.occurrenceRead==='retry'));return;
+  }
   if(which.startsWith('resume-')){
     render();await tick();input.value='100';go.onclick();await tick();
     c.qs('#occSearch').value='模板';const mark=c.occurrenceBookmark(20000);
@@ -93,7 +117,7 @@ async function main(which){
       assert.equal(input.value,'');assert.equal(input.disabled,true);assert.equal(go.disabled,true);assert.equal(c.qs('#editGalleryCount').textContent,'读取中…');
       request.resolve(response());await loading;assert.equal(input.value,'1');assert.equal(input.max,'20');assert.equal(go.disabled,false);assert.equal(host.scrollTop,0);
     }else if(which==='jump-draft'){
-      for(const value of ['120','','1.5','999']){input.value=value;host.scrollTop=126;render();await tick();assert.equal(input.value,value)}
+      for(const value of ['120','','1.5','999']){input.value=value;host.scrollTop=142;render();await tick();assert.equal(input.value,value)}
     }else if(which==='jump-validation'){
       const position=host.scrollTop;
       for(const value of ['',0,-1,1.5,241,'Infinity','NaN',1e30]){input.value=String(value);go.onclick();assert.match(input.validationMessage,/1–240/);assert.equal(input.validityReported,true);assert.equal(host.scrollTop,position);input.oninput();assert.equal(input.validationMessage,'')}
@@ -119,7 +143,7 @@ async function main(which){
     }else if(['jump-lazy-focus','jump-focus-abandoned','jump-focus-scrolled','jump-lazy-filter','jump-lazy-arrow'].includes(which)){
       const page=gate();c.pageCache.delete(96);c.endpoint=()=>page.promise;
       if(which==='jump-lazy-arrow'){
-        host.scrollTop=1890;render();await tick();assert.ok(card(95));card(95).querySelector('button').focus();card(95).onkeydown({key:'ArrowRight',preventDefault(){},stopPropagation(){}});
+        host.scrollTop=2130;render();await tick();assert.ok(card(95));card(95).querySelector('button').focus();card(95).onkeydown({key:'ArrowRight',preventDefault(){},stopPropagation(){}});
       }else go.onclick();
       assert.equal(document.activeElement,host);
       if(which==='jump-focus-abandoned')input.focus();
@@ -141,11 +165,11 @@ async function main(which){
   if(which==='late-response'){
     const old=gate(),fresh=gate();c.eventWave=()=>old.promise;render();const prior=card(0);
     c.state.editLead='V5';c.eventWave=()=>fresh.promise;render();old.resolve(f.wave);await tick();
-    assert.equal(metrics.svg,0);assert.equal(prior.isConnected,false);fresh.resolve(f.wave);await tick();assert.equal(metrics.svg,30);return;
+    assert.equal(metrics.svg,0);assert.equal(prior.isConnected,false);fresh.resolve(f.wave);await tick();assert.equal(metrics.svg,24);return;
   }
   render();await tick();const initial=card(6),base=metrics.svg;
   if(which==='inactive'){
-    c.state.currentPage='report';host.scrollTop=504;render();await tick();assert.equal(metrics.svg,base);assert.equal(f.retained.at(-1).keys.length,0);return;
+    c.state.currentPage='report';host.scrollTop=568;render();await tick();assert.equal(metrics.svg,base);assert.equal(f.retained.at(-1).keys.length,0);return;
   }
   if(which==='navigation'){
     let blocked=true,releases=0;c.clinicalUI={releaseOccurrenceWaves:()=>releases++};c.goPage=name=>{if(!blocked)c.state.currentPage=name};
@@ -153,8 +177,8 @@ async function main(which){
     c.goPage('report');assert.equal(releases,0);blocked=false;c.goPage('report');assert.equal(releases,1);return;
   }
   if(which==='demand'){
-    assert.equal(f.retained.at(-1).owner,'occurrence');assert.equal(f.retained.at(-1).keys.length,30);
-    host.scrollTop=504;render();await tick();assert.equal(f.retained.at(-1).keys.length,36);assert.ok(f.retained.at(-1).keys.every(key=>Number(key.split('|')[3].slice(6))>=18));
+    assert.equal(f.retained.at(-1).owner,'occurrence');assert.equal(f.retained.at(-1).keys.length,24);
+    host.scrollTop=568;render();await tick();assert.equal(f.retained.at(-1).keys.length,30);assert.ok(f.retained.at(-1).keys.every(key=>Number(key.split('|')[3].slice(6))>=18));
     c.occurrence.total=0;render();assert.equal(f.retained.at(-1).keys.length,0);return;
   }
   if(which==='benchmark'||which==='reuse'){
@@ -163,19 +187,19 @@ async function main(which){
     if(which==='benchmark'){console.log(JSON.stringify(result));return}
     assert.equal(metrics.svg,base);assert.equal(card(6),initial);
   }else if(which==='rows'){
-    host.scrollTop=252;render();await tick();assert.equal(card(6),initial);assert.equal(card(0),null);assert.equal(metrics.svg,42);assert.equal(host.querySelector('.occurrence-lane').children.length,36);
-    host.scrollTop=0;render();await tick();assert.equal(card(6),initial);assert.deepEqual(host.querySelector('.occurrence-lane').children.map(n=>Number(n.dataset.occIndex)),Array.from({length:30},(_,i)=>i));
+    host.scrollTop=284;render();await tick();assert.equal(card(6),initial);assert.equal(card(0),null);assert.equal(metrics.svg,36);assert.equal(host.querySelector('.occurrence-lane').children.length,30);
+    host.scrollTop=0;render();await tick();assert.equal(card(6),initial);assert.deepEqual(host.querySelector('.occurrence-lane').children.map(n=>Number(n.dataset.occIndex)),Array.from({length:24},(_,i)=>i));
   }else if(which==='scope'){
     c.waveEvidenceScope='A-r2';render();await tick();assert.notEqual(card(6),initial);const revised=card(6);c.occurrenceToken++;render();await tick();assert.notEqual(card(6),revised);
     const filtered=card(6);c.state.caseId='B';render();await tick();assert.notEqual(card(6),filtered);
   }else if(which==='selection'){
     c.state.editSelectedSamples.add(1400);render();assert.equal(card(6).querySelector('input').checked,true);
-    host.scrollTop=126;render();await tick();const actual=await scopes.get(initial).scope.samples(true);assert.equal(actual[0],1400);assert.equal(actual.length,18);
+    host.scrollTop=142;render();await tick();const actual=await scopes.get(initial).scope.samples(true);assert.equal(actual[0],1400);assert.equal(actual.length,12);
   }else if(which==='focus'){
     initial.querySelector('input').focus();const focused=document.activeElement;host.scrollTop=40;render();await tick();assert.equal(document.activeElement,focused);assert.equal(focused.isConnected,true);
   }else if(which==='resize'){
     host.clientWidth=510;render();await tick();assert.equal(card(6),initial);const before=metrics.svg;
-    initial.onkeydown({key:'ArrowDown',stopPropagation(){},preventDefault(){}});await tick();assert.equal(document.activeElement.closest().dataset.occIndex,9);assert.equal(host.scrollTop,378);assert.ok(metrics.svg>=before);
+    initial.onkeydown({key:'ArrowDown',stopPropagation(){},preventDefault(){}});await tick();assert.equal(document.activeElement.closest().dataset.occIndex,9);assert.equal(host.scrollTop,426);assert.ok(metrics.svg>=before);
   }else if(which==='replaced-item'){
     c.pageCache.get(0)[6]={...f.items[6],label:'已修订',target_samples:[9999]};render();await tick();assert.notEqual(card(6),initial);assert.equal(scopes.get(card(6)).item.target_samples[0],9999);assert.equal(metrics.svg,base+1);
   }else throw Error('Unknown test '+which);

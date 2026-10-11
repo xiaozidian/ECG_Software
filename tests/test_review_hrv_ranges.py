@@ -149,11 +149,15 @@ def test_range_editor_has_only_two_cursors_and_keeps_explicit_apply():
       closest(){return this},parentElement:{getBoundingClientRect:()=>({width:1000})}});
     const start=make({rangeDrag:'start'}),end=make({rangeDrag:'end'});
     const from=make({bound:'start'}),to=make({bound:'end'}),output={},error={},apply={},reset={};
+    Object.defineProperty(output,'innerHTML',{set(value){this.textContent=value.replace(/<[^>]*>/g,'');}});
+    let resizePlot,stageWidth=1000;const retainedSvg={outerHTML:''};
+    const stage={getBoundingClientRect:()=>({width:stageWidth,height:210}),querySelector:()=>retainedSvg};
+    globalThis.ResizeObserver=class{constructor(fn){resizePlot=fn}observe(){}disconnect(){}};
     const nodes={'[data-range-drag=start]':[start],'[data-range-drag=end]':[end],
       '[data-bound=start]':[from],'[data-bound=end]':[to],'[data-bound]':[from,to],
       'output':[output],'.range-error':[error],'[data-range-apply]':[apply],
-      '[data-range-reset]':[reset],'button,input':[start,end,from,to,apply,reset]};
-    const handlers={},host={style:{setProperty(){}},
+      '[data-range-reset]':[reset],'button,input':[start,end,from,to,apply,reset],'.report-range-stage':[stage]};
+    const handlers={},host={isConnected:true,style:{setProperty(){}},
       querySelector:s=>nodes[s]?.[0],querySelectorAll:s=>nodes[s]||[],
       addEventListener:(type,fn)=>handlers[type]=fn};
     let applied=null,resets=0;
@@ -176,8 +180,14 @@ def test_range_editor_has_only_two_cursors_and_keeps_explicit_apply():
     handlers.pointermove({pointerId:2,clientX:500});handlers.pointerup();
     assert.equal(to.value,'10.000');
     from.value='3.25';from.onchange();to.value='10.75';to.onchange();
+    stageWidth=500;resizePlot();
+    assert(retainedSvg.outerHTML.includes('viewBox="0 0 500 210"'));
+    assert.equal((retainedSvg.outerHTML.match(/<polyline /g)||[]).length,3);
+    assert(retainedSvg.outerHTML.includes('vector-effect="non-scaling-stroke"'));
+    assert.equal(from.value,'3.250');assert.equal(to.value,'10.750');
     assert.equal(applied,null);
-    assert(output.textContent.includes('尚未应用'));
+    assert(output.textContent.includes('待应用区间'));
+    assert(output.textContent.includes('当前已应用区间'));
     (async()=>{await apply.onclick();assert.deepEqual(applied,{range_start_s:3.25,range_end_s:10.75});
       await reset.onclick();assert.equal(resets,1)})().catch(e=>{console.error(e);process.exitCode=1});
     """

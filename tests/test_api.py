@@ -3,7 +3,34 @@ from __future__ import annotations
 from io import BytesIO
 import time
 
+import pytest
+
 from app import create_app
+from test_analysis_provenance import synthetic_case
+
+
+@pytest.fixture
+def phi_data_root(synthetic_case):
+    """Explicit opt-in tests use only fabricated, disposable source material."""
+    import base64
+
+    root, case_id, paths = synthetic_case
+    (paths['lps'].parent / f'{case_id}_1.png').write_bytes(base64.b64decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jq1cAAAAASUVORK5CYII='))
+    return root
+
+
+@pytest.fixture
+def phi_client(phi_data_root, tmp_path, monkeypatch):
+    # This is a test-client-only app. It never binds a socket or changes the
+    # running workstation's PHI setting, and cannot read the hospital directory.
+    with monkeypatch.context() as environment:
+        environment.setenv('ECG_ALLOW_PHI', '1')
+        environment.setenv('ECG_DEMO_READONLY', '0')
+        environment.delenv('ECG_DEMO_PASSWORD', raising=False)
+        application = create_app(data_root=phi_data_root, db_path=tmp_path / 'phi-test.db', testing=True)
+    assert application.config['ALLOW_PHI'] is True
+    return application.test_client()
 
 
 def _case_id(client, *, prefer_ventricular: bool = False) -> str:
@@ -26,7 +53,8 @@ def test_health_and_dashboard_default_to_masked_phi(client):
     assert "*" in first["metadata"]["name"]
 
 
-def test_phi_requires_explicit_query_and_is_audited(client):
+def test_phi_requires_explicit_query_and_is_audited(phi_client):
+    client = phi_client
     masked = client.get("/api/cases").json["items"][0]
     assert masked["report_image_urls"] == []
 
@@ -44,8 +72,12 @@ def test_phi_requires_explicit_query_and_is_audited(client):
     assert any(item["action"] == "privacy.phi_hide" for item in audit)
 
 
-def test_production_mutations_require_local_ui_header(data_root, tmp_path):
-    production = create_app(data_root=data_root, db_path=tmp_path / "guard.db", testing=False)
+def test_production_mutations_require_local_ui_header(phi_data_root, tmp_path, monkeypatch):
+    with monkeypatch.context() as environment:
+        environment.setenv('ECG_ALLOW_PHI', '1')
+        environment.setenv('ECG_DEMO_READONLY', '0')
+        environment.delenv('ECG_DEMO_PASSWORD', raising=False)
+        production = create_app(data_root=phi_data_root, db_path=tmp_path / "guard.db", testing=False)
     client = production.test_client()
     blocked = client.post("/api/privacy/view", json={"enabled": True})
     assert blocked.status_code == 403
@@ -57,7 +89,8 @@ def test_production_mutations_require_local_ui_header(data_root, tmp_path):
     assert allowed.status_code == 200
 
 
-def test_source_report_image_requires_explicit_phi_access(client):
+def test_source_report_image_requires_explicit_phi_access(phi_client):
+    client = phi_client
     case_id = _case_id(client)
     blocked = client.get(f"/api/cases/{case_id}/source-report/page/1")
     assert blocked.status_code == 403
@@ -82,10 +115,10 @@ def test_integrity_manifest_state_is_consistent(client):
         assert all(detail["integrity"]["manifest_available"] is False for detail in details)
 
 
-def test_mutation_endpoints_reject_invalid_json_and_ranges(client):
+def test_mutation_endpoints_reject_invalid_json_and_ranges(client, phi_client):
     case_id = _case_id(client)
-    assert client.post("/api/privacy/view", json=["bad"]).status_code == 400
-    assert client.post("/api/privacy/view", json={"enabled": "yes"}).status_code == 400
+    assert phi_client.post("/api/privacy/view", json=["bad"]).status_code == 400
+    assert phi_client.post("/api/privacy/view", json={"enabled": "yes"}).status_code == 400
     assert client.patch(f"/api/cases/{case_id}/patient", json=["bad"]).status_code == 400
     assert client.put(f"/api/cases/{case_id}/report", json=["bad"]).status_code == 400
     assert client.put(f"/api/cases/{case_id}/report", json={"conclusion": [], "status": "draft"}).status_code == 400
@@ -196,7 +229,8 @@ def test_scatter_and_strip_validation(client):
     assert client.post(strips_url, json={"sample_indices": [sample], "max_points": 800.5}).status_code == 400
 
 
-def test_annotation_patient_override_report_workflow_and_pdf(client):
+def test_annotation_patient_override_report_workflow_and_pdf(phi_client):
+    client = phi_client
     case_id = _case_id(client)
     created = client.post(f"/api/cases/{case_id}/annotations", json={
         "sample_index": 2000, "lead": "II", "category": "note",
@@ -252,7 +286,8 @@ def test_report_composition_validation(client):
     assert client.put(f"/api/cases/{case_id}/report", json={"conclusion": source["conclusion"], "composition": {"included_pages": ["summary"], "paper": {"size": "Letter"}}}).status_code == 400
 
 
-def test_patient_patch_validation_merge_and_pdf_uses_override(client, monkeypatch):
+def test_patient_patch_validation_merge_and_pdf_uses_override(phi_client, monkeypatch):
+    client = phi_client
     case_id = _case_id(client)
     invalid = client.patch(f"/api/cases/{case_id}/patient", json={"name": ["not", "text"]})
     assert invalid.status_code == 400

@@ -47,6 +47,7 @@ async function wave(which){
     updateZoomControls(){},renderWaveform(){renders.push(state.waveform)},renderVisibleEvents(){},renderAnnotations(){},renderOverview(){},syncHourScatter(){}});
   vm.runInContext(source.slice(source.indexOf('async function loadWaveform('),source.indexOf('function canvasContext(')),ctx);
   vm.runInContext(source.slice(source.indexOf('async function loadEditWaveform('),source.indexOf('function setEditStart(')),ctx);
+  vm.runInContext(source.slice(source.indexOf('function sttReviewLayout('),source.indexOf('function sttLandmarkFractions(')),ctx);
   vm.runInContext(source.slice(source.indexOf('async function loadStt('),source.indexOf('function setSttStart(')),ctx);
   const result=which.startsWith('edit-load')?ctx.loadEdit():field==='editWaveform'?ctx.loadEditWaveform():field==='sttWaveform'?ctx.loadStt():ctx.loadWaveform();
   assert.equal(state[field],null,'old waveform remains editable under new cursor');

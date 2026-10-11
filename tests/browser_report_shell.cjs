@@ -14,7 +14,7 @@ const state = {
 };
 let pendingSteps = [], isWritable = true;
 const ctx = vm.createContext({
-  state, qs: element, $: element, tabs: [], reportData: null, category: 'final',
+  state, qs: element, $: element, tabs: [], A: {categories: []}, esc: String, reportData: null, category: 'final',
   selected: () => [], selectedLookup: new Map(), STATUS_TEXT: {draft: '未审核'},
   updateConclusionCount: () => {}, pending: () => pendingSteps, writable: () => isWritable,
   data: {steps: {}, events: {}}, CASE_WORKFLOW_STEPS: [],

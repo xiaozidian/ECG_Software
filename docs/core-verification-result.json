@@ -1,0 +1,117 @@
+{
+  "schema": 1,
+  "status": "passed",
+  "input_kind": "mathematical_and_temporary_synthetic_fixtures",
+  "execution_kind": "local",
+  "source_identity": {
+    "release_id": "0.12.11-doctor-evaluation.20261011+b536fff32339cc27",
+    "source_sha256": "b536fff32339cc271f408160d9186fdc088bfb7a4bf8e965a5e967cfb3afe8c7",
+    "production_files_verified": 94,
+    "clinical_acceptance": false
+  },
+  "runtime": {
+    "python": "3.12.14",
+    "node": "v26.0.0",
+    "numpy": "2.3.5",
+    "pytest": "9.1.1",
+    "reportlab": "5.0.0"
+  },
+  "counts": {
+    "tests": 20,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "verification_code_sha256": {
+    "scripts/verify_core_synthetic.py": "151181ffb862c5bfa399b5ee9cab53b4c5d1b57a2b6af983c071de7a5f1c7cec",
+    "scripts/verify_public_release.py": "df66ea274c8a976981e2eadf92990398a4601aeeab0bba34189fcf6e22be02e3",
+    "tests/test_advanced_analysis.py": "a25f209a19959f9e6cafc9fb7ca5cd610afc25a0e140ab44694222821e1db256",
+    "tests/test_beat_editor.py": "dacb60d3b84215d7c10fe4314289b2b6f8e609acc622554261c81d7cb9d7c722",
+    "tests/test_clinical_analysis.py": "1b2cd8dadf1230c41205b67fc63cb5a75ed72d2edf2f225bb575f476b4aa6dd1",
+    "tests/test_review_hrv_ranges.py": "1b0d8f0c4cb8061c8bc37cbf229a47124062a8a1473f86edad22c573892940a4",
+    "tests/test_rr_quality.py": "be126b7224fefbaeefb84dbdeb9c51d298335b4f321b4cbc953fe43e6a5b4121"
+  },
+  "checks": [
+    {
+      "name": "portable-beats",
+      "evidence_kind": "python-js",
+      "selector": "tests/test_beat_editor.py::test_portable_engine_matches_python_operations_hrv_events_and_qrs"
+    },
+    {
+      "name": "clinical-index",
+      "evidence_kind": "python-js",
+      "selector": "tests/test_clinical_analysis.py::test_python_browser_parity"
+    },
+    {
+      "name": "hrv-day-night",
+      "evidence_kind": "python-js",
+      "selector": "tests/test_review_hrv_ranges.py::test_hrv_browser_backend_parity_and_day_night"
+    },
+    {
+      "name": "frequency-peak-energy",
+      "evidence_kind": "python-oracle",
+      "selector": "tests/test_review_hrv_ranges.py::test_frequency_peak_and_energy_are_measured"
+    },
+    {
+      "name": "frequency-gap",
+      "evidence_kind": "python-oracle",
+      "selector": "tests/test_review_hrv_ranges.py::test_gaps_are_not_interpolated_into_frequency"
+    },
+    {
+      "name": "missing-clock-noise",
+      "evidence_kind": "python-oracle",
+      "selector": "tests/test_review_hrv_ranges.py::test_short_noise_and_unknown_clock_do_not_fabricate_metrics"
+    },
+    {
+      "name": "frequency-af-boundary",
+      "evidence_kind": "python-oracle",
+      "selector": "tests/test_rr_quality.py::test_hrv_frequency_never_interpolates_across_short_af_span"
+    },
+    {
+      "name": "frequency-time-axis-dc",
+      "evidence_kind": "python-oracle",
+      "selector": "tests/test_rr_quality.py::test_spectrum_rejects_invalid_time_axis_and_dc_bin_is_not_doubled"
+    },
+    {
+      "name": "alternation-kors",
+      "evidence_kind": "python-oracle",
+      "selector": "tests/test_advanced_analysis.py::test_known_alternation_and_kors"
+    },
+    {
+      "name": "measurement-cache-markers",
+      "evidence_kind": "python-oracle",
+      "selector": "tests/test_advanced_analysis.py::test_full_measurement_quality_manual_and_cache"
+    },
+    {
+      "name": "af-flat-invalid",
+      "evidence_kind": "python-oracle",
+      "selector": "tests/test_advanced_analysis.py::test_empty_af_flat_and_bad_data"
+    },
+    {
+      "name": "clipping-af-boundary",
+      "evidence_kind": "python-oracle",
+      "selector": "tests/test_advanced_analysis.py::test_clipped_vcg_and_af_boundary_are_rejected"
+    },
+    {
+      "name": "invalid-options",
+      "evidence_kind": "python-oracle",
+      "selector": "tests/test_advanced_analysis.py::test_options_reject_invalid"
+    },
+    {
+      "name": "rr-periodicity-gaps",
+      "evidence_kind": "python-oracle",
+      "selector": "tests/test_advanced_analysis.py::test_rr_screen_periodicity_missing_and_not_ahi"
+    },
+    {
+      "name": "supplied-evidence-documents-pdf",
+      "evidence_kind": "python-js-presentation-and-python-pdf",
+      "selector": "tests/test_advanced_analysis.py::test_documents_pdf_and_browser_share_evidence"
+    }
+  ],
+  "scope": {
+    "python_core_executed": true,
+    "browser_python_executed": false,
+    "advanced_analysis_browser_compute_parity": false,
+    "clinical_validation": false
+  }
+}

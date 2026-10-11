@@ -1,0 +1,41 @@
+name: Verify core algorithms with mathematical fixtures
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: core-verification-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mathematical-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install verification dependencies
+        run: python -m pip install -r requirements-dev.txt
+      - name: Verify frozen source and run mathematical core checks
+        run: python scripts/verify_core_synthetic.py
+      - name: Verify mathematical Demo provenance and saved-work guards
+        run: python -m pytest -q tests/test_static_demo_builder.py tests/test_beat_editor.py::test_static_demo_edit_pipeline_and_storage_failure -p no:cacheprovider --junitxml=build/core-verification/mathematical-demo-junit.xml
+      - name: Retain source identity and test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mathematical-core-verification
+          path: build/core-verification
+          if-no-files-found: error
+          retention-days: 14

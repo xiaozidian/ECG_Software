@@ -37,7 +37,7 @@ def expected_page(index,params):
     items=[]
     for r in rows:
         sample=r['sample_index']
-        items.append(dict(event_id='beat:'+r['id'],category=code,subtype='beat',label=r.get('name',r['class_code']),
+        items.append(dict(event_id='beat:'+r['id'],class_code=r['class_code'],category=code,subtype='beat',label=r.get('name',r['class_code']),
             sample_index=sample,start_sample=sample,end_sample=sample,time_s=sample/200,end_s=sample/200,
             target_samples=[sample],beat_count=1,hr=r.get('hr'),rr_ms=r.get('rr_ms'),
             basis_version=index['beat_version'],templates=[{'id':str(template['id']),'name':template['name']}] if template else [],

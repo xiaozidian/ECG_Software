@@ -6,11 +6,11 @@ function production(ctx,name){const start=source.indexOf('  async function '+nam
 async function download(phase,change){
  const remote=gate(),response=gate(),blob=gate();let pending=false,advanced=false,clicked=0,requested=0,objects=0;
  const state={caseId:'A',caseRequestId:1,report:{version:2,review_revision:3},reportDirty:false,reportSaving:false,reportStale:false};
- const ctx=vm.createContext({state,URLSearchParams,setTimeout:()=>{},
+ const ctx=vm.createContext({state,URLSearchParams,AbortController,setTimeout:()=>{},renderExportState(){},
    ECGReportRange:{assertApplied(){if(pending)throw Error('pending-range')}},
    ECGAdvancedAnalysis:{assertApplied(){if(advanced)throw Error('pending-advanced')}},
    ECGReportConsistency:{sameBase:(a,b)=>a.version===b.version&&a.review_revision===b.review_revision},
-   endpoint:()=>remote.promise,fetch:()=>{requested++;return response.promise},renderReportShell(){},
+   api:()=>remote.promise,fetch:()=>{requested++;return response.promise},renderReportShell(){},
    document:{createElement:()=>({click:()=>clicked++})},URL:{createObjectURL:()=>{objects++;return 'blob:qa'},revokeObjectURL(){}}});
  production(ctx,'downloadReport');const task=ctx.downloadReport();
  if(phase!=='remote'){remote.resolve({...state.report});await tick();}
@@ -28,12 +28,13 @@ async function download(phase,change){
  else {await assert.rejects(task,/pending-range|pending-advanced|变化/);assert.equal(clicked,0);assert.equal(objects,0);if(phase==='remote')assert.equal(requested,0);}
 }
 async function preview(advanced=false){
- const data=gate(),body={textContent:''};let pending=false,rendered=0;
- const dialog={open:true,querySelector:s=>s==='button'?{}:body,showModal(){},close(){}};
+ const data=gate(),body={textContent:'',append(){}};let pending=false,rendered=0;
+ const dialog={open:false,querySelector:s=>s==='button'?{}:body,showModal(){this.open=true},close(){this.open=false}};
  const ctx=vm.createContext({state:{caseId:'A',caseRequestId:1},reportRenderToken:0,
    ECGReportRange:{assertApplied(){if(pending&&!advanced)throw Error('pending-range')}},
    ECGAdvancedAnalysis:{assertApplied(){if(pending&&advanced)throw Error('pending-advanced')}},ECGReportSections:{validate(){}},
    ECGReportConsistency:{content:()=>''},composition:()=>({}),qs:s=>s==='#rwPaperPreview'?dialog:{value:''},
+   document:{createElement:()=>({})},run:fn=>Promise.resolve().then(fn),
    readPaperEvidence:()=>data.promise,ECGReportPaper:{render:()=>{rendered++;return ''},number(){}}});
  production(ctx,'previewPaper');const task=ctx.previewPaper();pending=true;data.resolve({});
  await assert.rejects(task,/pending-range|pending-advanced/);assert.equal(rendered,0);assert.match(body.textContent,/预览失败.*pending-/);

@@ -4,7 +4,8 @@ const gate=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {prom
 const pending=gate(),tick=()=>new Promise(r=>setImmediate(r));
 function node(){return {hidden:true,open:false,innerHTML:'',textContent:'',disabled:false,dataset:{},classList:{add(){}},setAttribute(){},removeAttribute(){},focus(){},matches:()=>false,showPopover(){},getBoundingClientRect:()=>({left:0,top:0,width:500,height:100}),closest:()=>null,querySelector(s){return $(s)},querySelectorAll:()=>[],addEventListener(){},showModal(){this.open=true},close(){this.open=false}}}
 const $=s=>{if(!nodes.has(s))nodes.set(s,node());return nodes.get(s)};
-let dialog,reloads=0,refreshes=0,editBookmark=null;
+let dialog,reloads=0,refreshes=0,editBookmark=null;const histories=[node(),node()],historyBar=node();historyBar.setAttribute=(k,v)=>{historyBar[k]=v;};
+histories[0].dataset.history='undo';histories[1].dataset.history='redo';
 const state={caseId:'A',caseRequestId:1,currentPage:'edit',editSelectedSamples:new Set([200]),editStart:0,scatterStripCache:new Map()};
 const info={revision:1,settings:{},can_undo:true,can_redo:false};
 const preview={affected:2,before:{metrics:{valid_beats:5},hrv:{},markers:[]},after:{metrics:{valid_beats:5},hrv:{},markers:[]}};
@@ -12,12 +13,13 @@ const stages={read:'GET',preview:'POST',put:'PUT',invoke:'GET',menu:'GET',undo:'
 const stage=scenario.split('-')[0];let waited=false;
 const api=async(url,opts={})=>{
   const method=opts.method||'GET',body=opts.body?JSON.parse(opts.body):null;calls.push({url,method,body});
+  if(scenario==='toolbar-recovery'&&method==='GET')ctx.editor.renderOccurrenceToolbar(toolbarSummary);
   if(!waited&&method===(stages[stage]||'NONE')){waited=true;await pending.promise;}
   if(url.endsWith('/beats'))return {items:[{sample_index:200,time_s:1,class_code:'N'}],markers:[]};
   return method==='POST'?preview:{...info};
 };
 const ctx=vm.createContext({state,$,api,escapeHtml:String,ECGBeatEngine:require('../static/js/beat-engine.js'),
-  document:{createElement(){dialog=node();return dialog},body:{appendChild(){}},querySelectorAll:()=>[],addEventListener:(name,fn)=>listeners[name]=fn,activeElement:{tagName:'BODY'}},
+  document:{createElement(){dialog=node();return dialog},body:{appendChild(){}},querySelectorAll:s=>s==='[data-history]'?histories:s==='.beat-edit-history'?[historyBar]:[],addEventListener:(name,fn)=>listeners[name]=fn,activeElement:{tagName:'BODY'}},
   clinicalWorkflow:{writable:()=>true,refresh:async()=>refreshes++},handleError:e=>errors.push(e.message),formatElapsedPrecise:String,
   clinicalUI:{occurrenceBookmark:()=>({id:'A',caseToken:1,sample:20000})},
   closeBeatRelabelMenu(){ctx.editor.invalidate();$('#beatRelabelMenu').hidden=true},refreshBeatOverrideViews(){},renderEditScatter(){},positionBeatRelabelMenu(){},
@@ -28,7 +30,29 @@ vm.runInContext(fs.readFileSync('static/js/beat-editor-ui.js','utf8')+'\nglobalT
 for(const s of ['#waveformCanvas','#editWaveformCanvas','#editLibraryWaveformCanvas'])nodes.set(s,null);
 listeners.DOMContentLoaded();
 const writes=()=>calls.filter(c=>c.method==='PUT');
+function cardForEditable(){const card=node();ctx.editor.registerOccurrence(card,{sample_index:200,time_s:1,class_code:'N'},{code:'N',samples:async()=>[200,400]});return card;}
+const toolbarSummary={sourceLabel:'N · 全部',totalRecords:3,visibleRecords:3,visibleSampleCount:4,selectedCount:2,lead:'II',revision:1};
 async function run(){
+  if(scenario.startsWith('history-')){
+    assert(histories.every(b=>b.disabled),'no current history must disable both buttons');
+    state.caseData={case_id:'A',analysis_revision:3,beat_editor_history:{revision:3,can_undo:true,can_redo:false}};ctx.editor.refreshHistory();assert.equal(histories[0].disabled,false);assert.equal(histories[1].disabled,true);assert.equal(calls.length,0,'rendering history must not request or calculate evidence');
+    if(scenario==='history-case'){state.caseId='B';state.caseRequestId++;}
+    if(scenario==='history-revision')state.caseData.analysis_revision=4;
+    if(scenario==='history-loading')state.caseLoading=true;
+    if(scenario==='history-keyboard'){state.caseData.beat_editor_history.can_undo=false;listeners.keydown({key:'z',ctrlKey:true,shiftKey:false,target:{closest:()=>null},preventDefault(){},stopImmediatePropagation(){}});await tick();assert.equal(calls.length,0);return;}
+    ctx.editor.refreshHistory();assert(histories.every(b=>b.disabled),'stale or loading history remained enabled');return;
+  }
+  if(scenario==='settings-direct'||scenario==='settings-stale'){
+    state.currentPage='settings';state.caseData={case_id:'A',analysis_revision:1,beat_editor_settings:{brady_bpm:50,tachy_bpm:120,pause_seconds:2.5}};ctx.editor.openSettings();assert.equal(dialog.open,true);assert.equal(calls.length,0,'opening already loaded settings should not issue a redundant request');
+    if(scenario==='settings-stale'){state.caseId='B';state.caseRequestId++;await $('form').onsubmit({preventDefault(){},target:{}});assert.equal(writes().length,0);}
+    else dialog.close();return;
+  }
+  if(scenario==='undo-busy-feedback'){const action=ctx.editor.invoke('undo');await tick();assert.equal(writes().length,1);assert(histories.every(b=>b.disabled),'history controls must disable throughout commit and refresh');assert.equal(historyBar['aria-busy'],'true');pending.resolve();await action;assert.equal(histories[0].disabled,false);assert.equal(histories[1].disabled,true);assert.equal(historyBar['aria-busy'],'false');return;}
+
+  if(scenario==='toolbar-recovery'){const buttons=[node(),node()];const heading=node();heading.after=()=>{};$('#editGalleryTitle').closest=()=>heading;$('#occurrenceSelectionToolbar').querySelectorAll=()=>buttons;state.editSelectedSamples=new Set([200,400]);ctx.editor.renderOccurrenceToolbar(toolbarSummary);await ctx.editor.quickEdit('OTHER',[200,400]);assert.equal(dialog.open,true);assert(buttons.every(b=>!b.disabled),'preview completion leaves toolbar busy');dialog.close();assert.equal(writes().length,0);return;}
+
+  if(scenario==='editable-shortcut'){await ctx.editor.occurrenceMenu(cardForEditable());const before=calls.length;listeners.keydown({key:'V',target:{closest:()=>({})}});await tick();assert.equal(calls.length,before,'typing in editable target triggered mutation');return;}
+
   if(scenario.startsWith('confirm')){
     await ctx.editor.quickEdit('OTHER',[200,400]);assert.equal(dialog.open,true);
     const submit=$('form').onsubmit;

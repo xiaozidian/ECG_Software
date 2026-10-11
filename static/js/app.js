@@ -1478,7 +1478,7 @@ function sttReviewLayout() {
     globalThis.ecgSttReviewLayout=ECGSttReviewLayout.mount({root:$("#page-stt"),onLocate:({time_s,lead})=>{
       if(!Number.isFinite(time_s)||!ALL_LEADS.includes(lead))return;
       if(!state.leads.includes(lead))state.leads=[...state.leads.slice(0,2),lead];
-      setSttStart(time_s-state.sttDuration*.45);
+      setSttStart(time_s-state.sttDuration/2);
     }});
   }
   return globalThis.ecgSttReviewLayout;

@@ -284,7 +284,7 @@ body:has(#page-review.active) .case-workflow-context small,body:has(#page-review
   #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .ov-histogram>header{height:26px;min-height:26px;padding:1px 7px}
   #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) #ovHistogram{height:calc(100% - 26px)!important;min-height:58px}
   #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .analysis-grid{grid-template-columns:minmax(0,65.5fr) minmax(0,34.5fr);gap:6px;height:100%;min-height:0;align-items:stretch}
-  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .analysis-main{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(250px,1fr) 26px calc(23.7dvh + 72px);gap:5px;height:100%;min-height:0;overflow:visible}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .analysis-main{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(196px,1fr) 26px calc(23.7dvh + 72px);gap:5px;height:100%;min-height:0;overflow:visible}
   #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .analysis-main:has(#ovLinkedDensity[open]){grid-template-rows:minmax(250px,1fr) max-content calc(23.7dvh + 72px);overflow-y:auto;overflow-x:hidden}
   #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .ov-trends{grid-template-columns:minmax(0,1fr);grid-template-rows:repeat(4,minmax(0,1fr));gap:4px;min-height:0}
   #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .ov-trends>.ov-lane:nth-child(n){grid-column:1;grid-row:auto}
@@ -299,7 +299,7 @@ body:has(#page-review.active) .case-workflow-context small,body:has(#page-review
   #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) #ovLinkedDensity>summary{height:24px;min-height:24px;box-sizing:border-box;padding:2px 6px;gap:5px;white-space:nowrap}
   #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) #ovLinkedDensity>summary strong{font-size:10px}
   #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) #ovLinkedDensity>summary #ovLinkedStatus{font-size:10px;overflow:hidden;text-overflow:ellipsis}
-  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) #waveformCard:not(.waveform-expanded){height:100%;min-height:0;overflow:hidden}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) #waveformCard:not(.waveform-expanded){height:100%;min-height:0;overflow:visible}
   #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) #waveformCard:not(.waveform-expanded) .waveform-title{height:28px;min-height:28px;padding:0 6px;gap:4px;font-size:11px}
   #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) #waveformCard:not(.waveform-expanded) #waveformScroller{height:0;min-height:0;flex:1;overflow:hidden}
   #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) #waveformCard:not(.waveform-expanded) #waveformCanvas{height:100%!important;min-height:0}
@@ -324,7 +324,7 @@ body:has(#page-review.active) .case-workflow-context small,body:has(#page-review
   #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .ov-scatter-options{padding:0;gap:3px;min-height:26px;font-size:10px}
   #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .ov-scatter-options [data-ov]{min-height:24px;font-size:10px;padding:2px 5px}
   #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .ov-scatter-options output{font-size:9px;line-height:13px}
-  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .scatter-canvas-wrap{flex:none;height:auto;min-height:0;aspect-ratio:1;width:100%}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .scatter-canvas-wrap{flex:1 1 0;height:auto;min-height:120px;aspect-ratio:auto;width:100%}
   #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) #scatterCanvas{height:100%!important;min-height:0}
   #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .workspace-scatter-controls{height:28px;min-height:28px;grid-template-columns:minmax(0,1fr) 64px;gap:3px}
   #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .workspace-scatter-range>summary{white-space:nowrap;padding:3px;font-size:10px}

@@ -887,10 +887,17 @@ const clinicalUI=(()=>{
   async function loadHrv(selector,windowIndex,preloaded=null){
     if(reportCase!==state.caseId){state.reportComposition={...copy(state.report?.composition||{}),schema_version:2};reportCase=state.caseId;reportVersion=state.report?.version;}
     windowIndex=windowIndex??composition().hrv_window??0;const token=++hrvToken,id=state.caseId,caseToken=state.caseRequestId,target=qs(selector);if(!target)return;
-    const current=()=>token===hrvToken&&id===state.caseId&&caseToken===state.caseRequestId&&target.isConnected&&target===qs(selector);
+    let loadedBasis=null;
+    const current=()=>{
+      if(!(token===hrvToken&&id===state.caseId&&caseToken===state.caseRequestId&&target.isConnected&&target===qs(selector)))return false;
+      if(loadedBasis&&state.caseData?.clinical_identity){
+        try{ECGAnalysisConsistency.assertSame(loadedBasis,state.caseData);}catch{return false;}
+      }
+      return true;
+    };
     hrv=null;
     renderHrvTarget(target,'<p class="empty-state">计算 HRV 分段、频谱及趋势证据…</p>');
-    try{const data=preloaded||(await ECGAnalysisConsistency.read(api,id,[basis=>endpoint('hrv-analysis',{window:windowIndex,...basis},id)]))[0];if(!current())return;hrv=data;const model=paperModel({},data);model.report.status='draft';renderHrvTarget(target,ECGHrvReport.ui(model,data,composition().include_hrv));ECGReportPaper.number(target);
+    try{const data=preloaded||(await ECGAnalysisConsistency.read(api,id,[basis=>endpoint('hrv-analysis',{window:windowIndex,...basis},id)]))[0];loadedBasis=ECGAnalysisConsistency.identity(data);if(!current())return;hrv=data;const model=paperModel({},data);model.report.status='draft';renderHrvTarget(target,ECGHrvReport.ui(model,data,composition().include_hrv));ECGReportPaper.number(target);
       if(state.privacySaving||state.privacyIdentityPending)target.querySelectorAll?.('.hrv-paper-preview .rp-running').forEach(header=>{const spans=header.querySelectorAll('span');if(spans[0])spans[0].textContent='患者 ID：身份更新中';if(spans[1])spans[1].textContent='姓名：身份更新中';});
       if(globalThis.ECGHrvReview){const evidenceHost=document.createElement('div');evidenceHost.className='hrv-review-host';target.querySelector('.hrv-evidence-notice')?.after(evidenceHost);ECGHrvReview.mount(evidenceHost,data,{isCurrent:current,scope:JSON.stringify([id,selector,windowIndex,data.start_s,data.end_s,data.data_version,data.analysis_basis,data.analysis_revision])});}
       target.querySelector('.v2-hrv-window').onchange=e=>{if(!current())return;const next=Number(e.target.value);state.reportComposition=composition();state.reportComposition.hrv_window=next;dirty();run(()=>selector==='#hrvWindowPanel'?loadTrends(next):loadHrv(selector,next))};

@@ -100,7 +100,7 @@
   #page-edit.workspace-library>.page-heading{height:28px;min-height:0;margin:0;padding:0;align-items:center}
   #page-edit.workspace-library .page-heading h1{font-size:18px;line-height:26px}
   #page-edit.workspace-library>.edit-class-toolbar{display:none}
-  #page-edit.workspace-library #editLibraryWorkbench{height:100%;min-height:0;max-height:none;display:grid;grid-template-columns:minmax(0,1fr) 280px;grid-template-rows:142px 360px minmax(291px,1fr);grid-template-areas:"deck analytics" "matrix analytics" "wave density";gap:6px;overflow:visible}
+  #page-edit.workspace-library #editLibraryWorkbench{height:100%;min-height:0;max-height:none;display:grid;grid-template-columns:minmax(0,1fr) 280px;grid-template-rows:142px minmax(214px,min(360px,calc(100% - 422px))) minmax(268px,1fr);grid-template-areas:"deck analytics" "matrix analytics" "wave density";gap:6px;overflow:visible}
   #page-edit.workspace-library #editLibraryWorkbench[hidden]{display:none}
   #page-edit.workspace-library .edit-library-deck-panel{grid-area:deck;min-height:0;display:flex;flex-direction:column;padding:0;overflow:visible}
   #page-edit.workspace-library .edit-library-deck-panel>.edit-panel-heading{height:24px;min-height:24px;padding:2px 8px;border-bottom:1px solid #e2eaed;display:flex;align-items:center}
@@ -136,7 +136,7 @@
   #page-edit.workspace-library .occurrence-actions{padding:0;margin:0;min-height:28px;height:28px;gap:4px;flex:0 0 auto;font-size:12px;order:0}
   #page-edit.workspace-library #occJump{width:50px;height:28px;min-height:28px;padding:2px 4px;font-size:12px}
   #page-edit.workspace-library .occurrence-actions #occRestore,#page-edit.workspace-library .occurrence-actions #occDisease,#page-edit.workspace-library .occ-scroll-help{display:none}
-  #page-edit.workspace-library #occurrenceSelectionToolbar{min-height:0;padding:3px 6px;display:flex;gap:8px;align-items:center;justify-content:space-between;border-top:1px solid #d7e3e8;border-bottom:1px solid #d7e3e8;flex-wrap:nowrap}
+  #page-edit.workspace-library #occurrenceSelectionToolbar{min-height:0;padding:2px 6px;display:flex;gap:8px;align-items:center;justify-content:space-between;border-top:1px solid #d7e3e8;border-bottom:1px solid #d7e3e8;flex-wrap:nowrap}
   #page-edit.workspace-library #occurrenceSelectionToolbar p{margin:0;font-size:12px;line-height:18px;flex:1;min-width:300px}
   #page-edit.workspace-library #occurrenceSelectionToolbar p.workspace-collection-scope{display:flex;gap:6px;align-items:center;min-width:0;white-space:nowrap}
   .workspace-collection-label{flex:0 1 auto;min-width:0;max-width:132px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -149,8 +149,8 @@
   #page-edit.workspace-library .edit-wave-toolbar strong{font-size:13px;line-height:18px}
   #page-edit.workspace-library .edit-wave-toolbar small{font-size:12px;line-height:16px}
   #page-edit.workspace-library .edit-key-legend{display:none}
-  #page-edit.workspace-library .edit-library-wave-wrap{flex:1;height:0;min-height:221px;position:relative;overflow:visible}
-  #page-edit.workspace-library #editLibraryWaveformCanvas{display:block;height:100%!important;min-height:221px;width:100%;max-height:none;flex:1}
+  #page-edit.workspace-library .edit-library-wave-wrap{flex:1;height:0;min-height:198px;position:relative;overflow:visible}
+  #page-edit.workspace-library #editLibraryWaveformCanvas{display:block;height:100%!important;min-height:198px;width:100%;max-height:none;flex:1}
   #page-edit.workspace-library .edit-library-wave-wrap>.clinical-beat-toolbar[hidden]{display:none}
   #page-edit.workspace-library .edit-library-wave-wrap .beat-edit-history{position:absolute;bottom:4px;right:6px}
   #page-edit.workspace-library #editLibraryNavigatorCanvas{height:20px!important;min-height:20px;max-height:20px;flex:0 0 20px}
@@ -213,13 +213,15 @@
   #page-review:not(.ov-af-mode) .workspace-evidence-tabs .empty-state{padding:4px;line-height:18px}
 }
 @media(min-width:1100px) and (max-height:780px){
-  #page-edit.workspace-library #editLibraryWorkbench{grid-template-rows:142px 214px minmax(291px,1fr);column-gap:4px;row-gap:1px}
+  #page-edit.workspace-library #editLibraryWorkbench{grid-template-rows:142px 214px minmax(244px,1fr);column-gap:4px;row-gap:1px}
   #page-edit.workspace-library .edit-library-deck-panel>.edit-panel-heading{height:20px;min-height:20px}
   #page-edit.workspace-library .workspace-master-card footer{line-height:14px}
   #page-edit.workspace-library #occurrenceSelectionToolbar{flex-wrap:nowrap;min-height:34px;padding:2px 6px}
   #page-edit.workspace-library #occurrenceSelectionToolbar p{min-width:0;max-width:55%;font-size:12px}
   #page-edit.workspace-library #occurrenceSelectionToolbar button{padding:2px 5px}
   #page-edit.workspace-library .edit-library-wave-panel .edit-wave-toolbar small{display:none}
+  #page-edit.workspace-library .edit-library-wave-wrap,
+  #page-edit.workspace-library #editLibraryWaveformCanvas{min-height:174px}
   #mainContent #page-review.active.overview-workbench:not(.ov-af-mode){grid-template-rows:34px 98px minmax(0,1fr)}
   #page-review.overview-workbench:not(.ov-af-mode) .review-rail{grid-template-rows:minmax(212px,1fr) 148px minmax(74px,.26fr)}
   #page-review:not(.ov-af-mode) .ov-statistics{height:148px}

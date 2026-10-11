@@ -34,6 +34,8 @@ function harness(){
     }});
   vm.runInContext(fs.readFileSync('static/js/report-consistency.js','utf8'),ctx);
   const source=fs.readFileSync('static/js/app.js','utf8');
+  vm.runInContext(source.match(/function caseDisplayId\([^)]*\)\s*\{[^}]*\}/)[0],ctx);
+  vm.runInContext(source.slice(source.indexOf('function renderCurrentAnalysisSettings()'),source.indexOf('function loadCaseWorkflow(')),ctx);
   vm.runInContext(source.slice(source.indexOf('function renderCaseLoading()'),source.indexOf('function waveformRequestLeads()')),ctx);
   const add=id=>{const server={open:gate(),data:gate(),version:1};servers.set(id,server);return server};
   return {ctx,state,loads,elements,add};

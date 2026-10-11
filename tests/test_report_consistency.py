@@ -123,6 +123,8 @@ def test_browser_approval_uses_one_gate_for_all_renderers():
 const assert=require('node:assert/strict');require('./static/js/report-consistency.js');
 const {canApprove}=ECGReportConsistency, state={report:{version:1}};
 assert.equal(canApprove(state,'doctor conclusion',true,true),true);
+assert.equal(canApprove({...state,reportCategoryPending:[{key:'V',label:'室早事件'}]},'doctor conclusion',true,true),false);
+assert.equal(canApprove({...state,reportCategoryPending:[]},'doctor conclusion',true,true),true);
 for(const key of ['reportDirty','reportStale','reportSaving','reportEvidenceLoading','reportEvidenceError'])
   assert.equal(canApprove({...state,[key]:true},'conclusion',true,true),false);
 assert.equal(canApprove({...state,reportComposition:{diagnosis_blocks:[{needs_review:true}]}},'conclusion',true,true),false);

@@ -7,6 +7,33 @@ READS = ['', 'trend', 'rr-visuals', 'scatter', 'hrv', 'hrv-windows',
          'hrv-analysis', 'stt-review', 'report-statistics', 'report-sections']
 
 
+def run_browser_vm_fixture(script, *scenarios):
+    """Load production closure dependencies before an isolated VM function."""
+    bootstrap = r"""
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const source = fs.readFileSync('static/js/clinical-ui.js', 'utf8');
+const start = source.indexOf('  let hrvLegacyWeb=null;');
+const end = source.indexOf('  function composition(', start);
+assert(start >= 0 && end > start, 'Missing production HRV closure dependencies');
+const dependencies = source.slice(start, end);
+assert(dependencies.includes('function renderHrvTarget('), 'Missing production HRV renderer');
+const runInContext = vm.runInContext;
+const loaded = new WeakSet();
+vm.runInContext = function(code, context, ...options) {
+  if (code.includes('async function loadHrv(') && !loaded.has(context)) {
+    runInContext.call(this, dependencies, context, ...options);
+    loaded.add(context);
+  }
+  return runInContext.call(this, code, context, ...options);
+};
+require(path.resolve(process.argv[1]));
+"""
+    subprocess.run(['node', '--eval', bootstrap, script, *scenarios], check=True, timeout=20)
+
+
 @pytest.mark.parametrize('kind', READS)
 @pytest.mark.parametrize('change', ['edit', 'source'])
 def test_read_endpoints_bind_source_and_review(synthetic_app, synthetic_case, kind, change):
@@ -76,9 +103,9 @@ def test_advanced_measurements_bind_analysis_basis(synthetic_app, synthetic_case
 
 
 @pytest.mark.parametrize('scenario', ['missing','nested','final','mixed','absent','success','missing-metrics',
-    'trends-success','trends-mixed','trends-failure','trends-case',
-    'stt-success','stt-cache','stt-mixed','stt-failure','stt-case',
+    'trends-success','trends-mixed','trends-failure','trends-case','trends-cancel',
+    'stt-success','stt-cache','stt-mixed','stt-failure','stt-case','stt-cancel',
     'hrv-late-error','hrv-old-controls','hrv-export',
     'demo-root','demo-batch','demo-race','demo-stale','demo-overview','demo-rhythm'])
 def test_browser_analysis_batch_lifecycle(scenario):
-    subprocess.run(['node','tests/browser_analysis_consistency.cjs',scenario],check=True,timeout=20)
+    run_browser_vm_fixture('tests/browser_analysis_consistency.cjs', scenario)

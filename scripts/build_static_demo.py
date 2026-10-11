@@ -6,12 +6,16 @@ import json
 import re
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
-from build_math_payload import generate
-from verify_public_release import verify
+if __package__:
+    from .build_math_payload import generate
+    from .verify_public_release import verify
+else:
+    from build_math_payload import generate
+    from verify_public_release import verify
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUTPUT = PROJECT_ROOT / 'build/pages'
-MANIFEST = PROJECT_ROOT / 'docs/releases/0.12.9-doctor-evaluation.20261009/source-manifest.json'
+MANIFEST = PROJECT_ROOT / 'docs/releases/0.12.11-doctor-evaluation.20261011/source-manifest.json'
 ASSET = 'static/demo-data/mathematical-4314'
 NAMESPACE = 'cardioinsight-public-math-4314-v2'
 sha = lambda b: hashlib.sha256(b).hexdigest()
@@ -56,7 +60,7 @@ def build(output: Path) -> Path:
     (output / 'static/js/demo-api.js').write_bytes(api_source.read_bytes())
     env = Environment(loader=FileSystemLoader(PROJECT_ROOT / 'templates'), autoescape=select_autoescape(['html']), undefined=StrictUndefined)
     env.globals['url_for'] = lambda endpoint, filename: 'static/' + filename
-    html = env.get_template('index.html').render(app_name='CardioInsight 数学交互演示', app_version=manifest['release_id'], app_version_short='0.12.9 数学Demo', demo_readonly=True, allow_phi=False)
+    html = env.get_template('index.html').render(app_name='CardioInsight 数学交互演示', app_version=manifest['release_id'], app_version_short='0.12.11 数学Demo', demo_readonly=True, allow_phi=False)
     html = html.replace('演示分析医生', '数学演示操作者').replace('本地工作站', '浏览器独立数学演示')
     html = html.replace('10 例仅用于功能回归', '纯数学输入仅演示交互')
     html = html.replace('在线 Demo 可体验测量交互，但不会保存复核意见。', '数学 Demo 的人工复核意见仅保存到当前浏览器，不上传。')

@@ -94,13 +94,13 @@ const morphologyWorkbench=(()=>{
     if(snap.scope.caseId!==s.id||snap.scope.caseToken!==s.caseToken||String(snap.scope.analysis_basis)!==String(s.basis)||String(snap.scope.analysis_revision)!==String(s.analysisRevision)||String(snap.scope.beatRevision)!==String(s.revision))return;
     const active=snap.kind==='samples'||s.viewedScope?.kind==='group',viewKey=linkedViewKey(s);
     if(!active){C.cancelLane('template.density');s.linked=null;controls();drawAll();notifyLinked();return;}
-    const cacheKey=JSON.stringify([snap.selectionGeneration,viewKey]);if(s.linked?.key===cacheKey&&s.linked.phase==='ready'){drawAll();return;}
+    const cacheKey=JSON.stringify([snap.selectionGeneration,viewKey]);if(s.linked?.key===cacheKey&&s.linked.phase==='ready'){drawAll();controls();return;}
     const ticket=C.beginLane('template.density',viewKey,{focusSensitive:false}),counts=linkedPopulation(s,snap);s.linked={key:cacheKey,phase:'loading',data:{},...counts,count:counts.samples.length};controls();drawAll();notifyLinked();
     try{
       const pairs=await Promise.all(['top','bottom'].map(async slot=>[slot,await request(s,view[slot],{samples:counts.samples,amplitude_limit:s.limits[view[slot]]},null,{signal:ticket.signal})]));
       if(!C.isCurrent(ticket,linkedViewKey(current))||!isCurrent(s)||snap.selectionGeneration!==C.snapshot().selectionGeneration)return;
-      s.linked={key:cacheKey,phase:'ready',data:Object.fromEntries(pairs),...counts,count:counts.samples.length};controls();drawAll();notifyLinked();
-    }catch(error){if(error.name==='AbortError'||!C.isCurrent(ticket,linkedViewKey(current))||!isCurrent(s))return;s.linked={key:cacheKey,phase:'error',data:{},...counts,count:counts.samples.length};status('联动密度读取失败：'+error.message+'；原分组保留，可重新读取。',true);drawAll();notifyLinked();}
+      s.linked={key:cacheKey,phase:'ready',data:Object.fromEntries(pairs),...counts,count:counts.samples.length};drawAll();controls();notifyLinked();
+    }catch(error){if(error.name==='AbortError'||!C.isCurrent(ticket,linkedViewKey(current))||!isCurrent(s))return;s.linked={key:cacheKey,phase:'error',data:{},...counts,count:counts.samples.length};status('联动密度读取失败：'+error.message+'；原分组保留，可重新读取。',true);drawAll();controls();notifyLinked();}
   }
   let drawFrame=0;
   function scheduleDraw(){if(!drawFrame)drawFrame=requestAnimationFrame(()=>{drawFrame=0;drawAll()})}
@@ -119,6 +119,16 @@ const morphologyWorkbench=(()=>{
   }
   const isCurrent=s=>current===s&&s.caseToken===(state.caseRequestId??0)&&key(context())===s.key;
   const available=s=>!!s?.groups&&isCurrent(s)&&!['error','stale','loading'].includes(s.phase)&&!busy&&!saving;
+  function sourceDensity(s,slot){
+    return s?.linked?(s.linked.phase==='ready'?s.linked.data?.[slot]||null:null):s?.data?.[slot]||null;
+  }
+  function sourceReady(s,slot){
+    return available(s)&&!!sourceDensity(s,slot);
+  }
+  function selectionUnavailable(s){
+    const invalid=!s||!isCurrent(s)||s.phase==='stale',failed=s?.linked?.phase==='error'||s?.phase==='error';
+    status(invalid?'当前病例或密度依据已变化；请重新读取，依据失效时先刷新病例。':saving?'模板正在保存；保存完成后可重新框选。':failed?'密度读取失败；请点击“重新读取”后框选。':s.linked?.phase==='loading'||busy?'正在读取密度；读取完成后可重新框选。':'当前导联密度绘图区尚未就绪；请点击“重新读取”后框选。',invalid||failed);
+  }
   const status=(message,error=false)=>{const el=qs('#morphStatus');if(el){el.textContent=message;el.dataset.error=String(error)}};
   function clearSelection(){selectionToken++;if(selecting){selecting=false;busy=false}selection=null;box=null;drag=null;controls();drawAll();}
   function sourceCanvas(slot){return qs('#'+sourceIds[slot]);}
@@ -158,12 +168,12 @@ const morphologyWorkbench=(()=>{
       const values=current?.groups?.slots[n]||[],saved=current?.saved[n];
       return n+' 组 · '+fmtNumber(values.length)+' 搏 · '+(saved?'已保存“'+saved.name+'”':values.length?'未保存':'空组')+' · 来源 '+label+' · '+view.groups+' · r'+(current?.revision??context().revision);
     }).join('；')+'。';
-    const impact=qs('#morphImpact');if(impact)impact.textContent=saving?'正在保存形态模板…':busy?(selecting?'正在匹配框选，暂不能移入。':'正在读取密度，暂不能分组。'):!ready?'密度依据不可用；请重新读取，版本变化时先刷新病例。':count?'移入将影响框选的 '+fmtNumber(count)+' 搏（'+view[selection.slot]+' · r'+current.revision+'）；只调整形态分组，心搏分类不变。':'先在任一左图框选；分组可撤销，保存模板才会保留。';
+    const impact=qs('#morphImpact');if(impact)impact.textContent=saving?'正在保存形态模板…':busy?(selecting?'正在匹配框选，暂不能移入。':'正在读取密度，暂不能分组。'):!ready?'密度依据不可用；请重新读取，版本变化时先刷新病例。':current?.linked?.phase==='loading'?'正在读取联动密度；新框选暂不可用，已匹配分组可继续。':current?.linked?.phase==='error'?'联动密度读取失败；请重新读取后框选，原分组与模板输入保留。':count?'移入将影响框选的 '+fmtNumber(count)+' 搏（'+view[selection.slot]+' · r'+current.revision+'）；只调整形态分组，心搏分类不变。':'先在任一左图框选；分组可撤销，保存模板才会保留。';
     qs('#clearEditSelection').disabled=!selection&&!box||saving;
     qs('#morphUndo').disabled=!ready||!current.groups.history.length;
     qs('#morphRetry').disabled=busy||saving;
     if(qs('#workspaceDensityRetry'))qs('#workspaceDensityRetry').disabled=busy||saving;
-    qs('#applyEditRange').disabled=!ready;
+    qs('#applyEditRange').disabled=!sourceReady(current,qs('#morphRangeLead').value||'top');
     for(const id of ['morphLeadTop','morphLeadBottom','morphLeadGroups'])qs('#'+id).disabled=busy||saving;
     if(qs('#morphLeadPicker'))qs('#morphLeadPicker').disabled=!ready;
     G.slots.forEach(n=>{
@@ -218,7 +228,7 @@ const morphologyWorkbench=(()=>{
   function drawAll(){
     const s=current;
     for(const slot of ['top','bottom']){
-      const linked=!!s?.linked,d=linked?s.linked.phase==='ready'?s.linked.data[slot]:null:s?.data[slot];draw(sourceCanvas(slot),d,linked?(s.linked.phase==='loading'?'正在统计联动选集…':'联动读取失败 · 原分组保留'):busy?'正在统计…':s?.phase==='stale'?'依据失效 · 刷新病例':s?.phase==='error'?'读取失败 · 重新读取':'尚未读取');
+      const linked=!!s?.linked,d=sourceDensity(s,slot);draw(sourceCanvas(slot),d,linked?(s.linked.phase==='loading'?'正在统计联动选集…':'联动读取失败 · 原分组保留'):busy?'正在统计…':s?.phase==='stale'?'依据失效 · 刷新病例':s?.phase==='error'?'读取失败 · 重新读取':'尚未读取');
       qs('[data-morph-count="'+slot+'"]').textContent=d?fmtNumber(d.included)+' 搏':'';
       qs(slot==='top'?'#editDensityPrimaryLabel':'#morphSecondaryLabel').textContent=view[slot]+' · '+(linked?'联动 '+(s.viewedScope?.kind==='group'?s.viewedScope.slot+'组':'剩余'):'剩余心搏');
     }
@@ -289,7 +299,7 @@ const morphologyWorkbench=(()=>{
     finally{if(token===requestToken&&isCurrent(s)){busy=false;controls();drawAll();notifyLinked();refreshLinked();}finishRefresh();}
   }
   async function choose(slot,a,b){
-    const s=current,g=plots.get(sourceCanvas(slot));if(!available(s)||!g)return;
+    const s=current,g=plots.get(sourceCanvas(slot));if(!sourceReady(s,slot)||!g||g.data!==sourceDensity(s,slot)){selectionUnavailable(s);return;}
     if(s.viewedScope?.kind==='group'){status('当前查看已剥离组；请先点击“查看剩余”，再框选移入。');return;}
     const token=++selectionToken;selection=null;box={slot,points:[a,b]};busy=true;selecting=true;controls();drawAll();status('正在按 '+view[slot]+' 在剩余集合中精确匹配…');
     const gate=[Math.min(a.x,b.x)*2-1,Math.max(a.x,b.x)*2-1,(1-2*Math.max(a.y,b.y))*g.limit,(1-2*Math.min(a.y,b.y))*g.limit];
@@ -425,15 +435,21 @@ const morphologyWorkbench=(()=>{
       if(values.some(v=>!Number.isFinite(v)||v<0||v>100)||values[0]===values[1]||values[2]===values[3]){status('请输入 0–100 的百分比范围，起止点不能相同。',true);return;}
       choose(qs('#morphRangeLead').value,{x:values[0]/100,y:values[2]/100},{x:values[1]/100,y:values[3]/100});
     },true);
+    qs('#morphRangeLead').addEventListener('change',controls);
     document.addEventListener('keydown',event=>{
-      if(state.currentPage!=='edit'||state.editMode!=='cluster'||!qs('#editWorkbench')?.getClientRects().length||event.target.closest('input,select,textarea,[contenteditable="true"]')||document.querySelector('dialog[open]'))return;
+      if(state.currentPage!=='edit'||state.editMode!=='cluster'||!qs('#editWorkbench')?.getClientRects().length||document.querySelector('dialog[open]'))return;
+      if(event.key==='Escape'&&event.target.closest('.edit-density-panel')){
+        if(saving)return;
+        event.preventDefault();event.stopImmediatePropagation();clearSelection();closeForm(true);return;
+      }
+      if(event.target.closest('input,select,textarea,[contenteditable="true"]'))return;
       const n=G.shortcut(event);if(n!==null){event.preventDefault();event.stopImmediatePropagation();if(!selection?.samples.length)status('请先在任一左侧密度图框选心搏，再按 '+n+'。');else move(n).catch(handleError);}
-      if(event.key==='Escape'&&event.target.closest('.edit-density-panel')){event.preventDefault();event.stopImmediatePropagation();clearSelection();closeForm(true);}
     },true);
     for(const slot of ['top','bottom']){
       const canvas=sourceCanvas(slot);
       canvas.addEventListener('pointerdown',event=>{
-        if(busy||saving||event.button!==0||!plots.has(canvas))return;
+        if(event.button!==0)return;
+        if(!sourceReady(current,slot)||plots.get(canvas)?.data!==sourceDensity(current,slot)){selectionUnavailable(current);return;}
         event.preventDefault();canvas.focus({preventScroll:true});canvas.setPointerCapture(event.pointerId);
         const p=point(event,canvas);drag={slot,canvas,id:event.pointerId,a:p,b:p};selection=null;box={slot,points:[p,p]};controls();
       });

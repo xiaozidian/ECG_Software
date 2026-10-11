@@ -1,0 +1,348 @@
+/* ==========================================================================
+   CardioInsight · Visual Refresh (2026-09)
+   统一设计令牌 + 全局紧凑化 + 视觉层次重构。
+   本文件最后加载，仅做覆盖，不改动既有样式文件。
+   ========================================================================== */
+
+/* ---------- 1. 设计令牌：现代医疗配色 / 紧凑尺寸 ---------- */
+:root{
+  /* 主色：保留医疗青蓝血统，统一全站散落的多种 teal */
+  --navy-950:#0a1f2e; --navy-900:#102a3b; --navy-800:#173b4f;
+  --teal-700:#0a7676; --teal-600:#0d9491; --teal-500:#15aaa4;
+  --teal-100:#d9f1ef; --teal-50:#ecf8f7;
+  --blue-600:#2376b8; --violet-600:#6f60c6; --amber-600:#c47c19; --coral-600:#cb5349;
+  /* 中性色：更冷的岩板灰阶，提升文字对比 */
+  --ink-900:#152834; --ink-700:#3c525f; --ink-500:#687d89; --ink-300:#67737c;
+  --line:#d8e2e7; --line-soft:#e6edf0;
+  --surface:#ffffff; --surface-alt:#f4f7f8; --canvas:#e9eff1;
+  /* 形状与阴影：更轻盈 */
+  --radius:10px;
+  --shadow:0 1px 2px rgba(15,42,59,.05),0 6px 18px rgba(15,42,59,.05);
+  /* 全局框架尺寸：压缩首屏占用 */
+  --topbar:56px; --sidebar:76px; --case-workflow-height:74px;
+  /* 控件统一高度 */
+  --ctl-h:32px;
+}
+
+/* ---------- 2. 顶栏：更薄、更深邃、层次分明 ---------- */
+.topbar{
+  height:var(--topbar);padding:0 16px;
+  background:linear-gradient(90deg,#0b2231 0%,#0f2c3e 52%,#123447 100%);
+  box-shadow:0 1px 0 rgba(255,255,255,.05) inset,0 6px 20px rgba(5,22,32,.28);
+}
+@supports ((-webkit-backdrop-filter:blur(18px)) or (backdrop-filter:blur(18px))){
+  .topbar{background:linear-gradient(90deg,rgba(11,34,49,.96),rgba(15,44,62,.94) 52%,rgba(18,52,71,.96));
+    -webkit-backdrop-filter:blur(18px) saturate(140%);backdrop-filter:blur(18px) saturate(140%)}
+}
+.brand{width:300px;gap:10px}
+.brand-mark{width:34px;height:34px;border-radius:9px;
+  background:linear-gradient(135deg,#17b3ab,#0c8f8c);
+  box-shadow:0 3px 10px rgba(20,170,164,.35),0 0 0 1px rgba(255,255,255,.14) inset}
+.brand-mark svg{width:27px}
+.brand strong{font-size:15.5px;letter-spacing:.2px}
+.brand span{font-size:10px;color:#93aeb9;margin-top:1px}
+.global-search{height:34px;max-width:520px;border-radius:9px;
+  background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.1)}
+.global-search:focus-within{background:rgba(255,255,255,.13);border-color:rgba(21,170,164,.55);
+  box-shadow:0 0 0 3px rgba(21,170,164,.16)}
+.top-actions{width:auto;min-width:0;gap:10px}
+.privacy-toggle{height:32px;border-radius:8px}
+.avatar{width:30px;height:30px;font-size:12px;
+  background:linear-gradient(135deg,#d9f1ef,#b9e3e0)}
+.role-chip strong{font-size:11.5px}.role-chip small{font-size:9.5px}
+
+/* ---------- 3. 侧栏：收窄、指示条式选中态 ---------- */
+.sidebar{width:var(--sidebar);padding:10px 6px 8px;
+  background:linear-gradient(180deg,#102a3b 0%,#0d2534 100%);
+  border-right:1px solid rgba(255,255,255,.04)}
+.sidebar nav{gap:3px}
+.nav-item{min-height:50px;border-radius:9px;gap:4px;color:#a9bec8;transition:background .14s,color .14s}
+.nav-item svg{width:19px;height:19px}
+.nav-item em{font-size:10.5px}
+.nav-item:hover{background:rgba(255,255,255,.07);color:#e8f1f4}
+.nav-item.active{
+  background:linear-gradient(135deg,rgba(21,170,164,.24),rgba(21,170,164,.13));
+  color:#fff;box-shadow:0 0 0 1px rgba(21,170,164,.4) inset}
+.nav-item.active:before{
+  content:"";position:absolute;left:-6px;top:20%;bottom:20%;width:3px;border-radius:0 3px 3px 0;
+  background:var(--teal-500);box-shadow:0 0 8px rgba(21,170,164,.7)}
+.nav-item.active em{font-weight:650;color:#c9f0ed}
+.nav-section-label{margin:8px 8px 2px;font-size:9px;letter-spacing:1.2px;color:#5f7c8a;text-transform:uppercase}
+
+/* ---------- 4. 安全横幅 & 流程条：纵向大幅压缩 ---------- */
+.main-shell{margin-left:var(--sidebar);padding-top:var(--topbar)}
+.safety-banner{min-height:30px;height:30px;padding:0 16px;gap:10px;font-size:11px;
+  background:#fff7ea;border-bottom:1px solid #eed9b6;color:#7a4d12}
+.safety-banner strong{font-size:10px;padding:2px 7px;letter-spacing:.4px}
+.safety-banner button{font-size:16px;line-height:1}
+
+.case-workflow{
+  height:var(--case-workflow-height);
+  grid-template-rows:44px 22px;padding:5px 14px 6px;gap:2px 12px;
+  background:#fbfdfe;border-bottom:1px solid var(--line);
+}
+.case-workflow-context strong{font-size:12px;color:var(--ink-900)}
+.case-workflow-context small{font-size:10px}
+.case-workflow-steps button{border-radius:7px;padding:2px 10px 2px 22px;transition:background .13s}
+.case-workflow-steps button>span{left:8px}
+.case-workflow-steps button strong{font-size:11px}
+.case-workflow-steps button small{font-size:9px;margin-top:0}
+.case-workflow-steps button.current{
+  background:var(--teal-100);color:#075e60;box-shadow:0 0 0 1px rgba(13,148,145,.3) inset}
+.case-workflow-steps button.current>span{background:var(--teal-600);border-color:var(--teal-600)}
+.workflow-next{height:32px;font-size:11.5px;border-radius:8px}
+.workflow-task-line{padding-top:3px;gap:12px;font-size:11px}
+/* 依赖横幅高度的视口公式同步修正（30px 横幅） */
+body.case-workflow-visible #page-edit.active{
+  height:calc(100dvh - var(--topbar) - 30px - var(--case-workflow-height));
+}
+/* ≤1280px 三行布局：行高与容器高度匹配，杜绝文字溢出 */
+@media(max-width:1280px){
+  :root{--case-workflow-height:106px}
+  .case-workflow{
+    grid-template-columns:minmax(190px,1fr) auto;
+    grid-template-rows:30px 40px 22px;
+    padding:5px 14px;gap:2px 12px;
+  }
+  .case-workflow-context{grid-column:1;grid-row:1;border-right:0;align-content:center}
+  .case-workflow-context small{display:none}
+  .case-workflow-steps{grid-column:1/-1;grid-row:2}
+  .workflow-next{grid-column:2;grid-row:1;align-self:center}
+  .workflow-task-line{grid-row:3;border-top:0;padding-top:0;align-items:center}
+}
+
+/* ---------- 5. 页面骨架：压缩留白、明确层次 ---------- */
+.page{padding:14px 20px 24px;max-width:1720px}
+.page-heading{margin:0 0 12px;gap:16px}
+.page-heading h1{font-size:19px;margin:2px 0 3px;letter-spacing:-.3px}
+.page-heading p{font-size:11.5px}
+.page-heading .eyebrow,.eyebrow{font-size:9.5px;letter-spacing:1.1px}
+.case-hero{min-height:56px;padding:10px 16px;margin-bottom:10px;border-radius:10px;
+  background:linear-gradient(92deg,#102a3b,#173f52)}
+.case-hero h1{font-size:16px}
+
+/* 卡片：轻阴影、细边、紧凑内距 */
+.card{border-radius:var(--radius);border-color:var(--line-soft);box-shadow:var(--shadow)}
+.card-header{padding:11px 14px 9px;gap:10px}
+.card-header h2{font-size:13.5px;margin:0 0 2px;letter-spacing:.1px}
+.card-header p{font-size:10.5px}
+.compact-card{padding:13px}
+.rail-card .card-header,.compact-card .card-header{padding:11px 14px 8px}
+
+/* 指标卡：压扁、图标渐变 */
+.metric-grid{gap:10px;margin-bottom:12px}
+.metric-card{min-height:80px;padding:12px 14px;gap:11px;border-radius:10px;
+  box-shadow:var(--shadow);transition:transform .15s,box-shadow .15s}
+.metric-card:hover{transform:translateY(-1px);box-shadow:0 3px 6px rgba(15,42,59,.06),0 10px 24px rgba(15,42,59,.08)}
+.metric-icon{width:38px;height:38px;border-radius:10px;font-size:13px}
+.metric-icon.teal{background:linear-gradient(135deg,#15aaa4,#0c8482)}
+.metric-icon.blue{background:linear-gradient(135deg,#3d8cc7,#1f639e)}
+.metric-icon.violet{background:linear-gradient(135deg,#8576d4,#5c4bad)}
+.metric-icon.amber{background:linear-gradient(135deg,#d89233,#b06c12)}
+.metric-card strong{font-size:20px;margin:1px 0}
+.metric-card span{font-size:10.5px}.metric-card small{font-size:9.5px}
+
+/* ---------- 6. 控件体系：统一 32px 高度、清晰点击态 ---------- */
+.button{height:var(--ctl-h);min-height:var(--ctl-h);padding:0 13px;border-radius:8px;
+  font-size:12px;font-weight:650;letter-spacing:.1px;transition:background .14s,border-color .14s,box-shadow .14s}
+.button:hover{transform:none}
+.button.primary{background:linear-gradient(135deg,#0f9d99,#0b8583);
+  box-shadow:0 2px 8px rgba(13,148,145,.28)}
+.button.primary:hover{background:linear-gradient(135deg,#0b8a87,#097270)}
+.button.secondary{background:#fff;border-color:var(--line);color:var(--ink-700)}
+.button.secondary:hover{border-color:#7fb8b5;color:var(--teal-700);background:var(--teal-50)}
+.button.dark{background:var(--navy-900)}
+.button.dark:hover{background:var(--navy-800)}
+.icon-button{width:30px;height:30px;border-radius:8px;font-size:15px;color:var(--ink-700)}
+.icon-button:hover{border-color:#7fb8b5;color:var(--teal-700);background:var(--teal-50)}
+.text-button{font-size:11.5px}
+.text-button:hover{text-decoration:underline;text-underline-offset:3px}
+.status-pill{height:22px;padding:0 8px;font-size:9.5px;letter-spacing:.2px}
+
+/* 输入控件 */
+.toolbar-group select,.table-tools select,.card-header select,
+.threshold-inline input,select{accent-color:var(--teal-600)}
+.toolbar-group select,.table-tools select,.card-header select{
+  height:30px;border-radius:7px;font-size:11px;color:var(--ink-700)}
+.toolbar-group select:hover,.lead-picker-trigger:hover{border-color:#7fb8b5}
+input[type="checkbox"],input[type="radio"]{accent-color:var(--teal-600)}
+button:focus-visible,a:focus-visible,select:focus-visible,textarea:focus-visible,input:focus-visible{
+  outline:2px solid var(--teal-600);outline-offset:2px}
+
+/* 分段控件（页签/模式切换）统一为胶囊组 */
+.event-tabs,.edit-mode-switch,.scatter-mode-grid,.report-module-tabs{
+  background:#eef3f5;border-radius:9px;padding:3px;gap:2px}
+.event-tabs button,.edit-mode-switch button,.scatter-mode-grid button,.report-module-tabs button{
+  border-radius:7px;transition:background .13s,color .13s}
+.event-tabs button.active,.scatter-mode-grid button.active{
+  background:#fff;color:var(--teal-700);font-weight:700;box-shadow:0 1px 4px rgba(15,42,59,.12)}
+.edit-mode-switch button[aria-selected="true"]{
+  background:#fff;color:var(--teal-700);box-shadow:0 1px 4px rgba(15,42,59,.14)}
+
+/* ---------- 7. 表格：更高密度、更清晰的行反馈 ---------- */
+.data-table{font-size:12px}
+.data-table th{height:31px;padding:6px 12px;background:#f3f7f8;font-size:10px;letter-spacing:.5px;
+  text-transform:uppercase;color:#5f7480;border-bottom:1px solid var(--line)}
+.data-table td{padding:7px 12px;border-bottom-color:#eef2f4}
+.data-table tbody tr:hover{background:var(--teal-50)}
+.row-action{border-radius:6px;padding:5px 8px;background:var(--teal-50);transition:background .13s}
+.row-action:hover{background:var(--teal-100)}
+.table-wrap{border-radius:0 0 var(--radius) var(--radius)}
+
+/* ---------- 8. 总览复核页：工具条收紧 + 吸附 ---------- */
+.review-toolbar{
+  min-height:46px;margin-bottom:10px;padding:6px 10px;gap:10px;
+  position:sticky;top:var(--topbar);z-index:30;
+  border-radius:10px;box-shadow:var(--shadow)}
+.toolbar-group>label{font-size:9.5px;letter-spacing:.3px}
+.zoom-controls{height:30px}.zoom-controls button{min-width:28px;height:28px}
+.lead-picker-trigger{height:30px;min-width:150px;border-radius:8px}
+.analysis-grid{gap:10px}
+.analysis-main{gap:10px}
+.trend-strip-card{padding:9px 12px 5px}
+.trend-strip-card canvas{height:76px}
+.waveform-title{height:38px;padding:0 12px}
+.waveform-scroller{max-height:calc(100dvh - 258px);min-height:400px}
+.waveform-foot{padding:6px 12px;font-size:10px}
+.wave-legend span{font-size:9.5px}
+.waveform-mode-button{height:28px}
+.scatter-card-header{min-height:52px;padding:10px 14px 9px}
+.scatter-card-header h2{font-size:13px}
+.scatter-mode-grid button{height:26px;font-size:10px}
+.keyboard-card h3{font-size:11.5px;margin:0 0 6px}
+.keyboard-card kbd{background:#f0f5f6;border:1px solid var(--line);border-radius:5px;padding:1px 5px;font-size:9.5px}
+
+/* ---------- 9. 趋势 / HRV 页 ---------- */
+.chart-grid{gap:10px}
+.chart-card canvas{padding:0 10px 8px}
+.comparison-grid{padding:2px 14px 12px;gap:8px}
+.compare-cell{padding:9px 10px;border-radius:8px}
+.compare-cell strong{font-size:15px;margin:3px 0}
+#hrvWindowPanel{padding:12px 14px;margin-bottom:12px;border-radius:10px}
+#hrvWindowPanel>p{margin:0 0 6px;font-size:11px}
+#hrvWindowPanel>label{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-500);margin-bottom:4px}
+#hrvWindowPanel>label select{height:26px;border:1px solid var(--line);border-radius:6px;font-size:11px;background:#fff}
+.v2-hrv-trend{height:110px;border-radius:6px}
+/* 逐小时长表改为表体内滚动：指标卡与图表回到首屏 */
+#hrvWindowPanel .v2-stats{margin:6px 0 0}
+#hrvWindowPanel .v2-stats thead,#hrvWindowPanel .v2-stats tbody{display:block}
+#hrvWindowPanel .v2-stats tbody{max-height:200px;overflow-y:auto;scrollbar-gutter:stable}
+#hrvWindowPanel .v2-stats tr{display:table;width:100%;table-layout:fixed}
+#hrvWindowPanel .v2-stats td,#hrvWindowPanel .v2-stats th{padding:5px 9px;font-size:11px}
+#page-trends .metric-grid{margin-top:2px}
+
+/* ---------- 10. 报告编排页（v2）：整页可滚动 + 磁贴导航重构 ---------- */
+/* P1 修复：旧版 report-workbench 用固定视口高 + overflow:hidden 的网格，
+   v2 长内容（最终报告/图条列表）被裁切且无法下滑。改为文档流 + 页面滚动。 */
+#page-report.active{
+  display:block;height:auto!important;overflow:visible!important;
+  min-height:calc(100dvh - var(--topbar) - 30px - var(--case-workflow-height));
+  padding:10px 16px 28px;
+}
+.main-shell:has(.safety-banner.hidden) #page-report.active{
+  min-height:calc(100dvh - var(--topbar) - var(--case-workflow-height));
+}
+body:has(#page-report.active){overflow-y:auto;overflow-x:hidden}
+.report-page-heading{margin-bottom:10px}
+.report-page-heading h1{font-size:19px;margin:2px 8px 2px 0}
+.report-actions{gap:6px}
+#reportV2Nav{
+  grid-template-columns:repeat(12,minmax(72px,1fr));gap:6px;padding:2px 0 10px}
+#reportV2Nav button{
+  border:1px solid var(--line);border-radius:9px;background:#fff;
+  padding:8px 4px 7px;font-size:11.5px;font-weight:600;color:var(--ink-700);
+  transition:border-color .13s,background .13s,box-shadow .13s}
+#reportV2Nav button:hover{border-color:#7fb8b5;background:var(--teal-50);color:var(--teal-700)}
+#reportV2Nav button.active{
+  background:linear-gradient(135deg,#0f9d99,#0b8583);border-color:transparent;color:#fff;
+  box-shadow:0 3px 10px rgba(13,148,145,.3)}
+#reportV2Nav small{margin-top:3px;font-size:9.5px;font-weight:500;opacity:.75;font-variant-numeric:tabular-nums}
+#reportV2Notice{font-size:11px;margin:0 0 8px}
+.v2-category-bar{
+  border-radius:10px;border-color:var(--line-soft);background:#fff;
+  box-shadow:var(--shadow);padding:9px 12px;gap:10px}
+.v2-category-bar strong{font-size:12.5px;color:var(--ink-900)}
+.v2-category-bar label{font-size:11px;color:var(--ink-500)}
+.v2-category-bar select{height:30px;border-radius:7px}
+.v2-event-layout{border-color:var(--line-soft);border-radius:0 0 10px 10px;overflow:hidden;background:#fff}
+.v2-event-list th,.v2-stats th{background:#f3f7f8}
+.v2-event-list td,.v2-event-list th,.v2-stats td,.v2-stats th{padding:7px 9px;font-size:11.5px}
+.v2-event-list td button{color:var(--teal-700);font-weight:650;font-variant-numeric:tabular-nums}
+.v2-event-detail{padding:10px 12px}
+.v2-distribution{min-height:44px;padding:8px 10px;gap:8px;border-radius:8px;font-size:11px}
+.v2-strip{border-radius:10px;padding:12px 14px}
+.v2-strip-list{gap:10px}
+#v2TimeDistribution{height:44px;margin:8px 0}
+.v2-paper-settings{gap:14px;align-items:center}
+.v2-paper-settings label{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-size:11px;color:var(--ink-500)}
+.v2-paper-settings select{width:auto;min-width:64px;height:28px;border-radius:6px}
+.v2-paper-settings span{font-size:10.5px}
+.report-conclusion-dock textarea{font-size:12.5px;line-height:1.6}
+
+/* 报告页头部操作组：主次分明 */
+.report-actions .button.secondary{border-color:var(--line)}
+.report-actions .button.dark{box-shadow:0 2px 8px rgba(16,42,59,.3)}
+
+/* ---------- 11. 模板编辑页 ---------- */
+.edit-class-toolbar{gap:10px;padding:8px 10px;border-radius:10px}
+.edit-class-switcher button{border-radius:7px;transition:background .13s}
+.edit-class-switcher button:hover{background:var(--teal-50)}
+.edit-class-switcher button.active{background:var(--teal-100);box-shadow:0 0 0 1px rgba(13,148,145,.3) inset}
+.edit-panel-heading{min-height:48px;padding:10px 12px 8px}
+.edit-panel-heading h2{font-size:12.5px}
+.edit-wave-toolbar{min-height:44px;padding:6px 12px}
+.edit-wave-foot{font-size:10px;color:var(--ink-500)}
+.edit-type-dock button{height:36px;transition:background .13s}
+.edit-type-dock button[aria-pressed="true"],.edit-type-dock button[aria-expanded="true"]{
+  background:var(--teal-100);color:#086d6b}
+.clinical-beat-toolbar button{border-radius:5px}
+.clinical-beat-toolbar button:hover{background:var(--teal-100);border-color:var(--teal-600)}
+.occurrence-tile{border-radius:6px;transition:border-color .13s,box-shadow .13s}
+.occurrence-tile:hover{border-color:#8fc3c0;box-shadow:0 2px 8px rgba(15,42,59,.08)}
+.occurrence-tile:has(input:checked){border-color:var(--teal-600);background:var(--teal-50);
+  box-shadow:0 0 0 1px var(--teal-600)}
+.beat-relabel-menu{border-radius:12px;border:1px solid var(--line);
+  box-shadow:0 18px 50px rgba(8,28,40,.28)}
+.beat-relabel-options>button{border-radius:8px;transition:background .12s}
+.beat-relabel-options>button:hover{background:var(--teal-50)}
+
+/* ---------- 12. 事件页 ---------- */
+.event-summary{gap:8px;margin-bottom:10px}
+.event-summary-card{padding:9px 11px;border-radius:9px;box-shadow:var(--shadow)}
+.event-summary-card strong{font-size:16px}
+#page-events .table-wrap{border:1px solid var(--line-soft);border-top:0}
+.threshold-inline label{border-radius:7px;padding:3px 7px}
+
+/* ---------- 13. ST-T 页 ---------- */
+.stt-safety-strip{min-height:52px;padding:8px 12px;border-radius:10px;gap:10px}
+.stt-safety-icon{width:28px;height:28px;font-size:13px}
+.stt-panel-header{min-height:48px;padding:10px 12px 8px}
+.stt-queue-panel,.stt-review-panel{top:calc(var(--topbar) + 10px)}
+
+/* ---------- 14. 弹窗 / Toast / 其它 ---------- */
+.modal{border-radius:12px;box-shadow:0 24px 70px rgba(6,26,38,.3)}
+.modal form{padding:16px 18px}
+.modal-header{margin-bottom:12px}
+.modal-header h2{font-size:16px}
+.modal-actions{margin-top:12px}
+.toast{border-radius:9px;font-size:11.5px;box-shadow:0 10px 28px rgba(0,0,0,.28)}
+.lead-picker-dialog{border-radius:12px}
+
+/* 滚动条：细而现代 */
+*::-webkit-scrollbar{width:9px;height:9px}
+*::-webkit-scrollbar-thumb{background:#b8c8cf;border:2px solid transparent;border-radius:6px;background-clip:content-box}
+*::-webkit-scrollbar-thumb:hover{background:#93a9b2;border:2px solid transparent;background-clip:content-box}
+*::-webkit-scrollbar-track{background:transparent}
+html{scrollbar-width:thin;scrollbar-color:#b8c8cf transparent}
+
+/* 选中文字 */
+::selection{background:rgba(21,170,164,.22)}
+
+/* ---------- 15. 响应式微调 ---------- */
+@media(max-width:1180px){:root{--sidebar:70px}.brand{width:250px}}
+@media(max-width:980px){.page{padding:12px 14px 20px}.topbar{padding:0 12px}}
+@media(max-height:800px){
+  .page{padding-top:12px}
+  .waveform-scroller{max-height:calc(100dvh - 240px);min-height:360px}
+}
+@media print{.review-toolbar{position:static}}

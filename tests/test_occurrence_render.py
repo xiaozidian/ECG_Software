@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.mark.parametrize('scenario', [
-    'reuse', 'rows', 'scope', 'selection', 'focus', 'resize',
+    'reuse', 'rows', 'scope', 'selection', 'focus', 'resize', 'viewport-rows',
     'replaced-item', 'late-response', 'failure-retry', 'demand', 'inactive', 'navigation',
     'jump-reset', 'jump-draft', 'jump-validation', 'jump-enter', 'jump-empty',
     'jump-failure', 'jump-filter-race', 'jump-case-race', 'jump-late-error',
@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
     'resume-exact', 'resume-nearby', 'resume-no-focus', 'resume-empty',
     'resume-filter', 'resume-case', 'resume-lifecycle', 'resume-token',
     'resume-page', 'resume-late-lifecycle', 'resume-scrolled',
+    'read-cancel', 'read-retry', 'read-superseded', 'read-leave',
 ])
 def test_occurrence_renderer(scenario):
     subprocess.run(['node', 'tests/browser_occurrence_render.cjs', scenario],

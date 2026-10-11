@@ -43,9 +43,11 @@
   }
   function mount(options = {}) {
     const root = options.root, host = root?.querySelector('#sttCurrentContext');
-    const status=root?.querySelector('#sttAnalysisStatus'),card=root?.querySelector('.stt-waveform-card');
-    if(status&&card&&host&&status.parentElement!==card)card.insertBefore(status,host);
+    const status=root?.querySelector('#sttAnalysisStatus'),card=root?.querySelector('.stt-waveform-card'),wave=root?.querySelector('#sttWaveCanvasWrap');
+    if(status&&wave&&status.parentElement!==wave)wave.prepend(status);
+    else if(status&&card&&host&&status.parentElement!==card)card.insertBefore(status,host);
     let model = context(null);
+    let renderedCase = null;
     const locate = options.onLocate;
     const trackFrom = event => {
       const track = event.target?.closest?.('.stt-trend-track');
@@ -72,7 +74,15 @@
     root?.addEventListener('click', click);
     root?.addEventListener('keydown', keydown);
     function render(snapshot) {
+      const sameCase=Boolean(snapshot?.caseId)&&snapshot.caseId===renderedCase;
+      if(host?.style){
+        if(sameCase&&model.ready&&snapshot.status!=='ready'){
+          const height=host.getBoundingClientRect?.().height;
+          if(number(height)!==null&&height>0)host.style.setProperty('--stt-context-retained-height',`${height}px`);
+        }else if(!sameCase||snapshot.status==='ready')host.style.removeProperty('--stt-context-retained-height');
+      }
       model = context(snapshot);
+      renderedCase=snapshot?.caseId||null;
       if (host) {host.dataset.state = model.status; host.innerHTML = markup(model);}
       root?.classList.toggle('stt-review-layout', Boolean(host));
       root?.querySelectorAll('.stt-trend-track').forEach(track => {

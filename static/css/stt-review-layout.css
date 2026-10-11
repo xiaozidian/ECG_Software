@@ -20,7 +20,7 @@
 #page-stt.stt-review-layout .stt-trend-row small {grid-column: 2; text-align: left;}
 #page-stt.stt-review-layout .stt-waveform-toolbar {flex-wrap: wrap; gap: 8px;}
 #page-stt.stt-review-layout .stt-waveform-actions {justify-content: flex-start; max-width: none;}
-#page-stt .stt-current-context {min-height: 132px; box-sizing: border-box; padding: 8px 12px; border-bottom: 1px solid var(--line-soft); background: var(--surface-alt, #f4f7f8); color: var(--ink-700); font-size: 12px; line-height: 1.5;}
+#page-stt .stt-current-context {min-height: max(132px, var(--stt-context-retained-height, 0px)); box-sizing: border-box; padding: 8px 12px; border-bottom: 1px solid var(--line-soft); background: var(--surface-alt, #f4f7f8); color: var(--ink-700); font-size: 12px; line-height: 1.5;}
 #page-stt .stt-context-heading,
 #page-stt .stt-context-window,
 #page-stt .stt-context-values {display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px;}
@@ -33,6 +33,7 @@
 #page-stt .stt-context-values small {font-size: 10px;}
 #page-stt .stt-context-state {margin: 0;}
 #page-stt #sttAnalysisStatus {margin: 0; padding: 7px 12px; border: 0; border-bottom: 1px solid var(--line-soft); border-radius: 0; font-size: 12px; line-height: 1.5;}
+#page-stt .stt-wave-canvas-wrap > #sttAnalysisStatus {position: absolute; z-index: 2; inset: 0 0 auto; background: var(--surface-alt, #f4f7f8); cursor: default;}
 #page-stt #sttAnalysisStatus .button {min-height: 28px; padding: 3px 9px; font-size: 12px;}
 #page-stt .stt-wave-canvas-wrap[data-stt-wave-state="loading"] {background: var(--surface-alt, #f4f7f8);}
 #page-stt .stt-wave-canvas-wrap[data-stt-wave-state="loading"]::after,

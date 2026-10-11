@@ -137,6 +137,8 @@ def test_api_preview_is_read_only_and_edited_views_share_version(client):
     case_id=client.get("/api/cases").json["items"][0]["case_id"];base="/api/cases/"+case_id
     source=client.get(base).json
     snapshot=client.get(base+"/beat-editor").json
+    history=client.get(base+"?analysis=edited").json["beat_editor_history"]
+    assert history=={key:snapshot[key] for key in ("revision","can_undo","can_redo")}
     beats=client.get(base+"/beat-editor/beats").json["items"];chosen=beats[20]["sample_index"]
     payload={"operation":"delete","selection":{"samples":[chosen]},"revision":snapshot["revision"]}
     preview=client.post(base+"/beat-editor/preview",json=payload)
@@ -150,12 +152,18 @@ def test_api_preview_is_read_only_and_edited_views_share_version(client):
     assert client.put(base+"/beat-editor",json={**payload,"confirmed":True}).status_code==400
     edited=client.get(base+"?analysis=edited").json
     assert edited["analysis_revision"]==result.json["revision"]
+    assert edited["beat_editor_history"]=={key:result.json[key] for key in ("revision","can_undo","can_redo")}
+    assert edited["beat_editor_history"]["can_undo"] is True
+    assert edited["beat_editor_history"]["can_redo"] is False
     assert edited["calculated"]==result.json["metrics"]
     assert client.get(base+"/hrv?analysis=edited").json["calculated"]==result.json["hrv"]
     assert client.get(base).json["calculated"]==source["calculated"]
     assert client.get(base).json["summary"]==source["summary"]
     undone=client.put(base+"/beat-editor",json={"operation":"undo","revision":result.json["revision"],"confirmed":True})
     assert undone.json["metrics"]==snapshot["metrics"]
+    undo_view=client.get(base+"?analysis=edited").json
+    assert undo_view["beat_editor_history"]=={key:undone.json[key] for key in ("revision","can_undo","can_redo")}
+    assert undo_view["beat_editor_history"]["can_redo"] is True
     assert client.post(base+"/beat-editor/preview",json={"operation":"detect","revision":undone.json["revision"],"start_s":0,"duration_s":5}).status_code==200
 
 
@@ -207,9 +215,9 @@ const store=new Map();let quota=false;
 global.document={addEventListener(){}};
 global.location={href:"https://demo.invalid/"};
 global.localStorage={getItem:k=>store.get(k)||null,setItem:(k,v)=>{if(quota)throw Error("quota");store.set(k,v)}};
-global.window={fetch:async p=>new Response(fs.readFileSync(path.join(process.cwd(),"static/demo-data/uploaded-sim-af-001/waveform.bin")))};
-require("./static/demo-data/uploaded-sim-af-001/case-data.js");require("./static/js/demo-api.js");
-const id=window.__CARDIOINSIGHT_UPLOADED_CASE__.case_id,base="/api/cases/"+id;
+global.window={fetch:async p=>new Response(fs.readFileSync(path.join(process.cwd(),"static/demo-data/mathematical-4314/waveform.bin")))};
+require("./static/demo-data/mathematical-4314/case-data.js");require("./static/js/demo-api.js");
+const id=window.__CARDIOINSIGHT_MATHEMATICAL_CASE__.case_id,base="/api/cases/"+id;
 async function req(path,method="GET",body){const r=await window.fetch(base+path,{method,body:body?JSON.stringify(body):undefined});return {status:r.status,data:await r.json()}}
 function check(ok,msg){if(!ok)throw Error(msg)}
 (async()=>{
