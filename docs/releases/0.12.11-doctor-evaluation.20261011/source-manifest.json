@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "release_id": "0.12.11-doctor-evaluation.20261011+bd0c5aba25eeacc7",
-  "source_sha256": "bd0c5aba25eeacc73aaaecedf1489ac257474f51d1421bcf39685b41c754d179",
+  "release_id": "0.12.11-doctor-evaluation.20261011+19797742c44ab260",
+  "source_sha256": "19797742c44ab2603a1c627ed0394b9276e25429ff062da0defb242ee040c9c4",
   "production_file_count": 94,
   "clinical_acceptance": false,
   "files": {
@@ -166,16 +166,16 @@
       "bytes": 15566
     },
     "static/css/desktop-workspace.css": {
-      "sha256": "b9e9b3e7825394b35f61cc9086ba165da746eab39b37d704d48733ab8c8ff892",
-      "bytes": 30831
+      "sha256": "ac5a943178e1be9ddd520caa40525ceb8dd08e1ea601c63ce29c8036cee3d3f1",
+      "bytes": 31954
     },
     "static/css/hrv-review-evidence.css": {
       "sha256": "26c2e2ba65c038d4c919b7dd2029dc857785a7cbc9f1c2b5c194882b8b3101d6",
       "bytes": 20105
     },
     "static/css/morphology-workbench.css": {
-      "sha256": "57e14d8aab64852d80284619405fc1f294af11d3c98f623bbf5d5e737152b6be",
-      "bytes": 12840
+      "sha256": "d3667d1bd3d098d9b1cc9b223d6a6d7b6915d90c3f45cdc81a803faf90f60724",
+      "bytes": 13127
     },
     "static/css/overview-workbench.css": {
       "sha256": "a8b39f93b6612f062bd01620dcf0114bc2973c40a5d2655621f3cbfe65255a94",
@@ -282,8 +282,8 @@
       "bytes": 1525
     },
     "static/js/morphology-workbench.js": {
-      "sha256": "b61836999ff2e20b270df1ec25f78a54d003bec93e10741bf4ccd39ed60baa44",
-      "bytes": 50928
+      "sha256": "fc4dba36faf22088072710b4610bede9aafcaf4894a708415d0e4327fa0c07dd",
+      "bytes": 50787
     },
     "static/js/occurrence-card.js": {
       "sha256": "c2b8ea25e2f4d86df7508160e5afe012ad2312a2f62544f84ed701d382c5538e",
@@ -358,8 +358,8 @@
       "bytes": 3572
     },
     "templates/index.html": {
-      "sha256": "9be71284055779020ebc477b7101073e3ffb072011c2b97a49412d9ba95a909c",
-      "bytes": 79805
+      "sha256": "f7a70a6a1362a06850f60038f556cca8b6150c7428892d16fa573e85163cadd4",
+      "bytes": 79916
     },
     "停止Mac评估版.command": {
       "sha256": "83196726779f732d81c4c67055da8a5aebef0e53d820a46ed882a7859b5f07ad",

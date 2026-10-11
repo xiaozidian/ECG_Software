@@ -2,9 +2,11 @@
 
 本仓库保存本机 ECG 软件源码及独立的浏览器交互 Demo。软件用于研究和工程验证，自动事件均为待医生复核的候选；本次发布不构成临床验收。
 
-当前保存的评估版为 `0.12.11-doctor-evaluation.20261011+bd0c5aba25eeacc7`。其 94 个生产文件与本机封存版本逐字节一致，完整指纹为 `bd0c5aba25eeacc73aaaecedf1489ac257474f51d1421bcf39685b41c754d179`。文件清单与验证方式见 [版本说明](docs/releases/0.12.11-doctor-evaluation.20261011/README.md) 和 [来源清单](docs/releases/0.12.11-doctor-evaluation.20261011/source-manifest.json)。
+当前仓库的界面修订为 `0.12.11-doctor-evaluation.20261011+19797742c44ab260`，94 个生产输入的完整指纹为 `19797742c44ab2603a1c627ed0394b9276e25429ff062da0defb242ee040c9c4`。本轮只调整 4 个界面文件；本机此前封存的原生包仍为 `0.12.11-doctor-evaluation.20261011+bd0c5aba25eeacc7`，原病例和已保存工作没有迁移或改写。文件清单与验证方式见 [版本说明](docs/releases/0.12.11-doctor-evaluation.20261011/README.md) 和 [来源清单](docs/releases/0.12.11-doctor-evaluation.20261011/source-manifest.json)。
 
 ## 本次交互更新
+
+- 密度界面的左上 R-R 散点随窗口高度增大；小桌面保留两幅剥离绘图区。重复指南、总数及来源统计移入详情，框选影响数量和失败反馈继续显示。窄屏模板库图表使用独立高度，避免随重绘不断增长。
 
 - 模板卡压缩重复文字、原位扩大波形；完整来源放在详情。密度分布和模板库双界面保留，单击立即选择，F 放大、Esc 返回。
 - ST 导联及报告类别局部更新，保留有效计数、布局、人工输入和未应用区间；取消、修订和选择变化会使过期请求失效。

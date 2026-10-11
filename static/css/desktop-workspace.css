@@ -22,8 +22,9 @@
   #page-edit:not(.workspace-library)>#occurrenceFilters .edit-type-dock{order:-1;display:flex;gap:2px;margin:0;border:0;border-radius:4px}
   #page-edit:not(.workspace-library)>#occurrenceFilters .edit-type-dock button{height:32px;padding:3px 8px;font-size:12px}
   #page-edit:not(.workspace-library) #editWorkbench{height:100%;min-height:0;grid-template-columns:clamp(320px,27vw,390px) minmax(0,1fr)}
-  #page-edit:not(.workspace-library) #editWorkbench .edit-left-stack{grid-template-rows:110px minmax(0,1fr)}
+  #page-edit:not(.workspace-library) #editWorkbench .edit-left-stack{grid-template-rows:clamp(190px,27dvh,300px) minmax(0,1fr)}
   #page-edit:not(.workspace-library) #editWorkbench .edit-class-panel>.edit-panel-heading{height:28px;min-height:28px;padding:3px 8px}
+  #page-edit:not(.workspace-library) #editWorkbench .edit-class-panel>.edit-panel-heading p{display:none}
   #page-edit:not(.workspace-library) #editWorkbench .edit-class-content{flex:1;min-height:0}
   #page-edit:not(.workspace-library) #editWorkbench .edit-class-content>#editScatterCanvas{height:100%!important;min-height:0;width:100%}
   #page-edit:not(.workspace-library) #editWorkbench .edit-density-panel{min-height:0;overflow:auto;overscroll-behavior:contain}
@@ -62,7 +63,12 @@
 }
 /* Keep both full source plots in view on short desktop displays. */
 @media screen and (min-width:1100px) and (max-height:800px){
+  #page-edit:not(.workspace-library) #editWorkbench .edit-left-stack{grid-template-rows:clamp(170px,24dvh,190px) minmax(0,1fr)}
   #page-edit:not(.workspace-library) #editWorkbench .morph-peeling-grid{height:284px;min-height:284px}
+  /* The mathematical Demo footer has its own budget on short desktop screens. */
+  #mathematicalDemoBoundary{font-size:12px;line-height:18px;padding:1px 12px!important}
+  body:has(#mathematicalDemoBoundary) #mainContent:has(#page-edit.active:not(.workspace-library)){height:calc(100dvh - 20px);min-height:0}
+  body:has(#mathematicalDemoBoundary) #page-edit:not(.workspace-library) #editWorkbench .edit-left-stack{grid-template-rows:clamp(150px,calc(24dvh - 20px),170px) minmax(0,1fr)}
 }
 .workspace-master-card{flex:0 0 184px;width:184px;min-width:184px;display:flex;flex-direction:column;border:1px solid #c6d8de;border-radius:5px;padding:4px;background:#fff;color:#25424d;text-align:left;cursor:pointer}
 .workspace-master-card[aria-pressed=true]{border:2px solid #078e8a;padding:3px;background:#f3faf9}
@@ -233,6 +239,10 @@
   #page-edit.workspace-library{grid-template-columns:minmax(0,1fr)}
   #page-edit.workspace-library #editLibraryWorkbench{min-width:0}
   #page-edit.workspace-library .edit-library-analytics{grid-template-columns:minmax(0,1fr)}
+  /* Explicit chart heights prevent intrinsic canvas sizes feeding back into auto rows. */
+  .workspace-library #editLibraryHistogramCanvas{height:92px!important;min-height:0;flex:0 0 92px}
+  .workspace-library #editLibraryTrendCanvas{height:80px!important;min-height:0;flex:0 0 80px}
+  .workspace-library #editLibraryScatterCanvas{height:220px!important;min-height:0;flex:0 0 220px}
   .workspace-library #editLibraryDeck{display:flex;gap:6px;overflow:auto;padding:6px;min-height:114px}
   .workspace-library .edit-library-deck-panel{min-height:150px}
   .workspace-library .edit-library-analytics .edit-library-filter-panel h2{font-size:14px}

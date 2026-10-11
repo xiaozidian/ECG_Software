@@ -194,7 +194,7 @@
           </aside>
 
           <aside class="card edit-density-panel" aria-labelledby="editDensityTitle">
-            <div class="edit-panel-heading"><div><h2 id="editDensityTitle">双导联密度 · 剥离分型</h2><p>在任一左图框选，按 6–9 移入右侧分组</p></div><span id="editMorphologyCount" class="status-pill neutral">尚未读取</span></div>
+            <div class="edit-panel-heading"><div><h2 id="editDensityTitle">双导联密度 · 剥离分型</h2></div></div>
             <div class="morph-leads"><label>左上导联<select id="morphLeadTop" aria-label="左上密度图导联"></select></label><label>左下导联<select id="morphLeadBottom" aria-label="左下密度图导联"></select></label><label>右侧导联<select id="morphLeadGroups" aria-label="右侧分组密度图导联"></select></label></div>
             <div class="morph-peeling-grid">
               <div class="morph-source-stack">
@@ -203,8 +203,8 @@
               </div>
               <div id="morphGroups" class="morph-group-stack" aria-label="剥离分组6至9"></div>
             </div>
-            <div id="morphGroupTools" class="morph-group-tools" aria-label="当前剥离组操作"><span id="morphActiveGroup">6 组 · 未保存模板</span><button id="morphGroupTemplate" type="button" disabled>设为模板</button><button id="morphGroupRestore" type="button" disabled>归还左侧</button></div>
-            <p id="morphStatus" class="morph-status" role="status" aria-live="polite">拖动框选 · 右键取消。框选后按 6–9 或点击“移入”；也可按 Escape 取消。</p>
+            <div id="morphGroupTools" class="morph-group-tools" aria-label="当前剥离组操作"><button id="morphGroupTemplate" type="button" disabled>设为模板</button><button id="morphGroupRestore" type="button" disabled>归还左侧</button></div>
+            <p id="morphStatus" class="morph-status" role="status" aria-live="polite"></p>
             <div class="morph-actions"><span id="editMorphSelectionLabel">尚未框选</span><button id="clearEditSelection" type="button" disabled>清除框选</button><button id="morphUndo" type="button" disabled>撤销剥离</button><button id="morphRetry" type="button">重新读取</button></div>
             <details class="morph-keyboard-range"><summary>键盘框选范围</summary><div><label>框选导联<select id="morphRangeLead"><option value="top">左上导联</option><option value="bottom">左下导联</option></select></label><label for="editRangeStart">横向起点 %<input id="editRangeStart" type="number" min="0" max="100" value="38"></label><label for="editRangeEnd">横向终点 %<input id="editRangeEnd" type="number" min="0" max="100" value="62"></label><label for="editRangeTop">纵向上界 %<input id="editRangeTop" type="number" min="0" max="100" value="18"></label><label for="editRangeBottom">纵向下界 %<input id="editRangeBottom" type="number" min="0" max="100" value="54"></label><output id="editRangeOutput"></output><button id="applyEditRange" type="button">应用矩形</button></div></details>
             <form id="morphTemplateForm" class="morph-template-form" hidden>
@@ -212,7 +212,7 @@
               <label>模板名称<input id="morphTemplateName" maxlength="80" required></label><label>模板家族<select id="morphTemplateFamily"></select></label>
               <div><button type="submit">保存模板</button><button id="morphTemplateCancel" type="button">取消</button></div>
             </form>
-            <details class="morph-method-details"><summary>统计口径与保存说明</summary><p id="morphMethod" class="morph-method">两导联共享剩余集合；绿→黄→红为对数密度。剥离可撤回，不删除原始心搏。分组暂存于本次页面；需要保留时请保存模板。</p></details>
+            <details class="morph-method-details"><summary>来源、操作与保存详情</summary><p class="morph-method">在任一左图框选，按 6–9 或点击“移入”分组；右键或 Escape 取消框选。分组可撤销，不改变心搏分类。</p><p class="morph-detail-stat"><span id="editMorphologyCount" class="status-pill neutral">尚未读取</span></p><p class="morph-detail-stat"><strong>当前操作组：</strong><span id="morphActiveGroup">6 组 · 未保存模板</span></p><p id="morphMethod" class="morph-method">两导联共享剩余集合；绿→黄→红为对数密度。剥离可撤回，不删除原始心搏。分组暂存于本次页面；需要保留时请保存模板。</p></details>
           </aside>
         </div>
         <div class="edit-main-stack">

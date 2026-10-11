@@ -1,12 +1,12 @@
 {
   "schema": 1,
-  "release_id": "0.12.11-doctor-evaluation.20261011+bd0c5aba25eeacc7",
-  "production_source_sha256": "bd0c5aba25eeacc73aaaecedf1489ac257474f51d1421bcf39685b41c754d179",
+  "release_id": "0.12.11-doctor-evaluation.20261011+19797742c44ab260",
+  "production_source_sha256": "19797742c44ab2603a1c627ed0394b9276e25429ff062da0defb242ee040c9c4",
   "production_files_verified": 94,
   "production_files_modified": false,
   "storage_namespace": "cardioinsight-public-math-4314-v2",
   "mathematical_source": {
-    "release_id": "0.12.11-doctor-evaluation.20261011+bd0c5aba25eeacc7",
+    "release_id": "0.12.11-doctor-evaluation.20261011+19797742c44ab260",
     "kind": "pure_mathematical",
     "case_id": "math-4314-001",
     "duration_seconds": 600,
@@ -29,7 +29,7 @@
       },
       "case-data.js": {
         "bytes": 55284,
-        "sha256": "332efb2326dbb54322a52161ab207c8446e6c02432f56028287f8475fe0a8cda"
+        "sha256": "27100fd4ac618ae9d17e62528d38422c7d521431ac02a8dc53cd1331cd89e48b"
       }
     }
   },
@@ -85,8 +85,8 @@
     },
     {
       "path": "static/css/desktop-workspace.css",
-      "production_sha256": "b9e9b3e7825394b35f61cc9086ba165da746eab39b37d704d48733ab8c8ff892",
-      "output_sha256": "b9e9b3e7825394b35f61cc9086ba165da746eab39b37d704d48733ab8c8ff892",
+      "production_sha256": "ac5a943178e1be9ddd520caa40525ceb8dd08e1ea601c63ce29c8036cee3d3f1",
+      "output_sha256": "ac5a943178e1be9ddd520caa40525ceb8dd08e1ea601c63ce29c8036cee3d3f1",
       "copy_changed": false,
       "transformations": []
     },
@@ -99,8 +99,8 @@
     },
     {
       "path": "static/css/morphology-workbench.css",
-      "production_sha256": "57e14d8aab64852d80284619405fc1f294af11d3c98f623bbf5d5e737152b6be",
-      "output_sha256": "57e14d8aab64852d80284619405fc1f294af11d3c98f623bbf5d5e737152b6be",
+      "production_sha256": "d3667d1bd3d098d9b1cc9b223d6a6d7b6915d90c3f45cdc81a803faf90f60724",
+      "output_sha256": "d3667d1bd3d098d9b1cc9b223d6a6d7b6915d90c3f45cdc81a803faf90f60724",
       "copy_changed": false,
       "transformations": []
     },
@@ -293,8 +293,8 @@
     },
     {
       "path": "static/js/morphology-workbench.js",
-      "production_sha256": "b61836999ff2e20b270df1ec25f78a54d003bec93e10741bf4ccd39ed60baa44",
-      "output_sha256": "b61836999ff2e20b270df1ec25f78a54d003bec93e10741bf4ccd39ed60baa44",
+      "production_sha256": "fc4dba36faf22088072710b4610bede9aafcaf4894a708415d0e4327fa0c07dd",
+      "output_sha256": "fc4dba36faf22088072710b4610bede9aafcaf4894a708415d0e4327fa0c07dd",
       "copy_changed": false,
       "transformations": []
     },

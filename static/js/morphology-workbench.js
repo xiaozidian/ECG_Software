@@ -168,7 +168,7 @@ const morphologyWorkbench=(()=>{
       const values=current?.groups?.slots[n]||[],saved=current?.saved[n];
       return n+' 组 · '+fmtNumber(values.length)+' 搏 · '+(saved?'已保存“'+saved.name+'”':values.length?'未保存':'空组')+' · 来源 '+label+' · '+view.groups+' · r'+(current?.revision??context().revision);
     }).join('；')+'。';
-    const impact=qs('#morphImpact');if(impact)impact.textContent=saving?'正在保存形态模板…':busy?(selecting?'正在匹配框选，暂不能移入。':'正在读取密度，暂不能分组。'):!ready?'密度依据不可用；请重新读取，版本变化时先刷新病例。':current?.linked?.phase==='loading'?'正在读取联动密度；新框选暂不可用，已匹配分组可继续。':current?.linked?.phase==='error'?'联动密度读取失败；请重新读取后框选，原分组与模板输入保留。':count?'移入将影响框选的 '+fmtNumber(count)+' 搏（'+view[selection.slot]+' · r'+current.revision+'）；只调整形态分组，心搏分类不变。':'先在任一左图框选；分组可撤销，保存模板才会保留。';
+    const impact=qs('#morphImpact');if(impact)impact.textContent=saving?'正在保存形态模板…':busy?(selecting?'正在匹配框选，暂不能移入。':'正在读取密度，暂不能分组。'):!ready?'密度依据不可用；请重新读取，版本变化时先刷新病例。':current?.linked?.phase==='loading'?'正在读取联动密度；新框选暂不可用，已匹配分组可继续。':current?.linked?.phase==='error'?'联动密度读取失败；请重新读取后框选，原分组与模板输入保留。':count?'移入将影响框选的 '+fmtNumber(count)+' 搏（'+view[selection.slot]+' · r'+current.revision+'）；只调整形态分组，心搏分类不变。':'分组暂存本页；保存模板才会保留。';
     qs('#clearEditSelection').disabled=!selection&&!box||saving;
     qs('#morphUndo').disabled=!ready||!current.groups.history.length;
     qs('#morphRetry').disabled=busy||saving;
@@ -293,7 +293,7 @@ const morphologyWorkbench=(()=>{
         delete s.saveRebase;
       }
       const edges=['top','bottom'].filter(slot=>s.data[slot]?.skipped_edges).map(slot=>view[slot]+' '+fmtNumber(s.data[slot].skipped_edges)+' 搏边界不足').join('；');
-      status(s.phase==='empty'?'当前来源集合没有心搏；请选择其他源类别或模板。':!remaining?'剩余集合为空；全部 '+fmtNumber(excluded.length)+' 搏已移入分组，可归还或撤销。':s.phase==='insufficient'?'当前 '+fmtNumber(remaining)+' 搏均缺少完整边界，无法绘制密度；可切换来源查看。':'剩余 '+fmtNumber(remaining)+' 搏；已剥离 '+fmtNumber(excluded.length)+' 搏。'+(edges?edges+'，未绘入对应导联密度。':'可在任一左图框选。'));
+      status(s.phase==='empty'?'当前来源集合没有心搏；请选择其他源类别或模板。':!remaining?'剩余集合为空；全部 '+fmtNumber(excluded.length)+' 搏已移入分组，可归还或撤销。':s.phase==='insufficient'?'当前 '+fmtNumber(remaining)+' 搏均缺少完整边界，无法绘制密度；可切换来源查看。':edges?edges+'，未绘入对应导联密度。':'');
       qs('#morphMethod').textContent='R 峰对齐 ±1s；绿→黄→红为对数密度。去固定基线，不逐搏归一化；幅度为设备单位，未作临床校准。两左图同一集合。剥离不删除心搏；分组仅暂存在本页面，保存模板才会保留。';
     }catch(error){if(token===requestToken&&isCurrent(s)){s.phase=error.code==='STALE_REVISION'?'stale':'error';status((s.phase==='stale'?'密度依据失效：':'密度读取失败：')+error.message+'。'+(s.phase==='stale'?'请刷新病例后重新复核。':'可点“重新读取”；分组与模板输入保留。'),true);s.data={}}}
     finally{if(token===requestToken&&isCurrent(s)){busy=false;controls();drawAll();notifyLinked();refreshLinked();}finishRefresh();}
@@ -406,9 +406,9 @@ const morphologyWorkbench=(()=>{
     if(!qs('#morphViewRemaining')){const b=document.createElement('button');b.type='button';b.id='morphViewRemaining';b.textContent='查看剩余';b.title='返回当前剩余集合；保留联动筛选、全部分组和模板输入';b.onclick=()=>{if(!available(current))return;clearSelection();current.viewedScope={kind:'remainder'};notifyLinked();refreshLinked();};qs('.morph-group-tools').append(b);}
     if(!linkedSubscribed&&globalThis.ECGLinkedSelection){linkedSubscribed=true;let generation=null;ECGLinkedSelection.subscribe((snap,detail)=>{if(generation===snap.selectionGeneration)return;generation=snap.selectionGeneration;if(detail?.origin!=='template.density-gate')clearSelection();refreshLinked();notifyLinked();});}
     if(!qs('#morphScope')){const scope=document.createElement('p');scope.id='morphScope';scope.className='morph-scope';scope.setAttribute('aria-label','密度集合与未保存分组');qs('#morphMethod').before(scope);}
-    if(!qs('#morphScopeSummary')){const summary=document.createElement('p');summary.id='morphScopeSummary';summary.className='morph-scope-summary';summary.setAttribute('aria-label','当前密度来源与完整集合数量');qs('.morph-leads').before(summary);}
+    if(!qs('#morphScopeSummary')){const summary=document.createElement('p');summary.id='morphScopeSummary';summary.className='morph-scope-summary';summary.setAttribute('aria-label','当前密度来源与完整集合数量');qs('#morphMethod').before(summary);}
     if(!qs('#morphGroupSources')){const sources=document.createElement('p');sources.id='morphGroupSources';sources.className='morph-group-sources';qs('#morphMethod').before(sources);}
-    qs('.morph-method-details summary').textContent='来源、统计与保存说明';
+    qs('.morph-method-details summary').textContent='来源、操作与保存详情';
     if(!qs('#morphImpact')){const impact=document.createElement('p');impact.id='morphImpact';impact.className='morph-impact';qs('.morph-actions').after(impact);}
     qs('#morphGroups').innerHTML=G.slots.map(n=>'<section class="morph-group" data-morph-group="'+n+'"><header><button type="button" data-group-select="'+n+'" aria-label="查看 '+n+' 组" aria-pressed="'+(n===6)+'"><b>'+n+'</b><span data-group-count>0搏</span><span data-group-state>空</span></button><button type="button" data-group-move="'+n+'" aria-label="移入 '+n+' 组" disabled>移入</button></header><canvas id="morphSlot'+n+'" data-morph-group-plot="'+n+'" aria-label="'+n+' 组剥离心搏密度"></canvas></section>').join('');
     for(const n of G.slots)qs('#morphSlot'+n).dataset.morphGroupPlot=String(n);
