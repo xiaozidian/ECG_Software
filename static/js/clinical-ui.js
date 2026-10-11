@@ -43,6 +43,24 @@ const clinicalUI=(()=>{
     target.innerHTML=html;
     if(legacy){const paper=target.querySelector('.hrv-paper-preview');if(paper)paper.before(legacy);else target.append(legacy);}
   }
+  function bindHrvNavigation(target,current){
+    if(target.id!=='hrvWindowPanel')return;
+    const toolbar=target.querySelector('.hrv-evidence-toolbar');if(!toolbar)return;
+    const review=target.querySelector('.hrvr-review');
+    if(review){review.id='hrvSelectedPeriodReview';review.tabIndex=-1;review.style.scrollMarginTop='68px';}
+    toolbar.insertAdjacentHTML('beforeend','<button type="button" class="button secondary" data-hrv-reference>全记录 N-N 参考</button><button type="button" class="button secondary" data-hrv-nn-settings>NN纳入范围…</button>');
+    const moveTo=node=>{if(!current()||!node?.isConnected)return;node.focus({preventScroll:true});node.scrollIntoView({block:'start'});};
+    target.querySelector('[data-hrv-reference]').onclick=()=>moveTo(hrvLegacyWeb);
+    const settings=target.querySelector('[data-hrv-nn-settings]');
+    settings.disabled=!clinicalWorkflow.writable();
+    settings.title=settings.disabled?'当前服务只读，不能修改分析参数':'打开当前病例分析参数（含 NN 纳入范围）；修改需预览并确认修订';
+    settings.onclick=()=>run(()=>{if(!current())return;beatEditor.openSettings();});
+    if(hrvLegacyWeb){
+      let back=hrvLegacyWeb.querySelector('[data-hrv-review-return]');
+      if(!back){back=document.createElement('button');back.type='button';back.className='button secondary';back.dataset.hrvReviewReturn='';back.textContent='返回时段复核';hrvLegacyWeb.querySelector('h2').after(back);}
+      back.disabled=!review;back.onclick=()=>moveTo(review);
+    }
+  }
   function composition(){
     const source=state.reportComposition||state.report?.composition||{};
     return {...source,schema_version:2,included_pages:ECGReportSections.selectedPages(source),page_selection_version:1,selected_events:source.selected_events||[],category_reviews:source.category_reviews||{},diagnosis_blocks:source.diagnosis_blocks||[],fast_slow_mode:source.fast_slow_mode||'rr',paper:{...(source.paper||{}),size:'A4',orientation:'portrait'},strip_defaults:ECGReportEngine.settings(source.strip_defaults)};
@@ -915,6 +933,7 @@ const clinicalUI=(()=>{
     try{const data=preloaded||(await ECGAnalysisConsistency.read(api,id,[basis=>endpoint('hrv-analysis',{window:windowIndex,...basis},id)]))[0];loadedBasis=ECGAnalysisConsistency.identity(data);if(!current())return;hrv=data;const model=paperModel({},data);model.report.status='draft';renderHrvTarget(target,ECGHrvReport.ui(model,data,composition().include_hrv));ECGReportPaper.number(target);
       if(state.privacySaving||state.privacyIdentityPending)target.querySelectorAll?.('.hrv-paper-preview .rp-running').forEach(header=>{const spans=header.querySelectorAll('span');if(spans[0])spans[0].textContent='患者 ID：身份更新中';if(spans[1])spans[1].textContent='姓名：身份更新中';});
       if(globalThis.ECGHrvReview){const evidenceHost=document.createElement('div');evidenceHost.className='hrv-review-host';target.querySelector('.hrv-evidence-notice')?.after(evidenceHost);ECGHrvReview.mount(evidenceHost,data,{isCurrent:current,scope:JSON.stringify([id,selector,windowIndex,data.start_s,data.end_s,data.data_version,data.analysis_basis,data.analysis_revision])});}
+      bindHrvNavigation(target,current);
       target.querySelector('.v2-hrv-window').onchange=e=>{if(!current())return;const next=Number(e.target.value);state.reportComposition=composition();state.reportComposition.hrv_window=next;dirty();run(()=>selector==='#hrvWindowPanel'?loadTrends(next):loadHrv(selector,next))};
       target.querySelector('[data-hrv-include]').onchange=e=>{if(!current())return;state.reportComposition=composition();state.reportComposition.include_hrv=e.target.checked;state.reportComposition.included_pages=state.reportComposition.included_pages.filter(k=>!k.startsWith('hrv_'));if(e.target.checked)state.reportComposition.included_pages.push('hrv_time','hrv_frequency','hrv_overview');dirty();toast(e.target.checked?'已加入主报告，请在报告页保存草稿':'已取消加入主报告，请保存草稿')};
       target.querySelector('[data-hrv-export]').disabled=Boolean(state.privacySaving||state.privacyIdentityPending);
@@ -1252,7 +1271,7 @@ const clinicalUI=(()=>{
     timebar.onchange=requestEditTime;syncEditTimeSlider();
     const overviewTime=qs('#timeSlider');if(overviewTime)qs('#waveformCanvas').parentElement.after(overviewTime);
     const h=document.createElement('article');h.id='hrvWindowPanel';h.className='card';
-    const trends=qs('#page-trends');hrvLegacyWeb=document.createElement('section');hrvLegacyWeb.className='hrv-legacy-reference';hrvLegacyWeb.setAttribute('aria-label','全记录参考与源报告对照');
+    const trends=qs('#page-trends');hrvLegacyWeb=document.createElement('section');hrvLegacyWeb.id='hrvWholeRecordReference';hrvLegacyWeb.tabIndex=-1;hrvLegacyWeb.style.scrollMarginTop='68px';hrvLegacyWeb.className='hrv-legacy-reference';hrvLegacyWeb.setAttribute('aria-label','全记录参考与源报告对照');
     hrvLegacyWeb.innerHTML='<h2>全记录参考与源报告对照</h2><p>以下全天趋势、N-N 分布与源报告对照覆盖全记录，不随上方 24 小时窗口切换；不替代当前窗口的统计。</p>';
     for(const node of [qs('#trendMetrics'),trends.querySelector(':scope > .chart-grid')])if(node)hrvLegacyWeb.append(node);
     h.append(hrvLegacyWeb);trends.append(h);

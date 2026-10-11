@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "release_id": "0.12.11-doctor-evaluation.20261011+54aaab615de4bfae",
-  "source_sha256": "54aaab615de4bfae9745804c6f5dfbedcd45d4203cc0d50f59609fc9f3f68915",
+  "release_id": "0.12.11-doctor-evaluation.20261011+805637aa415a176f",
+  "source_sha256": "805637aa415a176feb25afca77b740bb3266541e31433107cdfa047a5c519e6a",
   "production_file_count": 94,
   "clinical_acceptance": false,
   "files": {
@@ -102,8 +102,8 @@
       "sha256": "bea31d5a28a03dec00b662d13227dfe0714fca2b8db6257c08711cf554dbd68b"
     },
     "ecg_core/storage.py": {
-      "bytes": 34108,
-      "sha256": "a1ed06ef07ee20bfc92b69066bb95c266dd4365cd0c3083d8c003a3d07d91ff4"
+      "bytes": 34116,
+      "sha256": "9b5d94bfd707b08a8d9f3501eb230448810a8f72c0d3110c3263b35993e8890d"
     },
     "ecg_core/stt.py": {
       "bytes": 26362,
@@ -170,8 +170,8 @@
       "sha256": "c403a3a2d0d86be56067678b7bef0c938955fad89bcd5675aa5b1aad0354d976"
     },
     "static/css/hrv-review-evidence.css": {
-      "bytes": 12711,
-      "sha256": "23aff261cf47358a3b4bff7fbc8b17a41028325dfc0b7595d0ead9c4fb6d2b5c"
+      "bytes": 13620,
+      "sha256": "831d9436aefd8881aad841bfa5acaae0f3ad08809dab3b2f1861c4d716385654"
     },
     "static/css/morphology-workbench.css": {
       "bytes": 13642,
@@ -226,8 +226,8 @@
       "sha256": "fb20b4aa33e0cd2cc5fae8bf8a2a7968b22f8506cdc012ae507c465ea59da3ee"
     },
     "static/js/app.js": {
-      "bytes": 245630,
-      "sha256": "81b03293af15e6ea12d10c11592317837f9990968b31301358b40189c8d84707"
+      "bytes": 245778,
+      "sha256": "0ab0837e2cf56bf8477d65df2154509f03990fd91926c7f702a412de8f19abac"
     },
     "static/js/beat-editor-ui.js": {
       "bytes": 36819,
@@ -250,8 +250,8 @@
       "sha256": "cc4599329b51f7166758a4c5be4d74dabb2362d942fbabe5df3abb3894577618"
     },
     "static/js/clinical-ui.js": {
-      "bytes": 160046,
-      "sha256": "3034b9677d66d51d9edd65ff4288c5c9ff4b978830488e4acfd4e90fd25a5cb3"
+      "bytes": 161760,
+      "sha256": "9f7ec3d04b01405f2e1e4a33ba4d9f1760badf3358addbc67ab455096ae1994b"
     },
     "static/js/clinical-workflow.js": {
       "bytes": 16319,
@@ -270,8 +270,8 @@
       "sha256": "9ea00c7f4b176e3bae5e5c0111f0fcec259c77b133c36b6f096a42f4112bd4d4"
     },
     "static/js/hrv-review-evidence.js": {
-      "bytes": 10383,
-      "sha256": "c95707b509851f35d240f9bb65c18bd05e166084f627d1965938c3391e4fdac0"
+      "bytes": 11871,
+      "sha256": "d1a63aee15f44184e14207d390faea95a2ed60917fc6f4938b48f6904e5cc91d"
     },
     "static/js/linked-selection.js": {
       "bytes": 8846,
@@ -298,8 +298,8 @@
       "sha256": "be7d303f1d5e4423cd54f31015991d9aee717e57b6fcfd4e68801622123af019"
     },
     "static/js/overview-workbench.js": {
-      "bytes": 100724,
-      "sha256": "702c03a9edfc58b9aff5c7a95e71f15d419a1c395188567338229fcba3747512"
+      "bytes": 101010,
+      "sha256": "90e8e0d391defc04cf1afaba470b85f58a67ff5f8bf29b70ed4b1096820c30c9"
     },
     "static/js/read-requests.js": {
       "bytes": 2715,

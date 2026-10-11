@@ -191,7 +191,7 @@ function caseDisplayId(item) {
 
 async function api(path, options = {}) {
   if(path.startsWith("/api/cases/"))path+=(path.includes("?")?"&":"?")+"analysis=edited";
-  const requestCase=state.caseId;
+  const requestCase=state.caseId,requestCaseToken=state.caseRequestId;
   const {readLane='',...fetchOptions}=options;
   const readRequest=async signal=>{
   const response = await fetch(path, {
@@ -209,7 +209,7 @@ async function api(path, options = {}) {
   if(isWrite){globalThis.ecgChartInspection?.invalidate();reads?.clear();}
   const scope=JSON.stringify([requestCase,state.caseRequestId,state.currentPage]);
   const payload=method==='GET'&&reads?await reads.read(scope,path,readRequest,readLane,options.signal):await readRequest(options.signal);
-  if(isWrite){globalThis.ecgChartInspection?.invalidate();reads?.clear();}
+  if(isWrite){globalThis.ecgChartInspection?.invalidate();reads?.clear();if(typeof overviewWorkbench!=='undefined')overviewWorkbench.invalidateAfterWrite(requestCase,requestCaseToken);}
   if(requestCase===state.caseId&&/^(PUT|PATCH|DELETE|POST)$/.test(options.method||"")&&/\/(beat-overrides|beat-templates|annotations|patient)(\/|$)/.test(path)){
     state.reportComposer=null;
     await clinicalWorkflow.refresh(requestCase).catch(()=>{clinicalWorkflow.receive(null);toast("修改已保存，但复核状态读取失败，请刷新后继续审核","error",6000);});

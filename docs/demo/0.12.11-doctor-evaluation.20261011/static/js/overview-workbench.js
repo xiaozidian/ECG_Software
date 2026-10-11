@@ -128,6 +128,12 @@ const overviewWorkbench=(()=>{
     const focus=qs('#ovFocusContext');if(focus)focus.textContent='当前波形依据尚未核对';
     resetCoverage(message);
   }
+  function invalidateAfterWrite(caseId,caseToken){
+    if(!caseId||caseId!==state.caseId||caseToken!==state.caseRequestId)return false;
+    ui.loadToken++;
+    invalidateEvidence('病例内容已修改，请重新读取当前总览依据。');
+    return true;
+  }
   function waveformBasis(){return overviewReady&&ui.id===state.caseId&&ui.caseToken===state.caseRequestId?ui.identity:null;}
   function waveformFailed(basis){
     if(basis&&ui.identity===basis){invalidateEvidence('波形依据读取失败或已变化，请重新载入后复核。');qs('#ovStatus').innerHTML=`波形与总览尚未重新核对 · ${button('重试载入','reload')}`;}
@@ -690,5 +696,5 @@ const overviewWorkbench=(()=>{
   renderWaveform=()=>{previousWave();waveformOverlay();drawContext()};
   renderAnnotations=items=>{previousAnnotations(items.filter(x=>!x.internal).map(x=>String(x.id).startsWith('af:')?{...x,note:(x.note||'')+'（在房颤分析页编辑）'}:x));qs('#annotationList').querySelectorAll('[data-delete-annotation]').forEach(b=>{if(b.dataset.deleteAnnotation.startsWith('af:'))b.remove()})};
   document.addEventListener('DOMContentLoaded',mount);
-  return {load,draw,waveformBasis,waveformFailed,openReportEpisode};
+  return {load,draw,waveformBasis,waveformFailed,openReportEpisode,invalidateAfterWrite};
 })();

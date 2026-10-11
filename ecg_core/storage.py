@@ -455,7 +455,7 @@ class Storage(ReviewWorkflowMixin):
             raise ValueError("note 必须为文本")
         details = payload.get("details", {})
         if details:
-            if not isinstance(details,dict) or details.get("kind") not in ("ST","AT","VT","AF","AFL") or details.get("status") not in ("confirmed","excluded","pending"):
+            if not isinstance(details,dict) or details.get("kind") not in ("ST","AT","VT","AF","AFL","STRIP") or details.get("status") not in ("confirmed","excluded","pending"):
                 raise ValueError("结构化发现类型或状态无效")
             end=details.get("end_sample",sample_index)
             if type(end) is not int or end<sample_index:raise ValueError("结束位置无效")

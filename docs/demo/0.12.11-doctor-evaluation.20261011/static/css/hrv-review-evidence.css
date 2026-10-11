@@ -38,6 +38,17 @@
 .hrvr-series{color:var(--hrv-teal,#087e7e);fill:currentColor}
 .hrvr-plots figure:nth-child(2) .hrvr-series{color:var(--hrv-blue,#377da8)}
 .hrvr-empty{padding:12px 6px;color:var(--hrv-muted,#3c525f)}
+.hrvr-time-comparison{min-width:0;margin:10px 0}
+.hrvr-time-comparison h3{margin:0;font-size:14px;line-height:1.4;color:var(--hrv-ink,#24424c)}
+.hrvr-time-comparison p{margin:3px 0 6px;font-size:12px;color:var(--hrv-muted,#526d79)}
+.hrvr-time-table-scroll{min-width:0;max-width:100%;max-height:360px;overflow:auto;border:1px solid var(--hrv-line,#d8e2e7);scrollbar-color:#6daba9 #f4f7f8}
+.hrvr-time-table-scroll:focus-visible{outline:2px solid #087e7e;outline-offset:2px}
+.hrvr-time-comparison table{min-width:1120px}
+.hrvr-time-comparison th,.hrvr-time-comparison td{padding:5px 7px;white-space:nowrap}
+.hrvr-time-comparison th:nth-child(n+3),.hrvr-time-comparison td[data-hrvr-metric]{text-align:right}
+.hrvr-time-comparison [data-hrvr-time-field=label]{min-width:115px;font-weight:600}
+.hrvr-time-comparison [data-hrvr-time-field=range]{min-width:260px;white-space:normal}
+.hrvr-time-unit{font-weight:400}
 .hrvr-method{padding-top:6px;border-top:1px solid var(--hrv-line,#d8e2e7)}
 .hrvr-method summary{cursor:pointer;color:var(--hrv-teal,#075e60);font-size:12px}
 .hrvr-method p{font-size:12px;color:var(--hrv-muted,#3c525f);overflow-wrap:anywhere}
