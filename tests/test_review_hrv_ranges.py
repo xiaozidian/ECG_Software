@@ -148,7 +148,7 @@ def test_range_editor_has_only_two_cursors_and_keeps_explicit_apply():
     const make=dataset=>({dataset,style:{},addEventListener(){},setPointerCapture(){},
       closest(){return this},parentElement:{getBoundingClientRect:()=>({width:1000})}});
     const start=make({rangeDrag:'start'}),end=make({rangeDrag:'end'});
-    const from=make({bound:'start'}),to=make({bound:'end'}),output={},error={},apply={},reset={};
+    const from=make({bound:'start'}),to=make({bound:'end'}),output={},error={},apply={},reset={},cancel={};
     Object.defineProperty(output,'innerHTML',{set(value){this.textContent=value.replace(/<[^>]*>/g,'');}});
     let resizePlot,stageWidth=1000;const retainedSvg={outerHTML:''};
     const stage={getBoundingClientRect:()=>({width:stageWidth,height:210}),querySelector:()=>retainedSvg};
@@ -156,14 +156,16 @@ def test_range_editor_has_only_two_cursors_and_keeps_explicit_apply():
     const nodes={'[data-range-drag=start]':[start],'[data-range-drag=end]':[end],
       '[data-bound=start]':[from],'[data-bound=end]':[to],'[data-bound]':[from,to],
       'output':[output],'.range-error':[error],'[data-range-apply]':[apply],
-      '[data-range-reset]':[reset],'button,input':[start,end,from,to,apply,reset],'.report-range-stage':[stage]};
+      '[data-range-reset]':[reset],'[data-range-cancel]':[cancel],'button,input':[start,end,from,to,apply,reset,cancel],'.report-range-stage':[stage]};
     const handlers={},host={isConnected:true,style:{setProperty(){}},
       querySelector:s=>nodes[s]?.[0],querySelectorAll:s=>nodes[s]||[],
       addEventListener:(type,fn)=>handlers[type]=fn};
     let applied=null,resets=0;
     ECGReportRange.mount(host,{strip:{start_s:2,end_s:9},sample_index:1000},
       {start_s:0,duration_s:20,leads:{II:[0,20,0],V1:[0,-30,0],V5:[0,40,0]},
-       beats:[{sample_index:1000,class_code:'V'}]},value=>{applied=value},()=>{resets++});
+       beats:[{sample_index:1000,class_code:'V'}]},value=>{applied=value},()=>{resets++},
+      {context:'math-range-context',basis:'math-range-basis',event:{event_id:'math-range-event'}});
+    assert.equal(ECGReportRange.pending().length,0);ECGReportRange.assertApplied();
     assert.equal((host.innerHTML.match(/class="report-range-stage"/g)||[]).length,1);
     assert.equal((host.innerHTML.match(/<svg /g)||[]).length,1);
     assert.equal((host.innerHTML.match(/<polyline /g)||[]).length,3);
@@ -188,7 +190,12 @@ def test_range_editor_has_only_two_cursors_and_keeps_explicit_apply():
     assert.equal(applied,null);
     assert(output.textContent.includes('待应用区间'));
     assert(output.textContent.includes('当前已应用区间'));
+    assert.equal(ECGReportRange.pending().length,1);assert.throws(()=>ECGReportRange.assertApplied(),/尚未应用/);
+    cancel.onclick();ECGReportRange.assertApplied();assert.equal(applied,null,'cancel implicitly applied draft');assert.equal(from.value,'2.000');assert.equal(to.value,'9.000');assert.equal(ECGReportRange.pending().length,0,'cancel kept unapplied cursors');
+    from.value='3.25';from.onchange();to.value='10.75';to.onchange();
+    assert.equal(applied,null);assert.equal(ECGReportRange.pending().length,1);assert.throws(()=>ECGReportRange.assertApplied(),/尚未应用/);
     (async()=>{await apply.onclick();assert.deepEqual(applied,{range_start_s:3.25,range_end_s:10.75});
+      assert.equal(ECGReportRange.pending().length,0);ECGReportRange.assertApplied();
       await reset.onclick();assert.equal(resets,1)})().catch(e=>{console.error(e);process.exitCode=1});
     """
     subprocess.run(['node','-e',code],cwd=ROOT,check=True)

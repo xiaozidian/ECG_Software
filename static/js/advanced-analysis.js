@@ -19,7 +19,7 @@ globalThis.ECGAdvancedAnalysis=(()=>{
     const panel=retained.host.querySelector('.am-panel');if(panel)panel.open=true;
     throw Error('研究测量有未应用修改或正在计算。请回到“报告 → 报告”的研究测量区，计算并复核，或明确放弃修改后再保存、预览或导出。');
   }
-  function clear(){retained=null;}
+  function clear(){retained?.controller?.cancel();retained=null;}
   const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const titles={qtd:'QT 离散度',vcg:'推导 VCG',twa:'T 波电交替',sap:'ECG 呼吸暂停筛查',hrt:'HRT / DC'};
   const value=x=>x==null?'—':String(x);
@@ -27,11 +27,11 @@ globalThis.ECGAdvancedAnalysis=(()=>{
   function plot(points,{title='',markers=[],xy=false,other=null}={}){
     const valid=points.filter(p=>Number.isFinite(p.x)&&Number.isFinite(p.y));
     if(!valid.length)return '<p>无可绘制数据</p>';
-    const all=other?valid.concat(other):valid;
+    const all=other?valid.concat(other.filter(p=>Number.isFinite(p.x)&&Number.isFinite(p.y))):valid;
     let xmin=Math.min(0,...all.map(p=>p.x)),xmax=Math.max(1,...all.map(p=>p.x)),ymin=Math.min(0,...all.map(p=>p.y)),ymax=Math.max(1,...all.map(p=>p.y));
     if(xy){const bound=Math.max(Math.abs(xmin),Math.abs(xmax),Math.abs(ymin),Math.abs(ymax));xmin=ymin=-bound;xmax=ymax=bound;}
     const w=xy?260:650,h=xy?260:180,px=x=>45+(x-xmin)/(xmax-xmin)*(w-60),py=y=>h-30-(y-ymin)/(ymax-ymin)*(h-50);
-    const path=pts=>{let pen=false;return pts.map(p=>{if(!Number.isFinite(p.y)){pen=false;return '';}const cmd=pen?'L':'M';pen=true;return cmd+px(p.x).toFixed(2)+' '+py(p.y).toFixed(2)}).join(' ')};
+    const path=pts=>{let pen=false;return pts.map(p=>{if(!Number.isFinite(p.x)||!Number.isFinite(p.y)){pen=false;return '';}const cmd=pen?'L':'M';pen=true;return cmd+px(p.x).toFixed(2)+' '+py(p.y).toFixed(2)}).join(' ')};
     const svg=`<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(title)}"><title>${esc(title)}</title><path d="M45 20V${h-30}H${w-15}" stroke="#647882" fill="none"/><path d="M45 ${py(0)}H${w-15}" stroke="#d8e2e7"/><path d="${path(points)}" fill="none" stroke="#173b4f" stroke-width="1.4"/>${other?`<path d="${path(other)}" fill="none" stroke="#0a7676" stroke-width="1.4" stroke-dasharray="5 3"/>`:''}${markers.filter(Number.isFinite).map((m,i)=>`<path d="M${px(m)} 20V${h-30}" stroke="#a45c0a" stroke-dasharray="3 3"/><text x="${px(m)+3}" y="15" font-size="11">${i?'T终点':'Q起点'}</text>`).join('')}<g fill="#3c525f" font-size="11"><text x="43" y="${h-10}">${xmin.toFixed(0)}</text><text x="${w-15}" y="${h-10}" text-anchor="end">${xmax.toFixed(0)}</text><text x="40" y="25" text-anchor="end">${ymax.toPrecision(3)}</text><text x="40" y="${h-32}" text-anchor="end">${ymin.toPrecision(3)}</text></g></svg>`;
     return xy?svg:`<div class="am-plot-scroll" tabindex="0" role="region" aria-label="${esc(title)}，可横向滚动">${svg}</div>`;
   }
@@ -39,10 +39,10 @@ globalThis.ECGAdvancedAnalysis=(()=>{
     if(globalThis.__CARDIOINSIGHT_UPLOADED_CASE__){host.innerHTML='<p class="am-boundary">QTd / VCG / TWA / ECG 呼吸筛查需本地工作台的原始采样计算。此纯静态演示未提供计算服务，不以预设数值替代。</p>';return;}
     let result=null,derivatives=null,tab='qtd',lead='II',busy=false,requestId=0,edited=false,hrtPage=0,hrtEvent=null;
     let current=JSON.parse(JSON.stringify(options));
-    host.innerHTML=`<details class="am-panel"><summary>研究指标测量与复核 · QTd / VCG / TWA / ECG 筛查 / HRT / DC</summary><div class="am-body"><p class="am-boundary">研究与软件验证用途。自动结果未经临床验证，不生成确诊、风险等级或 AHI。VLP 所需高频信息不在当前 200 Hz 采集中。</p><form class="am-form"><fieldset><legend>QT / VCG / TWA 原始信号片段</legend><label>起点（记录后秒数）<input name="start_s" type="number" min="0" max="${Math.max(0,duration-1)}" step="1" value="${esc(current.start_s||0)}" required></label><label>分析时长（秒）<input name="duration_s" type="number" min="30" max="600" step="1" value="${esc(current.duration_s||300)}" required></label><p>自动 QT 使用片段内最多 64 个完整正常搏；TWA 使用连续 128 搏窗口。短记录按实际范围分析。</p></fieldset><fieldset><legend>ECG 周期性 RR 变化筛查</legend><label>起点（记录后秒数）<input name="sap_start_s" type="number" min="0" max="${Math.max(0,duration-1)}" value="${esc(current.sap_start_s||0)}" required></label><label>终点（留空＝记录末尾）<input name="sap_end_s" type="number" min="1" max="${duration}" value="${esc(current.sap_end_s??'')}"></label><p>5 分钟窗；范围需由医生确认，软件不推断睡眠。HRT / DC 使用全程有效正常间期。</p></fieldset><fieldset class="am-calibration"><legend>导联与幅度依据（可选）</legend><label class="am-check"><input name="use_estimate" type="checkbox" ${current.voltage_estimate?'checked':''}>使用顶部当前估算系数（非设备校准）</label><p data-am-estimate>选择后点击计算，复制当时的系数；顶部切换不改写已有结果。</p><label class="am-check"><input name="standard_leads" type="checkbox" ${current.standard_leads?'checked':''}>已核实通道为标准 I、II、V1–V6 电极位置与相同增益（仅用于启用推导 VCG）</label><label>统一系数（µV / 设备单位；留空＝未校准）<input name="uv_per_unit" type="number" min="0.000001" max="10000" step="any" value="${esc(current.voltage_estimate?'':(current.uv_per_unit??''))}"></label><label>设备校准依据<input name="calibration_note" maxlength="300" value="${esc(current.voltage_estimate?'':(current.calibration_note||''))}" placeholder="设备规格或校准记录，不是显示增益"></label></fieldset><div class="am-actions"><button type="submit">计算并复核</button><button type="button" data-reset-markers>清除人工端点并重算</button></div></form><p class="am-status" role="status" aria-live="polite">按需计算；不会修改原始 ECG 或心搏诊断。设置随报告草稿保存。</p><div class="am-results" hidden><nav aria-label="研究测量类型">${Object.entries(titles).map(([k,t])=>`<button type="button" data-am-tab="${k}" aria-pressed="${k===tab}">${t}</button>`).join('')}</nav><div class="am-content"></div></div></div></details>`;
+    host.innerHTML=`<details class="am-panel"><summary>研究指标测量与复核 · QTd / VCG / TWA / ECG 筛查 / HRT / DC</summary><div class="am-body"><p class="am-boundary">研究与软件验证用途。自动结果未经临床验证，不生成确诊、风险等级或 AHI。VLP 所需高频信息不在当前 200 Hz 采集中。</p><details class="am-settings" open><summary>参数 · 片段、校准与筛查范围</summary><form class="am-form"><fieldset><legend>QT / VCG / TWA 原始信号片段</legend><label>起点（记录后秒数）<input name="start_s" type="number" min="0" max="${Math.max(0,duration-1)}" step="1" value="${esc(current.start_s||0)}" required></label><label>分析时长（秒）<input name="duration_s" type="number" min="30" max="600" step="1" value="${esc(current.duration_s||300)}" required></label><p>自动 QT 使用片段内最多 64 个完整正常搏；TWA 使用连续 128 搏窗口。短记录按实际范围分析。</p></fieldset><fieldset><legend>ECG 周期性 RR 变化筛查</legend><label>起点（记录后秒数）<input name="sap_start_s" type="number" min="0" max="${Math.max(0,duration-1)}" value="${esc(current.sap_start_s||0)}" required></label><label>终点（留空＝记录末尾）<input name="sap_end_s" type="number" min="1" max="${duration}" value="${esc(current.sap_end_s??'')}"></label><p>5 分钟窗；范围需由医生确认，软件不推断睡眠。HRT / DC 使用全程有效正常间期。</p></fieldset><fieldset class="am-calibration"><legend>导联与幅度依据（可选）</legend><label class="am-check"><input name="use_estimate" type="checkbox" ${current.voltage_estimate?'checked':''}>使用顶部当前估算系数（非设备校准）</label><p data-am-estimate>选择后点击计算，复制当时的系数；顶部切换不改写已有结果。</p><label class="am-check"><input name="standard_leads" type="checkbox" ${current.standard_leads?'checked':''}>已核实通道为标准 I、II、V1–V6 电极位置与相同增益（仅用于启用推导 VCG）</label><label>统一系数（µV / 设备单位；留空＝未校准）<input name="uv_per_unit" type="number" min="0.000001" max="10000" step="any" value="${esc(current.voltage_estimate?'':(current.uv_per_unit??''))}"></label><label>设备校准依据<input name="calibration_note" maxlength="300" value="${esc(current.voltage_estimate?'':(current.calibration_note||''))}" placeholder="设备规格或校准记录，不是显示增益"></label></fieldset><div class="am-actions"><button type="submit">计算并复核</button><button type="button" data-reset-markers>清除人工端点并重算</button></div></form></details><div class="am-run-actions"><button type="button" data-cancel-analysis hidden>取消计算</button></div><p class="am-status" role="status" aria-live="polite">按需计算；不会修改原始 ECG 或心搏诊断。设置随报告草稿保存。</p><div class="am-results" hidden><nav aria-label="研究测量类型">${Object.entries(titles).map(([k,t])=>`<button type="button" data-am-tab="${k}" aria-pressed="${k===tab}">${t}</button>`).join('')}</nav><div class="am-content"></div></div></div></details>`;
     const form=host.querySelector('form'),status=host.querySelector('.am-status'),content=host.querySelector('.am-content');
     form.querySelector('.am-actions').insertAdjacentHTML('beforeend','<button type="button" data-discard-settings hidden>放弃未计算修改</button>');
-    const discard=host.querySelector('[data-discard-settings]');
+    const discard=host.querySelector('[data-discard-settings]'),settings=host.querySelector('.am-settings'),cancelButton=host.querySelector('[data-cancel-analysis]');
     status.textContent='按需计算；计算成功的设置才随报告草稿保存。未计算输入仅暂存在本窗口，不修改原始 ECG 或心搏诊断。';
     function restore(){
       for(const [name,fallback] of [['start_s',0],['duration_s',300],['sap_start_s',0],['sap_end_s','']])form.elements[name].value=current[name]??fallback;
@@ -54,7 +54,14 @@ globalThis.ECGAdvancedAnalysis=(()=>{
     }
     discard.onclick=()=>{if(!busy)restore();};
     function read(){const estimate=form.elements.use_estimate.checked?globalThis.ECGVoltage?.snapshot():null;if(form.elements.use_estimate.checked&&!estimate)throw Error('请先在顶部开启估算电压，或取消使用估算系数');return {...current,voltage_estimate:estimate,start_s:Number(form.elements.start_s.value),duration_s:Number(form.elements.duration_s.value),sap_start_s:Number(form.elements.sap_start_s.value),sap_end_s:form.elements.sap_end_s.value===''?null:Number(form.elements.sap_end_s.value),standard_leads:form.elements.standard_leads.checked,uv_per_unit:estimate?estimate.uv_per_unit:(form.elements.uv_per_unit.value===''?null:Number(form.elements.uv_per_unit.value)),calibration_note:estimate?ECGVoltage.note(estimate):form.elements.calibration_note.value};}
-    function lock(on){busy=on;host.querySelectorAll('button,input,select').forEach(el=>el.disabled=on);if(!on){form.elements.uv_per_unit.disabled=form.elements.calibration_note.disabled=form.elements.use_estimate.checked;}host.setAttribute('aria-busy',String(on));}
+    function lock(on){busy=on;host.querySelectorAll('button,input,select').forEach(el=>el.disabled=on);cancelButton.disabled=false;cancelButton.hidden=!on;if(!on){form.elements.uv_per_unit.disabled=form.elements.calibration_note.disabled=form.elements.use_estimate.checked;}host.setAttribute('aria-busy',String(on));}
+    function cancel(){
+      if(!busy)return;
+      requestId++;lock(false);edited=true;discard.hidden=false;settings.open=true;
+      host.querySelector('.am-results').hidden=true;
+      status.textContent='已取消本次计算；输入已保留，可重新计算。较早请求的结果不会应用。';
+    }
+    cancelButton.onclick=cancel;
     async function calculate(next){
       if(busy)return;
       if(!isCurrent()){host.querySelector('.am-results').hidden=true;status.textContent='当前页面或分析依据已变化，请先处理未应用修改，并载入最新版本后重新计算。';return;}
@@ -63,7 +70,7 @@ globalThis.ECGAdvancedAnalysis=(()=>{
         const payload=await compute(next);if(id!==requestId)return;
         if(!isCurrent()){status.textContent='页面或分析依据已变化，本次结果未应用。输入仍在本窗口暂存，返回后请重新计算。';return;}
         result=payload.advanced;derivatives=payload.derivatives;current=result.options;
-        edited=false;discard.hidden=true;
+        edited=false;discard.hidden=true;settings.open=false;
         onChange(current);host.querySelector('.am-results').hidden=false;
         status.textContent=`计算完成 · 依据 ${result.basis} · ${result.calibration} · 当前报告使用此组参数；是否已保存以报告保存状态为准。`;
         render();
@@ -115,8 +122,9 @@ globalThis.ECGAdvancedAnalysis=(()=>{
       }
       content.querySelectorAll('[data-am-print]').forEach(b=>b.onclick=()=>{if(!isCurrent()){host.querySelector('.am-results').hidden=true;status.textContent='分析依据已变化，请载入最新版本后重新计算。';return;}if(edited||busy){status.textContent='请先应用修改或放弃修改，再打印研究测量。';return;}onPrint(b.dataset.amPrint,{advanced:result,...derivatives});});
       content.querySelectorAll('[data-am-locate]').forEach(b=>b.onclick=()=>{if(isCurrent())onLocate(Number(b.dataset.amLocate),{raw:b.hasAttribute?.('data-am-raw')||false});else{host.querySelector('.am-results').hidden=true;status.textContent='分析依据已变化，请载入最新版本后重新计算。';}});
+      content.querySelectorAll('svg').forEach(svg=>{svg.setAttribute('data-inspect-chart','');svg.setAttribute('data-inspect-title',svg.getAttribute('aria-label')||titles[tab]);});
     }
-    return {pending:()=>edited||busy};
+    return {pending:()=>edited||busy,cancel};
   }
   return {mount,mountRetained,plot,pending,assertApplied,clear};
 })();

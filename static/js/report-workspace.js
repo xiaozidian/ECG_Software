@@ -5,7 +5,7 @@ globalThis.ECGReportWorkspace=(()=>{
   let filter='all',reviewFilter='all',caseId=null;
   let view={expanded:new Set(),active:null,position:null,pageOpen:new Map(),waveHeights:new Map(),termState:{}},previewToken=0;
   const boundHosts=new WeakSet();
-  const positionSelectors=['.rw-selected-strips','.rw-strip-index nav','.rw-rail nav','.rw-page-options','.rw-wave-scroll','.v2-event-list'];
+  const positionSelectors=['.v2-event-detail','.rw-selected-strips','.rw-strip-index nav','.rw-rail nav','.rw-page-options','.rw-wave-scroll','.v2-event-list'];
   let waveSvgId=0;
   // Render only the channel arrays supplied by the source. No missing lead is synthesized here.
   function reviewWaveSvg(wave,event=null){
@@ -16,6 +16,7 @@ globalThis.ECGReportWorkspace=(()=>{
   // Pointer enlargement belongs only to the visible SVG. Table inclusion stays immediate.
   function bindWavePreview(host,open,isCurrent=()=>true){
     host._rwWaveOpen=open;host._rwWaveCurrent=isCurrent;
+    if(!host.hasAttribute('tabindex'))host.setAttribute('tabindex','0');
     host.setAttribute('aria-description','波形只读复核；双击具体波形或 Shift+Enter 查看 12 导联。左侧列表单击或勾选入报。');
     if(host._rwWaveBound)return;host._rwWaveBound=true;
     host.addEventListener('click',event=>{if(event.target.closest?.('svg')&&host.contains(event.target)){event.stopPropagation();if(host._rwWaveCurrent())host.focus({preventScroll:true});}},true);
@@ -49,7 +50,7 @@ globalThis.ECGReportWorkspace=(()=>{
       if(!isCurrent()||!host.isConnected||document.querySelector('dialog[open]'))return;
       const root=host.closest('#reportV2Content')||host,position=capturePosition(root),token=++previewToken;
       position.focus=host;
-      const dialog=document.createElement('dialog');dialog.className='rw-event-preview-dialog';dialog.setAttribute('aria-labelledby','rwEventPreviewTitle');
+      const dialog=document.createElement('dialog');dialog.className='rw-event-preview-dialog';dialog.dataset.reportFullscreen='true';dialog.setAttribute('aria-labelledby','rwEventPreviewTitle');
       dialog.innerHTML=`<header><div><h2 id="rwEventPreviewTitle">12 导联事件复核</h2><p>${esc(event?.label||'连续波形')}${event?.time_s!==undefined?' · '+esc(formatElapsed(event.time_s)):''}</p></div><button type="button" data-rw-close>返回事件列表</button></header><p class="rw-hint">只读放大当前范围；关闭后返回原事件、筛选与位置。入报、诊断确认与报告审核分别操作。</p><div data-rw-preview-wave role="status">正在读取 12 导联…</div>`;
       document.body.append(dialog);dialog.querySelector('[data-rw-close]').onclick=()=>dialog.close();
       dialog.addEventListener('close',()=>{if(token===previewToken)previewToken++;dialog.remove();if(isCurrent())restorePosition(position);},{once:true});
@@ -71,6 +72,7 @@ globalThis.ECGReportWorkspace=(()=>{
     };
     host._rwOpenPreview=open;
     globalThis.ECGChartInspection?.bindSurface(host,open,{isCurrent,title:'当前事件 12 导联'});
+    bindWavePreview(host,open,isCurrent);
     return open;
   }
   function pageGroups(sections){

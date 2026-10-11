@@ -22,7 +22,7 @@
   #page-edit:not(.workspace-library)>#occurrenceFilters .edit-type-dock{order:-1;display:flex;gap:2px;margin:0;border:0;border-radius:4px}
   #page-edit:not(.workspace-library)>#occurrenceFilters .edit-type-dock button{height:32px;padding:3px 8px;font-size:12px}
   #page-edit:not(.workspace-library) #editWorkbench{height:100%;min-height:0;grid-template-columns:clamp(320px,27vw,390px) minmax(0,1fr)}
-  #page-edit:not(.workspace-library) #editWorkbench .edit-left-stack{grid-template-rows:clamp(190px,27dvh,300px) minmax(0,1fr)}
+  #page-edit:not(.workspace-library) #editWorkbench .edit-left-stack{grid-template-rows:clamp(250px,34dvh,340px) minmax(0,1fr)}
   #page-edit:not(.workspace-library) #editWorkbench .edit-class-panel>.edit-panel-heading{height:28px;min-height:28px;padding:3px 8px}
   #page-edit:not(.workspace-library) #editWorkbench .edit-class-panel>.edit-panel-heading p{display:none}
   #page-edit:not(.workspace-library) #editWorkbench .edit-class-content{flex:1;min-height:0}
@@ -34,7 +34,8 @@
   #page-edit:not(.workspace-library) #editWorkbench .edit-density-panel .edit-panel-heading p{margin:2px 0;font-size:12px}
   #page-edit:not(.workspace-library) #editWorkbench .morph-scope{font-size:12px;margin:0 0 4px;padding:3px 0}
   #page-edit:not(.workspace-library) #editWorkbench .morph-leads{margin-bottom:4px;gap:4px}
-  #page-edit:not(.workspace-library) #editWorkbench .morph-leads label{font-size:12px;gap:2px}
+  #page-edit:not(.workspace-library) #editWorkbench .morph-leads label{font-size:11px;gap:1px}
+  #page-edit:not(.workspace-library) #editWorkbench .morph-leads select{min-height:26px;height:26px;padding:2px 4px}
   #page-edit:not(.workspace-library) #editWorkbench .morph-peeling-grid{height:320px;min-height:320px}
   #page-edit:not(.workspace-library) #editWorkbench .edit-main-stack{--cluster-wave-canvas-height:221px;grid-template-rows:72px var(--cluster-gallery-height,285px) minmax(0,1fr)}
   #page-edit:not(.workspace-library) #editWorkbench .edit-gallery-panel{height:100%;overflow:auto;min-height:0;box-sizing:border-box;display:grid;grid-template-columns:minmax(240px,.9fr) minmax(0,1.3fr);grid-template-rows:28px auto 28px var(--occ-height,142px);padding-bottom:4px}
@@ -63,12 +64,12 @@
 }
 /* Keep both full source plots in view on short desktop displays. */
 @media screen and (min-width:1100px) and (max-height:800px){
-  #page-edit:not(.workspace-library) #editWorkbench .edit-left-stack{grid-template-rows:clamp(170px,24dvh,190px) minmax(0,1fr)}
+  #page-edit:not(.workspace-library) #editWorkbench .edit-left-stack{grid-template-rows:clamp(240px,35dvh,270px) minmax(0,1fr)}
   #page-edit:not(.workspace-library) #editWorkbench .morph-peeling-grid{height:284px;min-height:284px}
   /* The mathematical Demo footer has its own budget on short desktop screens. */
   #mathematicalDemoBoundary{font-size:12px;line-height:18px;padding:1px 12px!important}
   body:has(#mathematicalDemoBoundary) #mainContent:has(#page-edit.active:not(.workspace-library)){height:calc(100dvh - 20px);min-height:0}
-  body:has(#mathematicalDemoBoundary) #page-edit:not(.workspace-library) #editWorkbench .edit-left-stack{grid-template-rows:clamp(150px,calc(24dvh - 20px),170px) minmax(0,1fr)}
+  body:has(#mathematicalDemoBoundary) #page-edit:not(.workspace-library) #editWorkbench .edit-left-stack{grid-template-rows:clamp(240px,35dvh,270px) minmax(0,1fr)}
 }
 .workspace-master-card{flex:0 0 184px;width:184px;min-width:184px;display:flex;flex-direction:column;border:1px solid #c6d8de;border-radius:5px;padding:4px;background:#fff;color:#25424d;text-align:left;cursor:pointer}
 .workspace-master-card[aria-pressed=true]{border:2px solid #078e8a;padding:3px;background:#f3faf9}
@@ -116,7 +117,7 @@
   #page-edit.workspace-library .workspace-master-card{padding:3px}
   #page-edit.workspace-library .workspace-master-card[aria-pressed=true]{padding:2px}
   #page-edit.workspace-library .workspace-master-card footer{display:none}
-  #page-edit.workspace-library .edit-library-analytics{grid-area:analytics;display:grid;grid-template-columns:1fr;grid-template-rows:1fr 1fr 1fr;gap:6px;min-height:0;height:100%}
+  #page-edit.workspace-library .edit-library-analytics{grid-area:analytics;display:grid;grid-template-columns:1fr;grid-template-rows:minmax(84px,1fr) minmax(84px,1fr) 230px;gap:6px;min-height:0;height:100%;overflow:auto;overscroll-behavior:contain}
   #page-edit.workspace-library .edit-library-analytics>article{display:flex;flex-direction:column;min-height:0;padding:0;overflow:visible}
   #page-edit.workspace-library .edit-library-analytics .edit-panel-heading{height:28px;min-height:28px;box-sizing:border-box;padding:2px 8px;align-items:center}
   #page-edit.workspace-library .edit-library-analytics .edit-panel-heading h2{font-size:13px;line-height:18px}
@@ -268,4 +269,176 @@
   #mainContent>.safety-banner>.workspace-boundary summary{min-height:28px;display:flex;align-items:center}
   #mainContent>.safety-banner>.workspace-boundary[open] p{position:static;width:100%;max-width:100%;box-sizing:border-box;margin:4px 0 0;overflow-wrap:anywhere}
   #mainContent>.safety-banner>button{grid-area:close;min-width:28px;min-height:28px;padding:0;justify-self:end}
+}
+
+/* Hospital alignment: reserve plots before presentation chrome. */
+@media screen and (min-width:1001px){
+  body:has(#page-review.active.overview-workbench:not(.ov-af-mode)){overflow:hidden}
+  #mainContent:has(#page-review.active.overview-workbench:not(.ov-af-mode)){height:100dvh;min-height:0;padding-top:56px;display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden}
+  #mainContent:has(#page-review.active.overview-workbench:not(.ov-af-mode))>.safety-banner{flex:0 0 26px;min-height:26px;height:26px;box-sizing:border-box;margin:0;padding:3px 10px;font-size:12px;line-height:18px}
+  #mainContent #page-review.active.overview-workbench.ov-hospital-columns:not(.ov-af-mode){flex:1;min-height:0;display:grid;grid-template-rows:30px 84px minmax(0,1fr);gap:5px;padding:5px 10px}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .analysis-grid{grid-template-columns:minmax(0,65.5fr) minmax(0,34.5fr);height:100%;min-height:0}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .analysis-main{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(232px,1fr) 26px 274px;min-height:0;gap:4px;display:grid;height:100%;overflow:hidden}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .ov-trends{grid-template-columns:minmax(0,1fr);grid-template-rows:repeat(4,minmax(0,1fr));gap:4px;min-height:0;display:grid}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .ov-trends>.ov-lane:nth-child(n){grid-column:1;grid-row:auto}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) #waveformCard:not(.waveform-expanded){display:flex;flex-direction:column;min-height:0;overflow:visible}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) #waveformCard:not(.waveform-expanded) .waveform-title{height:26px;min-height:26px;flex:0 0 26px;padding:0 6px;gap:5px;font-size:12px;box-sizing:border-box}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) #waveformCard:not(.waveform-expanded) #waveformScroller{height:0;min-height:180px;flex:1;overflow:hidden}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) #waveformCard:not(.waveform-expanded) #waveformCanvas{height:100%!important;min-height:180px}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) #waveformCard:not(.waveform-expanded) .waveform-foot{height:22px;min-height:22px;flex:0 0 22px;box-sizing:border-box;padding:1px 6px;font-size:11px;line-height:18px;white-space:nowrap;overflow-x:auto}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .review-rail{height:100%;min-height:0}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .scatter-review-card{height:100%;min-height:0;box-sizing:border-box;display:flex;flex-direction:column}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .scatter-workspace{display:grid;grid-template-columns:minmax(0,47fr) minmax(0,53fr);min-height:0;flex:1;gap:5px}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .scatter-plot-pane{min-width:0;min-height:0;overflow:auto;display:flex;flex-direction:column}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .scatter-canvas-wrap{flex:0 0 auto;width:100%;height:auto;min-height:0;aspect-ratio:1}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) #scatterCanvas{height:100%!important;min-height:0;display:block}
+  #page-stt{padding:6px 10px}
+  #page-stt>.stt-page-heading{min-height:30px;margin-bottom:5px}
+  #page-stt.stt-review-layout .page-heading h1{font-size:18px;line-height:24px}
+  #page-stt.stt-review-layout .page-heading p{margin:0;font-size:12px}
+  #page-stt.stt-review-layout .stt-safety-strip{min-height:30px;padding:4px 8px;margin-bottom:6px;border-radius:5px;gap:7px;grid-template-columns:22px minmax(0,1fr) auto}
+  #page-stt.stt-review-layout .stt-safety-icon{height:20px;width:20px}
+  #page-stt.stt-review-layout .stt-safety-strip strong{font-size:12px}
+  #page-stt.stt-review-layout .stt-safety-strip p{font-size:11px;line-height:16px;margin:0}
+  #page-stt.stt-review-layout .stt-workbench{grid-template-columns:minmax(170px,14fr) minmax(0,70fr) minmax(230px,16fr);gap:6px;align-items:stretch;height:calc(100dvh - 198px);min-height:0;grid-template-areas:"queue analysis review";grid-template-rows:minmax(0,1fr)}
+  #page-stt.stt-review-layout .stt-analysis-column{grid-template-columns:minmax(170px,32fr) minmax(0,68fr);grid-template-rows:78px minmax(0,1fr);gap:6px;grid-template-areas:"overview overview" "trend wave";min-height:0;height:100%;align-items:stretch}
+  #page-stt.stt-review-layout .stt-overview-card{grid-area:overview;display:flex;flex-direction:column;min-height:0}
+  #page-stt.stt-review-layout .stt-overview-card canvas{height:38px;min-height:30px;flex:1}
+  #page-stt.stt-review-layout .stt-overview-card .time-slider{height:12px;min-height:12px;margin:0 6px;width:calc(100% - 12px)}
+  #page-stt.stt-review-layout .stt-trend-card{grid-area:trend;display:flex;flex-direction:column;min-height:0}
+  #page-stt.stt-review-layout .stt-waveform-card{grid-area:wave;display:flex;flex-direction:column;min-height:0}
+  #page-stt.stt-review-layout .stt-panel-header{min-height:28px;padding:3px 7px;gap:4px;box-sizing:border-box}
+  #page-stt.stt-review-layout .stt-panel-header h2{font-size:13px;line-height:18px;margin:0}
+  #page-stt.stt-review-layout .stt-panel-header p{font-size:11px;line-height:14px;margin:0}
+  #page-stt.stt-review-layout .stt-trend-rows{min-height:0;flex:1;padding:3px 5px;grid-template-rows:repeat(12,minmax(22px,1fr));gap:1px}
+  #page-stt.stt-review-layout .stt-trend-row{min-height:22px;grid-template-columns:26px minmax(0,1fr) 38px;gap:3px;grid-template-rows:minmax(0,1fr)}
+  #page-stt.stt-review-layout .stt-trend-row strong,#page-stt.stt-review-layout .stt-trend-row small{font-size:11px}
+  #page-stt.stt-review-layout .stt-trend-track,#page-stt.stt-review-layout .stt-disabled-track{height:100%;min-height:18px}
+  #page-stt.stt-review-layout .stt-waveform-toolbar{min-height:36px;padding:3px 6px;flex-wrap:wrap;gap:3px}
+  #page-stt.stt-review-layout .stt-waveform-toolbar>div:first-child{flex:1}
+  #page-stt.stt-review-layout .stt-waveform-toolbar strong{font-size:12px}
+  #page-stt.stt-review-layout .stt-waveform-toolbar small{font-size:11px}
+  #page-stt.stt-review-layout .stt-waveform-actions{gap:4px;min-width:0}
+  #page-stt.stt-review-layout .stt-waveform-actions>label{display:none}
+  #page-stt.stt-review-layout .stt-waveform-actions .lead-picker-trigger{min-width:90px;max-width:130px}
+  #page-stt.stt-review-layout #sttSelectedLeadLabel{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #page-stt.stt-review-layout .stt-current-context{padding:3px 6px;font-size:11px;line-height:15px;min-height:18px}
+  #page-stt.stt-review-layout .stt-wave-canvas-wrap{height:0;min-height:360px;flex:1}
+  #page-stt.stt-review-layout #sttWaveformCanvas{height:100%!important;min-height:360px}
+  #page-stt.stt-review-layout .stt-waveform-foot{min-height:22px;padding:2px 6px;font-size:11px;line-height:16px;flex-wrap:wrap;gap:2px}
+  #page-stt.stt-review-layout .stt-queue-panel,#page-stt.stt-review-layout .stt-review-panel{position:static;min-height:0;overflow:auto;overscroll-behavior:contain}
+  #page-stt.stt-review-layout .stt-candidate-list,#page-stt.stt-review-layout .stt-source-section{padding:6px}
+  #page-stt.stt-review-layout .stt-unavailable-state{min-height:0;padding:8px 5px;border-radius:4px}
+  #page-stt.stt-review-layout .stt-unavailable-state>span{display:none}
+  #page-stt.stt-review-layout .stt-unavailable-state strong{margin:0;font-size:12px}
+  #page-stt.stt-review-layout .stt-unavailable-state p{font-size:12px;line-height:18px;margin:4px 0 6px}
+  #page-stt.stt-review-layout .stt-source-notes blockquote{padding:5px}
+  #page-stt.stt-review-layout .stt-source-notes blockquote p{font-size:12px;line-height:18px}
+  #page-stt.stt-review-layout .stt-method-summary{padding:5px;gap:3px}
+  #page-stt.stt-review-layout .stt-method-summary div{padding:4px}
+  #page-stt.stt-review-layout .stt-method-summary dt,#page-stt.stt-review-layout .stt-method-summary dd{font-size:11px;line-height:16px}
+  #page-stt.stt-review-layout .stt-measurement-heading{padding:5px;font-size:12px}
+  #page-stt.stt-review-layout .stt-measurement-list{padding:0 5px 5px;gap:2px}
+  #page-stt.stt-review-layout .stt-measurement-list>div:not(.stt-measurement-empty){min-height:24px;padding:2px 4px;border-radius:3px;gap:5px}
+  #page-stt.stt-review-layout .stt-measurement-list :is(strong,b,small){font-size:11px}
+  #page-stt.stt-review-layout .stt-nudge-controls,#page-stt.stt-review-layout .stt-review-form{padding:5px;font-size:12px}
+  #page-stt.stt-review-layout .stt-review-form textarea{min-height:60px;max-height:100px}
+  #page-stt.stt-review-layout .stt-review-form label{font-size:12px;line-height:18px}
+  #page-stt :is(button,select){font-size:12px;min-height:26px}
+  #page-dashboard .page-heading{margin-bottom:8px}
+  #page-dashboard .dashboard-metrics{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:8px}
+  #page-dashboard .metric-card{box-shadow:none;border:0;padding:3px 0;background:none;min-height:0;flex:1}
+  #page-dashboard .metric-icon,#page-dashboard .metric-card small{display:none}
+  #page-dashboard .metric-card>div{display:flex;gap:6px;align-items:baseline}
+  #page-dashboard .metric-card strong{font-size:15px;line-height:22px}
+  #page-dashboard .metric-card span{font-size:12px}
+  #page-dashboard .dashboard-layout{grid-template-columns:minmax(0,1fr) 200px;gap:8px}
+  #page-dashboard .worklist-card .card-header{min-height:36px;padding:5px 8px}
+  #page-dashboard .worklist-card .card-header h2{font-size:14px;margin:0}
+  #page-dashboard #worklistStatus{font-size:12px;line-height:17px;margin:0}
+  #page-dashboard .data-table :is(th,td){padding:5px 7px;font-size:12px;line-height:18px}
+  #page-dashboard .patient-badge{display:none}
+  #page-dashboard .patient-cell small,#page-dashboard .hr-range small{font-size:11px;line-height:15px}
+  #page-dashboard .data-table .row-action{min-height:26px;padding:2px 6px;font-size:12px}
+  #page-dashboard .dashboard-side .quality-ring{height:auto;padding:5px}
+  #page-dashboard .quality-ring>div{height:auto;width:auto;background:none;border:0;border-radius:0;box-shadow:none}
+  #page-dashboard .quality-ring strong{font-size:18px}
+  #page-dashboard .dashboard-side .compact-card{padding:8px}
+  #page-dashboard .dashboard-side :is(p,li,span,em){font-size:12px;line-height:18px}
+  #page-settings .card-header{min-height:32px;padding:5px 8px}
+  #page-settings :is(label,button,input,select,textarea){font-size:12px;min-height:28px}
+}
+@media screen and (min-width:1001px) and (max-height:820px){
+  #mainContent #page-review.active.overview-workbench.ov-hospital-columns:not(.ov-af-mode){grid-template-rows:28px 52px minmax(0,1fr);gap:4px}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .ov-histogram>header{height:22px;min-height:22px;flex:0 0 22px}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) #ovHistogram{height:calc(100% - 22px)!important;min-height:32px}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .analysis-main{grid-template-rows:minmax(232px,1fr) 26px 274px;gap:3px}
+  #page-stt.stt-review-layout .stt-workbench{height:calc(100dvh - 198px);min-height:0}
+  #page-stt.stt-review-layout .stt-wave-canvas-wrap,#page-stt.stt-review-layout #sttWaveformCanvas{min-height:300px}
+}
+@media screen and (min-width:1001px) and (max-width:1199px){
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .analysis-grid{grid-template-columns:minmax(0,61fr) minmax(0,39fr)}
+  #page-stt.stt-review-layout .stt-workbench{grid-template-columns:150px minmax(0,1fr) 200px}
+  #page-stt.stt-review-layout .stt-analysis-column{grid-template-columns:minmax(130px,30fr) minmax(0,70fr)}
+}
+
+#page-review.overview-workbench:not(.ov-af-mode) .waveform-title-actions .lead-toolbar-group{display:flex;flex-direction:row;align-items:center;gap:4px;margin:0}
+#page-review.overview-workbench:not(.ov-af-mode) .waveform-title-actions .lead-toolbar-group>label{display:none}
+#page-review.overview-workbench:not(.ov-af-mode) .waveform-title-actions .lead-picker-trigger{min-height:24px;height:24px;padding:1px 5px;min-width:104px;max-width:135px;font-size:12px}
+#page-review.overview-workbench:not(.ov-af-mode) .waveform-title-actions .lead-picker-trigger small{display:none}
+#page-review.overview-workbench:not(.ov-af-mode) #toggleWaveformFullscreen{min-height:24px;height:24px;padding:1px 5px;font-size:12px}
+
+@media screen and (min-width:1001px){
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .ov-lane canvas{min-height:30px;height:calc(100% - 26px)!important;flex:1}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .ov-lane{min-height:0;height:100%;overflow:hidden}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .review-rail{display:flex;flex-direction:column;overflow:hidden}
+  #page-stt.stt-review-layout .stt-trend-row small{grid-column:3;grid-row:1;text-align:right}
+  #page-stt.stt-review-layout .stt-trend-track[role="button"]{min-height:20px;height:100%}
+  #page-stt.stt-review-layout .stt-current-context{flex:0 0 auto;min-height:0;max-height:110px;overflow:auto}
+  #page-stt.stt-review-layout .stt-context-landmarks{margin:3px 0;gap:4px}
+  #page-stt.stt-review-layout .stt-context-landmarks dd{margin:0}
+  #page-stt.stt-review-layout .stt-context-values{padding-top:3px;gap:1px 7px}
+  #page-stt.stt-review-layout .stt-waveform-toolbar{flex:0 0 auto;min-height:32px;flex-wrap:nowrap}
+  #page-stt.stt-review-layout .stt-waveform-toolbar>div:first-child{min-width:0}
+  #page-stt.stt-review-layout .stt-waveform-actions{flex-wrap:nowrap;max-width:none}
+  #page-stt.stt-review-layout .stt-waveform-actions .lead-picker-trigger{min-height:26px;height:26px;padding:2px 4px}
+  #page-stt.stt-review-layout .stt-waveform-actions .lead-picker-trigger small{display:none}
+  #page-stt.stt-review-layout .stt-waveform-actions .lead-picker-trigger span{max-width:82px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #page-stt.stt-review-layout .stt-waveform-foot{flex:0 0 auto}
+  #page-stt.stt-review-layout .stt-review-panel{display:block}
+  #page-stt.stt-review-layout .stt-review-form{border-left:0}
+}
+@media screen and (min-width:1001px) and (max-height:820px){
+  #page-stt.stt-review-layout .stt-current-context{max-height:72px}
+  #page-stt.stt-review-layout .stt-waveform-toolbar>div:first-child small{display:none}
+}
+
+@media screen and (min-width:1001px){
+  #page-stt.stt-review-layout .stt-waveform-toolbar{display:grid;grid-template-columns:minmax(0,1fr);gap:2px;padding:3px 5px}
+  #page-stt.stt-review-layout .stt-waveform-toolbar>div:first-child{white-space:nowrap;overflow:hidden;min-height:16px}
+  #page-stt.stt-review-layout .stt-waveform-toolbar strong{white-space:nowrap}
+  #page-stt.stt-review-layout .stt-waveform-toolbar>div:first-child small{display:none}
+  #page-stt.stt-review-layout .stt-waveform-actions{justify-content:flex-start;gap:3px;max-width:100%;overflow-x:auto}
+  #page-stt.stt-review-layout .stt-waveform-actions select{min-width:0;height:26px;padding:0 3px;max-width:124px}
+  #page-stt.stt-review-layout .stt-waveform-actions .icon-button{width:26px;height:26px;min-height:26px;padding:0}
+  #page-stt.stt-review-layout .stt-waveform-actions .button{height:26px;min-height:26px;padding:2px 4px;white-space:nowrap}
+  #page-stt.stt-review-layout .stt-waveform-foot{height:22px;min-height:22px;overflow-x:auto;flex-wrap:nowrap;white-space:nowrap;display:flex}
+}
+
+/* Keep the complete measuring band and local statistic disclosure reachable. */
+@media screen and (min-width:1001px){
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) #waveformCard:not(.waveform-expanded){overflow:visible}
+}
+@media screen and (min-width:1001px) and (max-height:820px){
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .scatter-canvas-wrap{height:min(176px,100%);aspect-ratio:auto;min-height:160px;flex:0 0 176px}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .ov-statistics{padding:4px;margin-top:2px}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .ov-statistics h2{font-size:11px;line-height:14px;margin:0 0 3px}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .ov-statistics dl{height:66px;max-height:66px;overflow:auto;overscroll-behavior:contain;margin:0;gap:3px 5px}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .ov-statistics dl>div{font-size:10px;line-height:12px}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .ov-statistics dd{font-size:11px;line-height:13px;margin:0}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .ov-statistics>details{font-size:10px;line-height:14px}
+}
+
+@media screen and (min-width:1001px) and (max-width:1199px) and (max-height:820px){
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .scatter-canvas-wrap{height:160px;flex-basis:160px}
 }

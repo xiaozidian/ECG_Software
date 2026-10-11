@@ -6,13 +6,15 @@ const source=fs.readFileSync('static/js/overview-workbench.js','utf8'),which=pro
 const helpers=source.slice(source.indexOf('  function coverageBasis('),source.indexOf('  function screenPAC('));
 const load=source.slice(source.indexOf('  async function load('),source.indexOf('  function prepare('));
 const rows=Array.from({length:119},(_,i)=>({sample_index:i*160,rr_ms:i?800:0,class_code:'N'}));
-let seconds=95,timers=[],seeks=[],focus=0,writes=0;
+let seconds=95,timers=[],seeks=[],focus=0,writes=0,navClears=0,readyRenders=0;
+const geometries=new WeakMap(),navCanvas={width:500,height:60,getContext:()=>({clearRect(){navClears++}})},navTime={textContent:'old navigation'};
 const host={innerHTML:'',querySelector:()=>({open:true}),insertAdjacentHTML:(_,html)=>host.innerHTML+=html},status={};
 const wave={scrollIntoView:()=>focus++,focus:()=>focus++},nav={...wave,innerHTML:'',hidden:true};
 const evidence={...wave,innerHTML:'',hidden:true},list={...wave,open:false,querySelector:()=>wave};
 const c={E,ECGAFCoverage:C,overviewReady:true,coverage:null,coveragePage:0,coverageBusy:false,coverageMessage:'',coverageRun:0,coverageFocus:-1,
   ui:{id:'c',af:true,revision:2,rows,rhythm:{revision:3,document:{episodes:[],bookmarks:{}}},loadToken:1},state:{caseId:'c',caseData:{}},
-  qs:key=>key==='#ovAFCoverage'?host:key==='#ovStatus'?status:key==='#ovAFGapNavigation'?nav:key==='#ovAFWindowEvidence'?evidence:key==='#ovAFWindows'?list:wave,
+  geometries,renderWaveform:()=>readyRenders++,
+  qs:key=>key==='#ovNavigator'?navCanvas:key==='#ovNavigatorTime'?navTime:key==='#ovAFCoverage'?host:key==='#ovStatus'?status:key==='#ovAFGapNavigation'?nav:key==='#ovAFWindowEvidence'?evidence:key==='#ovAFWindows'?list:wave,
   duration:()=>seconds,span:()=>[60,95],esc:String,formatElapsed:x=>'D1 '+x,
   button:(label,action,attrs='')=>`<button data-ov="${action}" ${attrs}>${label}</button>`,
   setTimeout:fn=>timers.push(fn),seek:async(...args)=>seeks.push(args),confirmRhythm:()=>writes++,
@@ -107,10 +109,12 @@ async function check(){const promise=call('checkCoverage()');assert.equal(c.cove
     c.api=path=>path.includes('/overview?')?new Promise((resolve,reject)=>finish=which==='load-failure'?reject:resolve):Promise.resolve(path.includes('/rhythm-review?')?rhythm:identity);
     // Use the actual async load body with decoding/drawing outside this test's concern.
     c.E={...E,decode:data=>data.rows,histogram:()=>[],stats:()=>({})};
+    geometries.set(navCanvas,{old:true});
     const p=call('load(true)');assert.equal(c.overviewReady,false);assert.equal(c.coverage,null);
+    assert.equal(navClears,1,'old navigator pixels were not cleared');assert.equal(geometries.has(navCanvas),false,'old navigator hit geometry remains active');assert.equal(navTime.textContent,'');
     await assert.rejects(call('checkCoverage()'),/载入/);
-    if(which==='load-failure'){finish(Error('offline'));await assert.rejects(p,/offline/);assert.equal(c.overviewReady,false);assert.match(host.innerHTML,/重试/);}
-    else{finish({...identity,rows,revision:4,duration_s:seconds});await p;assert.equal(c.overviewReady,true);assert.equal(c.ui.revision,4);assert.equal(c.coverage,null);assert.match(host.innerHTML,/尚未检查/);}
+    if(which==='load-failure'){finish(Error('offline'));await assert.rejects(p,/offline/);assert.equal(c.overviewReady,false);assert.match(host.innerHTML,/重试/);assert.equal(readyRenders,0,'failed basis load repainted waveform');}
+    else{finish({...identity,rows,revision:4,duration_s:seconds});await p;assert.equal(c.overviewReady,true);assert.equal(c.ui.revision,4);assert.equal(c.coverage,null);assert.match(host.innerHTML,/尚未检查/);assert.equal(readyRenders,1,'confirmed basis load did not repaint cached waveform');}
     return;
   }
   throw Error('unknown test '+which);

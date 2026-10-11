@@ -293,7 +293,7 @@ const clinicalUI=(()=>{
     const templateName=(state.editTemplates||[]).find(t=>String(t.id)===template)?.name;
     const sourceLabel=templateName&&editMode==='all'?templateName+' · 完整形态模板':type+' · '+modeLabel();
     qs('#editGalleryTitle').textContent=`${sourceLabel} · 全部出现记录`;
-    qs('#editGalleryDescription').textContent='点击定位；Ctrl/⌘点击或空格多选；方向键移动；右键/Shift+F10 菜单，N/S/V/X 改型须预览确认';
+    qs('#editGalleryDescription').textContent='单击查看；Ctrl/⌘点击或空格多选；方向键定位；右键改型须预览确认';
     occurrenceViewControls();
     qs('#editGalleryCount').textContent=`${g.visibleFirst}–${g.visibleLast} / ${total}`;
     syncOccurrenceJump();
@@ -333,7 +333,7 @@ const clinicalUI=(()=>{
       };
       if(reused){ECGOccurrenceCard.syncSelection(card,e,state);if(card.occurrenceWave)renderTileWave(card.occurrenceWave);continue;}
       const code=e.class_code||type,status=e.diagnosis_status==='edited'?'已修订':e.diagnosis_status==='confirmed'?'已确认':'待审核';
-      card.innerHTML=`<button type="button" class="occurrence-open" aria-label="第${n+1}条 ${esc(e.label)}，${e.beat_count}搏，${status}；点击定位，空格或Ctrl点击多选"><span class="occurrence-card-heading"><strong class="occurrence-code">${esc(code)}</strong>${e.beat_count>1?`<span class="occurrence-group-count">×${e.beat_count} 搏</span>`:''}</span><span class="occurrence-wave">读取波形…</span><span class="occurrence-card-footer"><time>${formatElapsed(e.time_s)}</time><span>${n+1}/${total}</span></span></button><input type="checkbox" hidden tabindex="-1" aria-hidden="true">`;
+      card.innerHTML=`<button type="button" class="occurrence-open" aria-label="第${n+1}条 ${esc(e.label)}，${e.beat_count}搏，${status}；单击查看大图，空格或Ctrl点击多选"><span class="occurrence-card-heading"><strong class="occurrence-code">${esc(code)}</strong>${e.beat_count>1?`<span class="occurrence-group-count">×${e.beat_count} 搏</span>`:''}</span><span class="occurrence-wave">读取波形…</span><span class="occurrence-card-footer"><time>${formatElapsed(e.time_s)}</time><span>${n+1}/${total}</span></span></button><input type="checkbox" hidden tabindex="-1" aria-hidden="true">`;
       ECGOccurrenceCard.syncSelection(card,e,state);
       let waveFailed=false;
       const selectCard=toggle=>{if(!isCurrent())return;if(toggle){const all=e.target_samples.every(s=>state.editSelectedSamples.has(s));e.target_samples.forEach(s=>all?state.editSelectedSamples.delete(s):state.editSelectedSamples.add(s));}else if(!e.target_samples.every(s=>state.editSelectedSamples.has(s)))state.editSelectedSamples=new Set(e.target_samples);state.editSelectedSample=e.sample_index;beatEditor.syncOccurrenceSelection();setEditStart(Math.max(0,e.time_s-2));renderEditScatter();
@@ -343,7 +343,7 @@ const clinicalUI=(()=>{
           loadWave:(params,signal)=>api(`/api/cases/${id}/waveform?${new URLSearchParams({...params,...waveEvidence})}`,{signal,readLane:'source-group'}),
           onLocate:time=>setEditStart(Math.max(0,time-2))});
       };
-      card.querySelector('button').onclick=ev=>{if(waveFailed){loadTileWave();return;}selectCard(Boolean(ev?.ctrlKey||ev?.metaKey));};
+      card.querySelector('button').onclick=ev=>{if(waveFailed){loadTileWave();return;}const toggle=Boolean(ev?.ctrlKey||ev?.metaKey);selectCard(toggle);if(!toggle&&isCurrent()&&card.occurrenceWave){const plot=card.querySelector('.occurrence-wave svg');if(plot)globalThis.ecgChartInspection?.open(plot,card.querySelector('button'),`${e.label} · ${formatElapsed(e.time_s)} · ${leads}`);}};
       beatEditor.registerOccurrence(card,e,{code:type,samples:async visible=>{
         if(!isCurrent())throw Error('筛选集合已变化，请重新打开菜单');
         if(visible){const view=currentGrid(),samples=[];for(let i=view.visibleFirst-1;i<view.visibleLast;i++){const row=pageCache.get(Math.floor(i/48)*48)?.[i%48];if(row)samples.push(...row.target_samples)}return [...new Set(samples)];}
@@ -778,7 +778,7 @@ const clinicalUI=(()=>{
     host.classList.toggle('report-candidate-workspace',candidates);
     qs('#page-report')?.classList.toggle('report-candidate-page',candidates);
     const dock=qs('.report-conclusion-dock');if(dock&&host.contains(dock))qs('#reportV2').after(dock);
-    if(category==='tables'){host.innerHTML=statsTable()+'<div id="reportHrvV2"></div>';await loadHrv('#reportHrvV2');return;}
+    if(category==='tables'){host.innerHTML='<section id="reportHourlyStatistics" role="region" aria-label="当前修订小时统计">正在读取小时统计…</section>'+statsTable()+'<div id="reportHrvV2"></div>';await Promise.all([loadHourlyStatistics(bodyCurrent),loadHrv('#reportHrvV2')]);return;}
     if(category==='strips'||category==='final'){
       const token=bodyToken,id=state.caseId;
       if(category==='final'){
@@ -797,7 +797,7 @@ const clinicalUI=(()=>{
       ${rateCandidates?`<label>计算序列<select id="v2Fast"><option value="rr">RR</option><option value="nn">NN</option><option value="both">RR 与 NN</option></select></label><label>心率排序<select id="v2RateSort"><option value="hr_desc" ${reportSort==='hr_desc'?'selected':''}>从快到慢</option><option value="hr_asc" ${reportSort==='hr_asc'?'selected':''}>从慢到快</option></select></label>`:''}
       <button class="button ${complete?'secondary':'primary'}" id="v2Complete" aria-pressed="${complete}" ${!reportData.category_counts[category]?'disabled':''}>${complete?'✓ 本类筛选已完成':'确认本类筛选完成'}</button></div>
       ${rateCandidates?`<div class="v2-rate-help"><p>RR / NN 单间期瞬时心率，非 7 秒平均心率。每序列最多 200 条，短记录按实显示。</p><p role="status">当前时间／序列内 ${reportData.candidate_unspaced_total} 条 · 显示 ${reportData.total} 条 · 间隔隐藏 ${reportData.candidate_hidden_count} 条。“全部候选”可恢复。</p><details><summary>间隔筛选说明</summary><p>只精简当前列表的相邻定位点，优先保留本类极值，RR / NN 分开；不保证图条无重叠，不改变统计或已选图条。柱图保留未按间隔精简的分布。回看入报图条或待应用游标时自动恢复全部候选。</p></details></div>`:''}
-      <div class="v2-event-layout"><div class="v2-event-list"><table><thead><tr><th>${rateCandidates?'序号 / 时间':'时间'}</th><th>${rateCandidates?'候选心率 / RR':'模板 / 亚型'}</th><th>入报</th></tr></thead><tbody>${items.map((e,i)=>`<tr data-preview="false"><td>${rateCandidates?`<span class="v2-candidate-rank">第 ${reportOffset+i+1} 条</span>`:''}<button data-locate="${i}" aria-current="false">${formatElapsed(e.time_s)}</button></td><td>${rateCandidates?`<strong class="v2-candidate-rate">${e.hr} bpm</strong><div>${esc(e.subtype)} ${e.rr_ms}ms</div>`:reportTemplateCell(e)}<small data-event-status>${e.beat_count} 搏 · ${e.diagnosis_status==='confirmed'?'已确认':'待诊断确认'}</small></td><td><input type="checkbox" data-include="${i}" aria-label="${formatElapsed(e.time_s)} ${esc(e.label)}入报" ${selected().some(s=>s.event_id===e.event_id&&s.basis_version===e.basis_version)?'checked':''}></td></tr>`).join('')||'<tr><td colspan="3">0 条匹配记录</td></tr>'}</tbody></table>
+      <div class="v2-event-layout"><div class="v2-event-list"><table><thead><tr><th>入报</th><th>${rateCandidates?'序号 / 时间':'时间'}</th><th>${rateCandidates?'候选心率 / RR':'模板 / 亚型'}</th></tr></thead><tbody>${items.map((e,i)=>`<tr data-preview="false"><td><input type="checkbox" data-include="${i}" aria-label="${formatElapsed(e.time_s)} ${esc(e.label)}入报" ${selected().some(s=>s.event_id===e.event_id&&s.basis_version===e.basis_version)?'checked':''}></td><td>${rateCandidates?`<span class="v2-candidate-rank">第 ${reportOffset+i+1} 条</span>`:''}<button data-locate="${i}" aria-current="false">${formatElapsed(e.time_s)}</button></td><td>${rateCandidates?`<strong class="v2-candidate-rate">${e.hr} bpm</strong><div>${esc(e.subtype)} ${e.rr_ms}ms</div>`:reportTemplateCell(e)}<small data-event-status>${e.beat_count} 搏 · ${e.diagnosis_status==='confirmed'?'已确认':'待诊断确认'}</small></td></tr>`).join('')||'<tr><td colspan="3">0 条匹配记录</td></tr>'}</tbody></table>
       <footer><button id="v2Prev" ${reportOffset===0?'disabled':''}>上一页</button><span>${reportData.total?reportOffset+1:0}–${reportOffset+items.length} / ${reportData.total}</span>${rateCandidates?`<label>页码<select id="v2ReportPage" aria-label="候选页码">${Array.from({length:pageCount},(_,i)=>`<option value="${i}" ${i===Math.floor(reportOffset/50)?'selected':''}>${i+1} / ${pageCount}</option>`).join('')}</select></label>`:''}<button id="v2Next" ${reportOffset+items.length>=reportData.total?'disabled':''}>下一页</button></footer></div>
       <div class="v2-event-detail"><div class="v2-distribution">${Object.entries(reportData.subtype_counts).map(([k,n])=>`<span>${esc(Object.fromEntries(A.patterns)[k]||k)} <b>${n}</b></span>`).join('')}<small>${rateCandidates?'RR：有效相邻心搏间期；NN：连续正常心搏且在设置范围内。这里只提供选图候选，不替代医生确认。':'连续搏数与重复节律为重叠标签，不能相加'}</small></div><div id="v2TimeDistribution"></div><div id="v2EventWave"><p class="empty-state">点击左侧事件查看完整波形</p></div><input id="v2Time" type="range" min="0" max="${state.caseData.technical.duration_seconds_raw}" step=".1" aria-label="事件连续波形时间导航"><small id="v2WaveLabel"></small></div></div>`;
     qs('.v2-category-bar').insertAdjacentHTML('beforeend',`<details class="v2-candidate-settings"><summary>${defaultStripSummary()}</summary>${stripSettingsHtml(composition().strip_defaults,'default')}</details>`);
@@ -876,6 +876,18 @@ const clinicalUI=(()=>{
       if(!current())return;
       host.textContent='连续波形读取失败，请重新选择时间或事件后重试。';throw error;
     }
+  }
+  function hourlyMatrix(stats){
+    const value=(row,key)=>key.split('.').reduce((item,part)=>item?.[part],row)??'—';
+    const fields=['total','min_hr','max_hr','avg_hr','V.total','V.single','V.couplet','V.run','V.bigeminy','V.trigeminy','S.total','S.single','S.couplet','S.run','S.bigeminy','S.trigeminy','pause','pause_over3','af'];
+    const row=(item,total=false)=>`<tr${total?' class="v2-hourly-total"':''}><th scope="row">${total?'合计':esc(item.label)}</th>${fields.map(key=>`<td>${esc(value(item,key))}</td>`).join('')}</tr>`;
+    return `<div class="v2-hourly-scroll"><table class="v2-hourly-matrix"><caption>当前修订 · 全记录小时统计（心搏数／事件次数分列，选图不改变统计）</caption><thead><tr><th rowspan="2">时段</th><th rowspan="2">心搏数</th><th colspan="3">心率 bpm</th><th colspan="6">室性：总搏数／模式次数</th><th colspan="6">室上性：总搏数／模式次数</th><th colspan="2">长 RR 次数</th><th rowspan="2">已确认房颤/扑 次数</th></tr><tr>${['最低','最高','平均','总搏数','单发','成对','短阵','二联律','三联律','总搏数','单发','成对','短阵','二联律','三联律','>2.5秒','>3秒'].map(label=>`<th>${label}</th>`).join('')}</tr></thead><tbody>${(stats.hourly||[]).map(item=>row(item)).join('')}</tbody><tfoot>${row(stats.summary||{},true)}</tfoot></table></div><details class="v2-source-summary"><summary>统计口径</summary><p>${esc(stats.method||'未知统计口径')}</p><p>短记录按实际覆盖显示；未知值留空，模式可重叠，不与总搏数相加。</p></details>`;
+  }
+  async function loadHourlyStatistics(bodyCurrent){
+    const target=qs('#reportHourlyStatistics'),id=state.caseId,scope=waveEvidenceScope;
+    const current=()=>bodyCurrent()&&scope===waveEvidenceScope&&target?.isConnected&&target===qs('#reportHourlyStatistics');
+    try{const stats=await endpoint('report-statistics',{...waveEvidence},id);if(!current())return;ECGAnalysisConsistency.assertSame(reportData,stats);target.innerHTML=hourlyMatrix(stats);}
+    catch(error){if(!current())return;target.textContent='小时统计读取失败：'+error.message;const retry=document.createElement('button');retry.type='button';retry.textContent='重试小时统计';retry.onclick=()=>{if(current())run(()=>loadHourlyStatistics(bodyCurrent));};target.append(retry);}
   }
   function statsTable(){return `<table class="v2-stats"><caption>全部已确认结果统计（图条选择不改变统计）</caption><thead><tr><th>分类</th><th>事件次数</th><th>心搏数量</th></tr></thead><tbody>${A.categories.map(([k,label])=>`<tr><td>${label}</td><td>${reportData?.confirmed_category_counts[k]??'—'}</td><td>${reportData?.confirmed_beat_counts[k]??'—'}</td></tr>`).join('')}</tbody></table><details class="v2-source-summary"><summary>源报告独立对照</summary><p>有效心搏 ${state.caseData.summary.total_beats??'—'} · 平均心率 ${state.caseData.summary.avg_hr??'—'} bpm · SDNN ${state.caseData.summary.sdnn_ms??'—'} ms</p></details>`;}
   function hrvTrendSvg(data){return `<svg class="v2-hrv-trend" viewBox="0 0 800 120" role="img" aria-label="逐小时SDNN趋势，空缺不连接">${data.hourly.map((r,i)=>{if(r.sdnn_ms===null)return '';const max=Math.max(1,...data.hourly.map(x=>x.sdnn_ms||0)),x=30+i*740/Math.max(1,data.hourly.length-1),y=100-r.sdnn_ms/max*80,prev=data.hourly[i-1];return (prev?.sdnn_ms!=null?`<path d="M${30+(i-1)*740/Math.max(1,data.hourly.length-1)} ${100-prev.sdnn_ms/max*80} L${x} ${y}" stroke="#0b7d7b"/>`:'')+`<circle cx="${x}" cy="${y}" r="3" fill="#0b7d7b"><title>${r.label} SDNN ${r.sdnn_ms} ms</title></circle>`}).join('')}</svg>`}
@@ -998,7 +1010,10 @@ const clinicalUI=(()=>{
     const evidence={};for(const key of ['analysis_basis','analysis_revision'])if(entry[key]!==undefined)evidence[key]=entry[key];
     const reviewTwelve=target.id==='v2EventWave',total=state.caseData.technical.duration_seconds_raw,padding=Math.max(0,Math.min(10,(120-entry.strip.actual_duration_s)/2));
     const pendingRange=reviewTwelve?ECGReportRange.pending().find(d=>d.event?.event_id===e.event_id&&d.basis===scope&&d.context===JSON.stringify([id,caseToken])):null;
-    const sourceStart=Number(entry.waveform?.start_s??entry.strip.start_s),sourceEnd=entry.waveform?.duration_s!=null?sourceStart+Number(entry.waveform.duration_s):Number(entry.strip.end_s??(sourceStart+Number(entry.strip.actual_duration_s))),start=reviewTwelve?Math.max(0,Math.min(sourceStart,pendingRange?.a??sourceStart)-.5):Math.max(0,Math.min(entry.strip.start_s-padding,total-30)),duration=reviewTwelve?Math.min(total-start,Math.max(sourceEnd,pendingRange?.b??sourceEnd)+.5-start):Math.min(120,total-start,Math.max(30,entry.strip.end_s-start+padding));
+    const sourceStart=Number(entry.waveform?.start_s??entry.strip.start_s),sourceEnd=entry.waveform?.duration_s!=null?sourceStart+Number(entry.waveform.duration_s):Number(entry.strip.end_s??(sourceStart+Number(entry.strip.actual_duration_s)));
+    const neededStart=Math.min(sourceStart,Number(entry.strip.start_s??sourceStart),pendingRange?.a??sourceStart),neededEnd=Math.max(sourceEnd,Number(entry.strip.end_s??sourceEnd),pendingRange?.b??sourceEnd);
+    const displayLength=Math.min(total,Math.max(15,neededEnd-neededStart+1)),displayStart=Math.max(0,Math.min((neededStart+neededEnd-displayLength)/2,total-displayLength));
+    const start=reviewTwelve?displayStart:Math.max(0,Math.min(entry.strip.start_s-padding,total-30)),duration=reviewTwelve?displayLength:Math.min(120,total-start,Math.max(30,entry.strip.end_s-start+padding));
     let wave;
     const reviewLeads=reviewTwelve?'I,II,III,aVR,aVL,aVF,V1,V2,V3,V4,V5,V6':entry.strip.leads.join(',');
     try{wave=await endpoint('waveform',{start,duration,leads:reviewLeads,filter:'raw',max_points:12000,...evidence},id);}
@@ -1020,8 +1035,8 @@ const clinicalUI=(()=>{
     ECGReportRange.mount(holder,{...entry,inReport:selected().some(s=>s.event_id===e.event_id)},wave,range=>apply(range),()=>apply(null),{context:JSON.stringify([id,caseToken]),basis:scope,event:copy(e)});
     if(reviewTwelve){
       holder.classList.add('rw-twelve-range');
-      const label=document.createElement('small');label.className='rw-review-lead-note';label.textContent=`12 导联 · ${formatElapsed(wave.start_s)} — ${formatElapsed(wave.start_s+wave.duration_s)} · ${wave.duration_s.toFixed(3)} 秒 · 入报 ${entry.strip.leads.join(' / ')} · 设备单位 u，未校准`;label.title='主图显示真实入报时间窗及前后各 0.5 秒上下文，便于直接拖动扩展；如有待应用游标，显示窗完整覆盖该暂存区间。';
-      const toolbar=document.createElement('div');toolbar.className='rw-main-range-toolbar';const navigation=qs('#v2EventNavigation');if(navigation)toolbar.append(navigation);toolbar.append(holder.querySelector('[data-range-apply]'),holder.querySelector('[data-range-reset]'));holder.querySelector('header').after(toolbar,label);
+      const label=document.createElement('small');label.className='rw-review-lead-note';label.textContent=`12 导联 · ${formatElapsed(wave.start_s)} — ${formatElapsed(wave.start_s+wave.duration_s)} · ${wave.duration_s.toFixed(3)} 秒 · 入报 ${entry.strip.leads.join(' / ')} · 设备单位 u，未校准`;label.title='主复核图显示至少15秒真实上下文（短记录按实显示），完整覆盖已应用及待应用区间；入报时长与至少5搏规则独立保留。';
+      const toolbar=document.createElement('div');toolbar.className='rw-main-range-toolbar';const navigation=qs('#v2EventNavigation');if(navigation)toolbar.append(navigation);toolbar.append(...['[data-range-apply]','[data-range-cancel]','[data-range-reset]','.range-precision'].map(selector=>holder.querySelector(selector)).filter(Boolean));holder.querySelector('header').after(toolbar,label);
       const stage=holder.querySelector('.report-range-stage');stage.setAttribute('aria-description','单击波形定位只读复核；双击具体波形打开 12 导联。入报使用左侧表行、勾选或加入报告草稿按钮。');
       function placeLeadLabels(){const plot=stage.querySelector('svg');if(!plot)return;const names=ECGChartInspection.names(wave.leads),row=plot.viewBox.baseVal.height/names.length;plot.querySelectorAll('text').forEach(text=>{const index=names.indexOf(text.textContent);if(index<0)return;text.setAttribute('x','-30');text.setAttribute('y',String((index+.55)*row));text.setAttribute('dominant-baseline','middle');text.setAttribute('font-size','12');text.setAttribute('data-review-lead-label',text.textContent);});}
       const axis=document.createElement('div');axis.className='rw-main-time-axis';axis.setAttribute('aria-label','当前真实时间窗的秒刻度');axis.innerHTML=Array.from({length:5},(_,i)=>`<span>${(wave.duration_s*i/4).toFixed(2)} s</span>`).join('');stage.after(axis);placeLeadLabels();const labelsObserver=new MutationObserver(()=>{if(!holder.isConnected){labelsObserver.disconnect();return;}placeLeadLabels();});labelsObserver.observe(stage,{childList:true});
@@ -1187,7 +1202,7 @@ const clinicalUI=(()=>{
     finally{document.removeEventListener?.('ecg-report-privacy-change',cancel);}
   }
   function bind(){
-    document.addEventListener('ecg-report-range-change',renderRangeDraftNotice);
+    document.addEventListener('ecg-report-range-change',()=>{if(state.report)renderReportShell();else renderRangeDraftNotice();});
     const more=qs('.report-more-actions');more?.addEventListener('click',event=>{if(event.target.closest('button'))more.open=false;});
     const settingsButton=qs('#openReportSettings');settingsButton.textContent='图条设置';settingsButton.addEventListener('click',event=>{event.preventDefault();event.stopImmediatePropagation();run(()=>chooseReportCategory('strips'))},true);
     const cancel=document.createElement('button');cancel.id='cancelReportExport';cancel.type='button';cancel.className='button secondary';cancel.textContent='取消导出';cancel.hidden=true;cancel.onclick=()=>cancelReportExport(true);qs('#downloadReport').after(cancel);

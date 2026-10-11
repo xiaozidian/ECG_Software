@@ -6,6 +6,7 @@
   const content=(conclusion,composition)=>JSON.stringify({conclusion,composition});
   const canApprove=(state,conclusion,ready,writable)=>Boolean(writable&&ready&&state.report&&
     !state.reportDirty&&!state.reportStale&&!state.reportSaving&&!state.reportEvidenceLoading&&!state.reportEvidenceError&&
+    !state.reportViewLoading&&!state.reportViewError&&!(globalThis.ECGReportRange?.pending?.()||[]).length&&
     !(state.reportCategoryPending||[]).length&&
     !(state.reportComposition?.diagnosis_blocks||[]).some(block=>block.needs_review)&&String(conclusion??'').trim());
   function receive(state,remote){

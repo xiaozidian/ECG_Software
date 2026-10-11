@@ -41,17 +41,20 @@ async function detail(){
 async function wave(which){
   const source=fs.readFileSync('static/js/app.js','utf8'),g=gate(),nodes=new Map(),renders=[];
   const field=which.startsWith('edit')?'editWaveform':which.startsWith('stt')?'sttWaveform':'waveform',meta=field==='waveform'?'waveMeta':field==='editWaveform'?'editWaveMeta':'sttWaveMeta';
-  const state={caseId:'A',caseRequestId:1,start:0,duration:10,filter:'raw',[field]:{old:true},waveformRequestId:0,editRequestId:0,sttRequestId:0,caseData:{technical:{duration_seconds_raw:90}},editStart:0,editDuration:20,editLead:'II',sttStart:0,sttDuration:10,leads:['II'],sttReview:{}};
+  const state={caseId:'A',caseRequestId:1,start:0,duration:10,filter:'raw',[field]:{old:true},waveformRequestId:0,editRequestId:0,sttRequestId:0,caseData:{technical:{duration_seconds_raw:90}},editStart:0,editDuration:20,editLead:'II',sttStart:0,sttDuration:10,leads:['II'],sttLeads:['II','V1'],workspaceEpoch:1,sttReview:{}};
   const $=s=>{if(!nodes.has(s))nodes.set(s,{textContent:'',value:0,setAttribute(){},getContext:()=>({clearRect(){},fillRect(){},fillText(){}}),width:500,height:200});return nodes.get(s)};
-  const ctx=vm.createContext({state,$,api:()=>g.promise,URLSearchParams,ECGAnalysisConsistency:require('../static/js/analysis-consistency.js'),withPhi:x=>x,analysisReadStatus(){},DEFAULT_PREVIEW_LEADS:['II','V1','V5'],waveformRequestLeads:()=>['II'],formatElapsed:String,
+  const ctx=vm.createContext({state,$,AbortController,api:()=>g.promise,URLSearchParams,ECGAnalysisConsistency:require('../static/js/analysis-consistency.js'),withPhi:x=>x,analysisReadStatus(){},DEFAULT_PREVIEW_LEADS:['II','V1','V5'],waveformRequestLeads:()=>['II'],formatElapsed:String,
     updateZoomControls(){},renderWaveform(){renders.push(state.waveform)},renderVisibleEvents(){},renderAnnotations(){},renderOverview(){},syncHourScatter(){}});
+  vm.runInContext(source.match(/^const ALL_LEADS = .*;$/m)[0],ctx);
   vm.runInContext(source.slice(source.indexOf('async function loadWaveform('),source.indexOf('function canvasContext(')),ctx);
   vm.runInContext(source.slice(source.indexOf('async function loadEditWaveform('),source.indexOf('function setEditStart(')),ctx);
   vm.runInContext(source.slice(source.indexOf('function sttReviewLayout('),source.indexOf('function sttLandmarkFractions(')),ctx);
   vm.runInContext(source.slice(source.indexOf('async function loadStt('),source.indexOf('function setSttStart(')),ctx);
   const result=which.startsWith('edit-load')?ctx.loadEdit():field==='editWaveform'?ctx.loadEditWaveform():field==='sttWaveform'?ctx.loadStt():ctx.loadWaveform();
   assert.equal(state[field],null,'old waveform remains editable under new cursor');
+  if(field==='sttWaveform'){assert.deepEqual(Array.from(ctx.sttVisibleLeads()),['II','V1']);assert.equal($('#sttReviewForm button[type="submit"]').disabled,true,'pending ST window remains saveable');}
   if(which.endsWith('failure')){g.reject(Error('offline'));await assert.rejects(result,/offline/);assert.match($('#'+meta).textContent,/失败|重试/);}
   else {state.caseId='B';state.caseRequestId++;g.resolve({start_s:20,duration_s:10,leads:{II:[]}});await result;assert.equal(state[field],null);assert.equal(renders.length,0);}
+  if(field==='sttWaveform'){assert.deepEqual(state.sttLeads,['II','V1']);assert.equal($('#sttReviewForm button[type="submit"]').disabled,true,'failed or stale waveform enabled save');}
 }
 const which=process.argv[2];(which.startsWith('range-')?range(which):which==='detail-loading'?detail():wave(which)).catch(e=>{console.error(e);process.exitCode=1});

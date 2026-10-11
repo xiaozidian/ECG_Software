@@ -341,3 +341,36 @@ body:has(#page-review.active) .case-workflow-context small,body:has(#page-review
   #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .ov-window-evidence>summary{padding:4px;cursor:pointer}
   #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .workspace-evidence-tabs{height:150px;min-height:0;overflow:auto}
 }
+
+/* Hospital alignment: keep every trend legible and common scatter gestures visible. */
+.ov-axis-unit{font-size:10px;font-weight:400;color:var(--ov-muted);margin-left:3px}
+.ov-scatter-tools{display:flex;flex-wrap:wrap;align-items:center;gap:4px;flex-shrink:0;font-size:11px}
+.ov-scatter-tools>div{display:flex;gap:3px;flex:1}
+.ov-scatter-tools [data-ov]{min-height:26px;padding:3px 6px;font-size:11px;white-space:nowrap}
+.ov-scatter-tools output{flex-basis:100%;height:30px;font-size:10px;line-height:15px;color:var(--ov-muted);overflow:hidden}
+@media(min-width:1001px){
+  #page-review.overview-workbench:not(.ov-af-mode) .ov-trends{grid-template-columns:minmax(0,1fr)}
+  #page-review.overview-workbench:not(.ov-af-mode) .ov-trends>.ov-lane:nth-child(n){grid-column:1;grid-row:auto}
+}
+@media(min-width:1100px){
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .analysis-main{grid-template-rows:minmax(228px,1fr) 26px clamp(232px,calc(22dvh + 38px),278px)}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .analysis-main:has(#ovLinkedDensity[open]){grid-template-rows:minmax(228px,1fr) max-content clamp(232px,calc(22dvh + 38px),278px)}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .ov-lane canvas{min-height:54px}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .scatter-plot-pane{overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;scrollbar-color:#8ba9ae #eff4f5;padding-right:2px}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .scatter-canvas-wrap{height:var(--ov-scatter-height,220px);min-height:160px;flex:none;aspect-ratio:auto}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .scatter-strip-meta{font-size:11px;height:26px}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .scatter-strip-meta strong,#page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .scatter-strip-meta small{font-size:10px}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .scatter-beat-badge{font-size:10px}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .scatter-card-header output,#page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .ov-scatter-options output,#page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .scatter-plot-foot{font-size:10px}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .ov-focus-context{white-space:normal;overflow:visible;height:auto;min-height:18px;font-size:11px;line-height:15px}
+}
+@media(max-width:680px){.ov-scatter-tools [data-ov]{min-height:36px;font-size:13px}.ov-scatter-tools output{font-size:12px;line-height:1.5}}
+
+/* Every beat keeps its real HR/RR label in a separate 26px measuring band. */
+.ov-beat-metrics{height:26px;min-height:26px;flex:0 0 26px;position:relative;overflow-x:auto;overflow-y:hidden;box-sizing:border-box;border-block:1px solid var(--ov-line);background:#f8fcfc;scrollbar-width:none}
+.ov-beat-metrics::-webkit-scrollbar{display:none}
+.ov-beat-metrics-list{height:24px;position:relative;min-width:100%}
+.ov-beat-metric{position:absolute;top:0;min-width:44px;font-size:10px;line-height:12px;color:#35616a;white-space:nowrap;font-variant-numeric:tabular-nums}
+.ov-beat-metric>span{display:block}
+.ov-beat-metrics[data-overflow=true]{box-shadow:inset -8px 0 8px -8px #078987}
+.ov-beat-metrics:focus-visible{outline:2px solid var(--ov-accent);outline-offset:-2px}

@@ -128,6 +128,25 @@ const desktopWorkspace=(()=>{
     }
     morphologyWorkbench.drawAll();
   }
+  function bindMasterInspection(host){
+    let inspectionToken=0,keyboardSelection=null;
+    host.addEventListener('keydown',event=>{keyboardSelection=event.key===' '?event.target.closest('.workspace-master-card'):null;});
+    host.addEventListener('pointerdown',()=>{keyboardSelection=null;});
+    host.addEventListener('click',event=>{
+      const card=event.target.closest('.workspace-master-card');if(!card)return;
+      const token=++inspectionToken,selectionOnly=event.ctrlKey||event.metaKey||(event.detail===0&&keyboardSelection===card);keyboardSelection=null;
+      // Keep data-edit-class bubbling to the existing selection owner.
+      if(selectionOnly)return;
+      if(host.dataset.failed==='true'){event.preventDefault();event.stopPropagation();deckKey='';renderDeck();return;}
+      const svg=card.querySelector('svg');if(!svg)return;
+      const owner={id:state.caseId,caseToken:state.caseRequestId,revision:state.caseData?.analysis_revision,lead:state.editLead,key:deckKey,deckToken,selectedClass:card.dataset.editClass,basis:{...evidence}};
+      requestAnimationFrame(()=>{
+        if(token!==inspectionToken||owner.key!==deckKey||owner.deckToken!==deckToken||!card.isConnected||!host.contains(card)||!svg.isConnected||card.querySelector('svg')!==svg||state.currentPage!=='edit'||state.editMode!=='library'||owner.id!==state.caseId||owner.caseToken!==state.caseRequestId||owner.revision!==state.caseData?.analysis_revision||owner.lead!==state.editLead||owner.selectedClass!==state.editSelectedClass||['id','caseToken','analysis_basis','analysis_revision','data_version'].some(k=>owner.basis[k]!==evidence?.[k]))return;
+        const name=card.querySelector('header strong')?.textContent||'模板代表波形',count=card.dataset.populationCount;
+        globalThis.ecgChartInspection?.open(svg,card,name+' · 完整集合 '+(count===undefined?'—':fmtNumber(Number(count)))+' 搏 · '+(card.dataset.masterKind==='class'?'分类预览，非形态模板':'形态模板代表波形'));
+      });
+    });
+  }
   function mount(){
     const page=q('#page-edit');if(!page)return;
     const boundary=q('.safety-banner>span'),details=document.createElement('details');details.className='workspace-boundary';details.innerHTML='<summary>使用与数据说明</summary><p></p>';details.querySelector('p').textContent=boundary.textContent;boundary.textContent='自动结果待复核 · 源文件只读 · 电压未校准';boundary.after(details);
@@ -142,7 +161,7 @@ const desktopWorkspace=(()=>{
     const filter=q('.edit-library-filter-panel');filter.querySelector('h2').textContent='全天心率定位';filter.querySelector('p').textContent='HR 趋势，不是形态分布';q('#editLibraryTypeStrip').hidden=true;
     q('.edit-library-density-panel').setAttribute('aria-label','当前完整集合双导联密度');q('.edit-library-density-panel figure:first-child small').textContent='完整集合';q('.edit-library-density-panel figure:nth-of-type(2) figcaption span').textContent='完整集合';
     const retry=document.createElement('button');retry.id='workspaceDensityRetry';retry.type='button';retry.textContent='重读密度';retry.onclick=()=>morphologyWorkbench.refresh(true);const densityNote=q('.edit-library-density-panel>p');retry.title=densityNote.textContent;densityNote.remove();q('.edit-library-density-panel').append(retry);
-    q('#editLibraryDeck').addEventListener('click',event=>{if(q('#editLibraryDeck').dataset.failed==='true'&&event.target.closest('.workspace-master-card')){event.preventDefault();event.stopPropagation();deckKey='';renderDeck();}});
+    bindMasterInspection(q('#editLibraryDeck'));
     new MutationObserver(schedule).observe(q('.edit-gallery-panel'),{childList:true,subtree:true});
     new MutationObserver(schedule).observe(page,{attributes:true,attributeFilter:['class']});
     new ResizeObserver(()=>{schedule();if(state.currentPage==='edit'&&state.editMode==='library'){renderEditWaveform('#editLibraryWaveformCanvas','#editLibraryWaveMeta');renderEditLibraryAnalytics();}}).observe(q('#editLibraryWorkbench'));
@@ -150,6 +169,9 @@ const desktopWorkspace=(()=>{
     setEditMode(state.editMode||'cluster',false);mountOverview();schedule();
   }
   function mountOverview(){
+    const leadGroup=q('#leadPickerButton')?.closest('.lead-toolbar-group'),waveActions=q('#waveformCard .waveform-title-actions');
+    if(leadGroup&&waveActions)waveActions.prepend(leadGroup);
+    const fullscreen=q('#toggleWaveformFullscreen');if(fullscreen)fullscreen.hidden=false;
     const rail=q('#page-review .review-rail'),cards=[...rail.querySelectorAll(':scope>.rail-card:not(.keyboard-card)')];
     const tabs=document.createElement('section');tabs.className='workspace-evidence-tabs';tabs.innerHTML='<nav role="tablist" aria-label="窗口证据"><button type="button" role="tab" aria-selected="true">当前窗口</button><button type="button" role="tab" aria-selected="false">人工标注</button></nav>';
     cards.forEach((card,i)=>{card.dataset.workspacePane=String(i);card.hidden=i!==0;tabs.append(card);});rail.append(tabs);

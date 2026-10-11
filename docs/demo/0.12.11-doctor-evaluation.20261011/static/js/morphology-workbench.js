@@ -142,9 +142,13 @@ const morphologyWorkbench=(()=>{
   }
   async function request(s,lead,payload={},gate=null,options={}){
     const params=new URLSearchParams({...s.params,lead});if(gate)params.set('gate',gate.join(','));
-    const d=await api('/api/cases/'+encodeURIComponent(s.id)+'/waveform-density?'+params,{method:'POST',...options,body:JSON.stringify({revision:s.revision,beat_revision:s.revision,...(s.basis?{analysis_basis:s.basis}:{}),...(s.analysisRevision!==undefined?{analysis_revision:s.analysisRevision}:{}),...payload})});
-    if(d.revision!==s.revision){const error=Error('心搏修订版本已变化，请刷新病例后重新框选');error.code='STALE_REVISION';throw error;}
-    if(globalThis.ECGLinkedSelection&&s.analysisRevision!==undefined?(String(d.beat_revision)!==String(s.revision)||String(d.analysis_basis)!==String(s.basis)||String(d.analysis_revision)!==String(s.analysisRevision)):(d.analysis_basis!==undefined&&String(d.analysis_basis)!==String(s.basis)||d.analysis_revision!==undefined&&String(d.analysis_revision)!==String(s.analysisRevision))){const error=Error('密度临床依据已变化，请重新读取');error.code='STALE_REVISION';throw error;}
+    // A successful save rebases this same session object. Keep the request's
+    // identity immutable so a late response cannot inherit the newer revision.
+    const expected={id:s.id,revision:s.revision,basis:s.basis,analysisRevision:s.analysisRevision},signal=options.signal||s.readController?.signal;
+    if(signal?.aborted){const error=Error('密度读取已取消');error.name='AbortError';throw error;}
+    const d=await api('/api/cases/'+encodeURIComponent(expected.id)+'/waveform-density?'+params,{method:'POST',...options,...(signal?{signal}:{}),body:JSON.stringify({revision:expected.revision,beat_revision:expected.revision,...(expected.basis?{analysis_basis:expected.basis}:{}),...(expected.analysisRevision!==undefined?{analysis_revision:expected.analysisRevision}:{}),...payload})});
+    if(d.revision!==expected.revision){const error=Error('心搏修订版本已变化，请刷新病例后重新框选');error.code='STALE_REVISION';throw error;}
+    if(globalThis.ECGLinkedSelection&&expected.analysisRevision!==undefined?(String(d.beat_revision)!==String(expected.revision)||String(d.analysis_basis)!==String(expected.basis)||String(d.analysis_revision)!==String(expected.analysisRevision)):(d.analysis_basis!==undefined&&String(d.analysis_basis)!==String(expected.basis)||d.analysis_revision!==undefined&&String(d.analysis_revision)!==String(expected.analysisRevision))){const error=Error('密度临床依据已变化，请重新读取');error.code='STALE_REVISION';throw error;}
     return d;
   }
   function controls(){
@@ -182,11 +186,13 @@ const morphologyWorkbench=(()=>{
       card.dataset.saved=String(!!saved);
       card.querySelector('[data-group-count]').textContent=fmtNumber(values.length)+'搏';
       card.querySelector('[data-group-state]').textContent=saved?'已存':values.length?'未存':'空';
-      const select=card.querySelector('[data-group-select]');select.setAttribute('aria-pressed',String(n===activeSlot));
-      select.setAttribute('aria-label','查看 '+n+' 组 · '+fmtNumber(values.length)+' 搏 · '+(saved?'已保存 '+saved.name:values.length?'未保存模板':'空组')+' · 来源 '+label);
+      const select=card.querySelector('[data-group-select]'),plot=qs('#morphSlot'+n),groupLabel='查看 '+n+' 组 · '+fmtNumber(values.length)+' 搏 · '+(saved?'已保存 '+saved.name:values.length?'未保存模板':'空组')+' · 来源 '+label;
+      select.setAttribute('aria-pressed',String(n===activeSlot));select.setAttribute('aria-label',groupLabel);
+      plot.setAttribute('aria-pressed',String(n===activeSlot));plot.setAttribute('aria-label',groupLabel+' · '+view.groups+'；单击或 Enter 查看同组联动');
       const move=card.querySelector('[data-group-move]');move.disabled=!ready||!count||!!saved;
       move.title=saved?'已保存的组不能追加；可归还左侧后重新建组':!ready?'请等待读取完成；失败时重新读取':!count?'请先框选心搏':'将 '+fmtNumber(count)+' 搏移入 '+n+' 组 · r'+current.revision+'；心搏分类不变';
       select.title=n+' 组 · '+fmtNumber(values.length)+' 搏 · '+(saved?'已保存 '+saved.name:values.length?'未保存模板':'空组')+' · 来源 '+label+' · '+view.groups+' · r'+(current?.revision??context().revision);
+      plot.title=select.title+'；单击查看同组，不修改成员或模板输入';
     });
     const saved=current?.saved[activeSlot],populated=!!current?.groups?.slots[activeSlot]?.length;
     qs('#morphActiveGroup').textContent=activeSlot+' 组 · '+fmtNumber(current?.groups?.slots[activeSlot]?.length||0)+' 搏 · '+view.groups+' · '+(saved?'已保存':populated?'未保存模板':'空组');
@@ -229,7 +235,8 @@ const morphologyWorkbench=(()=>{
     const s=current;
     for(const slot of ['top','bottom']){
       const linked=!!s?.linked,d=sourceDensity(s,slot);draw(sourceCanvas(slot),d,linked?(s.linked.phase==='loading'?'正在统计联动选集…':'联动读取失败 · 原分组保留'):busy?'正在统计…':s?.phase==='stale'?'依据失效 · 刷新病例':s?.phase==='error'?'读取失败 · 重新读取':'尚未读取');
-      qs('[data-morph-count="'+slot+'"]').textContent=d?fmtNumber(d.included)+' 搏':'';
+      const count=qs('[data-morph-count="'+slot+'"]');count.textContent=d?fmtNumber(d.included)+' / '+fmtNumber(d.total)+' 搏':'';
+      count.title=d?'参与叠加 '+fmtNumber(d.included)+' / 当前集合 '+fmtNumber(d.total)+' 搏；边界不足 '+fmtNumber(d.skipped_edges)+' 搏':'';
       qs(slot==='top'?'#editDensityPrimaryLabel':'#morphSecondaryLabel').textContent=view[slot]+' · '+(linked?'联动 '+(s.viewedScope?.kind==='group'?s.viewedScope.slot+'组':'剩余'):'剩余心搏');
     }
     for(const n of G.slots)draw(qs('#morphSlot'+n),s?.data[n],s?.groups?.slots[n]?.length?(busy?'正在统计…':s?.phase==='stale'?'依据失效':s?.phase==='error'?'读取失败':'尚未读取'):'空组 · 按 '+n);
@@ -244,9 +251,20 @@ const morphologyWorkbench=(()=>{
   }
   async function refresh(force=false){
     if(!state.caseId||state.currentPage!=='edit'||!qs('#morphGroups'))return;
-    const c=context(),k=key(c);
+    const c=context(),k=key(c),linkedScope=globalThis.ECGLinkedSelection?.snapshot().scope;
+    // The occurrence index supplies the complete clinical identity. After a
+    // beat edit, an old report basis is not a substitute for that fresh read.
+    const awaitingEvidence=globalThis.ECGLinkedSelection&&(!c.basis||!Number.isSafeInteger(c.analysisRevision)||!linkedScope||linkedScope.caseId!==c.id||linkedScope.caseToken!==c.caseToken||String(linkedScope.analysis_basis)!==String(c.basis)||String(linkedScope.analysis_revision)!==String(c.analysisRevision)||String(linkedScope.beatRevision)!==String(c.revision));
+    const awaitingSave=saving&&(!saveReload||c.analysisRevision===saveReload.session.analysisRevision);
+    if(awaitingEvidence||awaitingSave){
+      if(current)current.evidencePending=true;
+      current?.readController?.abort();globalThis.ECGLinkedSelection?.cancelLane('template.density');
+      requestToken++;selectionToken++;selecting=false;busy=!saving;controls();drawAll();notifyLinked();
+      status(saving?'模板正在保存并核对最新依据；原分组与输入保留。':'正在等待当前病例的最新密度依据；原分组与输入保留。');return;
+    }
     if(leadPickerOwner&&(leadPickerOwner.key!==k||leadPickerOwner.session.caseToken!==c.caseToken))closeLeadPicker();
-    if(current?.key===k&&current.caseToken===c.caseToken&&!force&&current.analysisRevision===c.analysisRevision&&!['error','stale'].includes(current.phase)){drawAll();controls();notifyLinked();refreshLinked();return;}
+    if(current?.key===k&&current.caseToken===c.caseToken&&!force&&current.analysisRevision===c.analysisRevision&&!current.evidencePending&&!['error','stale'].includes(current.phase)){drawAll();controls();notifyLinked();refreshLinked();return;}
+    current?.readController?.abort();
     if(current?.key!==k||current.caseToken!==c.caseToken){
       const carry=ownSaveTransition(c),receipt=saveReload;clearSelection();
       if(carry){
@@ -259,17 +277,19 @@ const morphologyWorkbench=(()=>{
       sessions.set(k,current);
     }
     while(sessions.size>6)sessions.delete(sessions.keys().next().value);
-    Object.assign(current,c);
-    const s=current,token=++requestToken;let finishRefresh;s.refreshDone=new Promise(resolve=>{finishRefresh=resolve});selectionToken++;selecting=false;busy=true;s.phase='loading';s.data={};s.linked=null;globalThis.ECGLinkedSelection?.cancelLane('template.density');controls();drawAll();notifyLinked();status('正在统计完整心搏集合…');
+    Object.assign(current,c,{evidencePending:false});
+    const s=current,token=++requestToken;
+    s.readController=typeof globalThis.AbortController==='function'?new globalThis.AbortController():null;s.pending=new Map();
+    let finishRefresh;s.refreshDone=new Promise(resolve=>{finishRefresh=resolve});selectionToken++;selecting=false;busy=true;s.phase='loading';s.data={};s.linked=null;globalThis.ECGLinkedSelection?.cancelLane('template.density');controls();drawAll();notifyLinked();status('正在统计完整心搏集合…');
     try{
-      // Unique leads run together. Reuse in-flight work during a refresh and show
-      // each source as soon as it arrives rather than waiting for every group.
-      s.pending ||= new Map();
+      // Unique leads run together within this refresh. An obsolete refresh
+      // cannot delete or reuse a newer refresh's pending work.
+      const pending=s.pending;
       const needed=new Set([view.top,view.bottom]);if(Object.values(s.groups?.slots||{}).some(v=>v.length))needed.add(view.groups);
       await Promise.all([...needed].map(async lead=>{
         if(!s.base[lead]){
-          if(!s.pending.has(lead))s.pending.set(lead,request(s,lead).finally(()=>s.pending.delete(lead)));
-          const d=await s.pending.get(lead);if(token!==requestToken||!isCurrent(s))return;
+          if(!pending.has(lead))pending.set(lead,request(s,lead).finally(()=>pending.delete(lead)));
+          const d=await pending.get(lead);if(token!==requestToken||!isCurrent(s))return;
           if(s.saveRebase&&!sameSamples(d.population_samples,s.saveRebase.population)){const error=Error('保存后来源心搏成员已变化，原分组保留待复核');error.code='STALE_REVISION';throw error;}
           if(!s.groups)s.groups=new G.Groups(d.population_samples);
           s.limits[lead]=d.amplitude_limit;s.base[lead]=d;
@@ -344,7 +364,7 @@ const morphologyWorkbench=(()=>{
     let returnFocus=false,focusMoved=false,committed=false,receipt=null;
     const trackFocus=event=>{if(event.target!==document.body&&!form.contains(event.target))focusMoved=true;};
     document.addEventListener('focusin',trackFocus);
-    saving=true;controls();
+    saving=true;s.readController?.abort();globalThis.ECGLinkedSelection?.cancelLane('template.density');requestToken++;selectionToken++;controls();
     try{
       const note='密度图 '+n+' 组；'+lead+' 导联；形态分组，未修改心搏分类';
       const payload=existing?{name,rhythm_family:family,note}:{name,rhythm_family:family,lead,source_class:s.source,sample_indices:samples,revision:s.revision,note};
@@ -374,7 +394,7 @@ const morphologyWorkbench=(()=>{
     return {key:current?.key,session:current,caseToken:state.caseRequestId,view:{...view},linkedViewedScope:{...current?.viewedScope||{kind:'remainder'}},selection:selection?{slot:selection.slot,samples:[...selection.samples]}:null,box:box?{slot:box.slot,points:box.points.map(p=>({...p}))}:null,activeSlot,formSlot,formOpen:!qs('#morphTemplateForm').hidden,name:qs('#morphTemplateName').value,family:qs('#morphTemplateFamily').value,range:['morphRangeLead','editRangeStart','editRangeEnd','editRangeTop','editRangeBottom'].map(id=>qs('#'+id).value),rangeOpen:qs('.morph-keyboard-range').open};
   }
   function resetView(){
-    closeLeadPicker();
+    closeLeadPicker();current?.readController?.abort();
     requestToken++;selectionToken++;current=null;saveReload=null;busy=false;selecting=false;sessions.clear();
     globalThis.ECGLinkedSelection?.cancelLane('template.density');notifyLinked();
     clearSelection();closeForm();activeSlot=6;Object.assign(view,{top:'II',bottom:'V1',groups:'II'});
@@ -401,6 +421,11 @@ const morphologyWorkbench=(()=>{
     else closeForm();
     controls();drawAll();notifyLinked();refreshLinked();
   }
+  function viewGroup(n){
+    if(!G.slots.includes(n))return;
+    if(!current||!isCurrent(current)){selectionUnavailable(current);return;}
+    clearSelection();activeSlot=n;current.viewedScope={kind:'group',slot:n};controls();notifyLinked();refreshLinked();
+  }
   function mount(){
     if(!qs('#morphGroups'))return;
     if(!qs('#morphViewRemaining')){const b=document.createElement('button');b.type='button';b.id='morphViewRemaining';b.textContent='查看剩余';b.title='返回当前剩余集合；保留联动筛选、全部分组和模板输入';b.onclick=()=>{if(!available(current))return;clearSelection();current.viewedScope={kind:'remainder'};notifyLinked();refreshLinked();};qs('.morph-group-tools').append(b);}
@@ -411,7 +436,10 @@ const morphologyWorkbench=(()=>{
     qs('.morph-method-details summary').textContent='来源、操作与保存详情';
     if(!qs('#morphImpact')){const impact=document.createElement('p');impact.id='morphImpact';impact.className='morph-impact';qs('.morph-actions').after(impact);}
     qs('#morphGroups').innerHTML=G.slots.map(n=>'<section class="morph-group" data-morph-group="'+n+'"><header><button type="button" data-group-select="'+n+'" aria-label="查看 '+n+' 组" aria-pressed="'+(n===6)+'"><b>'+n+'</b><span data-group-count>0搏</span><span data-group-state>空</span></button><button type="button" data-group-move="'+n+'" aria-label="移入 '+n+' 组" disabled>移入</button></header><canvas id="morphSlot'+n+'" data-morph-group-plot="'+n+'" aria-label="'+n+' 组剥离心搏密度"></canvas></section>').join('');
-    for(const n of G.slots)qs('#morphSlot'+n).dataset.morphGroupPlot=String(n);
+    for(const n of G.slots){
+      const canvas=qs('#morphSlot'+n);canvas.dataset.morphGroupPlot=String(n);canvas.tabIndex=0;canvas.setAttribute('role','button');
+      canvas.addEventListener('keydown',event=>{if(event.key!=='Enter'&&event.key!==' ')return;event.preventDefault();event.stopPropagation();viewGroup(n);});
+    }
     for(const [id,slot] of [['morphLeadTop','top'],['morphLeadBottom','bottom'],['morphLeadGroups','groups']]){
       const el=qs('#'+id);el.innerHTML=leads.map(l=>'<option value="'+l+'">'+l+'</option>').join('');el.value=view[slot];
       el.onchange=()=>{view[slot]=el.value;clearSelection();closeForm();refresh(true)};
@@ -420,9 +448,10 @@ const morphologyWorkbench=(()=>{
     qs('#morphTemplateFamily').innerHTML=['自定义','单发','成对','连续三发','连续多发','房速','室速','二联律','三联律(NNP)','三联律(NPP)','四联律','全部'].map(x=>'<option>'+esc(x)+'</option>').join('');
     qs('#morphTemplateForm').onsubmit=saveTemplate;qs('#morphTemplateCancel').onclick=()=>closeForm(true);
     qs('#morphGroups').onclick=event=>{
+      const plot=event.target.closest('[data-morph-group-plot]');if(plot){viewGroup(Number(plot.dataset.morphGroupPlot));return;}
       const b=event.target.closest('button');if(!b)return;
       if(b.dataset.groupMove)move(Number(b.dataset.groupMove)).catch(handleError);
-      if(b.dataset.groupSelect){clearSelection();activeSlot=Number(b.dataset.groupSelect);if(current)current.viewedScope={kind:'group',slot:activeSlot};controls();notifyLinked();refreshLinked();}
+      if(b.dataset.groupSelect)viewGroup(Number(b.dataset.groupSelect));
     };
     qs('#morphGroupTemplate').onclick=()=>templateForm(activeSlot);
     qs('#morphGroupRestore').onclick=()=>restore(activeSlot).catch(handleError);

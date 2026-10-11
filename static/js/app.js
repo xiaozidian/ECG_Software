@@ -108,6 +108,7 @@ const state = {
   trend: null,
   waveform: null,
   waveformRequestId: 0,
+  sttLeads: [...ALL_LEADS],
   sttReview: null,
   sttWaveform: null,
   sttRequestId: 0,
@@ -776,7 +777,7 @@ function updateWaveformModeUI() {
   if (title) title.textContent = state.waveformExpanded ? "全导联连续波形" : `连续波形 · ${state.leads.length} 导联复核`;
   if (buttonLabel) buttonLabel.textContent = state.waveformExpanded ? "退出全屏" : "全屏多导联";
   if (button) {
-    button.hidden = !state.waveformExpanded;
+    button.hidden = false;
     button.classList.toggle("active", state.waveformExpanded);
     button.setAttribute("aria-pressed", String(state.waveformExpanded));
     button.setAttribute("aria-label", state.waveformExpanded ? "退出全屏多导联" : "全屏查看全部十二导联");
@@ -840,7 +841,7 @@ function finishWaveformFullscreenExit() {
   const returnContext=state.sttFullscreenReturn;state.sttFullscreenReturn=null;
   if(returnContext&&returnContext.caseId===state.caseId&&returnContext.caseToken===state.caseRequestId){
     Object.assign(state,returnContext.preview);$("#filterSelect").value=state.filter;updateZoomControls();
-    state.sttStart=returnContext.start;state.sttDuration=returnContext.duration;state.sttIsoFraction=returnContext.iso;state.sttJFraction=returnContext.j;state.sttMeasurementMs=returnContext.measurementMs;state.leads=returnContext.leads.slice();
+    state.sttStart=returnContext.start;state.sttDuration=returnContext.duration;state.sttIsoFraction=returnContext.iso;state.sttJFraction=returnContext.j;state.sttMeasurementMs=returnContext.measurementMs;state.leads=returnContext.leads.slice();if(returnContext.sttLeads)state.sttLeads=returnContext.sttLeads.slice();
     updateWaveformModeUI();goPage("stt");return;
   }
   if (state.currentPage === "review") loadWaveform().catch(handleError);
@@ -1477,22 +1478,27 @@ function sttReviewLayout() {
   if(!globalThis.ecgSttReviewLayout&&globalThis.ECGSttReviewLayout){
     globalThis.ecgSttReviewLayout=ECGSttReviewLayout.mount({root:$("#page-stt"),onLocate:({time_s,lead})=>{
       if(!Number.isFinite(time_s)||!ALL_LEADS.includes(lead))return;
-      if(!state.leads.includes(lead))state.leads=[...state.leads.slice(0,2),lead];
+      if(!sttVisibleLeads().includes(lead))state.sttLeads=ALL_LEADS.filter(name=>sttVisibleLeads().includes(name)||name===lead);
       setSttStart(time_s-state.sttDuration/2);
     }});
   }
   return globalThis.ecgSttReviewLayout;
 }
 
+function sttVisibleLeads() {
+  const selected=Array.isArray(state.sttLeads)?state.sttLeads:state.leads.slice(0,3);
+  return ALL_LEADS.filter(lead=>selected.includes(lead));
+}
+
 function sttSelectionSnapshot() {
   return {caseId:state.caseId,caseToken:state.caseRequestId,workspaceEpoch:state.workspaceEpoch,
-    start:state.sttStart,duration:state.sttDuration,leads:state.leads.slice(0,3).join(",")};
+    start:state.sttStart,duration:state.sttDuration,leads:sttVisibleLeads().join(",")};
 }
 
 function sttSelectionMatches(snapshot) {
   return Boolean(snapshot)&&snapshot.caseId===state.caseId&&snapshot.caseToken===state.caseRequestId
     &&snapshot.workspaceEpoch===state.workspaceEpoch&&(state.currentPage===undefined||state.currentPage==="stt")
-    &&snapshot.start===state.sttStart&&snapshot.duration===state.sttDuration&&snapshot.leads===state.leads.slice(0,3).join(",");
+    &&snapshot.start===state.sttStart&&snapshot.duration===state.sttDuration&&snapshot.leads===sttVisibleLeads().join(",");
 }
 
 function sttEvidenceMatches(basis=state.caseData) {
@@ -1534,7 +1540,7 @@ function setSttWindowState(status,message) {
   const tooltip=$('#sttWaveTooltip');if(tooltip)tooltip.hidden=true;
   const wrapper=$('#sttWaveCanvasWrap');if(wrapper){if(wrapper.dataset)wrapper.dataset.sttWaveState=status;wrapper.setAttribute?.('aria-busy',String(status==='loading'));}
   const valid=sttEvidenceMatches(),navigation=valid?{start_s:state.sttStart,duration_s:state.sttDuration,total_s:Number(state.caseData?.technical?.duration_seconds_raw)}:null;
-  sttReviewLayout()?.render({caseId:state.caseId,status,message,navigation,leadNames:state.leads.slice(0,3),measurementMs:state.sttMeasurementMs});
+  sttReviewLayout()?.render({caseId:state.caseId,status,message,navigation,leadNames:sttVisibleLeads(),measurementMs:state.sttMeasurementMs});
 }
 
 function invalidateSttWindow() {
@@ -1759,20 +1765,20 @@ function setSttStart(value) {
 
 function updateSttLeadPickerState() {
   const choices=$$('[data-stt-lead-choice]'),count=choices.filter(choice=>choice.checked).length;
-  choices.forEach(choice=>{choice.disabled=!choice.checked&&count>=3;});
-  $("#sttLeadSelectionCount").textContent=`已选 ${count} / 3`;$("#applySttLeadSelection").disabled=count===0;
+  choices.forEach(choice=>{choice.disabled=!choice.checked&&count>=12;});
+  $("#sttLeadSelectionCount").textContent=`已选 ${count} / 12`;$("#applySttLeadSelection").disabled=count===0;
 }
 
 function setSttLeadPickerSelection(leads) {$$('[data-stt-lead-choice]').forEach(choice=>{choice.checked=leads.includes(choice.value);});updateSttLeadPickerState();}
-function openSttLeadPicker() {const dialog=$("#sttLeadDialog");if(!dialog||dialog.open)return;setSttLeadPickerSelection(state.leads);dialog.showModal();}
+function openSttLeadPicker() {const dialog=$("#sttLeadDialog");if(!dialog||dialog.open)return;setSttLeadPickerSelection(sttVisibleLeads());dialog.showModal();}
 function applySttLeadSelection() {
-  const selected=$$('[data-stt-lead-choice]:checked').map(choice=>choice.value).sort((a,b)=>ALL_LEADS.indexOf(a)-ALL_LEADS.indexOf(b));if(!selected.length||selected.length>3)return;
-  state.leads=selected;persistPreviewLeads();updateWaveformModeUI();$("#sttLeadDialog").close();loadStt().catch(handleError);
+  const selected=$$('[data-stt-lead-choice]:checked').map(choice=>choice.value).sort((a,b)=>ALL_LEADS.indexOf(a)-ALL_LEADS.indexOf(b));if(!selected.length||selected.length>12)return;
+  state.sttLeads=selected;$("#sttLeadDialog").close();loadStt().catch(handleError);
 }
 
 async function openSttTwelveLead() {
   if(!state.caseId)return;
-  state.sttFullscreenReturn={caseId:state.caseId,caseToken:state.caseRequestId,start:state.sttStart,duration:state.sttDuration,iso:state.sttIsoFraction,j:state.sttJFraction,measurementMs:state.sttMeasurementMs,leads:state.leads.slice(),preview:{start:state.start,duration:state.duration,filter:state.filter}};
+  state.sttFullscreenReturn={caseId:state.caseId,caseToken:state.caseRequestId,start:state.sttStart,duration:state.sttDuration,iso:state.sttIsoFraction,j:state.sttJFraction,measurementMs:state.sttMeasurementMs,leads:state.leads.slice(),sttLeads:sttVisibleLeads(),preview:{start:state.start,duration:state.duration,filter:state.filter}};
   state.start=state.sttStart;state.duration=state.sttDuration;state.filter="raw";$("#filterSelect").value="raw";updateZoomControls();
   const context=state.sttFullscreenReturn;goPage("review");
   if(state.currentPage!=="review"||context.caseId!==state.caseId||context.caseToken!==state.caseRequestId){
@@ -1791,8 +1797,8 @@ async function saveSttReviewAnnotation() {
   const selection=sttSelectionSnapshot(),waveform=state.sttWaveform,basis=state.sttEvidence.basis,requestId=state.sttRequestId;
   const draft={note:$('#sttReviewNote').value,finding,qualityChecked,iso:state.sttIsoFraction,j:state.sttJFraction,measurementMs:state.sttMeasurementMs};
   const pointLabel=state.sttMeasurementMs===0?"J 点":`J+${state.sttMeasurementMs} ms`,values=sttMeasurementValues(),rawValues=values.map(item=>`${item.lead} ${item.delta===null?"—":`${item.delta>=0?"+":""}${item.delta.toFixed(0)}`}`).join("，"),freeNote=draft.note.trim();
-  const sampleRate=Number(state.sttWaveform.sample_rate_hz)||200,sampleIndex=Math.round((state.sttStart+sttLandmarkFractions().j*state.sttDuration)*sampleRate),note=[`方法：手工 ISO → ${pointLabel}`,`显示导联：${state.leads.join(" / ")}`,`相对差值（设备原始单位）：${rawValues}`,`信号质量核对：${qualityChecked?"已核对":"未核对"}`,freeNote].filter(Boolean).join("；").slice(0,2000);
-  const payload={sample_index:sampleIndex,lead:state.leads.length===1?state.leads[0]:"全部",category:"note",label:`ST-T 人工复核：${finding}`,note,details:{kind:"ST",status:finding.includes("无法")?"pending":finding.includes("未见")||finding.includes("伪差")?"excluded":"confirmed",end_sample:Math.min(Math.round(state.caseData.technical.duration_seconds_raw*200)-1,Math.round((state.sttStart+state.sttDuration)*200)),finding}};
+  const sampleRate=Number(state.sttWaveform.sample_rate_hz)||200,sampleIndex=Math.round((state.sttStart+sttLandmarkFractions().j*state.sttDuration)*sampleRate),note=[`方法：手工 ISO → ${pointLabel}`,`显示导联：${sttVisibleLeads().join(" / ")}`,`相对差值（设备原始单位）：${rawValues}`,`信号质量核对：${qualityChecked?"已核对":"未核对"}`,freeNote].filter(Boolean).join("；").slice(0,2000);
+  const payload={sample_index:sampleIndex,lead:sttVisibleLeads().length===1?sttVisibleLeads()[0]:"全部",category:"note",label:`ST-T 人工复核：${finding}`,note,details:{kind:"ST",status:finding.includes("无法")?"pending":finding.includes("未见")||finding.includes("伪差")?"excluded":"confirmed",end_sample:Math.min(Math.round(state.caseData.technical.duration_seconds_raw*200)-1,Math.round((state.sttStart+state.sttDuration)*200)),finding}};
   const saving={caseId:selection.caseId,caseToken:selection.caseToken,workspaceEpoch:selection.workspaceEpoch};
   state.sttSaving=saving;updateSttSaveState();
   const ownsSave=()=>state.sttSaving===saving&&saving.caseId===state.caseId&&saving.caseToken===state.caseRequestId&&saving.workspaceEpoch===state.workspaceEpoch;
@@ -2671,7 +2677,7 @@ function bindEvents() {
     const editClass=event.target.closest("[data-edit-class]");if(editClass)selectEditClass(editClass.dataset.editClass);
     const editSample=event.target.closest("[data-edit-sample]");if(editSample){selectEditSample(editSample.dataset.editSample,editSample.dataset.editTime,event);}
     const libraryFilter=event.target.closest("[data-edit-library-filter]");if(libraryFilter){state.editLibraryFilter=libraryFilter.dataset.editLibraryFilter;renderEditLibrary();}
-    const sttCandidate=event.target.closest("[data-stt-candidate]");if(sttCandidate){const leads=String(sttCandidate.dataset.sttLeads||"").split(",").filter(lead=>ALL_LEADS.includes(lead)).slice(0,3);if(leads.length)state.leads=leads;setSttStart(Math.max(0,Number(sttCandidate.dataset.sttCandidate)||0));}
+    const sttCandidate=event.target.closest("[data-stt-candidate]");if(sttCandidate){const leads=String(sttCandidate.dataset.sttLeads||"").split(",").filter(lead=>ALL_LEADS.includes(lead));if(leads.length)state.sttLeads=leads;setSttStart(Math.max(0,Number(sttCandidate.dataset.sttCandidate)||0));}
     if(event.target.closest("[data-stt-current-window]")){$("#sttWaveformCanvas")?.focus();$("#sttWaveformCanvas")?.scrollIntoView({behavior:"smooth",block:"center"});}
   });
   $("#openFirstCase").addEventListener("click",()=>{const first=filteredCases()[0];if(first)openWorklistCase(first.case_id).catch(handleError)});
@@ -2696,7 +2702,7 @@ function bindEvents() {
   $("#sttMeasurementPoint").addEventListener("change",event=>{state.sttMeasurementMs=Number(event.target.value);renderSttWaveform();});
   $("#sttPrevWindow").addEventListener("click",()=>setSttStart(state.sttStart-state.sttDuration*.8));
   $("#sttNextWindow").addEventListener("click",()=>setSttStart(state.sttStart+state.sttDuration*.8));
-  $("#sttOpenTwelveLead").hidden=true;
+  $("#sttOpenTwelveLead").hidden=false;
   $("#sttOpenTwelveLead").addEventListener("click",()=>openSttTwelveLead().catch(handleError));
   $("#openSttGuidance").addEventListener("click",()=>$("#sttGuidanceDialog").showModal());
   $("#openSttLimitations").addEventListener("click",()=>$("#sttGuidanceDialog").showModal());

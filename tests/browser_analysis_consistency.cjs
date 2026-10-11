@@ -18,35 +18,38 @@ async function protocol(which){
 }
 async function panel(which){
   const stt=which.startsWith('stt'),g=gate(),calls=[],renders=[],nodes=new Map();let failing=which.endsWith('failure');
-  const state={caseId:'A',caseRequestId:1,trendsRequestId:0,sttRequestId:0,sttStart:0,sttDuration:10,leads:['II'],caseData:{technical:{duration_seconds_raw:90}},sttReview:{...basis,analysis_revision:which.endsWith('cache')?0:1},sttWaveform:{old:true},rr:{old:true},hrv:{old:true}};
-  const $=s=>{if(!nodes.has(s))nodes.set(s,{textContent:'old',width:500,height:200,getContext:()=>({clearRect(){}})});return nodes.get(s)};
-  const response=kind=>kind===''?{clinical_identity:basis,technical:{duration_seconds_raw:90}}:{...basis,start_s:0};
-  const api=async raw=>{const u=new URL(raw,'http://test'),kind=u.pathname.split('/').slice(4).join('/');calls.push({kind,query:u.searchParams});if(kind==='analysis-basis')return basis;
+  const state={caseId:'A',caseRequestId:1,trendsRequestId:0,sttRequestId:0,sttStart:0,sttDuration:10,leads:['II'],sttLeads:['II','V1'],workspaceEpoch:1,currentPage:stt?'stt':'trends',caseData:{technical:{duration_seconds_raw:90}},sttReview:{...basis,analysis_revision:which.endsWith('cache')?0:1},sttWaveform:{old:true},rr:{old:true},hrv:{old:true}};
+  const $=s=>{if(!nodes.has(s))nodes.set(s,{textContent:'old',dataset:{},setAttribute(){},width:500,height:200,getContext:()=>({clearRect(){}})});return nodes.get(s)};
+  const response=kind=>kind===''?{clinical_identity:basis,technical:{duration_seconds_raw:90}}:kind==='waveform'?{...basis,start_s:0,duration_s:10,sample_rate_hz:200,display_sample_rate_hz:200,leads:{II:Array.from({length:2000},(_,i)=>i%17-8),V1:Array.from({length:2000},(_,i)=>8-i%17)}}:{...basis,start_s:0};
+  const api=async (raw,options={})=>{const u=new URL(raw,'http://test'),kind=u.pathname.split('/').slice(4).join('/');calls.push({kind,query:u.searchParams,signal:options.signal});if(stt&&kind==='waveform')assert.equal(u.searchParams.get('leads'),'II,V1','ST window used preview leads instead of its local selection');if(kind==='analysis-basis')return basis;
     assert.equal(u.searchParams.get('analysis_basis'),basis.analysis_basis);
     if(kind===(stt?'waveform':'hrv-analysis')){await g.promise;if(failing)throw Error('offline');if(which.endsWith('mixed'))return {...basis,analysis_revision:2};}
     return response(kind);
   };
-  const ctx=vm.createContext({state,$,api,ECGAnalysisConsistency:C,URLSearchParams,withPhi:x=>x,ECGReportConsistency:{receive(){}},clinicalWorkflow:{receive(){}},
+  const ctx=vm.createContext({state,$,api,AbortController,ECGAnalysisConsistency:C,URLSearchParams,withPhi:x=>x,ECGReportConsistency:{receive(){}},clinicalWorkflow:{receive(){}},
     analysisReadStatus:(s,m,retry,cancel)=>Object.assign($(s),{textContent:m,retry,cancel}),clearWaveformSurface:key=>{state[key]=null},
     renderTrendMetrics:()=>renders.push('trends'),renderTrendChart(){},renderHistogram(){},renderPoincare(){},renderHrv(){},renderSttCapability:()=>renders.push('stt'),renderSttOverview(){},renderSttTrendRows(){},renderSttWaveform(){}});
+  vm.runInContext(app.match(/^const ALL_LEADS = .*;$/m)[0],ctx);
   vm.runInContext(app.slice(app.indexOf('const CASE_IDENTITY_FIELDS ='),app.indexOf('function renderCaseIdentity(')),ctx);
   vm.runInContext(app.slice(app.indexOf('function clearTrendEvidence('),app.indexOf('function renderTrendMetrics(')),ctx);
   vm.runInContext(app.slice(app.indexOf('function sttReviewLayout('),app.indexOf('function sttLandmarkFractions(')),ctx);
   vm.runInContext(app.slice(app.indexOf('async function loadStt('),app.indexOf('function setSttStart(')),ctx);
-  const invoke=()=>stt?ctx.loadStt():ctx.loadTrends(),pending=invoke();await tick();
+  const invoke=()=>stt?ctx.loadStt():ctx.loadTrends(),pending=invoke();await tick();const pendingController=stt?state.sttAbort:null;
+  if(stt){assert.equal($('#sttReviewForm button[type="submit"]').disabled,true,'loading ST waveform remains saveable');if(['stt-success','stt-cache'].includes(which))state.leads=['V6'];}
   assert.equal(renders.length,0,'partial batch rendered before slow evidence finished');
   assert.equal(stt?state.sttWaveform:state.hrv,null);
   if(stt){assert.match($('#sttMeasurementList').textContent,/读取/);assert.equal($('#sttCandidateCount').textContent,'—');}
   if(which.endsWith('case')){state.caseRequestId++;state.caseData={replacement:true};}
   if(which.endsWith('cancel')){
     const status=$(stt?'#sttAnalysisStatus':'#trendsAnalysisStatus');assert.equal(typeof status.cancel,'function');
-    status.cancel();assert.equal(typeof status.retry,'function');assert.match(status.textContent,/已取消/);
+    status.cancel();if(stt){assert.equal(pendingController.signal.aborted,true,'cancel did not abort ST transport');assert.equal($('#sttReviewForm button[type="submit"]').disabled,true);}assert.equal(typeof status.retry,'function');assert.match(status.textContent,/已取消/);
   }
   g.resolve();
   if(failing||which.endsWith('mixed')){await assert.rejects(pending,/offline|变化/);assert.equal(renders.length,0);assert.equal(stt?state.sttWaveform:state.hrv,null);assert.equal(typeof $(stt?'#sttAnalysisStatus':'#trendsAnalysisStatus').retry,'function');
     if(stt){assert.match($('#sttMeasurementList').textContent,/未取得/);assert.equal($('#sttCandidateCount').textContent,'—');}
     failing=false;if(which.endsWith('failure')){await invoke();assert.equal(renders.length,1);}
   }else{await pending;if(which.endsWith('case')){assert.equal(renders.length,0);assert.equal(state.caseData.replacement,true);}else if(which.endsWith('cancel')){assert.equal(renders.length,0);assert.equal(stt?state.sttWaveform:state.hrv,null);}else assert.equal(renders.length,1);}
+  if(stt){assert.deepEqual(state.sttLeads,['II','V1'],'local ST lead selection changed');if(['stt-success','stt-cache'].includes(which)){assert.deepEqual(state.leads,['V6'],'ST read changed preview selection');assert.deepEqual(Object.keys(state.sttWaveform.leads),['II','V1']);assert.equal(ctx.sttWaveformIsCurrent(),true);assert.equal($('#sttReviewForm button[type="submit"]').disabled,false);}if(which.endsWith('cancel'))assert.equal($('#sttReviewForm button[type="submit"]').disabled,true,'late cancelled success reenabled saving');}
   if(which.endsWith('cache'))assert.equal(calls.filter(c=>c.kind==='stt-review').length,1,'old cached candidates were reused');
   if(which==='stt-success')assert.equal(calls.filter(c=>c.kind==='stt-review').length,0,'valid cache needlessly recomputed');
 }

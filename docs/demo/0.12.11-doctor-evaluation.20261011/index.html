@@ -408,14 +408,14 @@
             <div class="stt-waveform-toolbar">
               <div><span class="live-dot"></span><div><strong>当前窗口 · 手工测量</strong><small id="sttWaveMeta">等待读取原始波形</small></div></div>
               <div class="stt-waveform-actions">
-                <button id="sttLeadPickerButton" class="lead-picker-trigger" type="button" title="选择最多三条复核导联"><span id="sttSelectedLeadLabel">II · V1 · V5</span><small>最多 3 条</small></button>
+                <button id="sttLeadPickerButton" class="lead-picker-trigger" type="button" title="选择1–12条复核导联"><span id="sttSelectedLeadLabel">12 导联</span><small>选择导联</small></button>
                 <label for="sttMeasurementPoint">测量点</label><select id="sttMeasurementPoint"><option value="60" selected>ST60（J+60 ms）</option><option value="80">ST80（J+80 ms）</option><option value="0">J 点</option></select>
                 <div class="window-nav-controls"><button id="sttPrevWindow" class="icon-button" type="button" aria-label="前一复核窗口">←</button><button id="sttNextWindow" class="icon-button" type="button" aria-label="后一复核窗口">→</button></div>
-                <button id="sttOpenTwelveLead" hidden class="button dark" type="button">全屏 12 导联</button>
+                <button id="sttOpenTwelveLead" class="button dark" type="button">全屏 12 导联</button>
               </div>
             </div>
             <div id="sttCurrentContext" class="stt-current-context" aria-label="当前ST-T测量上下文" role="status"></div>
-            <div id="sttWaveCanvasWrap" class="stt-wave-canvas-wrap"><canvas id="sttWaveformCanvas" height="438" tabindex="0" aria-label="最多三导联 ST-T 手工复核波形；拖动 ISO 与 J 游标调整测量位置，右键选择导联，双击进入全屏十二导联"></canvas><div id="sttWaveTooltip" class="wave-tooltip" hidden></div></div>
+            <div id="sttWaveCanvasWrap" class="stt-wave-canvas-wrap"><canvas id="sttWaveformCanvas" height="438" tabindex="0" aria-label="一至十二导联 ST-T 手工复核波形；拖动 ISO 与 J 游标调整测量位置，右键选择导联，双击进入全屏十二导联"></canvas><div id="sttWaveTooltip" class="wave-tooltip" hidden></div></div>
             <div class="stt-waveform-foot"><span>拖动 <b>ISO</b> 与 <b>J</b> 游标 · ST 测量点按 J+60/80 ms 自动联动 · 右键选择导联 · 双击全屏</span><span>原始设备单位 · 不换算 mV</span></div>
           </article>
         </section>
@@ -440,7 +440,7 @@
       </div>
 
       <dialog id="sttLeadDialog" class="lead-picker-dialog" aria-labelledby="sttLeadDialogTitle">
-        <form method="dialog"><div class="lead-picker-header"><div><span>ST‑T 复核导联</span><h2 id="sttLeadDialogTitle">选择当前显示导联</h2></div><button value="cancel" aria-label="关闭导联选择">×</button></div><p class="lead-picker-help">普通视图最多同时显示 3 条；双击波形或点击按钮可进入全屏 12 导联复核。</p><fieldset class="lead-choice-grid"><legend class="visually-hidden">ST-T 复核导联</legend><label><input type="checkbox" value="I" data-stt-lead-choice><span>I</span></label><label><input type="checkbox" value="aVR" data-stt-lead-choice><span>aVR</span></label><label><input type="checkbox" value="V1" data-stt-lead-choice><span>V1</span></label><label><input type="checkbox" value="V4" data-stt-lead-choice><span>V4</span></label><label><input type="checkbox" value="II" data-stt-lead-choice><span>II</span></label><label><input type="checkbox" value="aVL" data-stt-lead-choice><span>aVL</span></label><label><input type="checkbox" value="V2" data-stt-lead-choice><span>V2</span></label><label><input type="checkbox" value="V5" data-stt-lead-choice><span>V5</span></label><label><input type="checkbox" value="III" data-stt-lead-choice><span>III</span></label><label><input type="checkbox" value="aVF" data-stt-lead-choice><span>aVF</span></label><label><input type="checkbox" value="V3" data-stt-lead-choice><span>V3</span></label><label><input type="checkbox" value="V6" data-stt-lead-choice><span>V6</span></label></fieldset><div class="lead-picker-status"><output id="sttLeadSelectionCount" aria-live="polite">已选 3 / 3</output><span>选择按标准导联顺序显示</span></div><div class="lead-picker-actions"><button id="resetSttLeadSelection" type="button" class="button secondary">恢复推荐</button><span></span><button value="cancel" class="button secondary">取消</button><button id="applySttLeadSelection" type="button" class="button primary">应用导联</button></div></form>
+        <form method="dialog"><div class="lead-picker-header"><div><span>ST‑T 复核导联</span><h2 id="sttLeadDialogTitle">选择当前显示导联</h2></div><button value="cancel" aria-label="关闭导联选择">×</button></div><p class="lead-picker-help">可选择 1–12 条；关闭或取消保留已应用导联。全屏复核后返回同一时间窗与游标。</p><fieldset class="lead-choice-grid"><legend class="visually-hidden">ST-T 复核导联</legend><label><input type="checkbox" value="I" data-stt-lead-choice><span>I</span></label><label><input type="checkbox" value="aVR" data-stt-lead-choice><span>aVR</span></label><label><input type="checkbox" value="V1" data-stt-lead-choice><span>V1</span></label><label><input type="checkbox" value="V4" data-stt-lead-choice><span>V4</span></label><label><input type="checkbox" value="II" data-stt-lead-choice><span>II</span></label><label><input type="checkbox" value="aVL" data-stt-lead-choice><span>aVL</span></label><label><input type="checkbox" value="V2" data-stt-lead-choice><span>V2</span></label><label><input type="checkbox" value="V5" data-stt-lead-choice><span>V5</span></label><label><input type="checkbox" value="III" data-stt-lead-choice><span>III</span></label><label><input type="checkbox" value="aVF" data-stt-lead-choice><span>aVF</span></label><label><input type="checkbox" value="V3" data-stt-lead-choice><span>V3</span></label><label><input type="checkbox" value="V6" data-stt-lead-choice><span>V6</span></label></fieldset><div class="lead-picker-status"><output id="sttLeadSelectionCount" aria-live="polite">已选 12 / 12</output><span>选择按标准导联顺序显示</span></div><div class="lead-picker-actions"><button id="resetSttLeadSelection" type="button" class="button secondary">恢复推荐</button><span></span><button value="cancel" class="button secondary">取消</button><button id="applySttLeadSelection" type="button" class="button primary">应用导联</button></div></form>
       </dialog>
 
       <dialog id="sttGuidanceDialog" class="modal stt-guidance-dialog" aria-labelledby="sttGuidanceTitle">
@@ -528,11 +528,11 @@
   <div id="toastStack" class="toast-stack" aria-live="polite"></div>
   <link rel="stylesheet" href="static/css/clinical-ui.css?v=7b031a318321">
   <link rel="stylesheet" href="static/css/visual-refresh.css?v=ee2f7e825594">
-  <link rel="stylesheet" href="static/css/overview-workbench.css?v=a8b39f93b661">
+  <link rel="stylesheet" href="static/css/overview-workbench.css?v=b67f40238b11">
   <link rel="stylesheet" href="static/css/report-paper.css?v=c65249c41cc3">
-  <link rel="stylesheet" href="static/css/report-workspace.css?v=4b5c6b445429">
-  <link rel="stylesheet" href="static/css/advanced-analysis.css?v=3e995526e6ed">
-  <link rel="stylesheet" href="static/css/morphology-workbench.css?v=d3667d1bd3d0">
+  <link rel="stylesheet" href="static/css/report-workspace.css?v=ada5e1f24f63">
+  <link rel="stylesheet" href="static/css/advanced-analysis.css?v=b25d07434cf5">
+  <link rel="stylesheet" href="static/css/morphology-workbench.css?v=290bb193f12d">
   <link rel="stylesheet" href="static/css/clinical-review-tools.css?v=d5a82f03bd53">
   <script src="static/js/clinical-review-tools.js?v=cc4599329b51"></script>
   <script src="static/js/report-engine.js?v=303af8905c6d"></script>
@@ -544,40 +544,40 @@
   <script src="static/js/af-coverage.js?v=343bb9127863"></script>
   <script src="static/js/clinical-analysis.js?v=b0c0d5df55cb"></script>
   <script src="static/js/hrv-analysis.js?v=9a4898e4549c"></script>
-  <script src="static/js/hrv-report.js?v=3ec6d82d5537"></script>
-  <link rel="stylesheet" href="static/css/hrv-review-evidence.css?v=26c2e2ba65c0">
-  <script src="static/js/hrv-review-evidence.js?v=65dd5e076c20"></script>
-  <script src="static/js/report-range-editor.js?v=27221d4a5af0"></script>
+  <script src="static/js/hrv-report.js?v=9ea00c7f4b17"></script>
+  <link rel="stylesheet" href="static/css/hrv-review-evidence.css?v=23aff261cf47">
+  <script src="static/js/hrv-review-evidence.js?v=c95707b50985"></script>
+  <script src="static/js/report-range-editor.js?v=7f2e8286b114"></script>
   <script src="static/js/beat-engine.js?v=a8aea660c1e3"></script>
   <script src="static/js/stt-review-layout.js?v=2bf0c798d47c"></script>
   <script src="static/js/read-requests.js?v=3535afa898d3"></script>
   <script src="static/js/chart-inspection.js?v=47f32312b1d3"></script>
   <script src="static/demo-data/mathematical-4314/case-data.js"></script>
 <script src="static/js/demo-api.js?v=2e5b74a4342a"></script>
-<script src="static/js/app.js?v=b136de14853d"></script>
+<script src="static/js/app.js?v=28d22f24706a"></script>
   <script src="static/js/linked-selection.js?v=0f88f4766d92"></script>
   <script src="static/js/workspace-backup.js?v=6e44bac5c5c3"></script>
   <script src="static/js/analysis-consistency.js?v=fb20b4aa33e0"></script>
-  <script src="static/js/report-consistency.js?v=1c5e2a055e28"></script>
+  <script src="static/js/report-consistency.js?v=a0399ca8390e"></script>
   <script src="static/js/clinical-workflow.js?v=07ce5c0ec72e"></script>
   <script src="static/js/beat-editor-ui.js?v=863de1c85b2c"></script>
   <script src="static/js/waveform-loader.js?v=ea72b3ac0d47"></script>
   <script src="static/js/occurrence-card.js?v=c2b8ea25e2f4"></script>
   <script src="static/js/source-group-evidence.js?v=df9a4355d52f"></script>
-  <script src="static/js/clinical-ui.js?v=d143b9d3f340"></script>
-  <script src="static/js/report-workspace.js?v=b4d62108f15c"></script>
-  <script src="static/js/advanced-analysis.js?v=8658a733d89e"></script>
+  <script src="static/js/clinical-ui.js?v=3034b9677d66"></script>
+  <script src="static/js/report-workspace.js?v=526a2382e95e"></script>
+  <script src="static/js/advanced-analysis.js?v=4286102d5a5c"></script>
   <script src="static/js/overview-linked-view.js?v=be7d303f1d5e"></script>
-  <script src="static/js/overview-workbench.js?v=6d7cf075f26c"></script>
+  <script src="static/js/overview-workbench.js?v=702c03a9edfc"></script>
   <script src="static/js/morphology-groups.js?v=9a179f05c75c"></script>
-  <script src="static/js/morphology-workbench.js?v=fc4dba36faf2"></script>
+  <script src="static/js/morphology-workbench.js?v=d8d94bbc0530"></script>
   <link rel="stylesheet" href="static/css/voltage-estimate.css?v=1012ab83a16a">
   <link rel="stylesheet" href="static/css/sidebar-workflow.css?v=6a296d8454ee">
   <link rel="stylesheet" href="static/css/stt-review-layout.css?v=1b5b0bc6ee9c">
   <link rel="stylesheet" href="static/css/shared-ui-review.css?v=8d802a4eae3f">
   <link rel="stylesheet" href="static/css/chart-inspection.css?v=5226e2ab702c">
-  <link rel="stylesheet" href="static/css/desktop-workspace.css?v=ac5a943178e1">
-  <script src="static/js/desktop-workspace.js?v=a628b40f5c02"></script>
+  <link rel="stylesheet" href="static/css/desktop-workspace.css?v=c403a3a2d0d8">
+  <script src="static/js/desktop-workspace.js?v=5d1c92c4ba83"></script>
   <script src="static/js/template-linked-view.js?v=7b28dc27ff5f"></script>
 </body>
 </html>

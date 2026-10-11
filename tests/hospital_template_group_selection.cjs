@@ -1,0 +1,46 @@
+"use strict";
+// Reuse the existing synthetic DOM fixture; every handler comes from the shipped module.
+// No service, database, patient input, browser, or alternate group implementation is involved.
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
+const {createRequire}=require('node:module');
+const root=path.resolve(__dirname,'..'),fixturePath=path.join(__dirname,'browser_morphology_scope.cjs');
+const original=fs.readFileSync(fixturePath,'utf8'),boundary=original.indexOf('\nasync function run(){');
+assert.ok(boundary>0,'existing fixture prefix is present');
+const fixture={require:createRequire(fixturePath),setImmediate,Uint8ClampedArray,URL,URLSearchParams,console};
+vm.runInNewContext(original.slice(0,boundary)+'\nglobalThis.makeFixture=setup;globalThis.settleFixture=settle;',fixture,{filename:fixturePath});
+const checks=[];
+const clickPlot=(h,n)=>h.qs('#morphGroups').onclick({target:{closest:s=>s==='[data-morph-group-plot]'?h.qs('#morphSlot'+n):null}});
+const clickHeading=(h,n)=>h.qs('#morphGroups').onclick({target:{closest:s=>s==='button'?{dataset:{groupSelect:String(n)}}:null}});
+const snapshot=h=>JSON.stringify(h.workbench.privateSnapshot());
+const beforeWrites=h=>h.calls.filter(c=>c.url.includes('beat-templates')||c.url.includes('beat-editor')).length;
+(async()=>{
+  process.chdir(root);
+  const h=fixture.makeFixture();await fixture.settleFixture();
+  h.clickRange();await fixture.settleFixture();h.key('7');await fixture.settleFixture();
+  h.qs('#morphGroupTemplate').onclick();h.qs('#morphTemplateName').value='synthetic group draft';
+  const before=h.workbench.captureView(),members=JSON.stringify(h.workbench.privateSnapshot().groups),writes=beforeWrites(h);
+  clickPlot(h,7);await fixture.settleFixture();
+  assert.equal(h.workbench.privateSnapshot().viewedScope.kind,'group');assert.equal(h.workbench.privateSnapshot().viewedScope.slot,7);
+  assert.equal(JSON.stringify(h.workbench.privateSnapshot().groups),members);
+  assert.equal(h.qs('#morphTemplateName').value,'synthetic group draft');assert.equal(h.qs('#morphTemplateForm').hidden,false);
+  assert.deepEqual(h.workbench.captureView().session.groups.history,before.session.groups.history);
+  assert.equal(beforeWrites(h),writes);checks.push('single-plot-click-selects-exact-group-with-members-history-draft-and-writes-unchanged');
+  let prevented=0,stopped=0;
+  h.qs('#morphSlot6').listeners.keydown({key:'Enter',preventDefault(){prevented++},stopPropagation(){stopped++}});
+  assert.equal(h.workbench.privateSnapshot().viewedScope.slot,6);assert.equal(prevented,1);assert.equal(stopped,1);
+  assert.equal(h.qs('#morphSlot6').attrs.role,'button');assert.equal(h.qs('#morphSlot6').attrs['aria-pressed'],'true');
+  assert.match(h.qs('#morphSlot7').attrs['aria-label'],/2 搏.*未保存.*II/);checks.push('enter-on-plot-is-keyboard-equivalent-with-current-count-and-state');
+  h.qs('#morphSlot8').listeners.keydown({key:' ',preventDefault(){prevented++},stopPropagation(){stopped++}});
+  assert.equal(h.workbench.privateSnapshot().viewedScope.slot,8);assert.equal(prevented,2);assert.equal(stopped,2);
+  assert.equal(JSON.stringify(h.workbench.privateSnapshot().groups),members);checks.push('space-selects-view-without-moving-members');
+  clickHeading(h,9);assert.equal(h.workbench.privateSnapshot().viewedScope.slot,9);assert.equal(beforeWrites(h),writes);
+  assert.equal(h.qs('#morphTemplateName').value,'synthetic group draft');checks.push('heading-and-plot-share-immediate-view-path');
+  h.state.caseRequestId++;const stale=snapshot(h);clickPlot(h,7);
+  assert.equal(snapshot(h),stale);assert.match(h.qs('#morphStatus').textContent,/病例|依据/);assert.equal(beforeWrites(h),writes);
+  checks.push('case-token-change-rejects-old-group-click-with-visible-feedback');
+  const edge=fixture.makeFixture();await fixture.settleFixture();edge.setMode('edges');edge.state.caseData.analysis_revision++;await edge.refresh(true);
+  assert.equal(edge.qs('[data-morph-count="top"]').textContent,'0 / 3 搏');
+  assert.match(edge.qs('[data-morph-count="top"]').title,/当前集合 3 搏.*边界不足 3 搏/);
+  assert.match(edge.qs('#morphStatus').textContent,/缺少完整边界/);checks.push('source-counter-keeps-full-current-population-and-boundary-feedback');
+  console.log(JSON.stringify({passed:true,actual_check_count:checks.length,checks}));
+})().catch(error=>{console.error(error.stack);process.exitCode=1});

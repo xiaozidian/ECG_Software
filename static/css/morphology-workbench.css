@@ -126,3 +126,11 @@
 @media(min-width:1100px){
   #mainContent #page-edit.active:not(.workspace-library) #editWorkbench .edit-gallery-panel{grid-template-rows:28px max-content 28px max-content;align-content:start}
 }
+
+/* The plot and heading are two immediate entrances to the same revision-scoped group. */
+.morph-group canvas[role="button"]{cursor:pointer}
+.morph-group[data-active="true"] header{background:#16483f}
+.edit-density-panel .morph-group canvas:focus-visible{outline-offset:-3px}
+#editWorkbench .morph-source-stack figcaption small{font-variant-numeric:tabular-nums}
+/* This form is reused in the library's white, sticky review dialog. */
+.workspace-dialog-body .morph-template-form :is(label,strong,p){color:#25424d}
