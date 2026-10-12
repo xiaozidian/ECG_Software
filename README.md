@@ -1,6 +1,6 @@
 # CardioInsight Holter
 
-本仓库保存 ECG 软件源码和独立的数学浏览器 Demo。当前代码版本为 `0.12.13-doctor-feedback.20261012`，生产软件清单包含112个文件。完整来源指纹、方法及验证记录见[本版说明](docs/releases/0.12.13-doctor-feedback.20261012/README.md)与[来源清单](docs/releases/0.12.13-doctor-feedback.20261012/source-manifest.json)。实际本机安装版本和线上构建结果分别核对；源码更新本身不表示已经切换服务。
+本仓库保存 ECG 软件源码和独立的数学浏览器 Demo。当前代码版本为 `0.12.14-template-linkage.20261012`，生产软件清单包含112个文件。完整来源指纹、方法及验证记录见[本版说明](docs/releases/0.12.14-template-linkage.20261012/README.md)与[来源清单](docs/releases/0.12.14-template-linkage.20261012/source-manifest.json)。实际本机安装版本和线上构建结果分别核对；源码更新本身不表示已经切换服务。
 
 软件用于研究与工程验证，自动事件为待医生复核的候选。原波形使用既有200Hz、8存储通道导入口径及12展示导联，设备映射、电压校准和医生金标准尚未独立核验；本版不构成临床验收。
 

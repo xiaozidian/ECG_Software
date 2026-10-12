@@ -1,0 +1,194 @@
+{
+  "schema": 1,
+  "scope": "Matched bottom three-lead double-click to the same full twelve-lead view; mathematical input only",
+  "release_id": "0.12.14-template-linkage.20261012+359938bacc872031",
+  "source_sha256": "359938bacc872031b3ac74433cff005587989ce805f1bda65afbab732a6997eb",
+  "baseline_release_id": "0.12.13-doctor-feedback.20261012+fe2d3e16654dc0f6",
+  "measurement_interval_utc": {
+    "start": "2026-10-12T15:02:46.921Z",
+    "end": "2026-10-12T15:03:00.555Z"
+  },
+  "viewport": {
+    "width": 1600,
+    "height": 1050,
+    "dpr": 1
+  },
+  "window": {
+    "case_alias": "C03",
+    "range_s": [
+      0,
+      20
+    ],
+    "filter": "display",
+    "bottom_leads": [
+      "II",
+      "V1",
+      "V5"
+    ],
+    "sample_rate_hz": 200,
+    "points_per_lead": 4000,
+    "gesture": "Real canvas mouse dblclick: horizontal50%, vertical70px",
+    "selected_sample": 1998,
+    "fullscreen": "Actual native waveformCard, no fallback"
+  },
+  "order": [
+    "old",
+    "new"
+  ],
+  "browser": "Actual Mac Google Chrome 154.0.8037.99 with Chromium sandbox enabled",
+  "timing_definition": "First physical pointerdown to fresh, current-owner twelve-lead data ready plus two animation frames; includes ordinary automation observation overhead",
+  "cache_definition": "Fresh browser first gesture recorded separately; backend and OS cache not flushed. No disk-cold measurement is claimed",
+  "data_equivalence": {
+    "nine_mathematical_source_files_bytes_and_mtime_unchanged": true,
+    "same_readonly_source_for_both_profiles": true,
+    "all_twelve_signal_samples_exact_sha256": "6edb5d1932b681ef18febc9b7602f2ff9093f1fbe6cad0053e0e5223f1d559d7",
+    "all_nineteen_beats_complete_fields_exact_sha256": "0bfe8c20461c999b755cc0e5861821811b0e6c14be35872fb974af4e864946ef",
+    "beat_fields": [
+      "class_code",
+      "group",
+      "hr",
+      "id",
+      "kind",
+      "label",
+      "name",
+      "rr_ms",
+      "sample_index",
+      "source_group",
+      "source_sample",
+      "time_s"
+    ],
+    "six_saved_document_endpoints_unchanged_within_each_profile": true,
+    "diagnostic_rules_or_units_changed": false
+  },
+  "results": [
+    {
+      "version": "old",
+      "release_id": "0.12.13-doctor-feedback.20261012+fe2d3e16654dc0f6",
+      "modes": [
+        {
+          "mode": "cluster",
+          "first_path_gesture_ms": 204.39999997615814,
+          "first_in_fresh_context": true,
+          "warm": {
+            "n": 5,
+            "median": 172.30000007152557,
+            "min": 171.40000009536743,
+            "max": 189.10000002384186
+          },
+          "warm_requests": {
+            "attempted": 11,
+            "successful": 6,
+            "aborted": 5,
+            "other_failed": 0,
+            "completed_decoded_response_bytes": 1880680
+          },
+          "per_gesture_attempts": [
+            3,
+            2,
+            2,
+            2,
+            2
+          ]
+        },
+        {
+          "mode": "library",
+          "first_path_gesture_ms": 219.70000004768372,
+          "first_in_fresh_context": false,
+          "warm": {
+            "n": 5,
+            "median": 222.89999997615814,
+            "min": 190,
+            "max": 223
+          },
+          "warm_requests": {
+            "attempted": 10,
+            "successful": 5,
+            "aborted": 5,
+            "other_failed": 0,
+            "completed_decoded_response_bytes": 1838745
+          },
+          "per_gesture_attempts": [
+            2,
+            2,
+            2,
+            2,
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "version": "new",
+      "release_id": "0.12.14-template-linkage.20261012+359938bacc872031",
+      "modes": [
+        {
+          "mode": "cluster",
+          "first_path_gesture_ms": 138.10000002384186,
+          "first_in_fresh_context": true,
+          "warm": {
+            "n": 5,
+            "median": 123.5,
+            "min": 121.89999997615814,
+            "max": 139.5
+          },
+          "warm_requests": {
+            "attempted": 5,
+            "successful": 5,
+            "aborted": 0,
+            "other_failed": 0,
+            "completed_decoded_response_bytes": 1793705
+          },
+          "per_gesture_attempts": [
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "mode": "library",
+          "first_path_gesture_ms": 189.60000002384186,
+          "first_in_fresh_context": false,
+          "warm": {
+            "n": 5,
+            "median": 172.60000002384186,
+            "min": 156.20000004768372,
+            "max": 174.19999992847443
+          },
+          "warm_requests": {
+            "attempted": 5,
+            "successful": 5,
+            "aborted": 0,
+            "other_failed": 0,
+            "completed_decoded_response_bytes": 1793705
+          },
+          "per_gesture_attempts": [
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        }
+      ]
+    }
+  ],
+  "request_result": "All 12 new first/warm bottom gestures issued exactly one successful waveform request, zero aborts; old12 gestures issued25 attempts with12 aborts, one extra completed3lead request.",
+  "response_bytes_definition": "Decoded complete response bodies only; aborted transferred bytes unavailable. Full response sizes also differ by review/profile metadata (old367749/new358741) although full12 samples and beat payloads exactly match; do not attribute all byte change to request removal.",
+  "limits": [
+    "Fresh browser context first gesture reported separately; backend/OS cache not flushed, no disk-cold claim.",
+    "Each path has five warm repeats: median/min/max only, no P95.",
+    "Old then new ordering retained; activity/ordering may influence latency. Request removal is separately evidenced.",
+    "No small copied-chart versus 12-lead timing comparison.",
+    "Only bottom same-output full12 function compared. Thumbnail behavior/centering/linkage newly added feature is delegated to separate doctor59 acceptance.",
+    "Library first path gesture follows cluster in same context, so only cluster is first browser gesture; neither is disk-cold.",
+    "Within each profile saved-doc hashes unchanged; cross-profile documents/global/source basis intentionally differ and were not asserted equal.",
+    "Full beat equality checked with two GETs after measurement, exact recorded scopes still current; no repeat performance or write.",
+    "Actual return-scroll was zero, so nonzero scroll restoration is outside this paired batch."
+  ],
+  "evidence_sha256": "249ecfa067cc46c7806ac5b4dd41f8db42fdcd8906295d5dc8462ccd87f97155",
+  "measurement_script_sha256": "db980a13102e94166508bcf1048bd88f7bba21777712e4be561d86922ea28b49",
+  "real_patient_inputs": false,
+  "clinical_acceptance": false
+}

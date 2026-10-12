@@ -354,8 +354,9 @@ const clinicalUI=(()=>{
         card.title=`${e.label} · ${e.beat_count} 搏 · ${w.duration_s} 秒 · ${leads}${w.stride>1?' · 步进 '+w.stride+' 采样的概览，请点击回看完整波形':''}`;
       };
       if(reused){ECGOccurrenceCard.syncSelection(card,e,state);if(card.occurrenceWave)renderTileWave(card.occurrenceWave);continue;}
+      const isCurrent=()=>state.currentPage==='edit'&&token===occurrenceToken&&id===state.caseId&&caseToken===state.caseRequestId&&context===occurrenceContext&&evidenceScope===waveEvidenceScope&&lane.dataset.occScope===scope&&card.isConnected;
       const code=e.class_code||type,status=e.diagnosis_status==='edited'?'已修订':e.diagnosis_status==='confirmed'?'已确认':'待审核';
-      card.innerHTML=`<button type="button" class="occurrence-open" aria-label="第${n+1}条 ${esc(e.label)}，${e.beat_count}搏，${status}；单击查看大图，空格或Ctrl点击多选"><span class="occurrence-card-heading"><strong class="occurrence-code">${esc(code)}</strong>${e.beat_count>1?`<span class="occurrence-group-count">×${e.beat_count} 搏</span>`:''}</span><span class="occurrence-wave">读取波形…</span><span class="occurrence-card-footer"><time>${formatElapsed(e.time_s)}</time><span>${n+1}/${total}</span></span></button><input type="checkbox" hidden tabindex="-1" aria-hidden="true">`;
+      card.innerHTML=`<button type="button" class="occurrence-open" aria-label="第${n+1}条 ${esc(e.label)}，${e.beat_count}搏，${status}；单击选择，双击查看12导联，空格或Ctrl点击多选"><span class="occurrence-card-heading"><strong class="occurrence-code">${esc(code)}</strong>${e.beat_count>1?`<span class="occurrence-group-count">×${e.beat_count} 搏</span>`:''}</span><span class="occurrence-wave">读取波形…</span><span class="occurrence-card-footer"><time>${formatElapsed(e.time_s)}</time><span>${n+1}/${total}</span></span></button><input type="checkbox" hidden tabindex="-1" aria-hidden="true">`;
       ECGOccurrenceCard.syncSelection(card,e,state);
       let waveFailed=false;
       const selectCard=toggle=>{if(!isCurrent())return;if(toggle){const all=e.target_samples.every(s=>state.editSelectedSamples.has(s));e.target_samples.forEach(s=>all?state.editSelectedSamples.delete(s):state.editSelectedSamples.add(s));}else if(!e.target_samples.every(s=>state.editSelectedSamples.has(s)))state.editSelectedSamples=new Set(e.target_samples);state.editSelectedSample=e.sample_index;beatEditor.syncOccurrenceSelection();setEditStart(Math.max(0,e.time_s-2));renderEditScatter();
@@ -365,15 +366,14 @@ const clinicalUI=(()=>{
           loadWave:(params,signal)=>api(`/api/cases/${id}/waveform?${new URLSearchParams({...params,...waveEvidence})}`,{signal,readLane:'source-group'}),
           onLocate:time=>setEditStart(Math.max(0,time-2))});
       };
-      card.querySelector('button').onclick=ev=>{if(waveFailed){loadTileWave();return;}const toggle=Boolean(ev?.ctrlKey||ev?.metaKey);selectCard(toggle);if(!toggle&&isCurrent()&&card.occurrenceWave){const plot=card.querySelector('.occurrence-wave svg');if(plot)globalThis.ecgChartInspection?.open(plot,card.querySelector('button'),`${e.label} · ${formatElapsed(e.time_s)} · ${leads}`);}};
-      beatEditor.registerOccurrence(card,e,{code:type,samples:async visible=>{
+      card.querySelector('button').onclick=ev=>{if(waveFailed)loadTileWave();selectCard(Boolean(ev?.ctrlKey||ev?.metaKey));};
+      beatEditor.registerOccurrence(card,e,{code:type,isCurrent,identity:Object.fromEntries(['analysis_basis','analysis_revision','beat_revision','data_version'].map(key=>[key,occurrence[key]])),samples:async visible=>{
         if(!isCurrent())throw Error('筛选集合已变化，请重新打开菜单');
         if(visible){const view=currentGrid(),samples=[];for(let i=view.visibleFirst-1;i<view.visibleLast;i++){const row=pageCache.get(Math.floor(i/48)*48)?.[i%48];if(row)samples.push(...row.target_samples)}return [...new Set(samples)];}
         const samples=[];for(let offset=0;offset<occurrence.total;offset+=200){const result=await endpoint('template-occurrences',{...editParams(offset),limit:200},id);if(token!==occurrenceToken||!sameEvidence(result,occurrence))throw Error('心搏集合已变化，请刷新后重试');samples.push(...result.items.flatMap(x=>x.target_samples))}return [...new Set(samples)];
       }});
       card.querySelector('input').onchange=ev=>{e.target_samples.forEach(s=>ev.target.checked?state.editSelectedSamples.add(s):state.editSelectedSamples.delete(s));state.editSelectedSample=e.sample_index;beatEditor.syncOccurrenceSelection();renderEditScatter();};
       card.onkeydown=ev=>{if([' ','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(ev.key)){ev.stopPropagation();ev.preventDefault();if(ev.key===' '){if(waveFailed)loadTileWave();else selectCard(true);}else{const view=currentGrid(),next=Math.max(0,Math.min(total-1,n+({ArrowLeft:-1,ArrowRight:1,ArrowUp:-view.columns,ArrowDown:view.columns}[ev.key])));focusOccurrence(next);}}};
-      const isCurrent=()=>state.currentPage==='edit'&&token===occurrenceToken&&id===state.caseId&&caseToken===state.caseRequestId&&context===occurrenceContext&&evidenceScope===waveEvidenceScope&&lane.dataset.occScope===scope&&card.isConnected;
       const loadTileWave=()=>{
         if(!isCurrent())return;
         waveFailed=false;card.querySelector('.occurrence-wave').textContent='读取波形…';

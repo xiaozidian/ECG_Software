@@ -1,8 +1,8 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
-const code=fs.readFileSync('static/js/app.js','utf8'),snippet=code.slice(code.indexOf('async function loadEditWaveform('),code.indexOf('function setEditStart('));
+const code=fs.readFileSync('static/js/app.js','utf8'),snippet=code.slice(code.indexOf('function editTwelveScope('),code.indexOf('async function openEditTwelveLead('))+code.slice(code.indexOf('async function loadEditWaveform('),code.indexOf('function setEditStart('));
 const gate=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
 async function run(changeCase){
- const pending=[],renders=[],nodes=new Map(),state={caseId:'synthetic-A',caseRequestId:1,caseData:{technical:{duration_seconds_raw:1800}},editRequestId:0,editStart:0,editDuration:20,editLead:'II',editSelectedClass:'source-N',editTemplates:[]};
+ const pending=[],renders=[],nodes=new Map(),state={caseId:'synthetic-A',caseRequestId:1,currentPage:'edit',caseData:{technical:{duration_seconds_raw:1800}},editRequestId:0,editStart:0,editDuration:20,editLead:'II',editSelectedClass:'source-N',editTemplates:[]};
  const context=vm.createContext({state,URLSearchParams,DEFAULT_PREVIEW_LEADS:['II','V1','V5'],EDIT_SOURCE_CLASSES:[{key:'source-N'}],$:s=>{if(!nodes.has(s))nodes.set(s,{textContent:''});return nodes.get(s)},clearWaveformSurface:()=>state.editWaveform=null,api:(url)=>{const g=gate();pending.push({url,...g});return g.promise;},renderEditClasses(){},renderEditOverview(){},renderEditScatter(){},renderEditWaveform:()=>renders.push(state.editWaveform),renderEditLibrary(){},loadEditTemplateStrips:async()=>{}});
  vm.runInContext(snippet,context);
  const init=context.loadEdit();assert.equal(pending.length,5);

@@ -167,7 +167,11 @@
 
   let waveformPromise=null;
   async function waveformBuffer(){
-    if(!waveformPromise)waveformPromise=nativeFetch(`${ASSET_BASE}/waveform.bin`).then(result=>{if(!result.ok)throw new Error(`波形资源加载失败（${result.status}）`);return result.arrayBuffer()});
+    if(!waveformPromise){
+      const pending=nativeFetch(`${ASSET_BASE}/waveform.bin`).then(result=>{if(!result.ok)throw new Error(`波形资源加载失败（${result.status}）`);return result.arrayBuffer()});
+      waveformPromise=pending;
+      pending.catch(()=>{if(waveformPromise===pending)waveformPromise=null;});
+    }
     return waveformPromise;
   }
   function displayFilter(values){

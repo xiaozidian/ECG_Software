@@ -52,6 +52,11 @@ const beatEditor=(()=>{
   function registerOccurrence(card,item,scope){
     occurrenceCards.set(card,{item,scope});
     card.oncontextmenu=event=>{event.preventDefault();event.stopPropagation();occurrenceContext(card,event).catch(handleError)};
+    card.ondblclick=event=>{
+      if(event.ctrlKey||event.metaKey||!scope.isCurrent?.())return;
+      event.preventDefault();event.stopPropagation();
+      openEditTwelveLead(card.querySelector('.occurrence-open')||card,item,{expectedScope:scope.identity,isCurrent:scope.isCurrent}).catch(handleError);
+    };
   }
   async function request(suffix,method="GET",body,scope=owner()){
     requireOwner(scope);
@@ -325,6 +330,11 @@ const beatEditor=(()=>{
       const item=state.editTemplateStrips.find(r=>r.sample_index===Number(card.dataset.editSample)),canvas=card.querySelector("canvas");if(!item||!canvas)return;
       event.preventDefault();event.stopImmediatePropagation();open(event,canvas,{...item,beats:[item]},"edit",true);
     },true);
+    document.addEventListener("dblclick",event=>{
+      const card=event.target.closest?.('[data-edit-sample]');if(!card||state.currentPage!=='edit')return;
+      const item=state.editTemplateStrips.find(row=>Number(row.sample_index)===Number(card.dataset.editSample));if(!item)return;
+      event.preventDefault();event.stopPropagation();openEditTwelveLead(card,item).catch(handleError);
+    });
     ["#waveformCanvas","#editWaveformCanvas","#editLibraryWaveformCanvas"].forEach(id=>{
       const canvas=$(id);if(!canvas)return;const bar=document.createElement("div");bar.className="beat-edit-history";
       bar.innerHTML='<span data-editor-status>心搏修订</span><button type="button" data-history="undo" title="⌘ / Ctrl+Z">撤销</button><button type="button" data-history="redo" title="⌘ / Ctrl+Shift+Z">重做</button>';

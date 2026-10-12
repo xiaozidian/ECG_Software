@@ -41,11 +41,12 @@ async function detail(){
 async function wave(which){
   const source=fs.readFileSync('static/js/app.js','utf8'),g=gate(),nodes=new Map(),renders=[];
   const field=which.startsWith('edit')?'editWaveform':which.startsWith('stt')?'sttWaveform':'waveform',meta=field==='waveform'?'waveMeta':field==='editWaveform'?'editWaveMeta':'sttWaveMeta';
-  const state={caseId:'A',caseRequestId:1,start:0,duration:10,filter:'raw',[field]:{old:true},waveformRequestId:0,editRequestId:0,sttRequestId:0,caseData:{technical:{duration_seconds_raw:90}},editStart:0,editDuration:20,editLead:'II',sttStart:0,sttDuration:10,leads:['II'],sttLeads:['II','V1'],workspaceEpoch:1,sttReview:{}};
+  const state={caseId:'A',caseRequestId:1,currentPage:field==='editWaveform'?'edit':field==='sttWaveform'?'stt':'review',start:0,duration:10,filter:'raw',[field]:{old:true},waveformRequestId:0,editRequestId:0,editWorkspaceRequestId:0,editMode:'cluster',editSelectedClass:'source-N',editSelectedSample:null,sttRequestId:0,caseData:{technical:{duration_seconds_raw:90,sample_rate_hz:200}},editStart:0,editDuration:20,editLead:'II',sttStart:0,sttDuration:10,leads:['II'],sttLeads:['II','V1'],workspaceEpoch:1,sttReview:{}};
   const $=s=>{if(!nodes.has(s))nodes.set(s,{textContent:'',value:0,setAttribute(){},getContext:()=>({clearRect(){},fillRect(){},fillText(){}}),width:500,height:200});return nodes.get(s)};
   const ctx=vm.createContext({state,$,AbortController,api:()=>g.promise,URLSearchParams,ECGAnalysisConsistency:require('../static/js/analysis-consistency.js'),withPhi:x=>x,analysisReadStatus(){},DEFAULT_PREVIEW_LEADS:['II','V1','V5'],waveformRequestLeads:()=>['II'],formatElapsed:String,
     updateZoomControls(){},renderWaveform(){renders.push(state.waveform)},renderVisibleEvents(){},renderAnnotations(){},renderOverview(){},syncHourScatter(){}});
   vm.runInContext(source.match(/^const ALL_LEADS = .*;$/m)[0],ctx);
+  vm.runInContext(source.slice(source.indexOf('function editTwelveScope()'),source.indexOf('async function openEditTwelveLead(')),ctx);
   vm.runInContext(source.slice(source.indexOf('async function loadWaveform('),source.indexOf('function canvasContext(')),ctx);
   vm.runInContext(source.slice(source.indexOf('async function loadEditWaveform('),source.indexOf('function setEditStart(')),ctx);
   vm.runInContext(source.slice(source.indexOf('function sttReviewLayout('),source.indexOf('function sttLandmarkFractions(')),ctx);

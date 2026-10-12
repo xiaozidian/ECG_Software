@@ -136,6 +136,16 @@
     }catch(error){if(error.name!=='AbortError'&&C().isCurrent(ticket,viewKey()))message('框选未应用：'+error.message,true);}
   }
   function clear(){if(active())C().clear({expectedScope:C().snapshot().scope,origin:'template-clear'});}
+  function capturePresentation(){
+    const panel=q('#templateLinkedCards');
+    return {scope:keyScope(C()?.snapshot().scope),view:viewKey(),pageIndex,open:!!panel?.matches(':popover-open'),scrollTop:panel?.scrollTop||0};
+  }
+  function restorePresentation(mark){
+    if(!mark||!active()||mark.scope!==keyScope(C().snapshot().scope)||mark.view!==viewKey())return;
+    pageIndex=mark.pageIndex;const panel=q('#templateLinkedCards');if(!mark.open||!panel)return;
+    if([...panel.querySelectorAll('[data-linked-wave]')].some(node=>!cardWaves.has(Number(node.dataset.linkedWave))))cardKey=null;
+    panel.showPopover();renderCards();panel.scrollTop=mark.scrollTop;
+  }
   async function renderCards(){
     const panel=q('#templateLinkedCards'),c=getCohort();if(!panel)return;
     if(!c){C().cancelLane('template.cards');cardKey=null;cardWaves.clear();q('#templateLinkedCardSummary').textContent='当前来源与分组匹配尚未读取；保留权威选集，暂不显示旧匹配卡。';q('#templateLinkedCardPage').textContent='匹配读取中';q('#templateLinkedPrev').disabled=q('#templateLinkedNext').disabled=true;q('#templateLinkedCardGrid').innerHTML='<p class="empty-state">正在读取当前来源与版本…</p>';return;}
@@ -181,6 +191,13 @@
     q('#page-edit').append(panel);open.onclick=()=>{if(!sameRows()){rowsError=null;ensureRows();schedule();return;}panel.showPopover();renderCards();q('#templateLinkedClose').focus();};q('#templateLinkedClose').onclick=()=>{C().cancelLane('template.cards');cardKey=null;panel.hidePopover();open.focus();};
     q('#morphRetry')?.addEventListener('click',()=>{rowsError=null;schedule();});q('#templateLinkedPrev').onclick=()=>{pageIndex=Math.max(0,pageIndex-1);cardKey=null;renderCards();};q('#templateLinkedNext').onclick=()=>{pageIndex++;cardKey=null;renderCards();};q('#templateLinkedClear').onclick=clear;
     panel.addEventListener('click',event=>{const b=event.target.closest('[data-linked-focus]');if(b)focusSample(Number(b.dataset.linkedFocus));});
+    panel.addEventListener('dblclick',event=>{
+      const card=event.target.closest('[data-linked-sample]');if(!card||event.target.closest('label,input')||!active()||!sameRows())return;
+      const sample=Number(card.dataset.linkedSample),row=rowMap.get(sample);if(!row)return;
+      const expected=C().snapshot().scope,key=cardKey,view=viewKey();
+      event.preventDefault();event.stopPropagation();
+      openEditTwelveLead(card.querySelector('[data-linked-focus]')||card,row,{expectedScope:expected,isCurrent:()=>active()&&sameRows()&&key===cardKey&&view===viewKey()&&card.isConnected&&keyScope(expected)===keyScope(C().snapshot().scope)}).catch(handleError);
+    });
     panel.addEventListener('change',event=>{const e=event.target;if(e.hasAttribute('data-linked-check')){const sample=Number(e.dataset.linkedCheck);if(!sameRows()||!rowMap.has(sample)||!clinicalUI.setLinkedChecked(sample,e.checked,C().snapshot().scope)){e.checked=state.editSelectedSamples.has(sample);message('改型勾选未应用：当前依据已变化，请重新读取',true);}syncCards();}});
     panel.addEventListener('keydown',event=>{if(['n','s','v','x','p','o','backspace'].includes(event.key.toLowerCase())&&!event.target.closest('input,select,textarea'))event.stopPropagation();if(event.key==='Escape'){event.preventDefault();event.stopPropagation();q('#templateLinkedClose').click();}});
     const status=document.createElement('p');status.id='templateLinkedStatus';status.className='template-linked-status';status.setAttribute('role','status');q('.morph-method-details')?.append(status);
@@ -197,6 +214,6 @@
     document.addEventListener('change',event=>{if(['editLeadSelect','editLibraryLeadSelect'].includes(event.target.id))schedule();});
     window.addEventListener('resize',schedule);schedule();
   }
-  root.ECGTemplateLinkedView=Object.freeze({refresh,schedule,render,focusSample,selectPolygon,selectSamples,clear,stats:()=>cohort?.active?nn(rows,cohort.samples):null,context:()=>cohort?Object.freeze({...cohort,samples:Object.freeze([...cohort.samples])}):null,math});
+  root.ECGTemplateLinkedView=Object.freeze({refresh,schedule,render,focusSample,selectPolygon,selectSamples,clear,capturePresentation,restorePresentation,stats:()=>cohort?.active?nn(rows,cohort.samples):null,context:()=>cohort?Object.freeze({...cohort,samples:Object.freeze([...cohort.samples])}):null,math});
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mount);else mount();
 })(globalThis);
