@@ -128,7 +128,14 @@ globalThis.ECGReportWorkspace=(()=>{
     host.onclick=e=>{const b=e.target.closest('button');if(!b||b.disabled)return;if(b.hasAttribute('data-clear-bins'))change({mode:'all',range:null,pauseBand:'all',spacing:0});if(b.dataset.patternBin!==undefined)change(category==='pause'?{pauseBand:b.dataset.patternBin}:{mode:b.dataset.patternBin});if(b.dataset.hourBin!==undefined){const bin=time[Number(b.dataset.hourBin)];change({range:[bin.start_s,bin.end_s]})}};
     const clear=host.querySelector('[data-clear-bins]');if(clear)clear.title=clear.disabled?'当前没有亚型、时段或间隔筛选':'仅清除显示筛选，保留已选图条与诊断复核';
   }
-  function compose(host,{id,composition,selected,lookup,sections,onPages,onMode,onPreview,renderWave,loadWave,renderAdvanced,terms=[],overview=null,isCurrent=()=>true}){
+  function releaseTerminology(host){
+    host?._rwTerminologyController?.destroy();
+    host?._rwTerminologyRestoreLayout?.();
+    if(host){delete host._rwTerminologyController;delete host._rwTerminologyRestoreLayout;}
+  }
+  function getTerminologyUsages(host){return host?._rwTerminologyController?.getUsages()??null;}
+  function compose(host,{id,composition,selected,lookup,sections,onPages,onMode,onPreview,renderWave,loadWave,renderAdvanced,terms=[],overview=null,isCurrent=()=>true,termContext=null,onUsages=null}){
+    releaseTerminology(host);
     view.miniObserver?.disconnect();
     if(caseId===id&&host.querySelector('.rw-workspace')){
       view.position=capturePosition(host);
@@ -174,7 +181,7 @@ globalThis.ECGReportWorkspace=(()=>{
     visible.forEach(({i,e})=>{if(e?.category==='AF'&&e.rhythm_episode_id)host.querySelector(`[data-back-event="${i}"]`).insertAdjacentHTML('afterend',`<button type="button" data-review-rhythm="${i}">保存草稿并复核片段</button>`);});
     if(renderAdvanced){const panel=document.createElement('div');panel.className='rw-research';host.querySelector('.rw-workspace').append(panel);renderAdvanced(panel);}
     function redraw(selector){
-      compose(host,{id,composition,selected,lookup,sections,onPages,onMode,onPreview,renderWave,loadWave,renderAdvanced,terms,overview,isCurrent});
+      compose(host,{id,composition,selected,lookup,sections,onPages,onMode,onPreview,renderWave,loadWave,renderAdvanced,terms,overview,isCurrent,termContext,onUsages});
       host.querySelector(selector)?.focus({preventScroll:true});
     }
     host.querySelectorAll('[data-strip-filter]').forEach(b=>b.onclick=()=>{filter=b.dataset.stripFilter;redraw('[data-strip-filter][aria-pressed="true"]')});
@@ -235,16 +242,35 @@ globalThis.ECGReportWorkspace=(()=>{
     const save=document.querySelector('#reportSaveState');host.querySelector('[data-rw-save-state]').textContent=save?.textContent||'';
     if(save){view.saveObserver?.disconnect();view.saveObserver=new MutationObserver(()=>{const target=host.querySelector('[data-rw-save-state]');if(target)target.textContent=save.textContent;});view.saveObserver.observe(save,{childList:true,characterData:true,subtree:true});}
     if(editor){
-      const oldTerms=dock.querySelector('[data-rw-terms]');if(oldTerms){if(oldTerms.dataset.rwCase===String(id)){view.termState.open=oldTerms.open;view.termState.choice=oldTerms.querySelector('[data-rw-term]')?.value;}oldTerms.remove();}
+      const oldTerms=dock.querySelector('[data-rw-terms]');if(oldTerms){if(oldTerms.dataset.rwCase===String(id)){view.termState.open=oldTerms.open;view.termState.choice=oldTerms.querySelector('[data-rw-term]')?.value;}oldTerms._rwTerminologyController?.destroy();oldTerms.remove();}
       const assistant=document.createElement('details');assistant.dataset.rwTerms='';assistant.dataset.rwCase=String(id);assistant.className='rw-terms';
-      const options=terms.length?terms:[...new Set([...groups].filter(([key])=>key!=='stale').map(([,g])=>g.name))];
-      assistant.innerHTML=`<summary>术语助手 · 选择后插入</summary><p class="rw-hint">候选名称不等于诊断。只插入你选择的文字，插在光标或选区末尾，保留医生正文。</p><label>选择文字<select data-rw-term><option value="">请选择</option>${options.map(t=>`<option value="${esc(typeof t==='string'?t:t.text)}">${esc(typeof t==='string'?t:t.label)}</option>`).join('')}</select></label><div><button type="button" data-rw-insert disabled>插入所选文字</button><button type="button" data-rw-undo disabled>撤销本次插入</button></div><p role="status" data-rw-term-status></p>`;
-      editor.after(assistant);
-      const picker=assistant.querySelector('[data-rw-term]'),insert=assistant.querySelector('[data-rw-insert]'),undo=assistant.querySelector('[data-rw-undo]'),status=assistant.querySelector('[data-rw-term-status]');let insertion=view.termState.insertion||null;assistant.open=!!view.termState.open;picker.value=view.termState.choice||'';insert.disabled=!picker.value||editor.readOnly||editor.disabled;undo.disabled=!insertion;
-      assistant.ontoggle=()=>{if(assistant.isConnected&&caseId===id&&isCurrent())view.termState.open=assistant.open;};
-      picker.onchange=()=>{view.termState.choice=picker.value;insert.disabled=!picker.value||editor.readOnly||editor.disabled;};
-      insert.onclick=()=>{insertion=insertSelectedText(editor,picker.value);view.termState.insertion=insertion;undo.disabled=!insertion;status.textContent=insertion?'已插入所选文字，原正文保留；需保存草稿。':'无法插入：请检查编辑权限、选择文字及正文长度。';};
-      undo.onclick=()=>{if(!undoInsertedText(editor,insertion)){status.textContent='正文已有后续修改，保留当前文字；可在正文中手动撤销。';undo.disabled=true;return;}insertion=null;view.termState.insertion=null;undo.disabled=true;status.textContent='已撤销本次插入，原正文恢复；需保存草稿。';};
+      editor.after(assistant);assistant.open=!!view.termState.open;
+      const termsCurrent=()=>assistant.isConnected&&caseId===id&&dock.querySelector('#conclusionEditor')===editor&&isCurrent();
+      assistant.ontoggle=()=>{if(termsCurrent())view.termState.open=assistant.open;};
+      if(termContext&&globalThis.ECGTerminologyTree?.mount){
+        assistant.classList.add('rw-versioned-terms');
+        const previousColumns=dock.style.getPropertyValue('grid-template-columns'),previousRows=dock.style.getPropertyValue('grid-template-rows');
+        dock.style.gridTemplateColumns='minmax(0,1fr)';dock.style.gridTemplateRows='auto minmax(120px,1fr) auto auto';
+        host._rwTerminologyRestoreLayout=()=>{if(previousColumns)dock.style.gridTemplateColumns=previousColumns;else dock.style.removeProperty('grid-template-columns');if(previousRows)dock.style.gridTemplateRows=previousRows;else dock.style.removeProperty('grid-template-rows');};
+        assistant.style.gridColumn='1 / -1';assistant.style.gridRow='4';assistant.style.height='auto';assistant.style.maxHeight='40dvh';
+        const summary=document.createElement('summary');summary.textContent='术语树 · 示例 / 待核准';
+        const treeHost=document.createElement('div');treeHost.dataset.rwTermTree='';
+        assistant.append(summary,treeHost);
+        const controller=globalThis.ECGTerminologyTree.mount(treeHost,{
+          editor,caseId:id,reportContext:termContext.reportContext??'draft',api:termContext.api,
+          usages:composition.terminology_usages||[],isCurrent:termsCurrent,
+          onUsageDirty:usages=>{if(!termsCurrent())return;composition.terminology_usages=usages;onUsages?.(usages);}
+        });
+        const columns=treeHost.querySelector('.tt-columns');if(columns&&treeHost.clientWidth>0&&treeHost.clientWidth<380)columns.style.gridTemplateColumns='minmax(0,1fr)';
+        host._rwTerminologyController=controller;assistant._rwTerminologyController=controller;
+      }else{
+        const options=terms.length?terms:[...new Set([...groups].filter(([key])=>key!=='stale').map(([,g])=>g.name))];
+        assistant.innerHTML=`<summary>术语助手 · 选择后插入</summary><p class="rw-hint">候选名称不等于诊断。只插入你选择的文字，插在光标或选区末尾，保留医生正文。</p><label>选择文字<select data-rw-term><option value="">请选择</option>${options.map(t=>`<option value="${esc(typeof t==='string'?t:t.text)}">${esc(typeof t==='string'?t:t.label)}</option>`).join('')}</select></label><div><button type="button" data-rw-insert disabled>插入所选文字</button><button type="button" data-rw-undo disabled>撤销本次插入</button></div><p role="status" data-rw-term-status></p>`;
+        const picker=assistant.querySelector('[data-rw-term]'),insert=assistant.querySelector('[data-rw-insert]'),undo=assistant.querySelector('[data-rw-undo]'),status=assistant.querySelector('[data-rw-term-status]');let insertion=view.termState.insertion||null;picker.value=view.termState.choice||'';insert.disabled=!picker.value||editor.readOnly||editor.disabled;undo.disabled=!insertion;
+        picker.onchange=()=>{if(!termsCurrent())return;view.termState.choice=picker.value;insert.disabled=!picker.value||editor.readOnly||editor.disabled;};
+        insert.onclick=()=>{if(!termsCurrent())return;insertion=insertSelectedText(editor,picker.value);view.termState.insertion=insertion;undo.disabled=!insertion;status.textContent=insertion?'已插入所选文字，原正文保留；需保存草稿。':'无法插入：请检查编辑权限、选择文字及正文长度。';};
+        undo.onclick=()=>{if(!termsCurrent())return;if(!undoInsertedText(editor,insertion)){status.textContent='正文已有后续修改，保留当前文字；可在正文中手动撤销。';undo.disabled=true;return;}insertion=null;view.termState.insertion=null;undo.disabled=true;status.textContent='已撤销本次插入，原正文恢复；需保存草稿。';};
+      }
       if(!boundHosts.has(host)){
         boundHosts.add(host);host.addEventListener('scroll',()=>{if(host.querySelector('.rw-workspace'))view.position=capturePosition(host);},true);
         host.addEventListener('focusin',()=>{if(host.querySelector('.rw-workspace'))view.position=capturePosition(host);});
@@ -255,5 +281,5 @@ globalThis.ECGReportWorkspace=(()=>{
     const output=host.querySelector('.rw-output-options');output.ontoggle=()=>{view.outputOpen=output.open;};
     restorePosition(view.position,host);
   }
-  return {distributions,compose,withRateMode,printEligible,waveContext,stripReviewState,reviewQueue,reviewExplanation,mountEventPreview,capturePosition,restorePosition,pageGroups,insertSelectedText,undoInsertedText,reviewWaveSvg,bindWavePreview};
+  return {distributions,compose,withRateMode,printEligible,waveContext,stripReviewState,reviewQueue,reviewExplanation,mountEventPreview,capturePosition,restorePosition,pageGroups,insertSelectedText,undoInsertedText,reviewWaveSvg,bindWavePreview,releaseTerminology,getTerminologyUsages};
 })();

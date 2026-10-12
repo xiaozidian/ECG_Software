@@ -15,7 +15,7 @@ else:
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUTPUT = PROJECT_ROOT / 'build/pages'
-MANIFEST = PROJECT_ROOT / 'docs/releases/0.12.11-doctor-evaluation.20261011/source-manifest.json'
+MANIFEST = PROJECT_ROOT / 'docs/releases/0.12.12-doctor-evaluation.20261012/source-manifest.json'
 ASSET = 'static/demo-data/mathematical-4314'
 NAMESPACE = 'cardioinsight-public-math-4314-v2'
 sha = lambda b: hashlib.sha256(b).hexdigest()
@@ -30,7 +30,7 @@ def build(output: Path) -> Path:
     output.mkdir(parents=True)
     copied = []
     for relative, row in manifest['files'].items():
-        if not relative.startswith('static/') or Path(relative).suffix not in ('.js', '.css', '.svg'):
+        if not relative.startswith('static/') or (Path(relative).suffix not in ('.js', '.css', '.svg') and relative!='static/terminology/builtin-draft-v1.json'):
             continue
         data = original = (PROJECT_ROOT / relative).read_bytes()
         transformations = []
@@ -58,9 +58,11 @@ def build(output: Path) -> Path:
     payload = generate(output / ASSET, manifest['release_id'])
     api_source = PROJECT_ROOT / 'demo/static/js/demo-api.js'
     (output / 'static/js/demo-api.js').write_bytes(api_source.read_bytes())
+    review_api_source=PROJECT_ROOT/'demo/static/js/demo-review-api.js'
+    (output/'static/js/demo-review-api.js').write_bytes(review_api_source.read_bytes())
     env = Environment(loader=FileSystemLoader(PROJECT_ROOT / 'templates'), autoescape=select_autoescape(['html']), undefined=StrictUndefined)
     env.globals['url_for'] = lambda endpoint, filename: 'static/' + filename
-    html = env.get_template('index.html').render(app_name='CardioInsight 数学交互演示', app_version=manifest['release_id'], app_version_short='0.12.11 数学Demo', demo_readonly=True, allow_phi=False)
+    html = env.get_template('index.html').render(app_name='CardioInsight 数学交互演示', app_version=manifest['release_id'], app_version_short='0.12.12 数学Demo', demo_readonly=True, allow_phi=False)
     html = html.replace('演示分析医生', '数学演示操作者').replace('本地工作站', '浏览器独立数学演示')
     html = html.replace('10 例仅用于功能回归', '纯数学输入仅演示交互')
     html = html.replace('在线 Demo 可体验测量交互，但不会保存复核意见。', '数学 Demo 的人工复核意见仅保存到当前浏览器，不上传。')
@@ -69,7 +71,7 @@ def build(output: Path) -> Path:
     html = html.replace(old_st_save, 'id="saveSttAnnotation" class="button primary" type="submit"')
     anchor = '<script src="static/js/app.js"></script>'
     assert html.count(anchor) == 1
-    html = html.replace(anchor, '<script src="' + ASSET + '/case-data.js"></script>\n<script src="static/js/demo-api.js"></script>\n' + anchor)
+    html = html.replace(anchor, '<script src="' + ASSET + '/case-data.js"></script>\n<script src="static/js/demo-review-api.js"></script>\n<script src="static/js/demo-api.js"></script>\n' + anchor)
     html = html.replace('<body>', '<body><aside id="mathematicalDemoBoundary" role="note" style="position:fixed;bottom:0;left:0;right:0;z-index:10000;pointer-events:none;background:#fff4d5;color:#3e2f10;padding:5px 12px;text-align:center">纯数学合成 · 无患者输入 · 修改仅存本浏览器 · 不构成疾病金标准或临床结论</aside>')
     def asset_version(match):
         attribute, relative = match.groups()
@@ -85,7 +87,7 @@ def build(output: Path) -> Path:
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
 """, encoding='utf-8', newline='\n')
-    receipt = {'schema': 1, 'release_id': manifest['release_id'], 'production_source_sha256': manifest['source_sha256'], 'production_files_verified': len(manifest['files']), 'production_files_modified': False, 'storage_namespace': NAMESPACE, 'mathematical_source': payload, 'software_assets': copied, 'demo_api_sha256': sha(api_source.read_bytes()), 'legacy_demo_inputs_read': False, 'scope': 'Browser-only mathematical interaction; no desktop database, native PDF, backup/restore, clinical or hardware validation.'}
+    receipt = {'schema': 1, 'release_id': manifest['release_id'], 'production_source_sha256': manifest['source_sha256'], 'production_files_verified': len(manifest['files']), 'production_files_modified': False, 'storage_namespace': NAMESPACE, 'mathematical_source': payload, 'software_assets': copied, 'demo_api_sha256': sha(api_source.read_bytes()), 'demo_review_api_sha256':sha(review_api_source.read_bytes()), 'legacy_demo_inputs_read': False, 'scope': 'Browser-only mathematical interaction; no desktop database, native PDF, backup/restore, clinical or hardware validation.'}
     (output / 'mathematical-source-manifest.json').write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + '\n', encoding='utf-8', newline='\n')
     return output
 

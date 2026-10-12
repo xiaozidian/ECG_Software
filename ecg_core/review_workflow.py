@@ -53,6 +53,8 @@ class ReviewWorkflowMixin:
             affected = STEPS
         elif action == "event.review":
             affected = ("events",)
+        elif action in ("hrv_review.changed", "hrv_review.confirmed"):
+            affected = ()  # HRV selections change report evidence, not beat/ST classification.
         else:
             return
         value = self._review(db, case_id)
@@ -70,7 +72,7 @@ class ReviewWorkflowMixin:
             composition=json.loads(report["composition"] or "{}")
             reviews=composition.get("category_reviews",{})
             if action.startswith("annotation.") and not action.startswith("annotation.rhythm"):reviews.pop("ST",None)
-            elif action != "event.review":reviews.clear()
+            elif action != "event.review" and not action.startswith("hrv_review."):reviews.clear()
             composition["category_reviews"]=reviews
             # Preserve the doctor's prose, but never carry its acknowledgement
             # across a changed clinical basis (including undo/redo).

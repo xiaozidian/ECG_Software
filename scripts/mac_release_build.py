@@ -46,6 +46,7 @@ def software_files(root):
     files += [root / name for name in COMMANDS]
     files += sorted((root / 'static' / 'css').glob('*.css'))
     files += sorted((root / 'static' / 'js').glob('*.js'))
+    files += [root / 'static' / 'terminology' / 'builtin-draft-v1.json']
     if any(not path.is_file() or path.is_symlink() for path in files):
         raise ValueError('软件白名单缺文件或包含链接，构建停止。')
     return sorted(files)
@@ -150,10 +151,15 @@ def build(args):
     _write(root / 'mac-release-manifest.json', release)
     _write(evidence / 'source-freeze.json', before)
     _write(evidence / 'build-environment.json', environment)
-    dist, work = evidence / 'build-dist', evidence / 'build-work'
-    build_environment = dict(os.environ, PYINSTALLER_CONFIG_DIR=str(evidence / 'pyinstaller-private-cache'))
+    dist = evidence / 'build-dist'
+    work = args.reuse_work.resolve() if args.reuse_work else evidence / 'build-work'
+    cache = args.reuse_cache.resolve() if args.reuse_cache else evidence / 'pyinstaller-private-cache'
+    build_environment = dict(os.environ, PYINSTALLER_CONFIG_DIR=str(cache))
+    free=shutil.disk_usage(evidence).free
+    if free < 3_500_000_000: raise ValueError('构建预估峰值1.5GB并保留2GB基本余量；空间不足，未启动构建。')
+    _write(evidence / 'build-space-and-cache.json',dict(free_bytes=free,estimated_peak_bytes=1_500_000_000,work=str(work),cache=str(cache),reuse_work=bool(args.reuse_work),reuse_cache=bool(args.reuse_cache)))
     with open(evidence / 'pyinstaller.log', 'w') as log:
-        _run([args.python, '-m', 'PyInstaller', '--noconfirm', '--clean', '--distpath', dist,
+        _run([args.python, '-m', 'PyInstaller', '--noconfirm', '--distpath', dist,
               '--workpath', work, root / 'CardioInsightMacCandidate.spec'], cwd=root,
              env=build_environment, stdout=log, stderr=subprocess.STDOUT)
     if source_snapshot(root) != before:
@@ -246,6 +252,8 @@ def main():
     parser.add_argument('--evidence', type=Path, required=True)
     parser.add_argument('--python', required=True)
     parser.add_argument('--frozen', action='store_true')
+    parser.add_argument('--reuse-work',type=Path)
+    parser.add_argument('--reuse-cache',type=Path)
     parser.add_argument('--expected-source-sha')
     parser.add_argument('--production-freeze', type=Path, required=True)
     args = parser.parse_args()

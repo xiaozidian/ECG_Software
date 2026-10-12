@@ -121,7 +121,7 @@ def build_paper_pdf(case, report, font):
             d = s.get(code,{})
             text(x,103,title,10)
             pairs(x,109,[('总数',f"{number(d.get('total'))} 搏（{number(d.get('pct'))}%）"),('单发',str(d.get('single','—'))+' 次'),('成对',str(d.get('couplet','—'))+' 对'),('短阵（≥3搏）',str(d.get('run','—'))+' 阵'),('二联律',str(d.get('bigeminy','—'))+' 阵'),('三联律',str(d.get('trigeminy','—'))+' 阵')],28)
-        text(2,138,'心率变异性 · 当前修订 N-N',10)
+        text(2,138,'全记录 N-N 标签基线 · 区间复核见 HRV 专页',10)
         for i,(name,key,unit) in enumerate([('SDNN','sdnn_ms','ms'),('SDANN','sdann_ms','ms'),('SDNN index','sdnn_index_ms','ms'),('rMSSD','rmssd_ms','ms'),('pNN50','pnn50_pct','%'),('三角指数','triangular_index','')]):
             text(2+i%3*63,144+i//3*4,f'{name}: {number(hrv.get(key))} {unit}',8.5)
         source=case.get('summary',{})

@@ -18,8 +18,12 @@ const source = fs.readFileSync('static/js/clinical-ui.js', 'utf8');
 const start = source.indexOf('  let hrvLegacyWeb=null;');
 const end = source.indexOf('  function composition(', start);
 assert(start >= 0 && end > start, 'Missing production HRV closure dependencies');
-const dependencies = source.slice(start, end);
+const helpersStart = source.indexOf('  async function refreshHrvCase(');
+const helpersEnd = source.indexOf('  async function loadHrv(', helpersStart);
+assert(helpersStart >= 0 && helpersEnd > helpersStart, 'Missing production HRV editor helpers');
+const dependencies = source.slice(start, end) + source.slice(helpersStart, helpersEnd);
 assert(dependencies.includes('function renderHrvTarget('), 'Missing production HRV renderer');
+assert(dependencies.includes('function mountHrvReviewEditor('), 'Missing production HRV editor mount');
 const runInContext = vm.runInContext;
 const loaded = new WeakSet();
 vm.runInContext = function(code, context, ...options) {
@@ -56,7 +60,7 @@ def test_read_endpoints_bind_source_and_review(synthetic_app, synthetic_case, ki
     assert response.status_code == 409, response.json
 
 
-@pytest.mark.parametrize('kind,reader', [('hrv', 'hrv'), ('hrv-analysis', 'analyze_hrv'),
+@pytest.mark.parametrize('kind,reader', [('hrv', 'hrv'), ('hrv-analysis', 'analyze_hrv_review'),
     ('hrv-windows', 'hrv_windows'), ('stt-review', 'build_stt_review'),
     ('report-statistics', 'report_statistics'), ('report-sections', 'build_stt_review'),
     ('trend', 'heart_rate_trend'), ('rr-visuals', 'rr_visuals'), ('scatter', 'scatter_points'),

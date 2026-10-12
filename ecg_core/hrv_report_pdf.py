@@ -145,4 +145,15 @@ def make_hrv_pages(c, font, data):
     pages=[first]
     for i in range(0,max(1,len(hours)),25):
         rows=hours[i:i+25];pages.append(lambda rows=rows,continued=i>0:second(rows,continued))
+    if data.get('hrv_review'):
+        review=data['hrv_review'];scope=review.get('scope',{})
+        declared='医生已声明核实本窗口节律与伪差' if review.get('confirmation',{}).get('valid') else '本窗口窦性与信号质量尚未核实'
+        reference=f"HRV r{review['hrv_revision']} / {review['digest'][:12]} / beat r{scope.get('beat_revision','?')} / analysis r{scope.get('analysis_revision','?')}"
+        def with_provenance(draw):
+            def wrapped():
+                draw()
+                text(0,263,reference,6)
+                text(0,266,'fixed-300s-fft-compat-v1 · N-N标签筛选候选 / '+declared,6)
+            return wrapped
+        pages=[with_provenance(draw) for draw in pages]
     return pages

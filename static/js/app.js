@@ -205,7 +205,7 @@ async function api(path, options = {}) {
   };
   const reads=globalThis.ECGReadRequests;
   const method=(options.method||'GET').toUpperCase();
-  const isWrite=!['GET','HEAD'].includes(method)&&path!=='/api/privacy/view'&&!(/\/(open|event-waveforms|waveform-strips|waveform-density|scatter-selection|advanced-analysis)(\?|$)/.test(path));
+  const isWrite=!['GET','HEAD'].includes(method)&&path!=='/api/privacy/view'&&!(/\/(open|event-waveforms|waveform-strips|waveform-density|scatter-selection|advanced-analysis|rr-review\/locate|hrv-review\/preview|hrv-review\/cancel)(\?|$)/.test(path));
   if(isWrite){globalThis.ecgChartInspection?.invalidate();reads?.clear();}
   const scope=JSON.stringify([requestCase,state.caseRequestId,state.currentPage]);
   const payload=method==='GET'&&reads?await reads.read(scope,path,readRequest,readLane,options.signal):await readRequest(options.signal);
@@ -525,9 +525,11 @@ function allowSttCaseSelection(caseId) {
 }
 
 async function selectCase(caseId, destination = "review") {
+  if(state.caseId!==caseId&&globalThis.ECGHRVEditor?.allowLeave()===false)return;
   if(!allowSttCaseSelection(caseId))return;
   if(!clinicalWorkflow.allowLeave())return;
   const sttCaseChanged=state.caseId!==caseId;
+  if(sttCaseChanged)globalThis.ecgRRBridge?.dispose();
   if(typeof clinicalUI!=='undefined')clinicalUI.cancelReportExport();
   globalThis.ecgChartInspection?.invalidate();
   globalThis.ECGReadRequests?.clear();
@@ -720,6 +722,7 @@ async function loadCase(caseId=state.caseId, requestId=null) {
 }
 
 function goPage(name, {reuseEditWorkspace=false}={}) {
+  if(state.currentPage!==name&&globalThis.ECGHRVEditor?.allowLeave()===false)return;
   if(state.caseLoading){
     if(!["dashboard","patients","audit","settings"].includes(name)){
       state.caseLoading.destination=name;renderCaseLoading();return;
@@ -730,7 +733,7 @@ function goPage(name, {reuseEditWorkspace=false}={}) {
   }
   if(ECGReviewTools.shouldConfirmNavigation(state.currentPage,name,state.reportDirty)&&!clinicalWorkflow.allowLeave())return;
   if (state.demoReadonly && ["audit", "settings"].includes(name)) name = "dashboard";
-  const needsCase = ["edit", "review", "trends", "stt", "events", "report"].includes(name);
+  const needsCase = ["edit", "review", "trends", "stt", "events", "report", "rr"].includes(name);
   if (needsCase && !state.caseId) {
     toast("请先从工作列表选择病例", "error");
     name = "dashboard";
@@ -741,6 +744,7 @@ function goPage(name, {reuseEditWorkspace=false}={}) {
     state.sttRequestId++;state.sttAbort?.abort();state.sttAbort=null;state.sttWaveformSelection=null;
     globalThis.ecgSttReviewLayout?.clear("已离开 ST‑T 复核，请重新读取当前窗口。","empty");
   }
+  if(state.currentPage==='rr'&&name!=='rr')globalThis.ecgRRBridge?.dispose();
   state.currentPage = name;
   markWorkflowVisited(name);
   $$(".page").forEach(page => page.classList.toggle("active", page.id === `page-${name}`));
@@ -751,6 +755,7 @@ function goPage(name, {reuseEditWorkspace=false}={}) {
   if (name === "patients" && state.dashboardStatus !== "ready") loadDashboard().catch(handleError);
   if (name === "review") {loadWaveform().catch(handleError);loadScatter().catch(handleError);}
   if (name === "trends") loadTrends().catch(handleError);
+  if (name === "rr") globalThis.ecgRRBridge?.load().catch(handleError);
   if (name === "stt") loadStt().catch(handleError);
   if (name === "edit" && !reuseEditWorkspace) loadEdit().catch(handleError);
   if (name === "events") loadEvents().catch(handleError);

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from .terminology import normalize_terminology_usages
 import sqlite3
 from .review_workflow import ReportConflict
 from .clinical_analysis import normalize_selection
@@ -45,6 +46,19 @@ DEFAULT_REPORT_COMPOSITION = {
         "gain": "10 mm/mV",
     },
 }
+
+
+def normalize_hrv_reference(value):
+    from .hrv_review import normalize_scope, PROFILE
+    if not isinstance(value,dict) or set(value)!={'hrv_revision','document_digest','window_index','profile','scope'}:
+        raise ValueError('报告 HRV 来源引用字段无效')
+    for key in ('hrv_revision','window_index'):
+        if type(value[key]) is not int or value[key]<0: raise ValueError('报告 HRV 修订和窗口必须为非负整数')
+    if value['profile']!=PROFILE or not isinstance(value['document_digest'],str) or len(value['document_digest'])!=64 or any(c not in '0123456789abcdef' for c in value['document_digest']):
+        raise ValueError('报告 HRV 方法或内容指纹无效')
+    scope=value['scope']
+    if not isinstance(scope,dict): raise ValueError('报告 HRV 依据无效')
+    return {**value,'scope':normalize_scope(scope,scope.get('case_id'))}
 
 
 def normalize_report_composition(value: dict | None) -> dict:
@@ -96,6 +110,8 @@ def normalize_report_composition(value: dict | None) -> dict:
         raise ValueError("paper 图条设置不受支持")
     return {
         **normalize_selection(value),
+        **({"terminology_usages": normalize_terminology_usages(value["terminology_usages"])} if "terminology_usages" in value else {}),
+        **({"hrv_review_reference": normalize_hrv_reference(value["hrv_review_reference"])} if "hrv_review_reference" in value else {}),
         "advanced_options": normalize_options(value.get('advanced_options')),
         "hrv_window": max(0, int(value.get("hrv_window",0))),
         "include_hrv": value.get('include_hrv',False),

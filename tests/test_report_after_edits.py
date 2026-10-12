@@ -81,13 +81,31 @@ def test_doctor_edit_invalidates_selected_report_undo_does_not_reapprove(synthet
         assert response.status_code==200,response.json
         return response.json
     def ready():
+        hrv=client.get(base+'/hrv-review').json
+        if hrv['document_stale']:
+            # A beat edit/undo needs a real source rebind even for an empty document.
+            assert hrv['document']['exclusions']==[]
+            predicted=client.post(base+'/hrv-review/preview',json=dict(scope=hrv['scope'],
+                expected_hrv_revision=hrv['hrv_revision'],operation='reset',window=0))
+            assert predicted.status_code==200,predicted.json
+            applied=client.put(base+'/hrv-review',json=dict(scope=hrv['scope'],
+                expected_hrv_revision=hrv['hrv_revision'],confirmed=True,window=0,
+                preview_token=predicted.json['preview_token'],preview_digest=predicted.json['preview_digest']))
+            assert applied.status_code==200,applied.json
         for step in ('edit','stt'):
             store.complete_review(cid,dict(step=step,confirmed=True,revision=store.get_review(cid)['revision']),'test-doctor')
+        hrv=client.get(base+'/hrv-review').json
+        confirmed=client.post(base+'/hrv-review/confirm',json=dict(scope=hrv['scope'],
+            expected_hrv_revision=hrv['hrv_revision'],expected_document_digest=hrv['digest'],
+            window=0,confirmed=True,nn_rhythm_artifact_reviewed=True,note='Synthetic workflow declaration'))
+        assert confirmed.status_code==200 and confirmed.json['confirmation']['valid']
+        assert confirmed.json['confirmation']['clinical_validation'] is False
     def save(report,status):
         return client.put(base+'/report',json=dict(status=status,expected_version=report['version'],expected_review_revision=report['review_revision'],conclusion=report['conclusion'],composition=report['composition']))
     edit('relabel',0,selection={'samples':[6000]},class_code='V');ready()
     events=client.get(base+'/report-events?category=V').json;event=events['items'][0]
     report=client.get(base+'/report').json
+    report['composition']['hrv_review_reference']=report['current_hrv_reference']
     report['conclusion']='合成病例：手工复核正文，不是患者诊断'
     report['composition'].update(selected_events=[dict(event_id=event['event_id'],basis_version=event['basis_version'],caption='合成室早')],category_reviews=events['basis_versions'],diagnosis_blocks=[dict(key='V:single',text='合成人工说明',manual=True,acknowledged=True,needs_review=False)])
     response=save(report,'draft');assert response.status_code==200,response.json
@@ -104,6 +122,7 @@ def test_doctor_edit_invalidates_selected_report_undo_does_not_reapprove(synthet
     assert save(approved,'reviewed').status_code==409
     assert client.get(base+'/report.pdf',query_string={'expected_version':approved['version']}).status_code==409
     ready();invalid=client.get(base+'/report').json
+    invalid['composition']['hrv_review_reference']=invalid['current_hrv_reference']
     assert save(invalid,'reviewed').status_code==400 # Removed pick must be replaced.
     assert client.get(base+'/report.pdf').status_code in (400,409) # No stale strip even in draft.
     edit('undo',2)
@@ -111,6 +130,7 @@ def test_doctor_edit_invalidates_selected_report_undo_does_not_reapprove(synthet
     restored=client.get(base+'/report').json
     assert restored['status']=='draft' and restored['composition']['diagnosis_blocks'][0]['needs_review']
     ready();restored=client.get(base+'/report').json
+    restored['composition']['hrv_review_reference']=restored['current_hrv_reference']
     restored['composition']['category_reviews']=client.get(base+'/report-events').json['basis_versions']
     draft=save(restored,'draft');assert draft.status_code==200,draft.json
     denied=save(draft.json,'reviewed');assert denied.status_code==400 and '人工诊断文字' in denied.json['error']

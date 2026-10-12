@@ -34,7 +34,10 @@ from ecg_core.ebi import (
     visible_beats,
 )
 from ecg_core.report_pdf import build_report_pdf
-from ecg_core.hrv_analysis import analyze_hrv
+from ecg_core.hrv_analysis import analyze_hrv, analyze_hrv_review
+from ecg_core.hrv_review import HrvReviewStore
+from ecg_core.rr_review import build_rr_index, query_rr, resolve_rr_target, RRReviewConflict
+from ecg_core.terminology import TerminologyStore, TerminologyConflict
 from ecg_core.report_layout import prepare_strip, report_statistics
 from ecg_core.clinical_analysis import build_index, query_index, hrv_windows, validate_report
 from ecg_core.clinical_query_cache import ClinicalQueryCache, ClinicalQueryBusy, WaveformBeatCache, ClinicalEvidenceCache
@@ -53,7 +56,7 @@ from ecg_core.waveform import read_event_waveform, ALL_LEADS, read_waveform, rea
 from ecg_core.overview import RhythmReviewStore, initial_episodes, density
 
 ACTOR = "演示分析医生"
-READONLY_POST_ENDPOINTS = frozenset({"case_open", "scatter_selection_endpoint", "waveform_strips_endpoint", "event_waveforms", "waveform_density", "advanced_analysis_endpoint"})
+READONLY_POST_ENDPOINTS = frozenset({"case_open", "scatter_selection_endpoint", "waveform_strips_endpoint", "event_waveforms", "waveform_density", "advanced_analysis_endpoint", "rr_locate_endpoint"})
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -210,6 +213,8 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
     waveform_beat_cache = WaveformBeatCache()
     hrv_evidence_cache = ClinicalEvidenceCache()
     app.extensions['hrv_evidence_cache'] = hrv_evidence_cache
+    hrv_measurement_cache = ClinicalEvidenceCache(max_entries=4,max_units=32*1024*1024)
+    app.extensions['hrv_measurement_cache'] = hrv_measurement_cache
     app.extensions['waveform_beat_cache'] = waveform_beat_cache
     backup_directory = storage.path.parent / 'backups'
     backup_lock = threading.Lock()
@@ -289,9 +294,27 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
 
     editor = BeatEditorStore(storage)
     rhythms = RhythmReviewStore(storage)
+    hrv_reviews = HrvReviewStore(storage)
+    terminology = TerminologyStore(storage)
+    app.extensions['hrv_reviews'] = hrv_reviews
+    app.extensions['terminology'] = terminology
+
+    class RRIndexCache(ClinicalQueryCache):
+        @staticmethod
+        def _weight(index):
+            return len(index['intervals'])  # targets retain references to the same rows
+    rr_cache = RRIndexCache(max_units=400_000)
+    app.extensions['rr_review_cache'] = rr_cache
+
+    class ReviewIdentityCache(ClinicalQueryCache):
+        @staticmethod
+        def _weight(index): return 1
+    review_identity_cache = ReviewIdentityCache(max_units=2)
 
     def linked_read_identity(case, expected=None):
         """Chart projections retain both review and edited-beat provenance."""
+        if expected and 'case_id' in expected and expected['case_id'] != case['case_id']:
+            raise ReportConflict('图表请求来自另一病例，请重新读取')
         basis = clinical_read_basis(case, expected)
         revision = editor.snapshot(case['case_id'])['revision']
         expected = expected or {}
@@ -299,7 +322,7 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
             if key in expected and (type(expected[key]) is not int or expected[key] != revision):
                 raise ReportConflict('心搏版本已变化，请重新读取当前图表')
         clinical_read_basis(case, basis)
-        return {**basis, 'beat_revision': revision}
+        return {**basis, 'beat_revision': revision, 'case_id': case['case_id']}
 
     def edited_feed(case, document=None):
         # Reuse only inside one read request, and only while the complete source
@@ -327,7 +350,7 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
     def analysis_path(case):
         return edited_feed(case) if request.args.get("analysis") == "edited" else Path(case["paths"]["ebi"])
 
-    def waveform_labels(case, basis, windows, include_markers=False):
+    def waveform_labels(case, basis, windows, include_markers=False, force_edited=False):
         """Reuse only private label indexes; samples are still read from DATA.
 
         Editing, statistics and report computations continue to own fresh feeds.
@@ -342,7 +365,7 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
                     rows.sort(key=lambda r: r['sample_index'])
                 output.append(rows)
             return output
-        if request.args.get('analysis') != 'edited':
+        if not force_edited and request.args.get('analysis') != 'edited':
             return project(Path(case['paths']['ebi']))
         key = (case['case_id'], basis['analysis_basis'], basis['analysis_revision'])
         def build_checked():
@@ -405,6 +428,14 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
     @app.errorhandler(ReportConflict)
     def report_conflict(error):
         return jsonify({"error": str(error), "code": "report_conflict"}), 409
+
+    @app.errorhandler(RRReviewConflict)
+    def rr_conflict(error):
+        return jsonify(error=str(error), code='rr_scope_conflict'), 409
+
+    @app.errorhandler(TerminologyConflict)
+    def terminology_conflict(error):
+        return jsonify(error=str(error), code='terminology_conflict', current_revision=error.current_revision), 409
 
     @app.errorhandler(SourceUnavailable)
     def source_unavailable(error):
@@ -685,9 +716,182 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         case=case_or_404(case_id)
         return clinical_response(case, lambda: hrv_windows(edited_feed(case),case["metadata"].get("start_iso") or case["metadata"].get("start_time"),request.args.get("window",0)))
 
+    def review_scope(case, expected=None, db=None):
+        """Bind new work to original contents and both edited/review revisions."""
+        source = runtime.basis(case)
+        beat = editor.snapshot(case['case_id'], db=db)['revision']
+        revision = storage._review(db, case['case_id'])['revision'] if db is not None else storage.get_review(case['case_id'])['revision']
+        # Compute exactly the clinical index's content identity without building
+        # thousands of unrelated event candidates on every RR/HRV query.
+        from ecg_core.clinical_analysis import fingerprint, encode, PERIODIC_VERSION
+        def project_version():
+            feed=edited_feed(case); opts=feed.document['settings']
+            rows=feed.beats+feed.markers
+            bv=fingerprint('|'.join(f"{r['id']}:{r['sample_index']}:{r['class_code']}" for r in rows)+'|'+encode([[k,opts[k]] for k in sorted(opts)]))
+            findings=[a for a in storage.list_annotations(case['case_id']) if a.get('details',{}).get('kind') in ('ST','AT','VT','AF','AFL','STRIP')]
+            av=fingerprint(encode([[a['id'],a['sample_index'],a.get('details')] for a in findings]))
+            return {'data_version':bv+'-'+av+'-rr-quality-v3-'+PERIODIC_VERSION+'-af-end-v1-status-v2'}
+        identity_key=(case['case_id'],source['digest'],revision,beat)
+        version=review_identity_cache.project(identity_key,project_version,lambda index:index['data_version'])
+        value = dict(case_id=case['case_id'], source_digest=provenance_digest(source['inputs']),
+                     data_version=version, analysis_basis=source['digest'],
+                     beat_revision=beat, analysis_revision=revision)
+        for key in value:
+            if expected is not None and key in expected:
+                item = expected[key]
+                if key in ('beat_revision', 'analysis_revision'):
+                    if isinstance(item, str) and item.isdecimal(): item = int(item)
+                    if type(item) is not int: raise ValueError('复核修订必须为非负整数')
+                if item != value[key]: raise ReportConflict('病例、原始来源或复核修订已变化，请重新读取')
+        runtime.assert_current()
+        return value
+
+    def review_duration(case):
+        samples = case['technical']['duration_seconds_raw'] * SAMPLE_RATE
+        rounded = round(samples)
+        if not math.isfinite(samples) or abs(samples-rounded) > 1e-6:
+            raise ValueError('录制长度未落在当前采样网格，不能编辑 HRV 排除区间')
+        return rounded
+
+    def hrv_state(case, window=0, expected=None):
+        context = review_scope(case, expected)
+        state = hrv_reviews.read(case['case_id'], context, review_duration(case), window=int(window))
+        review_scope(case, context)
+        return state
+
+    def hrv_reference(case, window=0, expected=None):
+        state = hrv_state(case, window, expected)
+        return dict(hrv_revision=state['hrv_revision'], document_digest=state['digest'],
+                    window_index=state['window_index'], profile=state['profile'], scope=state['scope'])
+
+    def assert_hrv_reference(case, reference, window, *, require_confirmation=False):
+        state = hrv_state(case, window)
+        if state['document_stale']: raise ReportConflict('HRV 排除区间来自旧依据，请预览并重新确认当前区间')
+        current = hrv_reference(case, window)
+        if reference is None:
+            if state['hrv_revision'] != 0:
+                raise ReportConflict('报告缺少当前 HRV 复核修订，请重新读取并保存草稿')
+        elif reference != current:
+            raise ReportConflict('报告 HRV 修订或来源已变化，请重新读取并保存草稿')
+        if require_confirmation and not state['confirmation'].get('valid'):
+            raise ReportConflict('请先在 HRV 页面确认本报告所用窗口的 NN、节律和伪差复核')
+        return state
+
+    @app.get('/api/terminology/catalogs')
+    def terminology_catalogs():
+        return jsonify(terminology.list_catalogs())
+
+    @app.get('/api/terminology/catalog')
+    def terminology_catalog():
+        result = terminology.get_catalog(request.args.get('namespace'), request.args.get('version'), request.args.get('hash'))
+        if result is None: return jsonify(error='该版本词库不存在或内容 hash 不一致'), 404
+        return jsonify(result)
+
+    @app.post('/api/terminology/import')
+    def terminology_import():
+        def unique_fields(pairs):
+            result={}
+            for key,value in pairs:
+                if key in result: raise ValueError('JSON 字段重复')
+                result[key]=value
+            return result
+        body = json.loads(request.get_data(as_text=True), object_pairs_hook=unique_fields,
+            parse_constant=lambda _: (_ for _ in ()).throw(ValueError('非有限 JSON 数值')))
+        if not isinstance(body, dict): raise ValueError('词库导入请求必须是对象')
+        return jsonify(terminology.import_catalog(body.get('catalog'), body.get('expected_catalog_revision'),
+            confirm=body.get('confirm', False), preview_hash=body.get('preview_hash')))
+
+    def rr_index_for(case, expected=None):
+        scope = review_scope(case, expected)
+        key = (case['case_id'], scope['analysis_basis'], scope['analysis_revision'], scope['beat_revision'])
+        def build():
+            result = build_rr_index(edited_feed(case), SAMPLE_RATE, scope)
+            review_scope(case, scope)
+            return result
+        return scope, key, build
+
+    @app.get('/api/cases/<case_id>/rr-review')
+    def rr_review_endpoint(case_id):
+        case = case_or_404(case_id)
+        scope, key, build = rr_index_for(case, request.args)
+        result = rr_cache.project(key, build, lambda index: query_rr(index, dict(request.args)))
+        review_scope(case, scope)
+        return jsonify(result)
+
+    @app.post('/api/cases/<case_id>/rr-review/locate')
+    def rr_locate_endpoint(case_id):
+        case = case_or_404(case_id); body = _json_object(); target = body.get('target', body)
+        if not isinstance(target, dict) or any(k not in target for k in ('case_id','analysis_basis','analysis_revision','beat_revision','sample_index')):
+            raise ValueError('缺少完整 RR 定位身份；请从当前间期重新选择')
+        scope, key, build = rr_index_for(case, target)
+        exact = rr_cache.project(key, build, lambda index: resolve_rr_target(index, target))
+        start = max(0, exact['sample_index']/SAMPLE_RATE-3.5)
+        end = min(case['technical']['duration_seconds_raw'], start+7)
+        wave = read_event_waveform(case['paths']['data'], start, end, ['II','V1','V5'], 2800)
+        wave['beats'] = waveform_labels(case, scope, [(wave['start_s'], wave['duration_s'])], force_edited=True)[0]
+        if not any(b['sample_index']==exact['sample_index'] for b in wave['beats']):
+            raise RRReviewConflict('目标心搏未出现在当前原始波形证据中；未用最近邻替代')
+        review_scope(case, scope)
+        return jsonify(target=exact, waveform={**wave, **scope}, located=True, **scope)
+
+    def hrv_measurements(case,window,document,context=None):
+        context = context or review_scope(case)
+        key=(case['case_id'],context['analysis_basis'],context['analysis_revision'],
+             context['beat_revision'],int(window),document['profile'],provenance_digest(document))
+        def build_checked():
+            result=analyze_hrv_review(edited_feed(case),case['metadata'].get('start_iso') or case['metadata'].get('start_time'),int(window),document['exclusions'])
+            review_scope(case,context)
+            return result
+        result=hrv_measurement_cache.read(key,build_checked)
+        review_scope(case,context)
+        return result  # fresh JSON decoding; enrichment cannot mutate retained evidence
+
+    @app.get('/api/cases/<case_id>/hrv-review')
+    def hrv_review_get(case_id):
+        case=case_or_404(case_id); window=_number_arg('window',0,int,0)
+        state=hrv_state(case,window,request.args)
+        active_document = {**state['document'],'exclusions':[]} if state['document_stale'] else state['document']
+        measured=hrv_measurements(case,window,active_document,state['scope'])
+        if state['document_stale']:
+            measured['reviewed']=None; measured['reason']='document_stale'
+        review_scope(case,state['scope'])
+        return jsonify({**state,'evidence':measured})
+
+    @app.post('/api/cases/<case_id>/hrv-review/preview')
+    def hrv_review_preview(case_id):
+        case=case_or_404(case_id); body=_json_object(); context=review_scope(case,body.get('scope',{}))
+        value=hrv_reviews.preview(case_id,body,context,review_duration(case),actor=ACTOR,window=body.get('window',0))
+        evidence=hrv_measurements(case,value['window_index'],value['after'],context)
+        review_scope(case,context)
+        return jsonify({**value,'evidence_preview':evidence})
+
+    @app.put('/api/cases/<case_id>/hrv-review')
+    def hrv_review_apply(case_id):
+        case=case_or_404(case_id); body=_json_object(); context=review_scope(case,body.get('scope',{}))
+        return jsonify(hrv_reviews.apply(case_id,body,ACTOR,context,review_duration(case),
+            check_current=lambda db:review_scope(case,db=db), on_change=storage.invalidate_review))
+
+    @app.post('/api/cases/<case_id>/hrv-review/confirm')
+    def hrv_review_confirm(case_id):
+        case=case_or_404(case_id); body=_json_object(); context=review_scope(case,body.get('scope',{}))
+        return jsonify(hrv_reviews.confirm(case_id,body,ACTOR,context,review_duration(case),
+            check_current=lambda db:review_scope(case,db=db), on_change=storage.invalidate_review))
+
+    @app.post('/api/cases/<case_id>/hrv-review/cancel')
+    def hrv_review_cancel(case_id):
+        case=case_or_404(case_id); body=_json_object(); context=review_scope(case,body.get('scope',{}))
+        return jsonify(hrv_reviews.cancel_preview(case_id,body,context,review_duration(case)))
+
     def build_hrv_evidence(case, window=0):
         feed=edited_feed(case)
-        data=analyze_hrv(feed,case['metadata'].get('start_iso') or case['metadata'].get('start_time'),window)
+        state=hrv_state(case,int(window))
+        if state['document_stale']: raise ReportConflict('HRV 排除区间来自旧依据，请打开区间复核并预览当前范围')
+        measured=hrv_measurements(case,int(window),state['document'],state['scope'])
+        data=measured['reviewed']
+        data['hrv_review']=state
+        data['hrv_review_reference']=hrv_reference(case,int(window))
+        data['review_profile']=measured['profile']
+        data['review_coverage']=measured['coverage']
         # Use the already-versioned ST research engine; never label device units mV.
         review=stt_review(case['case_id']).get_json()
         data['st_trends']=(review.get('analysis') or {}).get('trends',{}).get('leads',{})
@@ -708,7 +912,8 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         if request.method != 'GET':
             return build_hrv_evidence(case, window)
         basis = clinical_read_basis(case, request.args)
-        key = (case['case_id'], basis['analysis_basis'], basis['analysis_revision'], str(window))
+        state = hrv_state(case,int(window))
+        key = (case['case_id'], basis['analysis_basis'], basis['analysis_revision'], str(window), state['hrv_revision'], state['digest'])
         def build_checked():
             result = build_hrv_evidence(case, window)
             clinical_read_basis(case, basis)
@@ -727,6 +932,13 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         case=case_or_404(case_id)
         clinical_read_basis(case, request.args)
         source_token=report_source_token(case)
+        state=hrv_state(case,_number_arg('window',0,int,0))
+        if 'expected_hrv_revision' in request.args and _number_arg('expected_hrv_revision',0,int,0)!=state['hrv_revision']:
+            raise ReportConflict('HRV 修订已变化，请重新读取后导出')
+        if 'expected_hrv_digest' in request.args and request.args['expected_hrv_digest']!=state['digest']:
+            raise ReportConflict('HRV 排除区间已变化，请重新读取后导出')
+        if state['hrv_revision'] and 'expected_hrv_revision' not in request.args:
+            raise ReportConflict('请从当前 HRV 复核窗口导出，缺少选段修订')
         include_phi=include_phi_authorized()
         visible=case_with_overrides(case)
         if not include_phi: visible=_masked_report_case(visible)
@@ -744,6 +956,9 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         response.headers['X-Privacy-Mode']='phi-visible' if include_phi else 'masked'
         response.headers['X-Analysis-Basis']=source_token[2]
         response.headers['X-Report-SHA256']=pdf_digest
+        response.headers['X-HRV-Revision']=str(state['hrv_revision'])
+        response.headers['X-HRV-Document-Digest']=state['digest']
+        response.headers['X-HRV-Profile']=state['profile']
         return response
 
     @app.get("/api/cases/<case_id>/hrv")
@@ -838,6 +1053,7 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         )
         for item in result["items"]:
             item.update(details[item["sample_index"]])
+            item['case_id'] = case_id
         linked_read_identity(case, identity)
         return jsonify({**result, **identity})
 
@@ -1153,7 +1369,8 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
     @app.get("/api/cases/<case_id>/report")
     def report_get(case_id: str):
         case = case_or_404(case_id)
-        return jsonify({**storage.get_report(case_id, case["conclusion"]), 'current_analysis_basis': runtime.basis(case)})
+        report=storage.get_report(case_id,case['conclusion'])
+        return jsonify({**report, 'current_analysis_basis':runtime.basis(case), 'current_hrv_reference':hrv_reference(case,report['composition'].get('hrv_window',0))})
 
     @app.put("/api/cases/<case_id>/report")
     def report_put(case_id: str):
@@ -1177,6 +1394,8 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
             raise ValueError("composition 必须为 JSON 对象")
         composition=normalize_report_composition(composition if composition is not None else storage.get_report(case_id, "")["composition"])
         validate_report(clinical_index(case_or_404(case_id)),composition,progress,status=="reviewed")
+        if composition.get('include_hrv') or any(k.startswith('hrv_') for k in composition.get('included_pages',[])):
+            assert_hrv_reference(case,composition.get('hrv_review_reference'),composition.get('hrv_window',0), require_confirmation=status=='reviewed')
         if composition.get('advanced_options',{}).get('markers'):
             case=case_or_404(case_id)
             advanced_evidence(case,clinical_index(case),composition['advanced_options'])
@@ -1187,7 +1406,8 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
     def report_source_token(case):
         progress = storage.get_review(case["case_id"])
         basis = runtime.basis(case)
-        return (progress["report_version"], progress["revision"], basis['digest'])
+        state=hrv_state(case,0)
+        return (progress["report_version"], progress["revision"], basis['digest'],state['hrv_revision'],state['digest'])
 
     @app.get("/api/cases/<case_id>/report.pdf")
     def report_pdf(case_id: str):
@@ -1231,6 +1451,7 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         if any(k in page_keys for k in ('qtd','vcg','twa','sap')):
             report['section_evidence']['advanced']=advanced_evidence(case,index,report['composition'].get('advanced_options'))
         if any(k.startswith('hrv_') for k in page_keys):
+            assert_hrv_reference(case,report['composition'].get('hrv_review_reference'),report['composition'].get('hrv_window',0),require_confirmation=report['status']=='reviewed')
             report['hrv_analysis']=hrv_evidence(case,report['composition'].get('hrv_window',0))
         privacy_mode = "phi-visible" if include_phi else "masked"
         pdf = build_report_pdf(report_case, calculated, report)
@@ -1244,6 +1465,10 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         response.headers["X-Review-Revision"] = str(source_token[1])
         response.headers['X-Analysis-Basis'] = source_token[2]
         response.headers['X-Report-SHA256'] = pdf_digest
+        if report.get('hrv_analysis'):
+            response.headers['X-HRV-Revision']=str(source_token[3])
+            response.headers['X-HRV-Document-Digest']=source_token[4]
+            response.headers['X-HRV-Profile']=report['hrv_analysis']['hrv_review']['profile']
         return response
 
     @app.get("/api/cases/<case_id>/source-report/page/<int:page>")

@@ -77,11 +77,11 @@ def test_hrv_hit_then_revision_and_same_mtime_source_change_recompute(synthetic_
     client = synthetic_app.test_client()
     cid, paths = synthetic_case[1:]
     base = f'/api/cases/{cid}'
-    original, calls = server.analyze_hrv, []
+    original, calls = server.analyze_hrv_review, []
     def counted(*args, **kwargs):
         calls.append(1)
         return original(*args, **kwargs)
-    monkeypatch.setattr(server, 'analyze_hrv', counted)
+    monkeypatch.setattr(server, 'analyze_hrv_review', counted)
     seed = client.get(base+'/hrv-analysis').json
     again = client.get(base+'/hrv-analysis')
     assert again.status_code == 200 and again.json == seed and len(calls) == 1

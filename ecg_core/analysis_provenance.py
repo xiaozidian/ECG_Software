@@ -25,7 +25,7 @@ MODULES = ('config', 'lps_parser', 'repository', 'ebi', 'waveform', 'beat_editor
            'advanced_analysis', 'report_layout', 'report_sections', 'report_pdf',
            'report_paper_pdf', 'report_sections_pdf', 'hrv_report_pdf', 'storage',
            'review_workflow', 'analysis_provenance', 'source_identity', 'workspace_backup',
-           'clinical_query_cache', 'signal_profile')
+           'clinical_query_cache', 'signal_profile', 'rr_review', 'hrv_review', 'terminology')
 
 LOGGER = logging.getLogger(__name__)
 SIGNATURE_FIELDS = ('device', 'inode', 'bytes', 'mtime_ns', 'ctime_ns')

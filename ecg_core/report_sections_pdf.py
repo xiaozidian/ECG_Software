@@ -37,7 +37,11 @@ def documents(case, report, keys):
             for p in periods:
                 rows.append(p['label']);f=p['frequency']
                 rows.append(f"NN {p['nn_count']}；SDNN {number(p.get('sdnn_ms'))} ms；SDANN {number(p.get('sdann_ms'))} ms；rMSSD {number(p.get('rmssd_ms'))} ms；pNN50 {number(p.get('pnn50_pct'))} %" if key=='hrv_time' else f"总功率 {number(f['total_ms2'])}；VLF {number(f['vlf_ms2'])}；LF {number(f['lf_ms2'])}；HF {number(f['hf_ms2'])} ms²；LF/HF {number(f['lf_hf'])}")
-            add(key,[d['method'],'日间 / 夜间按记录钟点分段，不代表实际清醒 / 睡眠；— 表示数据不足。'],[dict(title=p['label']+(' - RR ms / 频数' if key=='hrv_time' else ' - Hz / ms²/Hz'),xmax=2000 if key=='hrv_time' else .5,bars=key=='hrv_time',points=[dict(x=q['rr_ms' if key=='hrv_time' else 'hz'],y=q['count' if key=='hrv_time' else 'power']) for q in p['histogram' if key=='hrv_time' else 'psd']]) for p in periods],rows)
+            review=d.get('hrv_review');proof=[]
+            if review:
+                status='医生已声明核实本窗口节律与伪差' if review['confirmation'].get('valid') else '本窗口窦性与信号质量尚未核实'
+                proof=[f"fixed-300s-fft-compat-v1 / HRV r{review['hrv_revision']} / {review['digest'][:12]} / {status}"]
+            add(key,[d['method'],*proof,'日间 / 夜间按记录钟点分段，不代表实际清醒 / 睡眠；— 表示数据不足。'],[dict(title=p['label']+(' - RR ms / 频数' if key=='hrv_time' else ' - Hz / ms²/Hz'),xmax=2000 if key=='hrv_time' else .5,bars=key=='hrv_time',points=[dict(x=q['rr_ms' if key=='hrv_time' else 'hz'],y=q['count' if key=='hrv_time' else 'power']) for q in p['histogram' if key=='hrv_time' else 'psd']]) for p in periods],rows)
     return out
 
 

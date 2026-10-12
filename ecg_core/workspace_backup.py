@@ -40,6 +40,11 @@ OPTIONAL = {
     'beat_edit_template_refs': 'template_id case_id beat_ids',
     'rhythm_reviews': 'case_id revision document undo redo updated_at',
     'workspace_recovery': 'id epoch source_sha256 restored_at',
+    'hrv_review_documents': 'case_id revision document document_scope confirmations undo redo updated_at',
+    'hrv_review_previews': 'token case_id revision scope operation document preview_digest actor window_index created_at',
+    'hrv_review_audit': 'id case_id actor action revision document_digest created_at',
+    'terminology_catalog_state': 'singleton revision',
+    'terminology_catalogs': 'namespace version sha256 payload created_at',
 }
 JSON_FIELDS = {
     'annotations': {'details': dict},
@@ -51,6 +56,9 @@ JSON_FIELDS = {
     'beat_edit_documents': {'document': dict, 'undo': list, 'redo': list},
     'beat_edit_template_refs': {'beat_ids': list},
     'rhythm_reviews': {'document': dict, 'undo': list, 'redo': list},
+    'hrv_review_documents': {'document': dict,'document_scope':dict,'confirmations':dict,'undo':list,'redo':list},
+    'hrv_review_previews': {'scope':dict,'document':dict},
+    'terminology_catalogs': {'payload':dict},
 }
 
 

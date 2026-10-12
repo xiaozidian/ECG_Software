@@ -63,6 +63,7 @@
       <div class="nav-section-label" aria-hidden="true">病例流程</div>
       <button class="nav-item workflow-nav-item" data-page="review" data-workflow-nav="review" title="核对原始波形与散点"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 13h4l2-5 3.2 10 2.3-7 1.8 2H21"/></svg><em>总览</em></button>
       <button class="nav-item workflow-nav-item" data-page="edit" data-workflow-nav="edit" title="复核聚类并编辑心搏模板"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><path d="m14 19 5-5 2 2-5 5h-2Z"/></svg><em>模板编辑</em></button>
+      <button class="nav-item" data-page="rr" title="原始相邻心搏的 RR 分类与精确定位"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 19V5M4 19h16M7 17v-4M11 17V8M15 17V6M19 17v-5"/></svg><em>RR 分类</em></button>
       <button class="nav-item workflow-nav-item" data-page="trends" data-workflow-nav="trends" title="核对趋势、RR 与 HRV"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 19V5M4 19h16M7 15l3-4 3 2 5-6"/></svg><em>趋势 HRV</em></button>
       <button class="nav-item workflow-nav-item" data-page="stt" data-workflow-nav="stt" title="查看 ST‑T 自动筛查并由医生复核"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 14h4l2-5 3 9 2-6h7M5 5h6M8 5v3M15 5h6M18 5v3"/></svg><em>ST‑T</em></button>
       <button class="nav-item workflow-nav-item" data-page="events" data-workflow-nav="events" title="复核候选事件"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m12 4 8 8-8 8-8-8Z"/><circle cx="12" cy="12" r="1.5"/></svg><em>事件候选</em></button>
@@ -363,6 +364,12 @@
       </div>
     </section>
 
+    <section class="page" id="page-rr">
+      <div class="page-heading compact"><div><h1>RR 分类复核</h1><p>原始相邻心搏 · 筛选保留间期来源 · N 标签不自动代表已核实 NN</p></div></div>
+      <div id="rrReviewWorkbench"></div>
+      <article id="rrLocatedEvidence" class="card" hidden aria-live="polite"></article>
+    </section>
+
     <section class="page" id="page-trends">
       <div class="page-heading compact"><div><p class="eyebrow">全天统计</p><h1>趋势、RR 与 HRV</h1><p id="trendCaseLabel">请选择病例</p></div><span class="status-pill warning">研究算法 · 待复核</span></div>
       <div id="trendsAnalysisStatus" role="status" hidden></div>
@@ -605,5 +612,12 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/desktop-workspace.css') }}">
   <script src="{{ url_for('static', filename='js/desktop-workspace.js') }}"></script>
   <script src="{{ url_for('static', filename='js/template-linked-view.js') }}"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/rr-review-workbench.css') }}">
+  <script src="{{ url_for('static', filename='js/rr-review-workbench.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/rr-review-bridge.js') }}"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/hrv-review-editor.css') }}">
+  <script src="{{ url_for('static', filename='js/hrv-review-editor.js') }}"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/terminology-tree.css') }}">
+  <script src="{{ url_for('static', filename='js/terminology-tree.js') }}"></script>
 </body>
 </html>

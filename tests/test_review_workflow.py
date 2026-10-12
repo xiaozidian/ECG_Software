@@ -36,10 +36,19 @@ def test_edit_invalidates_checkpoints_and_previously_approved_report(client):
     retained = client.put(base + "/event-reviews", json={"items": [event], "status": "retained"})
     assert retained.status_code == 200
     complete_all(client, case_id)
-    draft = client.put(base + "/report", json={"expected_version":1,"conclusion": "复核测试", "status": "draft"})
+    hrv = client.get(base + "/hrv-review").json
+    confirmed = client.post(base + "/hrv-review/confirm", json={
+        "scope":hrv["scope"], "expected_hrv_revision":hrv["hrv_revision"],
+        "expected_document_digest":hrv["digest"], "window":0, "confirmed":True,
+        "nn_rhythm_artifact_reviewed":True, "note":"Disposable QA workflow declaration",
+    })
+    assert confirmed.status_code == 200 and confirmed.json["confirmation"]["valid"]
+    assert confirmed.json["confirmation"]["clinical_validation"] is False
+    current = client.get(base + "/report").json
+    draft = client.put(base + "/report", json={"expected_version":current["version"],"conclusion": "复核测试", "status": "draft"})
     assert draft.status_code == 200
     index = client.get(base + "/report-events").json
-    composition={"category_reviews":index["basis_versions"]}
+    composition={"category_reviews":index["basis_versions"],"hrv_review_reference":current["current_hrv_reference"]}
     draft = client.put(base + "/report", json={"expected_version":draft.json["version"],"conclusion":"复核测试","status":"draft","composition":composition})
     approved = client.put(base + "/report", json={"expected_version":draft.json["version"],"conclusion": "复核测试", "status": "reviewed", "composition":composition})
     assert approved.json["status"] == "reviewed"

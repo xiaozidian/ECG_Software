@@ -12,6 +12,7 @@ release = json.loads((root / 'mac-release-manifest.json').read_text())
 assets = [root / 'templates' / 'index.html', root / 'static' / 'icon.svg']
 assets += sorted((root / 'static' / 'css').glob('*.css'))
 assets += sorted((root / 'static' / 'js').glob('*.js'))
+assets += [root / 'static' / 'terminology' / 'builtin-draft-v1.json']
 datas = [(str(path), str(path.parent.relative_to(root))) for path in assets]
 datas.append((str(root / 'mac-release-manifest.json'), '.'))
 reportlab = collect_all('reportlab')
