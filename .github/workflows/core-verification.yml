@@ -15,7 +15,8 @@ concurrency:
 
 jobs:
   mathematical-core:
-    runs-on: ubuntu-latest
+    # Retain Chromium sandbox on a supported image; 22.04 retires 2027-04-17.
+    runs-on: ubuntu-22.04
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
