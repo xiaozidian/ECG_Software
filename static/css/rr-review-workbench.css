@@ -40,3 +40,35 @@
 
 /* Clinical reason labels remain readable without exposing machine keys in cells. */
 .rrv-table-scroll td:nth-child(6) small,.rrv-table-scroll td:last-child small{white-space:normal;max-width:200px;overflow:visible;text-overflow:clip}
+
+/* Waveform-priority review: full counts remain available in one compact strip. */
+.rrv-summary{display:flex;flex-wrap:wrap;gap:0;background:#f8fbfb;padding:4px 10px}
+.rrv-summary>div{display:flex;align-items:baseline;gap:6px;padding:3px 10px 3px 0;margin-right:10px;background:none;border:0}
+.rrv-summary span,.rrv-summary strong{display:inline;font-size:11px;line-height:1.5}
+.rrv-summary strong{font-size:12px;font-weight:650}.rrv-summary span{white-space:nowrap}
+.rrv-grid{grid-template-columns:190px minmax(0,1fr);gap:8px;padding:8px}.rrv-filter{padding:8px}.rrv-filter>label{margin-bottom:7px}
+.rrv-chart-card>canvas{height:125px}.rrv-chart-foot{min-height:23px;padding-top:3px;padding-bottom:3px}
+.rrv-table-scroll{max-height:285px}.rrv-table-scroll tr[data-rr-row-index]{cursor:pointer}
+.rrv-table-scroll tr[data-rr-row-index]:hover{background:#f1f8f6}.rrv-table-scroll tr.rrv-selected-row{background:#d7f1e9;box-shadow:inset 4px 0 #078987}
+.rrv-table-scroll tr.rrv-selected-row td{border-bottom-color:#a5d6cc}.rrv-table-scroll tr.rrv-selected-row td:first-child strong{color:#055d59}
+.rrv-selected{display:flex;align-items:center;justify-content:space-between;gap:6px 12px;flex-wrap:wrap;padding:8px 10px;background:#edf8f4;border-bottom:1px solid #c4e0d8;min-height:44px}
+.rrv-selected>div{display:grid;gap:3px}.rrv-selected strong{font-size:12px}.rrv-selected span{font-size:11px;font-variant-numeric:tabular-nums}.rrv-selected small{flex-basis:100%;font-size:10px;line-height:1.5;color:#526773}
+.rrv-valid{background:#eef2f3;color:#3b5662}.rrv-invalid{background:#fff1e2;color:#8f5721}
+.rrv-waveform-evidence{min-width:0;margin:8px 0;border:1px solid #c4d9df;border-radius:8px;background:#fff;overflow:hidden}
+.rrv-waveform-evidence>header,.rrv-waveform-evidence>.card-header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid #d7e3e8}
+.rrv-waveform-evidence svg{display:block;width:100%;min-height:250px;max-height:430px}.rrv-waveform-evidence [role=status]{padding:18px 12px;color:#526773}
+@media(max-width:1150px){.rrv-summary{display:flex}.rrv-grid{grid-template-columns:180px minmax(0,1fr)}}
+@media(max-width:800px){.rrv-grid{grid-template-columns:minmax(0,1fr)}.rrv-summary{gap:0}.rrv-summary>div{padding:3px 8px 3px 0;margin-right:6px}.rrv-table-scroll{max-height:300px}.rrv-chart-card>canvas{height:115px}}
+@media(max-width:520px){.rrv-summary strong{font-size:12px}.rrv-summary>div{padding:3px 6px 3px 0}.rrv-selected{padding:8px}.rrv-selected small{font-size:11px}.rrv-table-scroll{max-height:320px}}
+
+/* The bridge retains and mounts its own article in this stable evidence slot. */
+[data-rr-role=evidence-slot]{min-width:0;padding:0 8px;background:#fff}
+[data-rr-role=evidence-slot]:empty{display:none}
+.rrv-selection-boundary{flex-basis:100%;font-size:11px;line-height:1.6;margin:2px 0;color:#344f5b}
+.rrv-selection-boundary strong{font-size:11px}.rrv-selection-boundary span{display:block;color:#526773;font-size:10px}
+.rrv-selected small{font-size:11px;line-height:1.6}
+
+.rrv-wave-stage{padding:0 12px;min-width:0}.rrv-wave-caption{margin:0;padding:6px 12px;font-size:11px;line-height:1.6;color:#526773}
+.rrv-waveform-evidence [role=status]{min-height:264px;display:flex;align-items:center;justify-content:center}
+.rrv-waveform-evidence h2{font-size:14px;margin:0}.rrv-waveform-evidence [role=alert]{padding:12px;color:#9e302b}
+.rrv-waveform-evidence>button{margin:0 12px 12px}

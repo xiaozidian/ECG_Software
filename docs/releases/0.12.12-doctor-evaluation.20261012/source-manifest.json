@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "release_id": "0.12.12-doctor-evaluation.20261012+7df5ad9e7c4a3632",
+  "release_id": "0.12.12-doctor-evaluation.20261012+aa063cf901780866",
   "app_version": "0.12.12-doctor-evaluation.20261012",
-  "source_sha256": "7df5ad9e7c4a3632642336cdc3c6a852b028b4235c19fd97906ee3b9293fd576",
+  "source_sha256": "aa063cf901780866d77425d30b7a30a453768f666335c14ba065365b819b99f0",
   "production_file_count": 105,
   "files": {
     "CardioInsightMacCandidate.spec": {
@@ -10,8 +10,8 @@
       "sha256": "f0843b50184126bd437b8d6d13391427f23d04f0d416b2b302a4f32f08bbb3a3"
     },
     "app.py": {
-      "bytes": 86348,
-      "sha256": "5fdfd82ad69b8070f4aef1334321d07222c666a384ce38be9ba98d7feaf6ba01"
+      "bytes": 87604,
+      "sha256": "50b70bab65db32a816086076c7bdc5f49da35bafb7f78e01a2cc82ac77ad49ce"
     },
     "ecg_core/__init__.py": {
       "bytes": 190,
@@ -178,8 +178,8 @@
       "sha256": "7ec358503f2a98374658491a45a33d4933753bcd28c8cdd44c4a22ec304e875d"
     },
     "static/css/desktop-workspace.css": {
-      "bytes": 49339,
-      "sha256": "c403a3a2d0d86be56067678b7bef0c938955fad89bcd5675aa5b1aad0354d976"
+      "bytes": 49902,
+      "sha256": "0132904bb3a491aa14fe8558d71d053c77bd7c8adf439de983d418d190a0a0e1"
     },
     "static/css/hrv-review-editor.css": {
       "bytes": 4119,
@@ -206,8 +206,8 @@
       "sha256": "ada5e1f24f635335168d05a93f49d35a2006b190fc99dc1973f7bb98b74aab5c"
     },
     "static/css/rr-review-workbench.css": {
-      "bytes": 8595,
-      "sha256": "60265f9f058f0569c76f2541a06160b8a201759e818b8879e527f98c335cc8b3"
+      "bytes": 12063,
+      "sha256": "f8dc625221d1b8e6d2f044ed971efb5e9e2df22c9158b1035a70c478d14e682c"
     },
     "static/css/shared-ui-review.css": {
       "bytes": 1701,
@@ -250,8 +250,8 @@
       "sha256": "fb20b4aa33e0cd2cc5fae8bf8a2a7968b22f8506cdc012ae507c465ea59da3ee"
     },
     "static/js/app.js": {
-      "bytes": 246213,
-      "sha256": "a93504dc12a5c302ff702e8d7d68a25b4c537dd04aa69cd0998176615a679f3d"
+      "bytes": 247054,
+      "sha256": "62d270f41616c9b62262c02a661eb69e0d7f0ab22277c0a0dc010c7548694658"
     },
     "static/js/beat-editor-ui.js": {
       "bytes": 36819,
@@ -362,12 +362,12 @@
       "sha256": "38da7459f895ae109ffbef96f562156c8bc1cbfbf2d870d9cc6e518fc201c5ae"
     },
     "static/js/rr-review-bridge.js": {
-      "bytes": 4316,
-      "sha256": "f554ff58ea15120ce2b028c9cf10d06f26a525c1c4a29f6952e8a52ecff77369"
+      "bytes": 8355,
+      "sha256": "d2e3df10dc165fb5db752d1dea18fe4f04dcf89e1d4cbc38d919582b0473d8e1"
     },
     "static/js/rr-review-workbench.js": {
-      "bytes": 39107,
-      "sha256": "c7d555076b0f3c96456d940ece919d447c6b00674b4ec266f806599e0f9e815d"
+      "bytes": 46225,
+      "sha256": "4a05859a685b18904b3259b5cbf5e99eaac812566026bf5ee4f46ebeee4e0c3b"
     },
     "static/js/source-group-evidence.js": {
       "bytes": 4492,
@@ -402,8 +402,8 @@
       "sha256": "ef1988abc91dd81b85d87f7c00b933c6efdc2101cb8915ce939f62c412f5ebcf"
     },
     "templates/index.html": {
-      "bytes": 81144,
-      "sha256": "d9fb7540d4fa88a3b37777a60b78568482c072c935f2064cc1594bbbb2e1b890"
+      "bytes": 81214,
+      "sha256": "3684f46b74ad2ebf12171ba0646b8d4f02abdf29501db37eec8253105aea1218"
     },
     "停止Mac评估版.command": {
       "bytes": 125,

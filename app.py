@@ -665,22 +665,45 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
     @app.get("/api/cases/<case_id>/report-strip")
     def report_strip(case_id):
         case = case_or_404(case_id)
-        basis = clinical_read_basis(case, request.args)
-        index = clinical_index(case)
-        event = next((e for e in index['events'] if e['event_id'] == request.args.get('event_id')), None)
-        if not event or event['basis_version'] != request.args.get('basis_version'):
-            return jsonify(error='图条依据已变化，请重新选择事件'), 409
-        settings = {'leads': _waveform_leads_arg(),
-                    'duration_s': _number_arg('duration', 7, float, 1, 120)}
-        if 'range_start_s' in request.args or 'range_end_s' in request.args:
-            for key in ('range_start_s','range_end_s'):
-                try:
-                    value=float(request.args[key])
-                except (KeyError,TypeError,ValueError):
-                    raise ValueError('人工入报区间须同时提供有效的起止时间') from None
-                settings[key]=_coerce_json_number(value,'人工入报时间',0,case['technical']['duration_seconds_raw'])
-        result = prepare_strip(index, event, settings, lambda a, b, leads, points: read_event_waveform(case['paths']['data'], a, b, leads, points))
-        clinical_read_basis(case, basis)
+        expected = {name: request.args[name] for name in
+                    ('case_id', 'analysis_basis', 'analysis_revision') if name in request.args}
+        # GET encodes integers as strings; reject malformed scope rather than
+        # falling back to a current revision or silently accepting another case.
+        for name in ('beat_revision', 'revision'):
+            if name in request.args:
+                value = request.args[name]
+                if not value or not value.isascii() or not value.isdecimal():
+                    raise ValueError('图表逐搏修订须为非负整数')
+                expected[name] = int(value)
+        identity = linked_read_identity(case, expected)
+        basis = {key: identity[key] for key in ('analysis_basis', 'analysis_revision')}
+        key = (case_id, basis['analysis_basis'], basis['analysis_revision'])
+
+        def build_checked():
+            index = clinical_index(case)
+            linked_read_identity(case, identity)
+            return index
+
+        def project_strip(index):
+            event = next((e for e in index['events'] if e['event_id'] == request.args.get('event_id')), None)
+            if not event or event['basis_version'] != request.args.get('basis_version'):
+                raise ReportConflict('图条依据已变化，请重新选择事件')
+            settings = {'leads': _waveform_leads_arg(),
+                        'duration_s': _number_arg('duration', 7, float, 1, 120)}
+            if 'range_start_s' in request.args or 'range_end_s' in request.args:
+                for name in ('range_start_s','range_end_s'):
+                    try:
+                        value=float(request.args[name])
+                    except (KeyError,TypeError,ValueError):
+                        raise ValueError('人工入报区间须同时提供有效的起止时间') from None
+                    settings[name]=_coerce_json_number(value,'人工入报时间',0,case['technical']['duration_seconds_raw'])
+            return prepare_strip(index, event, settings,
+                lambda a, b, leads, points: read_event_waveform(case['paths']['data'], a, b, leads, points))
+
+        # Reuse only the existing guarded private event index, never a waveform
+        # or mutable saved report. The projection is detached by the cache.
+        result = clinical_query_cache.project(key, build_checked, project_strip)
+        linked_read_identity(case, identity)
         return jsonify({**result, **basis})
 
     @app.get("/api/cases/<case_id>/report-statistics")

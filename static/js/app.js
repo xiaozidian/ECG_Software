@@ -1664,7 +1664,13 @@ function renderSttReviewContext() {
 
 function renderSttWaveform() {
   const waveform=state.sttWaveform;if(!waveform||!sttWaveformIsCurrent())return;
-  const canvas=$("#sttWaveformCanvas"),{ctx,width,height}=canvasContext(canvas,438),leads=(globalThis.ECGChartInspection?.entries(waveform.leads||{})||Object.entries(waveform.leads||{})),m={l:54,r:18,t:24,b:22},plotW=width-m.l-m.r,plotH=height-m.t-m.b,leadHeight=plotH/Math.max(1,leads.length);
+  const canvas=$("#sttWaveformCanvas"),leads=(globalThis.ECGChartInspection?.entries(waveform.leads||{})||Object.entries(waveform.leads||{}));
+  // Twelve channels need 64 CSS pixels each; the surrounding slot stays put.
+  canvas.dataset.sttRenderLeads=String(leads.length);
+  canvas.style.height=leads.length===12?"814px":"438px";
+  // The desktop slot may differ from 438px. Paint its actual CSS geometry.
+  const cssHeight=Math.max(1,Math.round(canvas.getBoundingClientRect().height||(leads.length===12?814:438)));
+  const {ctx,width,height}=canvasContext(canvas,cssHeight),m={l:54,r:18,t:24,b:22},plotW=width-m.l-m.r,plotH=height-m.t-m.b,leadHeight=plotH/Math.max(1,leads.length);
   ctx.clearRect(0,0,width,height);ctx.fillStyle="#fff";ctx.fillRect(0,0,width,height);
   for(let x=m.l;x<=width-m.r;x+=10){ctx.strokeStyle=(x-m.l)%50===0?"rgba(219,104,91,.24)":"rgba(219,104,91,.10)";ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x,m.t);ctx.lineTo(x,m.t+plotH);ctx.stroke();}
   for(let y=m.t;y<=m.t+plotH;y+=10){ctx.strokeStyle=(y-m.t)%50===0?"rgba(219,104,91,.24)":"rgba(219,104,91,.10)";ctx.beginPath();ctx.moveTo(m.l,y);ctx.lineTo(width-m.r,y);ctx.stroke();}
@@ -2599,6 +2605,15 @@ function nudgeSttMarker(marker,direction) {
 
 function bindSttInteraction() {
   const canvas=$("#sttWaveformCanvas"),wrapper=$("#sttWaveCanvasWrap"),tooltip=$("#sttWaveTooltip");let dragging=null,sliderTimer=null;
+  // Repaint the source samples when a local slot changes without a window resize.
+  if(typeof ResizeObserver!=="undefined"&&!canvas._sttSlotObserver){
+    let resizeFrame=0;
+    canvas._sttSlotObserver=new ResizeObserver(()=>{
+      if(resizeFrame)return;
+      resizeFrame=requestAnimationFrame(()=>{resizeFrame=0;if(state.currentPage==="stt"&&sttWaveformIsCurrent())renderSttWaveform();});
+    });
+    canvas._sttSlotObserver.observe(wrapper);
+  }
   const geometry=()=>{const rect=canvas.getBoundingClientRect(),l=54,r=18,w=Math.max(1,rect.width-l-r),marks=sttLandmarkFractions();return {rect,l,w,marks,isoX:l+marks.iso*w,jX:l+marks.j*w};};
   const hideTooltip=()=>{tooltip.hidden=true;};
   canvas.addEventListener("pointerdown",event=>{

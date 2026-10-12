@@ -442,3 +442,12 @@
 @media screen and (min-width:1001px) and (max-width:1199px) and (max-height:820px){
   #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .scatter-canvas-wrap{height:160px;flex-basis:160px}
 }
+
+/* ST-T twelve-channel view: scroll source-painted rows, retain external controls. */
+@media screen {
+  #page-stt.stt-review-layout #sttWaveformCanvas[data-stt-render-leads="12"]{height:814px!important;min-height:814px}
+  #page-stt.stt-review-layout .stt-wave-canvas-wrap:has(#sttWaveformCanvas[data-stt-render-leads="12"]){overflow:auto;overscroll-behavior:contain}
+}
+@media screen and (max-width:1000px) {
+  #page-stt.stt-review-layout .stt-wave-canvas-wrap:has(#sttWaveformCanvas[data-stt-render-leads="12"]){height:438px;min-height:438px;max-height:438px}
+}

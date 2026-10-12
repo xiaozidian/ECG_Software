@@ -102,6 +102,7 @@
     const identity=normalizeBasis(options.basis),context=Object.freeze({caseId:options.caseId,caseToken:options.caseToken,...identity});
     let query={...DEFAULT_QUERY},response=null,histogram=null,histogramKey='',phase='idle',error='',generation=0,controller=null,stripController=null,locateController=null,disposed=false;
     let logScale=false,showStrips=false,stripsPhase='idle',stripError='',stripItems=new Map(),brush=null,keyboardBin=0,locateGeneration=0,locatedIndex=null,locationMessage='';
+    let selectedIndex=null,selectionPhase='idle',hasLoaded=false;
     const listeners=[];
     const current=()=>!disposed&&(typeof options.isCurrent!=='function'||options.isCurrent(context)!==false);
     const qs=name=>host.querySelector('[data-rr-role="'+name+'"]');
@@ -109,7 +110,7 @@
     const on=(type,handler)=>{host.addEventListener(type,handler);listeners.push([type,handler]);};
     const setText=(name,text)=>{const el=qs(name);if(el)el.textContent=text;};
     host.classList?.add('rr-review-workbench');
-    host.innerHTML=`<section class="rrv-workspace" aria-label="RR 间期复核"><header class="rrv-heading"><div><h2>RR 间期复核</h2><p>按原始相邻心搏核对 · 精确定位终搏</p></div><div class="rrv-heading-actions"><button type="button" data-rr-action="cancel">取消读取</button><button type="button" data-rr-action="retry">重新读取</button></div></header><div class="rrv-summary" data-rr-role="summary"></div><div class="rrv-grid"><aside class="rrv-filter"><h3>间期条件</h3><label>显示指标<select data-rr-field="mode"><option value="rr">RR 间期 · ms</option><option value="ratio">R/R 比值 · %</option><option value="hr">瞬时心率 · bpm</option></select></label><label>有序类型 · 前搏 → 终搏<select data-rr-field="pair_type"><option value="all">全部有序类型</option></select></label><label>统计总体<select data-rr-field="population"><option value="all">全部间期</option><option value="normal_pair">N → N 类型间期</option><option value="nn_eligible">既有 NN 筛选候选（窦性未核实）</option><option value="nn_verified">已核实窦性与质量的 NN</option><option value="unknown">类型未知</option></select></label><label>RR 质量<select data-rr-field="quality"><option value="all">全部质量</option><option value="valid">有效 RR</option><option value="invalid">无效 RR</option></select></label><form data-rr-form="range"><fieldset><legend>时间范围 · 秒</legend><div class="rrv-field-pair"><label>开始<input data-rr-field="start_s" type="number" min="0" step="any" placeholder="全程"></label><label>结束<input data-rr-field="end_s" type="number" min="0" step="any" placeholder="全程"></label></div></fieldset><fieldset><legend data-rr-role="range-label">RR 范围 · ms</legend><div class="rrv-field-pair"><label>下限 · 含<input data-rr-field="range_min" type="number" min="0" step="any" placeholder="不限"></label><label>上限 · 不含<input data-rr-field="range_max" type="number" min="0" step="any" placeholder="不限"></label></div></fieldset><div class="rrv-filter-actions"><button type="submit" data-rr-action="apply">应用范围</button><button type="button" data-rr-action="clear-range">清除数值范围</button></div></form><p class="rrv-rule">原始邻居保持不变。筛选不会拼接新的 RR。类型未知与未通过 NN 候选规则的间期分别保留。</p></aside><div class="rrv-main"><section class="rrv-chart-card"><header><div><h3 data-rr-role="chart-title">RR 分布</h3><output data-rr-role="chart-count">尚未读取</output></div><label class="rrv-check"><input type="checkbox" data-rr-field="log">计数对数显示</label></header><canvas data-rr-role="histogram" tabindex="0" role="img" aria-label="间期柱图。拖动选择数值范围；方向键移动，Shift 加方向键扩大范围，Enter 应用，Escape 清除。"></canvas><div class="rrv-chart-foot"><span data-rr-role="selection">拖动柱图或输入范围；下限包含，上限不包含</span><span>方向键移动 · Shift 扩展 · Enter 应用</span></div></section><section class="rrv-results"><header><div><h3>匹配间期</h3><output data-rr-role="count">尚未读取</output></div><label class="rrv-check"><input type="checkbox" data-rr-field="strips">当前页三导联片段</label></header><div class="rrv-status" data-rr-role="status" role="status" aria-live="polite"></div><div data-rr-role="results"></div><footer class="rrv-pagination"><button type="button" data-rr-action="previous">上一页</button><output data-rr-role="page">—</output><button type="button" data-rr-action="next">下一页</button><label>每页<select data-rr-field="limit"><option value="25">25</option><option value="50" selected>50</option><option value="100">100</option><option value="200">200</option></select></label><form data-rr-form="page"><label>转到序号<input data-rr-field="ordinal" type="number" min="1" step="1" inputmode="numeric"></label><button type="submit">前往</button></form></footer></section></div></div><details class="rrv-method" open><summary>依据、来源与计算口径</summary><div data-rr-role="provenance"></div></details></section>`;
+    host.innerHTML=`<section class="rrv-workspace" aria-label="RR 间期复核"><header class="rrv-heading"><div><h2>RR 间期复核</h2><p>按原始相邻心搏核对 · 精确定位终搏</p></div><div class="rrv-heading-actions"><button type="button" data-rr-action="cancel">取消读取</button><button type="button" data-rr-action="retry">重新读取</button></div></header><div class="rrv-summary" data-rr-role="summary"></div><div class="rrv-grid"><aside class="rrv-filter"><h3>间期条件</h3><label>显示指标<select data-rr-field="mode"><option value="rr">RR 间期 · ms</option><option value="ratio">R/R 比值 · %</option><option value="hr">瞬时心率 · bpm</option></select></label><label>有序类型 · 前搏 → 终搏<select data-rr-field="pair_type"><option value="all">全部有序类型</option></select></label><label>统计总体<select data-rr-field="population"><option value="all">全部间期</option><option value="normal_pair">N → N 类型间期</option><option value="nn_eligible">既有 NN 筛选候选（窦性未核实）</option><option value="nn_verified">已核实窦性与质量的 NN</option><option value="unknown">类型未知</option></select></label><label>RR 可计算性<select data-rr-field="quality"><option value="all">全部质量</option><option value="valid">可计算普通 RR</option><option value="invalid">不可计算普通 RR</option></select></label><form data-rr-form="range"><fieldset><legend>时间范围 · 秒</legend><div class="rrv-field-pair"><label>开始<input data-rr-field="start_s" type="number" min="0" step="any" placeholder="全程"></label><label>结束<input data-rr-field="end_s" type="number" min="0" step="any" placeholder="全程"></label></div></fieldset><fieldset><legend data-rr-role="range-label">RR 范围 · ms</legend><div class="rrv-field-pair"><label>下限 · 含<input data-rr-field="range_min" type="number" min="0" step="any" placeholder="不限"></label><label>上限 · 不含<input data-rr-field="range_max" type="number" min="0" step="any" placeholder="不限"></label></div></fieldset><div class="rrv-filter-actions"><button type="submit" data-rr-action="apply">应用范围</button><button type="button" data-rr-action="clear-range">清除数值范围</button></div></form><p class="rrv-rule">原始邻居保持不变。筛选不会拼接新的 RR。类型未知与未通过 NN 候选规则的间期分别保留。</p></aside><div class="rrv-main"><section class="rrv-chart-card"><header><div><h3 data-rr-role="chart-title">RR 分布</h3><output data-rr-role="chart-count">尚未读取</output></div><label class="rrv-check"><input type="checkbox" data-rr-field="log">计数对数显示</label></header><canvas data-rr-role="histogram" tabindex="0" role="img" aria-label="间期柱图。拖动选择数值范围；方向键移动，Shift 加方向键扩大范围，Enter 应用，Escape 清除。"></canvas><div class="rrv-chart-foot"><span data-rr-role="selection">拖动柱图或输入范围；下限包含，上限不包含</span><span>方向键移动 · Shift 扩展 · Enter 应用</span></div></section><section class="rrv-results"><div class="rrv-selected" data-rr-role="selected" aria-live="polite"></div><div data-rr-role="evidence-slot"></div><header><div><h3>匹配间期</h3><output data-rr-role="count">尚未读取</output></div><label class="rrv-check"><input type="checkbox" data-rr-field="strips">当前页三导联片段</label></header><div class="rrv-status" data-rr-role="status" role="status" aria-live="polite"></div><div data-rr-role="results"></div><footer class="rrv-pagination"><button type="button" data-rr-action="previous">上一页</button><output data-rr-role="page">—</output><button type="button" data-rr-action="next">下一页</button><label>每页<select data-rr-field="limit"><option value="25">25</option><option value="50" selected>50</option><option value="100">100</option><option value="200">200</option></select></label><form data-rr-form="page"><label>转到序号<input data-rr-field="ordinal" type="number" min="1" step="1" inputmode="numeric"></label><button type="submit">前往</button></form></footer></section></div></div><details class="rrv-method"><summary>依据、来源与计算口径</summary><div data-rr-role="provenance"></div></details></section>`;
     function syncFields(){
       for(const name of Object.keys(DEFAULT_QUERY)){const node=field(name);if(node)node.value=query[name]??'';}
       if(field('log'))field('log').checked=logScale;
@@ -119,7 +120,7 @@
     }
     function renderSummary(){
       const summary=response?.summary;
-      const entries=[['当前 QRS','qrs_count'],['原邻间期','interval_count'],['有效 RR','valid_rr_count'],['无效 RR','invalid_count'],['类型未知','unknown_type_count'],['N → N','normal_pair_count'],['NN 候选（未核实）','nn_eligible_count']];
+      const entries=[['当前 QRS','qrs_count'],['原邻间期','interval_count'],['可计算 RR','valid_rr_count'],['不可计算 RR','invalid_count'],['类型未知','unknown_type_count'],['N → N','normal_pair_count'],['NN 候选（未核实）','nn_eligible_count']];
       const node=qs('summary');if(node)node.innerHTML=entries.map(([label,name])=>`<div><span>${label}</span><strong>${count(summary?.[name])}</strong></div>`).join('');
     }
     function renderPairs(){
@@ -137,20 +138,32 @@
     function renderRows(){
       const node=qs('results');if(!node)return;
       if(phase!=='ready'||!response){node.innerHTML=`<div class="rrv-empty">${esc(phase==='loading'?'正在读取当前条件的完整结果…':phase==='error'?'读取未完成，请重新读取。':phase==='cancelled'?'读取已取消，可重新读取当前条件。':phase==='inactive'?'当前病例或依据已变化，请重新打开 RR 复核。':'选择条件后读取 RR 间期。')}</div>`;return;}
-      if(!response.total){node.innerHTML='<div class="rrv-empty"><strong>匹配 0 个间期</strong><span>当前条件没有匹配结果；未知和无效间期可用对应条件单独查看。</span></div>';return;}
-      node.innerHTML=`<div class="rrv-table-scroll"><table><thead><tr><th>序号 / 时间</th><th>前搏 → 终搏</th><th>RR · ms</th><th>R/R · %</th><th>心率 · bpm</th><th>质量 / NN</th><th>定位</th></tr></thead><tbody>${response.items.map((item,index)=>{
+      if(!response.total){node.innerHTML='<div class="rrv-empty"><strong>匹配 0 个间期</strong><span>当前条件没有匹配结果；类型未知和不可计算间期可分别筛选查看。</span></div>';return;}
+      node.innerHTML=`<div class="rrv-table-scroll"><table><thead><tr><th>序号 / 时间</th><th>前搏 → 终搏</th><th>RR · ms</th><th>R/R · %</th><th>心率 · bpm</th><th>计算 / NN</th><th>定位</th></tr></thead><tbody>${response.items.map((item,index)=>{
         const valid=item.quality?.valid,known=item.type_known;
         const provenance=`${sourceLabel(item.left?.classification_source)} → ${sourceLabel(item.right?.classification_source)}`;
         const provenanceKeys=`${item.left?.classification_source||'unknown'} → ${item.right?.classification_source||'unknown'}`;
         const qualityCode=item.quality?.reason||'',nnCode=item.nn_reason||'';
         const nnText=item.nn_eligible_verified===true?'已核实 NN':item.nn_eligible_current_rules===true?'NN 候选 · 窦性未核实':`NN 候选未通过：${reasonLabel(nnCode)}`;
-        return `<tr${locatedIndex===index?' aria-selected="true"':''}><td><strong>${count(response.offset+index+1)}</strong><small>${time(item.time_s)}</small></td><td><span class="rrv-pair${known===false?' rrv-unknown':''}">${esc(item.left_type)} → ${esc(item.right_type)}</span><small title="${esc(provenanceKeys)}">${esc(provenance)}</small><small>样本 ${esc(item.start_sample??'未知')} → ${esc(item.end_sample??'未知')}</small></td><td>${metric(item.rr_ms)}${item.rr_ms===null&&finite(item.computed_rr_ms)?`<small>采样间距 ${metric(item.computed_rr_ms)} ms</small>`:''}${finite(item.stored_rr_ms)&&item.stored_rr_ms!==item.rr_ms?`<small>输入间期 ${metric(item.stored_rr_ms)}</small>`:''}</td><td>${metric(item.ratio_pct,2)}</td><td>${metric(item.hr_bpm,2)}</td><td><span class="rrv-quality ${valid===true?'rrv-valid':'rrv-invalid'}">${valid===true?'有效':valid===false?'无效':'未知'}</span>${valid===false?`<small title="${esc(qualityCode)}">${esc(reasonLabel(qualityCode))}</small>`:''}<small title="${esc(nnCode)}">${esc(nnText)}</small></td><td>${item.target===null?`<button type="button" disabled>目标不可用</button><small title="${esc(qualityCode)}">${esc(reasonLabel(qualityCode))}</small>`:`<button type="button" data-rr-action="locate" data-rr-index="${index}" aria-label="精确定位第 ${response.offset+index+1} 个间期终搏，样本 ${item.end_sample}">定位终搏</button>`}</td></tr>${showStrips&&item.target!==null?`<tr class="rrv-strip-row"><td colspan="7"><div class="rrv-strip-label">II / V1 / V5 · 终搏 R 对齐 · 设备单位未校准</div>${stripItems.has(item.end_sample)?`<canvas data-rr-strip="${item.end_sample}" aria-label="间期终搏样本 ${item.end_sample} 的三导联波形"></canvas>`:`<div class="rrv-strip-placeholder">${esc(stripsPhase==='error'?stripError||'片段读取失败':stripsPhase==='ready'?'片段缺失':'正在读取当前页真实片段…')}</div>`}</td></tr>`:''}`;
+        const selected=typeof options.onSelection==='function'?selectedIndex===index:locatedIndex===index;
+        return `<tr data-rr-row-index="${index}" tabindex="${selected?'0':'-1'}" aria-selected="${selected?'true':'false'}" class="${selected?'rrv-selected-row':''}"><td><strong>${count(response.offset+index+1)}</strong><small>${time(item.time_s)}</small></td><td><span class="rrv-pair${known===false?' rrv-unknown':''}">${esc(item.left_type)} → ${esc(item.right_type)}</span><small title="${esc(provenanceKeys)}">${esc(provenance)}</small><small>样本 ${esc(item.start_sample??'未知')} → ${esc(item.end_sample??'未知')}</small></td><td>${metric(item.rr_ms)}${item.rr_ms===null&&finite(item.computed_rr_ms)?`<small>采样间距 ${metric(item.computed_rr_ms)} ms</small>`:''}${finite(item.stored_rr_ms)&&item.stored_rr_ms!==item.rr_ms?`<small>输入间期 ${metric(item.stored_rr_ms)}</small>`:''}</td><td>${metric(item.ratio_pct,2)}</td><td>${metric(item.hr_bpm,2)}</td><td><span class="rrv-quality ${valid===true?'rrv-valid':'rrv-invalid'}">${valid===true?'可计算 RR':valid===false?'不可计算 RR':'计算未知'}</span>${valid===false?`<small title="${esc(qualityCode)}">${esc(reasonLabel(qualityCode))}</small>`:''}<small title="${esc(nnCode)}">${esc(nnText)}</small></td><td>${item.target===null?`<button type="button" disabled>目标不可用</button><small title="${esc(qualityCode)}">${esc(reasonLabel(qualityCode))}</small>`:`<button type="button" data-rr-action="locate" data-rr-index="${index}" aria-label="精确定位第 ${response.offset+index+1} 个间期终搏，样本 ${item.end_sample}">定位终搏</button>`}</td></tr>${showStrips&&item.target!==null?`<tr class="rrv-strip-row"><td colspan="7"><div class="rrv-strip-label">II / V1 / V5 · 终搏 R 对齐 · 设备单位未校准</div>${stripItems.has(item.end_sample)?`<canvas data-rr-strip="${item.end_sample}" aria-label="间期终搏样本 ${item.end_sample} 的三导联波形"></canvas>`:`<div class="rrv-strip-placeholder">${esc(stripsPhase==='error'?stripError||'片段读取失败':stripsPhase==='ready'?'片段缺失':'正在读取当前页真实片段…')}</div>`}</td></tr>`:''}`;
       }).join('')}</tbody></table></div>`;
       if(showStrips)for(const canvas of node.querySelectorAll('canvas[data-rr-strip]'))drawStrip(canvas,stripItems.get(Number(canvas.dataset.rrStrip)));
     }
+    function renderSelection(){
+      const node=qs('selected');if(!node)return;
+      const item=selectedIndex===null?null:response?.items?.[selectedIndex];
+      if(typeof options.onSelection!=='function'){node.hidden=true;return;}
+      node.hidden=false;
+      const quality=item?.quality?.valid===true?'可计算普通 RR':item?.quality?.valid===false?'不可计算普通 RR：'+reasonLabel(item.quality.reason):'RR 可计算性未知';
+      const nn=item?.nn_eligible_verified===true?'已核实 NN（仅当前修订和核实范围）':item?.nn_eligible_current_rules===true?'既有 NN 筛选候选（窦性未核实）':'未纳入既有 NN 候选：'+reasonLabel(item?.nn_reason);
+      const sources=item?sourceLabel(item.left?.classification_source)+' → '+sourceLabel(item.right?.classification_source):'';
+      const status=selectionPhase==='loading'?'正在读取精确原始波形…':selectionPhase==='ready'?'已显示所选原始波形':selectionPhase==='error'?locationMessage||'波形读取未完成':selectionPhase==='pending'?'等待波形核对':phase==='loading'?'正在读取当前筛选…':'选择间期查看原始波形';
+      node.innerHTML=item?`<div><strong>当前第 ${count(response.offset+selectedIndex+1)} 个间期 · ${esc(item.left_type)} → ${esc(item.right_type)}</strong><span>RR ${metric(item.rr_ms)} ms · R/R ${metric(item.ratio_pct,2)} % · ${time(item.time_s)}</span></div><div><span role="status">${esc(status)}</span>${selectionPhase==='error'?'<button type="button" data-rr-action="retry-selection">重读所选波形</button>':''}</div><p class="rrv-selection-boundary"><strong>${esc(quality)}</strong> · ${esc(nn)}<span>类型来源：${esc(sources)}</span></p><small>可计算 RR 不代表临床质量合格；源 N 标签不等于医生已核实窦性，节律、信号质量与核实范围仍需复核。↑ / ↓ 切换当前页间期。</small>`:`<strong>${esc(status)}</strong><small>原始波形按当前病例与修订精确读取；没有合法目标时不使用最近邻替代。</small>`;
+    }
     function render(){
-      if(!current()&&phase!=='inactive'){phase='inactive';response=null;histogram=null;}
-      syncFields();renderSummary();renderMethod();renderRows();
+      if(!current()&&phase!=='inactive'){abort('inactive');phase='inactive';response=null;histogram=null;}
+      syncFields();renderSummary();renderMethod();renderRows();renderSelection();
       const busy=phase==='loading';
       setText('status',phase==='error'?error:phase==='loading'?'正在读取当前条件…':phase==='cancelled'?'已取消读取':phase==='inactive'?'病例或依据已变化，结果已失效':'尚未读取');
       if(phase==='ready')setText('status',locationMessage||`当前条件完整匹配 ${count(response.total)} 个间期`);
@@ -159,7 +172,7 @@
       setText('count',phase==='ready'?`完整匹配 ${count(response.total)} 个 · 当前页 ${count(response.items.length)} 个`:busy?'正在核对完整匹配数量…':'—');
       setText('page',phase==='ready'?response.total?`${count(response.offset+1)}–${count(response.offset+response.items.length)} / ${count(response.total)}`:'0 / 0':'—');
       for(const action of ['previous','next']){const button=host.querySelector('[data-rr-action="'+action+'"]');if(button)button.disabled=phase!=='ready'||(action==='previous'?response.offset<=0:response.offset+response.items.length>=response.total);}
-      const cancelButton=host.querySelector('[data-rr-action="cancel"]');if(cancelButton)cancelButton.disabled=!busy&&stripsPhase!=='loading';
+      const cancelButton=host.querySelector('[data-rr-action="cancel"]');if(cancelButton)cancelButton.disabled=!busy&&stripsPhase!=='loading'&&selectionPhase!=='loading';
       drawHistogram();
     }
     function drawHistogram(){
@@ -205,7 +218,14 @@
       leads.forEach((lead,index)=>{const values=strip.leads?.[lead]||[],y=index*36+18;ctx.fillStyle='#b9d6d7';ctx.font='10px sans-serif';ctx.fillText(lead,7,y+3);ctx.strokeStyle='#72d6c3';ctx.lineWidth=1;ctx.beginPath();values.forEach((value,i)=>{if(!finite(value))return;const x=x0+(i*(strip.stride||1)/strip.sample_rate_hz)/strip.duration_s*w,py=y-value/limit*14;if(i===0)ctx.moveTo(x,py);else ctx.lineTo(x,py);});ctx.stroke();});
       const marker=x0+strip.anchor_offset_s/strip.duration_s*w;ctx.strokeStyle='#ffc978';ctx.setLineDash([3,3]);ctx.beginPath();ctx.moveTo(marker,0);ctx.lineTo(marker,height);ctx.stroke();ctx.setLineDash([]);
     }
-    function abort(){generation++;controller?.abort();stripController?.abort();locateController?.abort();controller=null;stripController=null;locateController=null;locateGeneration++;brush=null;stripItems.clear();stripsPhase='idle';stripError='';locatedIndex=null;locationMessage='';}
+    function abort(reason='query'){
+      generation++;controller?.abort();stripController?.abort();locateController?.abort();controller=null;stripController=null;locateController=null;locateGeneration++;brush=null;stripItems.clear();stripsPhase='idle';stripError='';locatedIndex=null;selectedIndex=null;selectionPhase='idle';locationMessage='';
+      if(typeof options.onSelection==='function'){
+        const run=generation,focusRun=locateGeneration;
+        const guard=Object.freeze({signal:new AbortController().signal,isCurrent:()=>run===generation&&focusRun===locateGeneration&&current(),reason,rowIndex:null});
+        try{Promise.resolve(options.onSelection(null,guard)).catch(()=>{});}catch(_){/* Clearing old evidence must not prevent cancellation. */}
+      }
+    }
     async function load(patch={}){
       if(!current()){abort();phase='inactive';response=null;histogram=null;render();return null;}
       let next;
@@ -216,7 +236,8 @@
         if(Object.hasOwn(patch,'limit')&&!Object.hasOwn(patch,'offset'))merged.offset=0;
         next=normalizeQuery(merged);
       }catch(problem){abort();phase='error';error=problem.message;response=null;render();return null;}
-      abort();query=next;const run=generation,requestController=new AbortController();controller=requestController;
+      const selectionReason=!hasLoaded?'initial':next.offset!==query.offset?'page':'query';
+      abort(selectionReason);query=next;const run=generation,requestController=new AbortController();controller=requestController;
       response=null;phase='loading';error='';
       if(histogramKey!==key(query)){histogram=null;histogramKey=key(query);}
       render();
@@ -226,6 +247,8 @@
         const result=await options.api('/api/cases/'+encodeURIComponent(context.caseId)+'/rr-review?'+params,{method:'GET',signal:requestController.signal});
         if(run!==generation||requestController.signal.aborted||!current())return null;
         validateResponse(result,context,query);response=result;histogram=result.histogram||null;phase='ready';controller=null;keyboardBin=Math.min(keyboardBin,Math.max(0,(histogram?.bins.length||1)-1));renderPairs();render();
+        hasLoaded=true;
+        if(typeof options.onSelection==='function'){const first=response.items.findIndex(item=>item.target!==null);if(first>=0)void select(first,selectionReason);}
         if(showStrips)void loadStrips(run);
         return result;
       }catch(problem){
@@ -256,7 +279,27 @@
         stripItems.clear();stripsPhase='error';stripError=problem.message||'片段读取失败';stripController=null;render();setText('status','当前页小波形读取失败，可重新读取。完整结果仍可精确定位。');
       }
     }
+    async function select(index,reason='pointer',{force=false,focus=false}={}){
+      if(phase!=='ready'||!response||!current()||typeof options.onSelection!=='function')return false;
+      const item=response.items[index];if(!item||item.target===null)return false;
+      if(!force&&selectedIndex===index&&['loading','ready','pending'].includes(selectionPhase))return false;
+      locateController?.abort();const ticket=new AbortController();locateController=ticket;
+      const run=generation,focusRun=++locateGeneration;
+      const guard=Object.freeze({signal:ticket.signal,isCurrent:()=>run===generation&&focusRun===locateGeneration&&selectedIndex===index&&current()&&!ticket.signal.aborted,reason,rowIndex:index,reveal:reason==='pointer'||reason==='keyboard'});
+      const target=Object.freeze({...item.target,case_token:context.caseToken});
+      selectedIndex=index;locatedIndex=null;selectionPhase='loading';locationMessage='正在读取所选间期的精确原始波形…';render();
+      if(focus){const row=host.querySelector('[data-rr-row-index="'+index+'"]');row?.focus({preventScroll:true});row?.scrollIntoView?.({block:'nearest'});}
+      try{
+        assertIdentity(target,context);if(target.case_id!==context.caseId||target.caseId!==context.caseId)throw Error('RR 目标病例身份已变化，未读取');
+        const result=await options.onSelection(target,guard);if(!guard.isCurrent())return false;
+        if(result===false||result?.located===false)throw Error(result?.reason||'所选精确目标已失效，未显示波形');
+        if(result===true||result?.located===true){locatedIndex=index;selectionPhase='ready';locationMessage=`已精确定位终搏样本 ${target.sample_index}`;}
+        else{selectionPhase='pending';locationMessage='已请求所选原始波形，等待波形核对';}
+        if(locateController===ticket)locateController=null;render();if(focus)host.querySelector('[data-rr-row-index="'+index+'"]')?.focus({preventScroll:true});return true;
+      }catch(problem){if(guard.isCurrent()){if(locateController===ticket)locateController=null;selectionPhase='error';locationMessage=problem.message||'原始波形读取未完成，可重试';render();if(focus)host.querySelector('[data-rr-row-index="'+index+'"]')?.focus({preventScroll:true});}return false;}
+    }
     async function locate(index){
+      if(typeof options.onSelection==='function')return select(index,'pointer',{force:selectionPhase!=='loading',focus:true});
       if(phase!=='ready'||!response||!current())return;
       const item=response.items[index];if(!item||item.target===null)return;
       locateController?.abort();const ticket=new AbortController();locateController=ticket;
@@ -283,11 +326,14 @@
     }
     function pointerBin(event){const canvas=qs('histogram'),g=canvas?._rrGeometry,bins=histogram?.bins;if(!g||!bins?.length)return null;const rect=canvas.getBoundingClientRect();return Math.max(0,Math.min(bins.length-1,Math.floor((event.clientX-rect.left-g.left)/g.width*bins.length)));}
     on('click',event=>{
-      const button=event.target.closest?.('[data-rr-action]');if(!button||!host.contains(button))return;
+      const button=event.target.closest?.('[data-rr-action]');
+      if(!button){const row=event.target.closest?.('[data-rr-row-index]');if(row&&host.contains(row)&&typeof options.onSelection==='function')void select(Number(row.dataset.rrRowIndex),'pointer',{focus:true});return;}
+      if(!host.contains(button))return;
       const action=button.dataset.rrAction;
       if(action==='apply'){event.preventDefault();void load(rangeFields());}
       else if(action==='cancel'){cancel();}
       else if(action==='retry'){void retry();}
+      else if(action==='retry-selection'&&selectedIndex!==null){void select(selectedIndex,'pointer',{force:true,focus:true});}
       else if(action==='clear-range'){void load({range_min:null,range_max:null,offset:0});}
       else if(action==='previous'&&phase==='ready'){void load({offset:Math.max(0,query.offset-query.limit)});}
       else if(action==='next'&&phase==='ready'&&query.offset+response.items.length<response.total){void load({offset:query.offset+query.limit});}
@@ -309,6 +355,13 @@
     on('pointerup',event=>{if(!brush||event.target!==qs('histogram')||event.pointerId!==brush.pointerId)return;const index=pointerBin(event);if(index!==null)brush.end=index;event.target.releasePointerCapture?.(event.pointerId);commitBrush();});
     on('pointercancel',()=>{brush=null;drawHistogram();});
     on('keydown',event=>{
+      const row=event.target.closest?.('[data-rr-row-index]');
+      if(row&&host.contains(row)&&typeof options.onSelection==='function'&&phase==='ready'&&['ArrowUp','ArrowDown','Home','End'].includes(event.key)){
+        event.preventDefault();const indexes=response.items.map((item,index)=>item.target!==null?index:null).filter(index=>index!==null);
+        if(!indexes.length)return;const before=selectedIndex??Number(row.dataset.rrRowIndex),position=Math.max(0,indexes.indexOf(before));
+        const next=event.key==='Home'?indexes[0]:event.key==='End'?indexes.at(-1):indexes[Math.max(0,Math.min(indexes.length-1,position+(event.key==='ArrowUp'?-1:1)))];
+        void select(next,'keyboard',{focus:true});return;
+      }
       if(event.target!==qs('histogram')||phase!=='ready'||!histogram?.bins.length)return;
       if(['ArrowLeft','ArrowRight','Home','End'].includes(event.key)){
         event.preventDefault();const before=keyboardBin;keyboardBin=event.key==='Home'?0:event.key==='End'?histogram.bins.length-1:Math.max(0,Math.min(histogram.bins.length-1,keyboardBin+(event.key==='ArrowLeft'?-1:1)));
@@ -317,16 +370,16 @@
       }else if(event.key==='Enter'||event.key===' '){event.preventDefault();if(!brush)brush={anchor:keyboardBin,end:keyboardBin};commitBrush();}
       else if(event.key==='Escape'){event.preventDefault();brush=null;void load({range_min:null,range_max:null,offset:0});}
     });
-    function cancel(){abort();response=null;phase=current()?'cancelled':'inactive';render();}
+    function cancel(){abort('cancel');response=null;phase=current()?'cancelled':'inactive';render();}
     function retry(){return load();}
     function snapshot(){
       if(!current()){abort();phase='inactive';response=null;histogram=null;render();}
-      return {context:{...context},phase,query:{...query},total:response?.total??null,matched_count:response?.total??null,offset:query.offset,limit:query.limit,items:response?.items?response.items.map(item=>({...item})):[],rows:response?.items?response.items.map(item=>({...item})):[],summary:response?.summary?{...response.summary}:null,error,generation,stripsPhase,locationMessage};
+      return {context:{...context},phase,query:{...query},total:response?.total??null,matched_count:response?.total??null,offset:query.offset,limit:query.limit,items:response?.items?response.items.map(item=>({...item})):[],rows:response?.items?response.items.map(item=>({...item})):[],summary:response?.summary?{...response.summary}:null,error,generation,stripsPhase,locationMessage,selectedIndex,selectedTarget:selectedIndex===null?null:response?.items?.[selectedIndex]?.target??null,selectionPhase};
     }
-    function dispose(){abort();disposed=true;for(const [type,handler]of listeners)host.removeEventListener(type,handler);resizeObserver?.disconnect();host.innerHTML='';host.classList?.remove('rr-review-workbench');}
+    function dispose(){abort('dispose');disposed=true;for(const [type,handler]of listeners)host.removeEventListener(type,handler);resizeObserver?.disconnect();host.innerHTML='';host.classList?.remove('rr-review-workbench');}
     const resizeObserver=typeof root.ResizeObserver==='function'?new root.ResizeObserver(()=>{drawHistogram();if(showStrips)renderRows();}):null;resizeObserver?.observe(host);
     render();
-    return {load,cancel,retry,dispose,snapshot};
+    return {load,cancel,retry,dispose,snapshot,select,retrySelection:()=>selectedIndex===null?Promise.resolve(false):select(selectedIndex,'pointer',{force:true,focus:true})};
   }
   const api={mount,normalizeQuery,normalizeBasis,assertIdentity,validateResponse,metric};root.ECGRRReview=api;if(typeof module!=='undefined')module.exports=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

@@ -43,7 +43,7 @@ jobs:
       - name: Verify thumbnail case and request isolation with synthetic UI state
         run: python -m pytest -q tests/test_occurrence_scope.py -p no:cacheprovider --junitxml=build/core-verification/thumbnail-scope-junit.xml
       - name: Verify RR topology, fixed-window HRV transactions and versioned terminology
-        run: python -m pytest -q tests/test_rr_review.py tests/test_hrv_review.py tests/test_terminology_validation.py tests/test_three_feature_oracles.py tests/test_three_feature_api.py tests/test_three_feature_browser_contracts.py -p no:cacheprovider --junitxml=build/core-verification/three-feature-junit.xml
+        run: python -m pytest -q tests/test_rr_review.py tests/test_hrv_review.py tests/test_terminology_validation.py tests/test_three_feature_oracles.py tests/test_three_feature_api.py tests/test_report_strip_projection_cache.py tests/test_three_feature_browser_contracts.py -p no:cacheprovider --junitxml=build/core-verification/three-feature-junit.xml
       - name: Retain source identity and test evidence
         if: always()
         uses: actions/upload-artifact@v4
