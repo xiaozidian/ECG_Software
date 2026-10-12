@@ -434,7 +434,7 @@ const clinicalUI=(()=>{
   function reportViewKey(params,data=reportData){return JSON.stringify([reportViewContext(data),category,params]);}
   function rememberReportView(){
     if(!reportData||state.reportDisplayedCategory!==category||state.reportViewContext!==reportViewContext(reportData))return;
-    const host=qs('#reportV2Content'),disclosures=Array.from(host?.querySelectorAll?.('details')||[]).filter(d=>d.open).map(d=>d.className);
+    const host=qs('#reportV2Content'),disclosures=Array.from(host?.querySelectorAll?.('details')||[]).filter(d=>d.open&&d.dataset?.reportSavedStNote===undefined).map(d=>d.className);
     state.reportBookmarks ||=new Map();state.reportBookmarks.set(category,{mode:reportMode,offset:reportOffset,sort:reportSort,spacing:reportSpacing,pauseBand,range:reportTimeRange,active:typeof active==='undefined'?null:active?.event_id,scroll:qs('.v2-event-list')?.scrollTop||0,disclosures});
   }
   function chooseReportCategory(next){
@@ -465,7 +465,7 @@ const clinicalUI=(()=>{
       }
       if(!current())return;state.reportDisplayedCategory=viewCategory;state.reportViewLoading=false;host.inert=false;host.setAttribute?.('aria-busy','false');renderReportShell();const rendered=renderReportBody();
       if(previousCategory===viewCategory&&focusId)qs('#'+focusId)?.focus({preventScroll:true});
-      if(previousCategory===viewCategory||navigation.restoreView)Array.from(host.querySelectorAll?.('details')||[]).forEach(d=>{if(viewState.disclosures?.includes(d.className))d.open=true;});
+      if(previousCategory===viewCategory||navigation.restoreView)Array.from(host.querySelectorAll?.('details')||[]).forEach(d=>{if(d.dataset?.reportSavedStNote===undefined&&viewState.disclosures?.includes(d.className))d.open=true;});
       await rendered;
       if(current()&&(previousCategory===viewCategory||navigation.restoreView)&&qs('.v2-event-list'))qs('.v2-event-list').scrollTop=viewState.scroll;
       if(current())rememberReportView();
@@ -857,6 +857,60 @@ const clinicalUI=(()=>{
     if(items.length)await locate(items.find(e=>e.event_id===active?.event_id)||items[0]);
     else{active=null;renderEventNavigation();}
   }
+  function mountSavedSTNote(target,event,isCurrent){
+    target.querySelectorAll('[data-report-saved-st-note]').forEach(node=>node.remove());
+    if(event?.category!=='ST'||typeof event.note!=='string'||!event.note.trim())return;
+    // These are historical saved values, never a new calculation or diagnosis.
+    const note=event.note,eventId=event.event_id,eventBasis=event.basis_version,editor=qs('#conclusionEditor'),
+      statistics=event.range_statistics?copy(event.range_statistics):null,
+      analysis=copy(waveEvidence),privacyToken=state.privacyRequestId??0;
+    function statisticsCurrent(){
+      if(!statistics)return true;
+      const scope=statistics.scope,history=state.caseData?.beat_editor_history?.revision;
+      if(!scope||scope.case_id!==state.caseId||!Number.isSafeInteger(scope.analysis_revision)||scope.analysis_revision<0||!Number.isSafeInteger(scope.beat_revision)||scope.beat_revision<0||Number.isSafeInteger(history)&&history>=0&&history!==scope.beat_revision)return false;
+      try{const current=ECGAnalysisConsistency.identity(state.caseData);return scope.analysis_basis===current.analysis_basis&&scope.analysis_revision+1===current.analysis_revision&&reportData?.case_id===state.caseId&&reportData.analysis_basis===current.analysis_basis&&reportData.analysis_revision===current.analysis_revision&&reportData.beat_revision===scope.beat_revision;}catch{return false;}
+    }
+    const detail=document.createElement('details');detail.dataset.reportSavedStNote=eventId;
+    const summary=document.createElement('summary');summary.textContent=statistics?'已保存备注 / 保存时区间统计'+(statisticsCurrent()?'':'（旧依据）'):'已保存备注';detail.append(summary);
+    const original=document.createElement('p');original.style.whiteSpace='pre-wrap';original.style.overflowWrap='anywhere';original.dataset.reportSavedStOriginal='';original.textContent=note;detail.append(original);
+    if(statistics){
+      const saved=document.createElement('section');saved.setAttribute('aria-label','保存时区间统计');
+      const title=document.createElement('strong');title.textContent='保存时区间统计';saved.append(title);
+      const range=statistics.range||{},point=statistics.method_profile?.measurement_ms,
+        value=x=>typeof x==='number'&&Number.isFinite(x)?String(x):'—';
+      const description=document.createElement('p');description.textContent=`${Number.isFinite(range.start_s)&&Number.isFinite(range.end_s)?`记录后 ${formatElapsed(range.start_s)}–${formatElapsed(range.end_s)} · `:''}${[0,60,80].includes(point)?point===0?'J 点 · ':`J+${point} ms · `:''}事件保存时的记录，未重新计算。u 未校准。`;saved.append(description);
+      if(Array.isArray(statistics.leads)){
+        const table=document.createElement('table');table.innerHTML='<thead><tr><th>导联</th><th>均值（u）</th><th>有效搏数</th></tr></thead><tbody></tbody>';
+        statistics.leads.forEach(row=>{const tr=document.createElement('tr');[row.lead??'—',value(row.mean_units),value(row.used_count)].forEach(text=>{const td=document.createElement('td');td.textContent=String(text);tr.append(td);});table.querySelector('tbody').append(tr);});saved.append(table);
+      }
+      detail.append(saved);
+    }
+    const button=document.createElement('button');button.type='button';button.dataset.reportAppendStNote='';button.textContent='填入报告结论';
+    const status=document.createElement('p');status.setAttribute('role','status');status.dataset.reportAppendStStatus='';detail.append(button,status);target.append(detail);
+    function owned(){
+      if(!detail.isConnected||!target.isConnected||!isCurrent()||state.currentPage!=='report'||state.reportSaving||state.reportStale||state.reportEvidenceLoading||state.reportEvidenceError||state.reportViewLoading||state.reportViewError||state.privacySaving||state.privacyIdentityPending||privacyToken!==(state.privacyRequestId??0))return false;
+      const candidate=target.id==='v2EventWave',live=candidate?active:selectedLookup.get(eventId);
+      if(!live||live.category!=='ST'||live.event_id!==eventId||live.basis_version!==eventBasis||live.note!==note)return false;
+      if(!candidate&&!selected().some(s=>s.event_id===eventId&&s.basis_version===eventBasis))return false;
+      try{ECGAnalysisConsistency.assertSame(analysis,state.caseData);}catch{return false;}
+      return true;
+    }
+    button.disabled=!clinicalWorkflow.writable()||!statisticsCurrent();
+    if(statistics&&!statisticsCurrent())status.textContent='保存时统计来自旧依据，请重新计算后填入；历史备注仍保留。';
+    button.onclick=()=>{
+      if(!owned()){status.textContent='事件、病例或依据已变化，请重新读取后填入。';return;}
+      if(!statisticsCurrent()){button.disabled=true;status.textContent='保存时统计来自旧依据，请重新计算后填入；历史备注仍保留。';return;}
+      if(!clinicalWorkflow.writable()||!editor||qs('#conclusionEditor')!==editor||editor.readOnly||editor.disabled){status.textContent='当前报告结论不可编辑；请重新读取后填入。';return;}
+      const before=editor.value,addition=(before&&!before.endsWith('\n')?'\n':'')+note,
+        maximum=Math.min(12000,editor.maxLength>=0?editor.maxLength:12000);
+      if(before.length+addition.length>maximum){status.textContent=`报告结论最多 ${maximum} 字；请先精简正文后再填入，原文字已保留。`;return;}
+      const selection={start:editor.selectionStart,end:editor.selectionEnd,direction:editor.selectionDirection,top:editor.scrollTop,left:editor.scrollLeft};
+      editor.setRangeText(addition,before.length,before.length,'preserve');
+      editor.setSelectionRange(selection.start,selection.end,selection.direction);editor.scrollTop=selection.top;editor.scrollLeft=selection.left;
+      editor.dispatchEvent(new Event('input',{bubbles:true}));
+      status.textContent='已追加保存时备注；请核对结论并保存。';
+    };
+  }
   async function locate(e){
     if(!e||e.category!==category||state.reportViewLoading||state.reportViewError||state.reportEvidenceLoading)return;
     active=e;const token=++waveToken,id=state.caseId,caseToken=state.caseRequestId,renderToken=reportRenderToken,viewCategory=category,scope=waveEvidenceScope,rateCandidates=['fastest','slowest'].includes(e.category),target=qs('#v2EventWave');
@@ -1138,6 +1192,7 @@ const clinicalUI=(()=>{
       function placeLeadLabels(){const plot=stage.querySelector('svg');if(!plot)return;const names=ECGChartInspection.names(wave.leads),row=plot.viewBox.baseVal.height/names.length;plot.querySelectorAll('text').forEach(text=>{const index=names.indexOf(text.textContent);if(index<0)return;text.setAttribute('x','-30');text.setAttribute('y',String((index+.55)*row));text.setAttribute('dominant-baseline','middle');text.setAttribute('font-size','12');text.setAttribute('data-review-lead-label',text.textContent);});}
       const axis=document.createElement('div');axis.className='rw-main-time-axis';axis.setAttribute('aria-label','当前真实时间窗的秒刻度');axis.innerHTML=Array.from({length:5},(_,i)=>`<span>${(wave.duration_s*i/4).toFixed(2)} s</span>`).join('');stage.after(axis);placeLeadLabels();const labelsObserver=new MutationObserver(()=>{if(!holder.isConnected){labelsObserver.disconnect();return;}placeLeadLabels();});labelsObserver.observe(stage,{childList:true});
     }
+    if(e.category==='ST'&&typeof e.note==='string'&&e.note.trim())mountSavedSTNote(target,e,current);
     return wave;
   }
   function renderRangeDraftNotice(){
@@ -1336,8 +1391,7 @@ const clinicalUI=(()=>{
     let scrollFrame;qs('#editTemplateGallery').addEventListener('scroll',()=>{cancelAnimationFrame(scrollFrame);scrollFrame=requestAnimationFrame(renderOccurrences)});
     qs('#editTemplateGallery').addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight')e.stopPropagation()});
     const old=qs('.report-workbench'),root=document.createElement('section');root.id='reportV2';root.innerHTML='<nav id="reportV2Nav" aria-label="报告二级导航"></nav><p id="reportV2Notice"></p><div id="reportV2Content"></div>';old.before(root);old.hidden=true;root.after(qs('.report-conclusion-dock'));
-    const preflight=qs('#reportPreflight');
-    if(preflight){const disclosure=document.createElement('details');disclosure.id='reportPreflightDisclosure';disclosure.innerHTML='<summary>审核前检查</summary>';disclosure.append(preflight);qs('#reportV2Notice').after(disclosure);}
+    // Core report actions expose their own state; no preflight panel is mounted.
     root.addEventListener('click',event=>{const b=event.target.closest('button');if(!b||b.disabled)return;if(b.dataset.reviewRhythm!==undefined)run(()=>openRhythmReview(b.dataset.reviewRhythm));if(b.hasAttribute('data-rhythm-replace'))run(replaceReturnedRhythm);});
     root.addEventListener('click',event=>{const b=event.target.closest('button');if(!b||b.disabled)return;if(b.dataset.category)run(()=>chooseReportCategory(b.dataset.category));if(b.dataset.locate!==undefined)run(()=>locate(reportData.items[Number(b.dataset.locate)]));if(b.dataset.remove!==undefined)removeReportSelection(Number(b.dataset.remove));if(b.dataset.move!==undefined){const i=Number(b.dataset.move),j=i+Number(b.dataset.delta);[state.reportComposition.selected_events[i],state.reportComposition.selected_events[j]]=[selected()[j],selected()[i]];dirty();run(renderReportBody)}if(b.dataset.backEvent!==undefined)run(()=>backToReportEvent(Number(b.dataset.backEvent)));if(b.dataset.ack!==undefined){Object.assign(state.reportComposition.diagnosis_blocks[Number(b.dataset.ack)],{acknowledged:true,needs_review:false});dirty();run(renderReportBody)}});
     root.addEventListener('change',event=>{const el=event.target;if(el.hasAttribute('data-estimate-paper-gain')){state.reportComposition=composition();state.reportComposition.paper.gain=el.value;dirty();return;}if(changePaperSettings(el)||changeStripSettings(el))return;if(el.dataset.include!==undefined)selectEvent(reportData.items[Number(el.dataset.include)],el.checked)});

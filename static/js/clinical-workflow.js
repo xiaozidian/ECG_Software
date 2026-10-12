@@ -47,8 +47,8 @@ const clinicalWorkflow = (() => {
     if(!visible)return;
     const next=$("#workflowNext"),isReport=state.currentPage==="report";
     next.hidden=isReport?data?.report_status==="reviewed":!["edit","stt"].includes(state.currentPage)||data?.steps?.[state.currentPage]?.status==="done";
-    next.textContent=isReport?"审核检查":"确认本步";
-    next.title=isReport?"查看报告审核前检查":"打开复核确认窗口；确认并保存后进入下一阶段";
+    next.textContent=isReport?"报告编排":"确认本步";
+    next.title=isReport?"前往报告编排、结论和导出":"打开复核确认窗口；确认并保存后进入下一阶段";
     next.disabled=!data||(!writable()&&!isReport);
     const browseNext=$("#workflowBrowseNext"),index=navigationSteps.findIndex(step=>step.page===state.currentPage),target=navigationSteps[index+1];
     browseNext.textContent=target?"下一阶段 ↓":"返回工作台";
@@ -66,7 +66,7 @@ const clinicalWorkflow = (() => {
   }
   function confirmStep() {
     if(!["edit","stt","report"].includes(state.currentPage)){browse();return;}
-    if(state.currentPage==="report"){if(data?.report_status==="reviewed"){goPage("dashboard");return;}const disclosure=$("#reportPreflightDisclosure");if(disclosure)disclosure.open=true;$("#reportPreflight")?.scrollIntoView({block:"nearest"});$("#reportPreflight")?.focus();return;}
+    if(state.currentPage==="report"){if(data?.report_status==="reviewed"){goPage("dashboard");return;}$('#reportV2Nav [data-category="final"]')?.click();$("#conclusionEditor")?.scrollIntoView({block:"nearest"});$("#conclusionEditor")?.focus({preventScroll:true});return;}
     if(data?.steps?.[state.currentPage]?.status==="done"){browse();return;}
     if(!data)return;
     dialogContext={caseId:state.caseId,step:state.currentPage,revision:data.revision};
@@ -90,12 +90,9 @@ const clinicalWorkflow = (() => {
     finally{button.disabled=false;}
   }
   function renderPreflight() {
-    const panel=$("#reportPreflight");if(!panel)return;
-    const summary=$("#reportPreflightDisclosure summary");
     const evidenceNotice=state.reportEvidenceLoading?'报告依据核对中':state.reportEvidenceError?'报告依据读取失败':(state.reportComposition?.diagnosis_blocks||[]).some(b=>b.needs_review)?'人工诊断文字待核对':state.reportCategoryPending?.length?'报告分类筛选待确认：'+state.reportCategoryPending.map(item=>item.label).join('、'):'';
-    if(summary)summary.textContent=`审核前检查 · ${pending().length?`${pending().length} 个环节待确认`:"环节已确认"}${state.reportStale?" · 依据已变化":state.reportDirty?" · 有未保存修改":""}${evidenceNotice?' · '+evidenceNotice:''}`;
-    const retained=Object.values(data?.events||{}).filter(x=>x.status==="retained");
-    panel.innerHTML=`<h2>审核前检查</h2><p>${pending().length?`尚有 ${pending().length} 个环节未确认`:"各环节已确认，请核对结论并保存"}</p><div class="preflight-steps">${CASE_WORKFLOW_STEPS.filter(x=>["edit","stt"].includes(x.page)).map(x=>`<button type="button" data-clinical-step="${x.page}"><span>${data?.steps?.[x.page]?.status==="done"?"✓":"○"}</span>${x.label}<small>${data?.steps?.[x.page]?.status==="stale"?"需重核":data?.steps?.[x.page]?.status==="done"?"已确认":"待确认"}</small></button>`).join("")}</div><p class="workflow-limit">RR、HRV 与候选使用当前修订；源报告摘要不改写。房颤/房扑标签是医生逐搏标记，不是自动诊断或发作负荷。请核对结论。</p><h3>医生保留的证据 · ${retained.length}</h3><div class="evidence-list">${retained.map(x=>`<button type="button" data-jump-time="${x.sample_index/200}">${escapeHtml(x.type)} · ${formatElapsed(x.sample_index/200)} ↗</button>`).join("")||"<p>尚未保留事件证据，可到事件复核中选择。</p>"}</div><small>${writable()?(state.demoReadonly?"演示修改仅存此浏览器":"确认与修改写入本地审计"):"当前服务为只读"}</small>`;
+    // Preserve every approval guard and synchronize the action even when no
+    // preflight DOM exists, including the transition from saved to dirty.
     const approve=$("#approveReport");
     if(approve){
       approve.disabled=!ECGReportConsistency.canApprove(state,$("#conclusionEditor")?.value,pending().length===0,writable());
@@ -130,8 +127,7 @@ const clinicalWorkflow = (() => {
     state.reportDirty=false;state.reportComposition=normalizedReportComposition(state.report?.composition);return true;
   }
   function bind(){
-    const panel=document.createElement("article");panel.id="reportPreflight";panel.className="card report-preflight";panel.tabIndex=-1;
-    $(".report-summary-rail")?.prepend(panel);
+    // Report state stays on its core actions, rather than a checklist panel.
     $("#workflowBrowseNext").addEventListener("click",browse);
     $("#workflowReturn").addEventListener("click",()=>{const origin=context;if(!origin)return;goPage(origin.page);requestAnimationFrame(()=>window.scrollTo(0,origin.scroll));context=null;render();});
     $("#workflowConfirmForm").addEventListener("submit",submit);

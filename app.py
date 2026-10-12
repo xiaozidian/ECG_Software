@@ -56,7 +56,7 @@ from ecg_core.waveform import read_event_waveform, ALL_LEADS, read_waveform, rea
 from ecg_core.overview import RhythmReviewStore, initial_episodes, density
 
 ACTOR = "演示分析医生"
-READONLY_POST_ENDPOINTS = frozenset({"case_open", "scatter_selection_endpoint", "waveform_strips_endpoint", "event_waveforms", "waveform_density", "advanced_analysis_endpoint", "rr_locate_endpoint"})
+READONLY_POST_ENDPOINTS = frozenset({"case_open", "scatter_selection_endpoint", "waveform_strips_endpoint", "event_waveforms", "waveform_density", "advanced_analysis_endpoint", "rr_locate_endpoint", "stt_range_endpoint"})
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -510,7 +510,13 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
     @app.get("/api/cases/<case_id>/stt-review")
     def stt_review(case_id: str):
         case = case_or_404(case_id)
-        basis = clinical_read_basis(case, request.args)
+        expected = dict(request.args)
+        if 'beat_revision' in expected:
+            value = expected['beat_revision']
+            if not value.isascii() or not value.isdecimal():
+                raise ValueError('心搏修订须为非负整数')
+            expected['beat_revision'] = int(value)
+        basis = linked_read_identity(case, expected)
         editor_value = editor.snapshot(case_id)
         feed = edited_feed(case, editor_value["document"])
         overrides = storage.list_beat_overrides(case_id)
@@ -522,7 +528,7 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
             case["technical"]["duration_seconds_raw"],
             analysis_revision=f"editor-{editor_value['revision']}|overrides-{override_signature or 'none'}",
         )
-        clinical_read_basis(case, basis)
+        linked_read_identity(case, basis)
         return jsonify({**result, **basis})
 
     @app.patch("/api/cases/<case_id>/patient")
@@ -739,6 +745,17 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         case=case_or_404(case_id)
         return clinical_response(case, lambda: hrv_windows(edited_feed(case),case["metadata"].get("start_iso") or case["metadata"].get("start_time"),request.args.get("window",0)))
 
+    def review_data_version(case, feed):
+        from ecg_core.clinical_analysis import fingerprint, encode, PERIODIC_VERSION
+        opts = feed.document['settings']
+        rows = feed.beats + feed.markers
+        bv = fingerprint('|'.join(f"{r['id']}:{r['sample_index']}:{r['class_code']}" for r in rows)
+                         + '|' + encode([[k, opts[k]] for k in sorted(opts)]))
+        findings = [a for a in storage.list_annotations(case['case_id'])
+                    if a.get('details', {}).get('kind') in ('ST', 'AT', 'VT', 'AF', 'AFL', 'STRIP')]
+        av = fingerprint(encode([[a['id'], a['sample_index'], a.get('details')] for a in findings]))
+        return bv + '-' + av + '-rr-quality-v3-' + PERIODIC_VERSION + '-af-end-v1-status-v2'
+
     def review_scope(case, expected=None, db=None):
         """Bind new work to original contents and both edited/review revisions."""
         source = runtime.basis(case)
@@ -746,14 +763,8 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         revision = storage._review(db, case['case_id'])['revision'] if db is not None else storage.get_review(case['case_id'])['revision']
         # Compute exactly the clinical index's content identity without building
         # thousands of unrelated event candidates on every RR/HRV query.
-        from ecg_core.clinical_analysis import fingerprint, encode, PERIODIC_VERSION
         def project_version():
-            feed=edited_feed(case); opts=feed.document['settings']
-            rows=feed.beats+feed.markers
-            bv=fingerprint('|'.join(f"{r['id']}:{r['sample_index']}:{r['class_code']}" for r in rows)+'|'+encode([[k,opts[k]] for k in sorted(opts)]))
-            findings=[a for a in storage.list_annotations(case['case_id']) if a.get('details',{}).get('kind') in ('ST','AT','VT','AF','AFL','STRIP')]
-            av=fingerprint(encode([[a['id'],a['sample_index'],a.get('details')] for a in findings]))
-            return {'data_version':bv+'-'+av+'-rr-quality-v3-'+PERIODIC_VERSION+'-af-end-v1-status-v2'}
+            return {'data_version': review_data_version(case, edited_feed(case))}
         identity_key=(case['case_id'],source['digest'],revision,beat)
         version=review_identity_cache.project(identity_key,project_version,lambda index:index['data_version'])
         value = dict(case_id=case['case_id'], source_digest=provenance_digest(source['inputs']),
@@ -768,6 +779,101 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
                 if item != value[key]: raise ReportConflict('病例、原始来源或复核修订已变化，请重新读取')
         runtime.assert_current()
         return value
+
+    def stt_range_result(case, payload):
+        from ecg_core.stt_range import analyze_stt_range
+        case_id = case['case_id']
+        scope = payload.get('scope')
+        if 'exclusions' in payload:
+            raise ValueError('范围统计仅采用当前已保存的节律排除区间，请先复核并保存节律标注')
+        names = ('case_id', 'analysis_basis', 'analysis_revision', 'beat_revision')
+        if not isinstance(scope, dict) or any(name not in scope for name in names):
+            raise ValueError('范围统计须提供病例、分析及逐搏修订依据')
+        if any(type(scope[name]) is not int or scope[name] < 0 for name in ('analysis_revision', 'beat_revision')):
+            raise ValueError('范围统计修订须为非负整数')
+        if 'case_id' in payload and payload['case_id'] != case_id:
+            raise ReportConflict('范围统计请求来自另一病例')
+        identity = linked_read_identity(case, {name: scope[name] for name in names})
+        source = runtime.basis(case)
+        source_digest = provenance_digest(source['inputs'])
+        feed = edited_feed(case)
+        data_version = review_data_version(case, feed)
+        for name, value in (('source_digest', source_digest), ('data_version', data_version)):
+            if name in scope and scope[name] != value:
+                raise ReportConflict('范围统计来源或复核依据已变化，请重新读取')
+        exclusions = []
+        # Use the same authoritative AF/AFL annotations as RR eligibility.
+        # Their end_sample is inclusive; the statistic accepts half-open masks.
+        # Pending episodes also withhold beats and must retain their actual status.
+        for row in storage.list_annotations(case_id):
+            details = row.get('details') or {}
+            if details.get('kind') not in ('AF', 'AFL') or details.get('status') == 'excluded':
+                continue
+            start, end = row.get('sample_index'), details.get('end_sample')
+            if type(start) is not int or type(end) is not int:
+                raise ValueError('节律排除区间须使用完整原始样本范围')
+            exclusions.append(dict(start_sample=start, end_sample=end + 1,
+                                   reason='rhythm_' + details['kind'],
+                                   origin='stored_annotation',
+                                   review_status=str(details.get('status', 'unclassified'))))
+        result = analyze_stt_range(case['paths']['data'], feed.records,
+            start_sample=payload.get('start_sample'), end_sample=payload.get('end_sample'),
+            leads=payload.get('leads'), measurement_ms=payload.get('measurement_ms', 60),
+            exclusions=exclusions, basis=scope, source_digest=source_digest)
+        linked_read_identity(case, identity)
+        assert_source_basis(case, source)
+        runtime.assert_current()
+        value = {**result, 'server_identity': {**identity, 'source_digest': source_digest,
+                                               'data_version': data_version},
+                 'physician_document_written': False}
+        compact = {key: item for key, item in value.items() if key != 'blocks'}
+        return {**compact, 'save_receipt': dict(kind='native-stt-range-hmac-v1',
+                                               digest=stt_range_receipt(compact))}
+
+    stt_receipt_key = os.urandom(32)
+
+    def stt_range_receipt(snapshot):
+        # Stateless attestation of the complete compact result, including masks
+        # and scope. A client cannot change a mean while retaining this receipt.
+        # JSON.parse/stringify preserves a number's value, but writes 60.0 as
+        # 60 (and -0.0 as 0). Authenticate those equivalent numeric values with
+        # one representation; the returned statistics and typed scope checks
+        # remain unchanged. Booleans are deliberately kept distinct.
+        def numbers(value):
+            if isinstance(value, dict):
+                return {key: numbers(child) for key, child in value.items()}
+            if isinstance(value, list):
+                return [numbers(child) for child in value]
+            if type(value) is float and math.isfinite(value) and value.is_integer():
+                return int(value)
+            return value
+
+        encoded = json.dumps(numbers(snapshot), sort_keys=True, ensure_ascii=False,
+                             separators=(',', ':'), allow_nan=False).encode()
+        return hmac.new(stt_receipt_key, encoded, sha256).hexdigest()
+
+    @app.post('/api/cases/<case_id>/stt-range')
+    def stt_range_endpoint(case_id):
+        return jsonify(stt_range_result(case_or_404(case_id), _json_object()))
+
+    def validate_stt_range_snapshot(case, snapshot):
+        if not isinstance(snapshot, dict) or snapshot.get('schema_version') != 'stt-range-mean-v1' or 'blocks' in snapshot:
+            raise ValueError('区间统计保存须采用完整的当前结构化摘要')
+        receipt = snapshot.get('save_receipt')
+        compact = {key: value for key, value in snapshot.items() if key != 'save_receipt'}
+        if (not isinstance(receipt, dict) or receipt.get('kind') != 'native-stt-range-hmac-v1'
+                or not isinstance(receipt.get('digest'), str)
+                or len(receipt['digest']) != 64
+                or any(char not in '0123456789abcdef' for char in receipt['digest'])
+                or not hmac.compare_digest(receipt['digest'], stt_range_receipt(compact))):
+            raise ReportConflict('区间统计已变化或服务已重启，请重新计算后保存；复核文字保留')
+        scope = snapshot.get('scope')
+        if not isinstance(scope, dict) or any(key not in scope for key in ('case_id', 'analysis_basis', 'analysis_revision', 'beat_revision')):
+            raise ValueError('区间统计缺少病例与修订依据')
+        identity = linked_read_identity(case, scope)
+        if snapshot.get('server_identity', {}).get('case_id') != case['case_id']:
+            raise ReportConflict('区间统计来自另一病例')
+        return identity
 
     def review_duration(case):
         samples = case['technical']['duration_seconds_raw'] * SAMPLE_RATE
@@ -1114,7 +1220,15 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
     def rhythm_review(case_id):
         case = case_or_404(case_id)
         payload = _json_object() if request.method == "PUT" else request.args
-        basis = clinical_read_basis(case, payload)
+        expected = {name: payload[name] for name in
+                    ('case_id', 'analysis_basis', 'analysis_revision', 'beat_revision') if name in payload}
+        if request.method == 'GET' and 'beat_revision' in expected:
+            value = expected['beat_revision']
+            if not value or not value.isascii() or not value.isdecimal():
+                raise ValueError('心搏修订须为非负整数')
+            expected['beat_revision'] = int(value)
+        identity = linked_read_identity(case, expected)
+        basis = {name: identity[name] for name in ('analysis_basis', 'analysis_revision')}
         snapshot = editor.snapshot(case_id)
         feed = edited_feed(case, snapshot["document"])
         duration = case["technical"]["duration_seconds_raw"]
@@ -1122,12 +1236,17 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         revision = snapshot["revision"]
         if request.method == "GET":
             result = rhythms.public(rhythms.read(case_id, initial))
-            clinical_read_basis(case, basis)
-            return jsonify(**result, beat_revision=revision, **basis)
-        clinical_read_basis(case, basis)
+            linked_read_identity(case, identity)
+            return jsonify({**result, **identity})
+        linked_read_identity(case, identity)
         result = rhythms.commit(case_id, payload, duration, initial, ACTOR, revision,
                                 analysis_revision=basis['analysis_revision'])
-        return jsonify(**result, beat_revision=revision)
+        # This write advances review revision. Validate unchanged source/beat
+        # identity, and expose the new global revision rather than comparing it
+        # to the pre-write revision or confusing rhythm revision with beat revision.
+        current = linked_read_identity(case, {name: identity[name] for name in
+                                       ('case_id', 'analysis_basis', 'beat_revision')})
+        return jsonify({**result, **current})
 
     @app.route("/api/cases/<case_id>/waveform-density", methods=["GET", "POST"])
     def waveform_density(case_id):
@@ -1381,7 +1500,49 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         payload["sample_index"] = int(sample_index)
         if isinstance(payload.get("details"),dict) and payload["details"].get("end_sample",sample_index)>=int(case["technical"]["duration_seconds_raw"]*SAMPLE_RATE):
             raise ValueError("结束位置超出记录范围")
-        return jsonify(storage.create_annotation(case_id, payload, ACTOR)), 201
+        details = payload.get('details') or {}
+        statistics = details.get('range_statistics') if isinstance(details, dict) else None
+        if statistics is not None:
+            if details.get('kind') != 'ST': raise ValueError('ST 区间统计不能用于其他标注类型')
+            previous = storage.annotation_submission(case_id, payload)
+            if previous is not None:
+                old_scope = previous['details']['range_statistics']['scope']
+                current = linked_read_identity(case, {key: old_scope[key] for key in
+                                                      ('case_id', 'analysis_basis', 'beat_revision')})
+                if current['analysis_revision'] != old_scope['analysis_revision'] + 1:
+                    raise ReportConflict('已保存统计后还有其他复核修订；请回看已保存标注并重新计算，未重复保存')
+                return jsonify(previous), 201
+            identity = validate_stt_range_snapshot(case, statistics)
+            chosen = statistics['range']
+            if (payload['sample_index'] != chosen['start_sample']
+                    or details.get('end_sample') != chosen['end_sample'] - 1):
+                raise ValueError('标注范围与已计算的半开样本范围不一致')
+            point = details.get('point_measurement_sample_index')
+            if point is not None and (type(point) is not int or not 0 <= point < int(case['technical']['duration_seconds_raw'] * SAMPLE_RATE)):
+                raise ValueError('手工点测量位置超出原始记录范围')
+            def source_guard():
+                if runtime.basis(case)['digest'] != identity['analysis_basis']:
+                    raise ReportConflict('区间统计来源已变化，请重新计算后保存')
+            def provenance_guard(db):
+                source_guard()
+                if editor.snapshot(case_id, db=db)['revision'] != identity['beat_revision']:
+                    raise ReportConflict('区间统计逐搏修订已变化，未保存；请重新计算后核对')
+                row = db.execute('SELECT basis FROM case_analysis_basis WHERE case_id=?', (case_id,)).fetchone()
+                if not row or json.loads(row['basis'])['digest'] != identity['analysis_basis']:
+                    raise ReportConflict('区间统计依据已变化，未保存')
+            def guard(db):
+                provenance_guard(db)
+                if storage._review(db, case_id)['revision'] != identity['analysis_revision']:
+                    raise ReportConflict('区间统计修订已变化，未保存；请重新计算后核对')
+            def replay_guard(db):
+                provenance_guard(db)
+                if storage._review(db, case_id)['revision'] != identity['analysis_revision'] + 1:
+                    raise ReportConflict('已保存统计后还有其他复核修订，请回看标注后重新计算；未重复保存')
+            item = storage.create_annotation(case_id, payload, ACTOR, guard=guard,
+                                             source_guard=source_guard, replay_guard=replay_guard)
+        else:
+            item = storage.create_annotation(case_id, payload, ACTOR)
+        return jsonify(item), 201
 
     @app.delete("/api/annotations/<int:annotation_id>")
     def annotation_delete(annotation_id: int):

@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-MANIFEST = ROOT / 'docs/releases/0.12.12-doctor-evaluation.20261012/source-manifest.json'
+MANIFEST = ROOT / 'docs/releases/0.12.13-doctor-feedback.20261012/source-manifest.json'
 
 
 def digest(path: Path) -> str:
@@ -27,13 +27,13 @@ def test_static_demo_builder(tmp_path: Path) -> None:
     receipt = json.loads((output / 'mathematical-source-manifest.json').read_text(encoding='utf-8'))
     assert receipt['release_id'] == source['release_id']
     assert receipt['production_source_sha256'] == source['source_sha256']
-    assert receipt['production_files_verified'] == source['production_file_count'] == 105
+    assert receipt['production_files_verified'] == source['production_file_count'] == 112
     assert receipt['production_files_modified'] is False
     assert receipt['legacy_demo_inputs_read'] is False
     assert receipt['storage_namespace'] == 'cardioinsight-public-math-4314-v2'
     allowed_software = {p for p in source['files'] if p.startswith('static/') and (Path(p).suffix in {'.js', '.css', '.svg'} or p=='static/terminology/builtin-draft-v1.json')}
     assert {a['path'] for a in receipt['software_assets']} == allowed_software
-    extras = {'index.html', '.nojekyll', '_headers', 'mathematical-source-manifest.json', 'static/js/demo-api.js', 'static/js/demo-review-api.js',
+    extras = {'index.html', '.nojekyll', '_headers', 'mathematical-source-manifest.json', 'static/js/demo-api.js', 'static/js/demo-review-api.js', 'static/js/stt-range-math.js',
               'static/demo-data/mathematical-4314/case-data.js', 'static/demo-data/mathematical-4314/waveform.bin'}
     actual = {p.relative_to(output).as_posix() for p in output.rglob('*') if p.is_file()}
     assert actual == allowed_software | extras

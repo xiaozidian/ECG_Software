@@ -72,6 +72,7 @@
       const kind=d.kind,cat=rhythm?'AF':kind==='ST'?'ST':kind==='AT'?'S':kind==='STRIP'?'other':'V',start=a.sample_index,end=d.end_sample??start,whole=['ST','AF','AFL','STRIP'].includes(kind),targets=rows.filter(r=>r.sample_index>=start&&r.sample_index<=end&&(whole||r.class_code===cat));
       const defaultLabel={ST:'ST 改变',AF:'房颤',AFL:'房扑',AT:'房速',VT:'室速',STRIP:'人工图条'}[kind];
       const item=make(cat,whole?kind:'tachycardia',d.finding||defaultLabel,targets,[{id:`a:${a.id}:start`,sample_index:start},{id:`a:${a.id}:end`,sample_index:end}],!whole,`annotation:${a.id}`);if(d.status!=='confirmed')item.diagnosis_status='pending';item.lead=a.lead||'全部';item.note=a.note||'';
+      if(kind==='ST'&&d.range_statistics&&typeof d.range_statistics==='object'&&!Array.isArray(d.range_statistics)){item.range_statistics=JSON.parse(JSON.stringify(d.range_statistics));item.end_s=(end+1)/200;}
       if(cat==='AF'){item.end_s=(end+1)/200;item.rhythm_status=d.status||'pending';} // Keep episode review separate from workflow approval.
     });
     events.filter(e=>e.category==='AF').forEach(e=>{const annotation=e.event_id.startsWith('annotation:')?e.event_id.slice(11):null;e.rhythm_episode_id=annotation===null?'beat-'+e.start_sample:annotation.startsWith('af:')?annotation.slice(3):'source-'+annotation;});

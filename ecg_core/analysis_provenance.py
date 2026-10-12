@@ -21,7 +21,7 @@ from .source_identity import (file_evidence, file_signature, SourceUnavailable,
                               SourceReadError, SourceInvalid)
 
 MODULES = ('config', 'lps_parser', 'repository', 'ebi', 'waveform', 'beat_editor',
-           'clinical_analysis', 'overview', 'rr_quality', 'hrv_analysis', 'stt',
+           'clinical_analysis', 'overview', 'rr_quality', 'hrv_analysis', 'stt', 'stt_range',
            'advanced_analysis', 'report_layout', 'report_sections', 'report_pdf',
            'report_paper_pdf', 'report_sections_pdf', 'hrv_report_pdf', 'storage',
            'review_workflow', 'analysis_provenance', 'source_identity', 'workspace_backup',

@@ -18,6 +18,9 @@ function harness() {
     sourceHint:String,applyPlatformIdentity:noop,bindEvents:noop,updateWaveformModeUI:noop,setLeadPickerSelection:noop,
     setSttLeadPickerSelection:noop,setEditMode:noop,renderCaseWorkflow:noop,updateZoomControls:noop,loadSettings:async()=>{},
     api:(url,options={})=>{const r={url,...gate(),signal:options.signal};requests.push(r);return r.promise;}});
+  // Include the shipped optional mount helpers used by init; no application stub replaces them.
+  vm.runInContext(source.slice(source.indexOf('const rhythmRangePointers ='), source.indexOf('function escapeHtml(')),ctx);
+  vm.runInContext(source.slice(source.indexOf('function initSttRangeReview('), source.indexOf('function clearSttEvidence(')),ctx);
   vm.runInContext(source.slice(source.indexOf('function escapeHtml('), source.indexOf('async function api(')),ctx);
   vm.runInContext(source.slice(source.indexOf('function fmtNumber('), source.indexOf('function formatElapsed(')),ctx);
   vm.runInContext(source.slice(source.indexOf('function withPhi('), source.indexOf('function loadCaseWorkflow(')),ctx);

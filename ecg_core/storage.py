@@ -451,7 +451,42 @@ class Storage(ReviewWorkflowMixin):
             items.append(dict(id="rhythm-control", sample_index=0, label="", internal=True, details={"rhythm_authoritative": True}))
         return items
 
-    def create_annotation(self, case_id: str, payload: dict, actor: str) -> dict:
+    def annotation_submission(self, case_id, payload, db=None):
+        """Read-only reconciliation of an exact ST range save intent."""
+        details = payload.get('details') or {}
+        identifier = details.get('submission_id') if isinstance(details, dict) else None
+        if identifier is None: return None
+        from uuid import UUID
+        if not isinstance(identifier, str) or str(UUID(identifier)) != identifier:
+            raise ValueError('区间统计提交编号须为规范 UUID')
+        if details.get('kind') != 'ST' or not isinstance(details.get('range_statistics'), dict):
+            raise ValueError('区间统计提交编号不能用于普通标注')
+        if any(key in payload and not isinstance(payload[key], str)
+               for key in ('lead', 'category', 'label', 'note')):
+            raise ValueError('标注文字须为文本')
+        if db is None:
+            with self.connect() as connection:
+                return self.annotation_submission(case_id, payload, connection)
+        rows = db.execute("SELECT * FROM annotations WHERE case_id=? AND json_extract(details,'$.submission_id')=?",
+                          (case_id, identifier)).fetchall()
+        if not rows: return None
+        if len(rows) != 1: raise ReportConflict('区间统计提交记录重复，请保留工作并核对')
+        row = dict(rows[0]); row['details'] = json.loads(row['details'])
+        label = payload.get('label', '人工标注')
+        expected_details = dict(kind=details.get('kind'), status=details.get('status'),
+            end_sample=details.get('end_sample', payload.get('sample_index', 0)),
+            finding=str(details.get('finding', label))[:120],
+            range_statistics=details['range_statistics'], submission_id=identifier)
+        if 'point_measurement_sample_index' in details:
+            expected_details['point_measurement_sample_index'] = details['point_measurement_sample_index']
+        expected = dict(sample_index=payload.get('sample_index', 0), lead=payload.get('lead', '')[:16],
+            category=payload.get('category', 'note')[:32], label=label.strip()[:120],
+            note=payload.get('note', '')[:2000], details=expected_details)
+        if any(row[key] != value for key, value in expected.items()):
+            raise ReportConflict('此提交编号已保存另一份内容；未重复保存或覆盖，请核对已保存标注')
+        return row
+
+    def create_annotation(self, case_id: str, payload: dict, actor: str, *, guard=None, source_guard=None, replay_guard=None) -> dict:
         if not isinstance(payload, dict):
             raise ValueError("标注必须为 JSON 对象")
         sample_index = payload.get("sample_index", 0)
@@ -475,7 +510,26 @@ class Storage(ReviewWorkflowMixin):
                 raise ValueError("结构化发现类型或状态无效")
             end=details.get("end_sample",sample_index)
             if type(end) is not int or end<sample_index:raise ValueError("结束位置无效")
+            original_details = details
             details={"kind":details["kind"],"status":details["status"],"end_sample":end,"finding":str(details.get("finding",label))[:120]}
+            if 'range_statistics' in original_details:
+                statistics = original_details['range_statistics']
+                if details['kind'] != 'ST' or not isinstance(statistics, dict) or statistics.get('schema_version') != 'stt-range-mean-v1':
+                    raise ValueError('区间统计结构或标注类型无效')
+                encoded = json.dumps(statistics, ensure_ascii=False, allow_nan=False)
+                if len(encoded.encode()) > 262144: raise ValueError('统计摘要超过当前保存上限；本次未保存，现有标注和复核备注已保留。')
+                details['range_statistics'] = json.loads(encoded)
+                if 'submission_id' in original_details:
+                    from uuid import UUID
+                    identifier = original_details['submission_id']
+                    if not isinstance(identifier, str) or str(UUID(identifier)) != identifier:
+                        raise ValueError('区间统计提交编号须为规范 UUID')
+                    details['submission_id'] = identifier
+            if 'point_measurement_sample_index' in original_details:
+                point = original_details['point_measurement_sample_index']
+                if details['kind'] != 'ST' or type(point) is not int or point < 0:
+                    raise ValueError('手工点测量位置无效')
+                details['point_measurement_sample_index'] = point
         now = utc_now()
         values = (
             case_id,
@@ -489,6 +543,14 @@ class Storage(ReviewWorkflowMixin):
             now,
         )
         with self.connect() as db:
+            if guard is not None:
+                db.execute('BEGIN IMMEDIATE')
+                previous = self.annotation_submission(case_id, payload, db)
+                if previous is not None:
+                    if replay_guard is not None: replay_guard(db)
+                    elif source_guard is not None: source_guard()
+                    return previous
+                guard(db)
             cursor = db.execute(
                 """INSERT INTO annotations
                 (case_id,sample_index,lead,category,label,note,created_by,created_at,updated_at)
@@ -498,6 +560,8 @@ class Storage(ReviewWorkflowMixin):
             db.execute("UPDATE annotations SET details=? WHERE id=?",(json.dumps(details,ensure_ascii=False),cursor.lastrowid))
             row = db.execute("SELECT * FROM annotations WHERE id=?", (cursor.lastrowid,)).fetchone()
             self._audit(db, actor, "annotation.create", case_id, f"#{row['id']} {row['label']}")
+            if replay_guard is not None: replay_guard(db)
+            elif source_guard is not None: source_guard()
         return {**dict(row),"details":details}
 
     def delete_annotation(self, annotation_id: int, actor: str) -> bool:

@@ -1,0 +1,108 @@
+/* Home-only icon and structural-readability layout; no analysis or review rules. */
+#page-dashboard .dashboard-metrics > .metric-card {
+  min-width:0;
+  align-items:center;
+  gap:10px;
+}
+#page-dashboard .dashboard-metrics > .metric-card > .metric-icon {
+  display:grid;
+  place-items:center;
+  align-items:center;
+  gap:0;
+  width:32px;
+  height:32px;
+  flex:0 0 32px;
+  padding:0;
+  border-radius:8px;
+  box-sizing:border-box;
+}
+#page-dashboard .dashboard-metrics .metric-icon > svg {
+  display:block;
+  width:20px;
+  height:20px;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:1.8;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+#page-dashboard .dashboard-metrics > .metric-card > .metric-copy {
+  display:grid;
+  gap:1px;
+  min-width:0;
+}
+#page-dashboard .dashboard-metrics .metric-copy > strong {
+  min-width:0;
+  overflow-wrap:anywhere;
+}
+#page-dashboard .dashboard-structure-card > .card-header {
+  padding:0;
+  flex-wrap:wrap;
+  align-items:flex-start;
+  gap:6px 8px;
+}
+#page-dashboard .dashboard-structure-card > .card-header > div {
+  flex:1 1 112px;
+  min-width:0;
+}
+#page-dashboard .dashboard-structure-card .quality-ring {
+  --dashboard-ring-size:108px;
+  width:var(--dashboard-ring-size);
+  height:var(--dashboard-ring-size);
+  aspect-ratio:1;
+  flex:none;
+  padding:0;
+  margin:10px auto 12px;
+  box-sizing:border-box;
+}
+#page-dashboard .dashboard-structure-card .quality-ring::before {
+  inset:8px;
+}
+#page-dashboard .dashboard-structure-card .quality-ring > div {
+  display:grid;
+  place-items:center;
+  align-content:center;
+  gap:2px;
+  width:calc(var(--dashboard-ring-size) - 16px);
+  height:calc(var(--dashboard-ring-size) - 16px);
+  border-radius:50%;
+  background:#fff;
+}
+#page-dashboard .dashboard-structure-card .quality-ring strong {
+  font-size:20px;
+  line-height:24px;
+  margin:0;
+}
+#page-dashboard .dashboard-structure-card .quality-ring span {
+  font-size:12px;
+  line-height:16px;
+  white-space:nowrap;
+}
+@media screen and (min-width:1001px) {
+  #page-dashboard .dashboard-metrics > .metric-card {gap:8px}
+  #page-dashboard .dashboard-metrics > .metric-card > .metric-icon {
+    width:28px;
+    height:28px;
+    flex-basis:28px;
+  }
+  #page-dashboard .dashboard-metrics > .metric-card > .metric-copy {
+    display:flex;
+    flex-wrap:wrap;
+    align-items:baseline;
+    gap:2px 6px;
+  }
+  #page-dashboard .dashboard-side {grid-template-columns:minmax(0,1fr)}
+  #page-dashboard .dashboard-structure-card .quality-ring {--dashboard-ring-size:96px}
+}
+@media screen and (max-width:680px) {
+  #page-dashboard .dashboard-side {grid-template-columns:minmax(0,1fr)}
+}
+@media screen and (max-width:600px) {
+  #page-dashboard .dashboard-metrics > .metric-card {
+    flex-direction:column;
+    align-items:flex-start;
+    gap:6px;
+    padding:10px;
+  }
+  #page-dashboard .dashboard-metrics > .metric-card > .metric-copy {width:100%}
+}

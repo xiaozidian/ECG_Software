@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import html
 import json
 import os
@@ -73,6 +74,11 @@ def create_review_app(data_root: Path, workspace: Path, *, purpose: str = 'user_
             return [present(child) for child in value]
         if not isinstance(value, dict):
             return value
+        # This measurement snapshot is signed before presentation and returned
+        # unchanged by saved annotations. Display aliases must not alter its
+        # echoed request scope, source identity, or authenticated contents.
+        if value.get('schema_version') == 'stt-range-mean-v1':
+            return copy.deepcopy(value)
         item = {key: present(child) for key, child in value.items()}
         if item.get('case_id') in aliases:
             item['display_case_id'] = aliases[item['case_id']]

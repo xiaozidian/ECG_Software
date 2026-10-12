@@ -554,6 +554,11 @@
 .rw-event-preview-dialog [data-rw-preview-wave]{flex:1;min-height:0;display:flex;flex-direction:column}
 .rw-event-preview-dialog .rw-wave-context{flex:none;margin:3px 0;font-size:11px}
 .rw-event-preview-dialog [data-rw-preview-wave]>.rw-hint{flex:none;margin:2px 0;font-size:11px}
+
+/* Report panels are hidden independently from readiness and save/export guards. */
+#page-report :is(#reportPreflightDisclosure,#reportPreflight){display:none!important}
+#reportV2 .rw-conclusion-pane .report-conclusion-dock:not(:has(.rw-terms)){grid-template-columns:minmax(0,1fr)}
+#reportV2 .rw-review-queue:not(:has(.rw-review-help)){grid-template-columns:minmax(0,1fr)}
 .rw-event-preview-dialog .rw-wave-scroll{flex:1;min-height:0;overflow:auto}
 .rw-event-preview-dialog .rw-wave-canvas{min-width:0;height:100%}
 .rw-event-preview-dialog .rw-wave-canvas>.rw-twelve-wave{height:100%;max-height:none;width:100%;display:block}
@@ -610,3 +615,11 @@
 .v2-hourly-matrix td:empty::after{content:'—';color:#647b84}
 @media screen and (min-width:1100px){.v2-hourly-scroll{max-height:calc(100dvh - 210px)}.v2-hourly-matrix thead th{position:sticky;top:0;z-index:2}.v2-hourly-matrix thead tr+tr th{top:24px;z-index:3}}
 @media screen and (max-width:1099px){.v2-hourly-matrix{font-size:12px}.v2-hourly-matrix :is(th,td){height:28px;padding:4px 6px}}
+
+/* Saved ST notes scroll inside the wave viewport, above its separate slider. */
+@media screen and (min-width:1100px){
+  .report-candidate-workspace #v2EventWave:has(> [data-report-saved-st-note]){
+    overflow:auto;
+    overscroll-behavior:contain;
+  }
+}

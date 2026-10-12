@@ -281,6 +281,7 @@
 /* Browser-only mathematical review state. No patient, sinus gold standard or clinical certification. */
 globalThis.ECGDemoReviewAPI = (() => {
   const PROFILE = 'fixed-300s-fft-compat-v1', SCOPE = ['case_id','source_digest','data_version','analysis_basis','beat_revision','analysis_revision'], SOURCE=SCOPE.filter(k=>k!=='analysis_revision');
+  const STT_SAVE_KIND='browser-math-content-digest-v1', STT_IDENTITY=['case_id','analysis_basis','analysis_revision','beat_revision'];
   const clone=value=>JSON.parse(JSON.stringify(value));
   const sorted=value=>Array.isArray(value)?value.map(sorted):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,sorted(value[key])])):value;
   const encode=value=>JSON.stringify(sorted(value));
@@ -339,8 +340,94 @@ globalThis.ECGDemoReviewAPI = (() => {
     async function catalogs(){const built=await getBuiltin(),current=catalogState();return {catalog_revision:current.revision,items:[summary(built,true),...current.items.map(value=>summary(value))]};}
     async function terminology(path,method,payload,query){if(path==='/api/terminology/catalogs'&&method==='GET')return catalogs();const built=await getBuiltin();if(path==='/api/terminology/catalog'&&method==='GET'){const found=[built,...catalogState().items].find(value=>value.namespace===query.namespace&&value.version===query.version&&(!query.hash||value.sha256===query.hash));if(!found)error('该目录版本不存在或hash不匹配',404);return validateCatalog(found);}if(path==='/api/terminology/import'&&method==='POST'){const value=await validateCatalog(payload.catalog),current=catalogState();integer(payload.expected_catalog_revision,'目录版本');if(payload.expected_catalog_revision!==current.revision)error('目录列表已变化，请重新预览',409);if(payload.confirm!==undefined&&typeof payload.confirm!=='boolean')error('confirm须为布尔值');const existing=[built,...current.items].find(item=>item.namespace===value.namespace&&item.version===value.version);if(existing&&existing.sha256!==value.sha256)error('相同namespace/version不能覆盖，请使用新版本',409);if(payload.confirm){if(payload.preview_hash!==value.sha256)error('明确发布须匹配预览hash');if(!existing){current.items.push(value);current.revision++;env.saved().terminologyCatalogs=current;env.persist();}}return {preview_only:payload.confirm!==true,catalog_revision:current.revision,catalog:value,summary:summary(value,existing===built),preview_hash:value.sha256,warnings:['此为纯数学浏览器Demo，目录仅存本浏览器；没有患者输入或临床金标准。','来源、许可、适用范围、完整性和核准状态仅按文件声明，软件未独立验证；本地发布不代表医生核准。']};}error('术语接口方法不受支持',405);}
     async function validateReport(composition,approving=false){if(Object.hasOwn(composition,'terminology_usages'))composition.terminology_usages=normalizeUsages(composition.terminology_usages);if(!composition.include_hrv&&!(composition.included_pages||[]).some(k=>String(k).startsWith('hrv_')))return;const result=await read(composition.hrv_window||0),expected={hrv_revision:result.hrv_revision,document_digest:result.digest,window_index:result.window_index,profile:PROFILE,scope:result.scope};if(result.document_stale)error('HRV排除来自旧数学依据，请重新预览保存',409);if(!composition.hrv_review_reference){if(result.hrv_revision!==0)error('报告缺少当前HRV引用，请重新载入保存',409);}else if(encode(composition.hrv_review_reference)!==encode(expected))error('报告HRV引用已失效，请重新载入保存',409);if(approving&&!result.confirmation.valid)error('请先确认当前数学HRV窗口复核声明',409);}
-    async function route(url,method,payload){const path=url.pathname,query=Object.fromEntries(url.searchParams);if(path.startsWith('/api/terminology/'))return terminology(path,method,payload,query);const match=path.match(/^\/api\/cases\/([^/]+)\/(rr-review(?:\/locate)?|hrv-review(?:\/(preview|confirm|cancel))?)$/);if(!match)return null;if(decodeURIComponent(match[1])!==env.caseId)error('数学病例不存在',404);const action=match[2];if(action.startsWith('hrv-review'))return hrvRoute(action,method,payload,query);const scope=currentScope();assertScope(query,scope);const index=ECGDemoRR.build(env.feed(),scope);if(action==='rr-review'&&method==='GET')return {...ECGDemoRR.query(index,query),simulation:{browser_computed:true,real_patient_inputs_read:false,clinical_validation:false,verified_nn_count:0}};if(action==='rr-review/locate'&&method==='POST'){const target=payload.target||payload;if(['case_id','analysis_basis','analysis_revision','beat_revision','sample_index'].some(k=>!Object.hasOwn(target,k)))error('缺少完整RR目标身份');assertScope(target,scope);const exact=ECGDemoRR.resolve(index,target),start=Math.max(0,exact.sample_index/200-3.5),end=Math.min(env.duration,start+7),wave=await env.waveform(new URLSearchParams({whole:'1',filter:'raw'}),{start,duration:end-start,leads:['II','V1','V5'],maxPoints:2800,filter:'raw'});assertScope(scope,currentScope(),true);wave.beats=env.feed().beats.filter(b=>b.sample_index/200>=wave.start_s&&b.sample_index/200<=wave.start_s+wave.duration_s);if(!wave.beats.some(b=>b.sample_index===exact.sample_index))error('数学波形缺少精确目标；未用最近邻替代',409);return {target:exact,waveform:{...wave,...scope},located:true,...scope,simulation:{browser_computed:true,real_patient_inputs_read:false,clinical_validation:false}};}error('RR接口方法不受支持',405);}
-    return {route,read,reference,analysis,validateReport};
+    function assertSttIdentity(expected,actual){
+      if(!expected||typeof expected!=='object'||Array.isArray(expected)||STT_IDENTITY.some(key=>!Object.hasOwn(expected,key)))error('区间统计缺少完整病例与逐搏依据');
+      for(const key of SCOPE)if(Object.hasOwn(expected,key)){
+        let value=expected[key];
+        if(['analysis_revision','beat_revision'].includes(key)){
+          integer(value,key);
+        }
+        if(value!==actual[key])error('区间统计病例或修订已变化，请重新计算后保存',409);
+      }
+    }
+    function assertSttRangeSaveCurrent(checked){
+      if(checked.saved!==encode(env.saved()))error('验证期间病例已变化，未保存；请重新计算后核对',409);
+      assertScope(checked.identity,currentScope(),true);
+    }
+    function assertSttRangeSavedSource(statistics){
+      const actual=currentScope(),scope=statistics?.scope;
+      if(!scope||typeof scope!=='object'||STT_IDENTITY.some(key=>!Object.hasOwn(scope,key)))error('已保存区间统计缺少来源依据');
+      for(const key of ['case_id','analysis_basis','beat_revision']){
+        const expected=scope[key];if(key==='beat_revision')integer(expected,key);
+        if(expected!==actual[key])error('已保存统计的来源或逐搏修订已变化，请核对标注',409);
+      }
+      let revision=scope.analysis_revision;
+      integer(revision,'已保存统计复核版本');
+      if(actual.analysis_revision!==revision+1)error('已保存统计之后已有其他复核修订，请回看标注并重新计算',409);
+    }
+    async function validateSttRangeSave(payload){
+      const details=payload.details,statistics=details?.range_statistics,total=Math.round(env.duration*200);
+      if(!details||details.kind!=='ST'||!['pending','confirmed','excluded'].includes(details.status)
+          ||!statistics||typeof statistics!=='object'||Array.isArray(statistics)
+          ||statistics.schema_version!=='stt-range-mean-v1'||Object.hasOwn(statistics,'blocks'))error('ST区间统计须为当前完整计算摘要');
+      const identity=currentScope();
+      assertSttIdentity(statistics.scope,identity);assertSttIdentity(statistics.server_identity,identity);
+      assertSttIdentity(statistics,identity);
+      const range=statistics.range;
+      if(!range||!Number.isSafeInteger(range.start_sample)||!Number.isSafeInteger(range.end_sample)
+          ||range.start_sample<0||range.end_sample>total||range.end_sample-range.start_sample<12000
+          ||payload.sample_index!==range.start_sample||details.end_sample!==range.end_sample-1)error('标注范围与已计算的半开样本范围不一致');
+      if(Object.hasOwn(details,'point_measurement_sample_index'))integer(details.point_measurement_sample_index,'手工点测量位置',0,total-1);
+      if(statistics.physician_document_written!==false||statistics.binding?.status!=='mathematical_raw_source_and_basis_bound'
+          ||statistics.binding.source_kind!=='pure_mathematical'||statistics.simulation?.browser_computed!==true
+          ||statistics.simulation.real_patient_inputs_read!==false||statistics.simulation.clinical_validation!==false)error('缺少纯数学范围统计来源声明');
+      const receipt=statistics.save_receipt;
+      if(!receipt||receipt.kind!==STT_SAVE_KIND||typeof receipt.digest!=='string'||!/^[a-f0-9]{64}$/.test(receipt.digest))error('区间统计保存凭据缺失或来源不符');
+      const compact=clone(statistics);delete compact.save_receipt;
+      if(new TextEncoder().encode(encode(statistics)).byteLength>262144)error('区间统计摘要过大，请精简已保存的排除区间后重新计算');
+      const checked={identity,saved:encode(env.saved())};
+      // This public content digest detects altered snapshots; it is not a
+      // private native HMAC or a clinical authentication statement.
+      if(await digest(compact)!==receipt.digest)error('区间统计摘要已被修改，请重新计算后保存');
+      assertSttRangeSaveCurrent(checked);return checked;
+    }
+    async function sttRangeRoute(method,payload){
+      if(method!=='POST')error('ST范围统计仅支持只读POST计算',405);
+      if(Object.hasOwn(payload,'exclusions'))error('范围统计仅采用当前已保存的节律排除区间，请先复核并保存节律标注');
+      const requested=payload.scope,required=['case_id','analysis_basis','analysis_revision','beat_revision'];
+      if(!requested||typeof requested!=='object'||Array.isArray(requested)||required.some(k=>!Object.hasOwn(requested,k)))error('范围统计须提供病例、分析及逐搏修订依据');
+      const actual=currentScope();
+      if(Object.hasOwn(payload,'case_id')&&payload.case_id!==env.caseId)error('范围统计请求来自另一病例',409);
+      for(const key of SCOPE)if(Object.hasOwn(requested,key)){
+        let expected=requested[key];
+        if(['analysis_revision','beat_revision'].includes(key)){
+          integer(expected,key);
+        }
+        if(expected!==actual[key])error('病例、原始来源或复核修订已变化，请重新读取',409);
+      }
+      if(!globalThis.ECGSTTRangeMath||typeof env.rawWaveform!=='function'||typeof env.annotations!=='function')error('全原始数学范围计算模块未加载，请刷新');
+      const savedBefore=encode(env.saved()),feed=env.feed(),masks=[];
+      for(const row of env.annotations()){
+        const details=row.details||{};
+        if(!['AF','AFL'].includes(details.kind)||details.status==='excluded')continue;
+        if(!Number.isSafeInteger(row.sample_index)||!Number.isSafeInteger(details.end_sample))error('节律排除区间须使用完整原始样本范围');
+        const status=details.status===undefined?'unclassified':details.status===null?'None':details.status===true?'True':details.status===false?'False':String(details.status);
+        masks.push({start_sample:row.sample_index,end_sample:details.end_sample+1,reason:'rhythm_'+details.kind,origin:'stored_annotation',review_status:status});
+      }
+      const raw=await env.rawWaveform();
+      if(raw.byteLength!==Math.round(env.duration*200)*16)error('完整数学波形长度与病例范围不一致');
+      const result=await ECGSTTRangeMath.calculate(raw,feed.beats,{start_sample:payload.start_sample,end_sample:payload.end_sample,leads:payload.leads,measurement_ms:payload.measurement_ms===undefined?60:payload.measurement_ms,exclusions:masks,basis:clone(requested)});
+      if(savedBefore!==encode(env.saved()))error('计算期间病例已变化，请重新读取',409);
+      assertScope(actual,currentScope(),true);
+      const compact={...result,...Object.fromEntries(STT_IDENTITY.map(key=>[key,actual[key]])),server_identity:actual,physician_document_written:false};
+      delete compact.blocks;
+      const saveReceipt={kind:STT_SAVE_KIND,digest:await digest(compact)};
+      if(savedBefore!==encode(env.saved()))error('生成摘要期间病例已变化，请重新读取',409);
+      assertScope(actual,currentScope(),true);
+      return {...compact,save_receipt:saveReceipt};
+    }
+    async function route(url,method,payload){const path=url.pathname,query=Object.fromEntries(url.searchParams);if(path.startsWith('/api/terminology/'))return terminology(path,method,payload,query);const match=path.match(/^\/api\/cases\/([^/]+)\/(rr-review(?:\/locate)?|hrv-review(?:\/(preview|confirm|cancel))?|stt-range)$/);if(!match)return null;if(decodeURIComponent(match[1])!==env.caseId)error('数学病例不存在',404);const action=match[2];if(action==='stt-range')return sttRangeRoute(method,payload);if(action.startsWith('hrv-review'))return hrvRoute(action,method,payload,query);const scope=currentScope();assertScope(query,scope);const index=ECGDemoRR.build(env.feed(),scope);if(action==='rr-review'&&method==='GET')return {...ECGDemoRR.query(index,query),simulation:{browser_computed:true,real_patient_inputs_read:false,clinical_validation:false,verified_nn_count:0}};if(action==='rr-review/locate'&&method==='POST'){const target=payload.target||payload;if(['case_id','analysis_basis','analysis_revision','beat_revision','sample_index'].some(k=>!Object.hasOwn(target,k)))error('缺少完整RR目标身份');assertScope(target,scope);const exact=ECGDemoRR.resolve(index,target),start=Math.max(0,exact.sample_index/200-3.5),end=Math.min(env.duration,start+7),wave=await env.waveform(new URLSearchParams({whole:'1',filter:'raw'}),{start,duration:end-start,leads:['II','V1','V5'],maxPoints:2800,filter:'raw'});assertScope(scope,currentScope(),true);wave.beats=env.feed().beats.filter(b=>b.sample_index/200>=wave.start_s&&b.sample_index/200<=wave.start_s+wave.duration_s);if(!wave.beats.some(b=>b.sample_index===exact.sample_index))error('数学波形缺少精确目标；未用最近邻替代',409);return {target:exact,waveform:{...wave,...scope},located:true,...scope,simulation:{browser_computed:true,real_patient_inputs_read:false,clinical_validation:false}};}error('RR接口方法不受支持',405);}
+    return {route,read,reference,analysis,validateReport,validateSttRangeSave,assertSttRangeSaveCurrent,assertSttRangeSavedSource};
   }
   return {create,analyze,validateCatalog,normalizeUsages,digest,profile};
 })();

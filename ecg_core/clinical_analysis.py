@@ -4,6 +4,7 @@ Pattern flags describe sequences, not new disease diagnoses. Source files stay r
 """
 from __future__ import annotations
 import json
+import copy
 import math
 import statistics
 from .report_layout import strip_settings, resolve_strip, valid_rr_pairs
@@ -164,6 +165,10 @@ def build_index(feed, templates=(), annotations=(), review=None):
             item['rhythm_episode_id'] = annotation_id[3:] if annotation_id.startswith('af:') else 'source-' + annotation_id
         if d.get('status')!='confirmed':item['diagnosis_status']='pending'
         item['lead']=a.get('lead','全部');item['note']=a.get('note','')
+        if kind == 'ST' and isinstance(d.get('range_statistics'), dict):
+            # Saved measurement evidence, separate from the physician's label.
+            item['range_statistics'] = copy.deepcopy(d['range_statistics'])
+            item['end_s'] = (end + 1) / 200  # New range statistics use [start, end+1).
     events.sort(key=lambda x:(x['start_sample'],x['event_id']))
     return dict(events=events,rows=rows+markers,templates=list(templates),basis_versions=basis,data_version=bv+'-'+av+'-rr-quality-v3-'+PERIODIC_VERSION+'-af-end-v1-status-v2',beat_version=bv,duration_s=feed.duration)
 

@@ -1,4 +1,4 @@
-// Execute the shipped shell and preflight renderers together, without a browser.
+// The removed preflight panel must not weaken shipped approval guards.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
@@ -32,20 +32,22 @@ vm.runInContext(ui.slice(ui.indexOf('  function renderReportShell('), ui.indexOf
 
 element('#conclusionEditor').value = 'unsaved local input';
 ctx.renderPreflight();
-assert.match(element('#reportPreflightDisclosure summary').textContent, /有未保存修改/);
+assert.match(element('#approveReport').title, /请先保存草稿/);
+assert.equal(elements.has('#reportPreflightDisclosure summary'), false);
 
 // Explicitly loading a newer report must clear both the editor and checklist status.
 state.reportDirty = false;
 ctx.renderReportShell();
 assert.equal(element('#conclusionEditor').value, 'saved conclusion');
 assert.equal(element('#reportSaveState').textContent, '已保存 saved time');
-assert.doesNotMatch(element('#reportPreflightDisclosure summary').textContent, /有未保存修改|依据已变化/);
+assert.match(element('#approveReport').title, /审核当前已保存版本/);
+assert.equal(elements.has('#reportPreflightDisclosure summary'), false);
 assert.equal(element('#approveReport').disabled, false);
 
 // Remote invalidation must reach the same checklist even without a workflow fetch.
 state.reportStale = true;
 ctx.renderReportShell();
-assert.match(element('#reportPreflightDisclosure summary').textContent, /依据已变化/);
+assert.match(element('#approveReport').title, /依据或版本已变化/);
 assert.equal(element('#reportConflict').hidden, false);
 assert.equal(element('#approveReport').disabled, true);
 
@@ -55,7 +57,8 @@ state.reportDirty = true;
 element('#conclusionEditor').value = 'keep this new input';
 ctx.renderReportShell();
 assert.equal(element('#conclusionEditor').value, 'keep this new input');
-assert.match(element('#reportPreflightDisclosure summary').textContent, /有未保存修改/);
+assert.match(element('#approveReport').title, /请先保存草稿/);
+assert.equal(elements.has('#reportPreflightDisclosure summary'), false);
 assert.equal(element('#approveReport').disabled, true);
 
 state.reportDirty = false;
@@ -69,8 +72,9 @@ for (const condition of ['saving', 'readonly', 'pending', 'empty','loading','fai
   state.report.conclusion = condition === 'empty' ? '' : 'saved conclusion';
   ctx.renderReportShell();
   assert.equal(element('#approveReport').disabled, true, condition);
-  if(condition==='loading')assert.match(element('#reportPreflightDisclosure summary').textContent,/依据核对中/);
-  if(condition==='failed')assert.match(element('#reportPreflightDisclosure summary').textContent,/依据读取失败/);
-  if(condition==='manual')assert.match(element('#reportPreflightDisclosure summary').textContent,/人工诊断文字待核对/);
+  if(condition==='loading')assert.match(element('#approveReport').title,/依据核对中/);
+  if(condition==='failed')assert.match(element('#approveReport').title,/依据读取失败/);
+  if(condition==='manual')assert.match(element('#approveReport').title,/人工诊断文字待核对/);
 }
-console.log('report shell/preflight state synchronization passed');
+assert.equal(elements.has('#reportPreflightDisclosure summary'), false);
+console.log('report shell protections remain synchronized with no preflight panel');

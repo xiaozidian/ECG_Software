@@ -215,13 +215,44 @@
   }
   function demoReview(){
     if(!globalThis.ECGDemoReviewAPI)throw Error('数学Demo复核模块未加载，请刷新');
-    return reviewAdapter||(reviewAdapter=ECGDemoReviewAPI.create({saved:()=>saved,persist,scope:demoReviewScope,feed:editedFeed,startTime:sourceCase.metadata.start_iso||sourceCase.metadata.start_time,duration,caseId,sourceCase,nativeFetch,waveform,changed:demoReviewChanged}));
+    return reviewAdapter||(reviewAdapter=ECGDemoReviewAPI.create({saved:()=>saved,persist,scope:demoReviewScope,feed:editedFeed,annotations:annotationList,rawWaveform:waveformBuffer,startTime:sourceCase.metadata.start_iso||sourceCase.metadata.start_time,duration,caseId,sourceCase,nativeFetch,waveform,changed:demoReviewChanged}));
+  }
+  function meanAnnotationPayload(value){
+    const details=value.details,allowed=['kind','status','end_sample','finding','range_statistics','submission_id','point_measurement_sample_index'];
+    if(!details||typeof details!=='object'||Array.isArray(details)||Object.keys(details).some(key=>!allowed.includes(key)))throw Error('范围统计标注包含未支持的字段');
+    const lead=value.lead??'',category=value.category??'note',label=value.label??'人工标注',note=value.note??'';
+    if(typeof lead!=='string'||!(lead===''||lead==='全部'||TEMPLATE_LEADS.has(lead))||!['note','N','S','V','noise'].includes(category))throw Error('标注导联或类别无效');
+    if(typeof label!=='string'||!label.trim()||typeof note!=='string'||details.finding!==undefined&&typeof details.finding!=='string')throw Error('标注标题、备注与发现须为文本');
+    if(Object.hasOwn(details,'submission_id')&&(typeof details.submission_id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(details.submission_id)))throw Error('区间统计提交编号须为规范 UUID');
+    const slice=(text,count)=>Array.from(text).slice(0,count).join(''),trim=text=>text.replace(/^[\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+|[\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+$/g,'');
+    const normalized={kind:details.kind,status:details.status,end_sample:details.end_sample,finding:slice(details.finding===undefined?label:details.finding,120),range_statistics:copy(details.range_statistics)};
+    for(const key of ['submission_id','point_measurement_sample_index'])if(Object.hasOwn(details,key))normalized[key]=details[key];
+    const title=trim(label);if(!title)throw Error('标注标题须为非空文本');
+    return {sample_index:value.sample_index,lead:slice(lead,16),category:slice(category,32),label:slice(title,120),note:slice(note,2000),details:normalized};
+  }
+  function meanSubmission(payload){
+    const identifier=payload.details.submission_id;if(identifier===undefined)return null;
+    const matches=(saved.annotations[caseId]||[]).filter(row=>row.details?.submission_id===identifier&&row.details?.range_statistics);
+    if(matches.length>1){const error=Error('区间统计提交记录重复，请保留工作并核对');error.status=409;throw error;}
+    if(!matches.length)return null;
+    const existing=matches[0],intent=Object.fromEntries(['sample_index','lead','category','label','note','details'].map(key=>[key,existing[key]]));
+    if(JSON.stringify(intent)!==JSON.stringify(payload)){
+      // Statistics and details are objects; key order is not a save intent.
+      const order=value=>Array.isArray(value)?value.map(order):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,order(value[key])])):value;
+      if(JSON.stringify(order(intent))!==JSON.stringify(order(payload))){const error=Error('此提交编号已保存另一份内容；未重复保存或覆盖，请核对已保存标注');error.status=409;throw error;}
+    }
+    demoReview().assertSttRangeSavedSource(existing.details.range_statistics);return copy(existing);
+  }
+  function reconcileMeanSubmission(payload){
+    if(payload.details.submission_id===undefined)return null;
+    saved={...copy(savedDefault),...JSON.parse(localStorage.getItem(STORE_KEY)||'{}')};
+    return meanSubmission(payload);
   }
 
   async function route(url,options={}){
     const path=url.pathname,method=String(options.method||"GET").toUpperCase();
     activeEdited=!!engine&&url.searchParams.get("analysis")==="edited";beats=activeEdited?editedFeed().beats:copy(sourceCase.beats);
-    if(path.startsWith('/api/terminology/')||/^\/api\/cases\/[^/]+\/(rr-review(?:\/locate)?|hrv-review(?:\/(preview|confirm|cancel))?)$/.test(path)){try{return response(await demoReview().route(url,method,requestBody(options)))}catch(error){return failure(error.message,error.status||400)}}
+    if(path.startsWith('/api/terminology/')||/^\/api\/cases\/[^/]+\/(rr-review(?:\/locate)?|hrv-review(?:\/(preview|confirm|cancel))?|stt-range)$/.test(path)){try{return response(await demoReview().route(url,method,requestBody(options)))}catch(error){return failure(error.message,error.status||400)}}
     if(path==="/api/health")return response({status:"ok",version:sourceCase.software_release_id,case_count:COUNT,data_root_found:true,demo_readonly:true,allow_phi:false});
     if(path==="/api/dashboard"){const item=present();return response({totals:{cases:1,recording_hours:round(duration/3600,2),beats:item.summary.total_beats,pending_reports:report(item).status==="reviewed"?0:1},cases:[item],privacy:{phi_visible:false}})}
     if(path==="/api/cases")return response({items:[present()],total:1});
@@ -241,14 +272,20 @@
         const initial=ECGOverviewEngine.initialEpisodes(editedFeed().beats,annotationList(),duration);
         saved.rhythms ||= {};let value=copy(saved.rhythms[caseId]||{revision:0,document:initial,undo:[],redo:[],updated_at:''});
         if(method==='PUT'){
-          const p=requestBody(options),basis={analysis_basis:'public-math-4314-v2:'+caseId,analysis_revision:workflow().revision,beat_revision:editorValue().revision};
-          if(Object.keys(basis).some(key=>p[key]!==undefined&&String(p[key])!==String(basis[key])))return failure('病例依据已变化，未保存片段；请重新载入后核对',409);
-          if(p.confirmed!==true||p.revision!==value.revision||p.beat_revision!==editorValue().revision)throw Error('病例修订版本已变化，请刷新核对');
+          const p=requestBody(options),basis=demoReviewScope();
+          if(p.confirmed!==true)throw Error('请核对修改并明确确认保存');
+          if(!Number.isSafeInteger(p.revision)||p.revision<0||!Number.isSafeInteger(p.beat_revision)||p.beat_revision<0)throw Error('缺少有效的复核或心搏版本');
+          for(const key of ['analysis_revision','beat_revision'])if(p[key]!==undefined&&(!Number.isSafeInteger(p[key])||p[key]<0))throw Error('病例版本必须为非负整数');
+          if(Object.keys(basis).some(key=>p[key]!==undefined&&p[key]!==basis[key])||p.revision!==value.revision||p.beat_revision!==editorValue().revision)return failure('病例依据已变化，未保存片段；请重新载入后核对',409);
           if(['undo','redo'].includes(p.operation)){if(!value[p.operation].length)throw Error('没有可撤销/重做的操作');value[p.operation==='undo'?'redo':'undo'].push(value.document);value.document=value[p.operation].pop()}
           else if(!p.operation||p.operation==='save'){const document=ECGOverviewEngine.validateDocument(p.document,duration);value.undo=(value.undo.concat([value.document])).slice(-20);value.redo=[];value.document=document}else throw Error('不支持的复核操作');
-          value.revision++;value.updated_at=now();saved.rhythms[caseId]=value;invalidateWorkflow('beat_override.rhythm');audit('annotation.rhythm_review','r'+value.revision);persist();
+          value.revision++;value.updated_at=now();saved.rhythms[caseId]=value;
+          invalidateWorkflow('annotation.rhythm_review');
+          saved.audit.unshift({created_at:now(),actor:'pages-demo',case_id:caseId,action:'annotation.rhythm_review',detail:'r'+value.revision});saved.audit=saved.audit.slice(0,300);
+          persist();
         }
-        return response({revision:value.revision,document:value.document,can_undo:!!value.undo.length,can_redo:!!value.redo.length,updated_at:value.updated_at,beat_revision:editorValue().revision});
+        else if(method!=='GET')return failure('节律复核接口方法不受支持',405);
+        return response({revision:value.revision,document:value.document,can_undo:!!value.undo.length,can_redo:!!value.redo.length,updated_at:value.updated_at,...demoReviewScope()});
       }catch(error){saved=previous;return failure(error.message)}
     }
     if(action==='waveform-density'){
@@ -316,7 +353,27 @@
     }
     if(action==="events")return response(eventData(url.searchParams));
     if(action==="annotations"&&method==="GET")return response({items:annotationList()});
-    if(action==="annotations"&&method==="POST"){const item={...requestBody(options),id:Date.now(),created_by:"pages-demo",created_at:now()};(saved.annotations[caseId]||(saved.annotations[caseId]=[])).push(item);audit("annotation.create","仅保存于当前浏览器");return response(item,201)}
+    if(action==="annotations"&&method==="POST"){
+      let payload=requestBody(options);
+      if(payload.details&&Object.hasOwn(payload.details,'range_statistics')){
+        payload=meanAnnotationPayload(payload);
+        const existing=meanSubmission(payload);if(existing)return response(existing,201);
+        const storedBefore=localStorage.getItem(STORE_KEY);let checked;
+        try{checked=await demoReview().validateSttRangeSave(payload)}
+        catch(error){if(error.status===409){const concurrent=reconcileMeanSubmission(payload);if(concurrent)return response(concurrent,201)}throw error}
+        if(storedBefore!==localStorage.getItem(STORE_KEY)){
+          const concurrent=reconcileMeanSubmission(payload);if(concurrent)return response(concurrent,201);
+          return failure('验证期间病例已变化，未保存；请重新计算后核对',409);
+        }
+        // No asynchronous work occurs between this final identity guard and
+        // the single localStorage commit of annotation, audit and revisions.
+        demoReview().assertSttRangeSaveCurrent(checked);
+        const previous=copy(saved),item={...payload,case_id:caseId,id:Date.now(),created_by:"pages-demo",created_at:now()};
+        try{(saved.annotations[caseId]||(saved.annotations[caseId]=[])).push(item);audit("annotation.create","仅保存于当前浏览器；纯数学范围统计摘要");return response(item,201)}
+        catch(error){saved=previous;throw error}
+      }
+      const item={...payload,id:Date.now(),created_by:"pages-demo",created_at:now()};(saved.annotations[caseId]||(saved.annotations[caseId]=[])).push(item);audit("annotation.create","仅保存于当前浏览器");return response(item,201);
+    }
     if(action==="patient"&&method==="PATCH"){saved.patients[caseId]={...(saved.patients[caseId]||{}),...requestBody(options)};audit("patient.update","仅保存于当前浏览器");return response(saved.patients[caseId])}
     if(action==="report"&&method==="GET"){const value=report(present());return response({...value,current_hrv_reference:await demoReview().reference(value.composition.hrv_window||0)});}
     if(action==="report"&&method==="PUT"){const payload=requestBody(options);if(!["draft","reviewed","returned"].includes(payload.status||"draft"))return failure("invalid report status");if(payload.status==="reviewed"&&(workflow().pending_steps.length||!String(payload.conclusion||"").trim()))return failure("请先确认全部复核环节并填写结论");const old=report(present());if(!Number.isInteger(payload.expected_version)||payload.expected_version!==old.version)return failure("报告版本已变更，请重新载入",409);if(!Number.isInteger(payload.expected_review_revision)||payload.expected_review_revision!==workflow().revision)return failure("报告复核依据已变更，请重新载入",409);try{if(payload.composition){payload.composition.strip_defaults=ECGReportEngine.settings(payload.composition.strip_defaults);payload.composition.selected_events=(payload.composition.selected_events||[]).map(s=>({...s,...ECGReportEngine.settings(s)}));}ECGClinicalAnalysis.validateReport(clinicalIndex(),payload.composition||{},workflow(),payload.status==="reviewed");await demoReview().validateReport(payload.composition||{},payload.status==="reviewed")}catch(error){return failure(error.message,error.status||400)}const item={status:payload.status||"draft",version:old.version+1,conclusion:String(payload.conclusion||""),composition:copy(payload.composition||old.composition),updated_at:now()};saved.reports[caseId]=item;audit(`report.${item.status}`,"仅保存于当前浏览器");persist();return response(report(present()))}
@@ -324,14 +381,14 @@
   }
 
   // Browser demo identity is a local revision, not a verified raw-file fingerprint.
-  const clinicalReads=new Set(['','analysis-basis','report','overview','rhythm-review','trend','rr-visuals','scatter','hrv','hrv-windows','hrv-analysis','stt-review','report-statistics','report-sections','template-occurrences','report-events','waveform','event-waveform','event-waveforms','report-strip','waveform-density','scatter-selection','waveform-strips','rr-review','rr-review/locate','hrv-review']);
+  const clinicalReads=new Set(['','analysis-basis','report','overview','rhythm-review','trend','rr-visuals','scatter','hrv','hrv-windows','hrv-analysis','stt-review','report-statistics','report-sections','template-occurrences','report-events','waveform','event-waveform','event-waveforms','report-strip','waveform-density','scatter-selection','waveform-strips','rr-review','rr-review/locate','hrv-review','stt-range']);
   async function clinicalRoute(url,options){
     const match=url.pathname.match(/^\/api\/cases\/([^/]+)(?:\/(.*))?$/),action=match?.[2]||'',method=String(options.method||'GET').toUpperCase();
-    if(!match||decodeURIComponent(match[1])!==caseId||!clinicalReads.has(action)||(method!=='GET'&&!(['event-waveforms','waveform-density','scatter-selection','waveform-strips','rr-review/locate'].includes(action)&&method==='POST')))return route(url,options);
+    if(!match||decodeURIComponent(match[1])!==caseId||!clinicalReads.has(action)||(method!=='GET'&&!(['event-waveforms','waveform-density','scatter-selection','waveform-strips','rr-review/locate','stt-range'].includes(action)&&method==='POST')))return route(url,options);
     const stored=localStorage.getItem(STORE_KEY);
     saved={...copy(savedDefault),...JSON.parse(stored||'{}')};
     const basis={case_id:caseId,analysis_basis:'public-math-4314-v2:'+caseId,analysis_revision:workflow().revision,beat_revision:editorValue().revision};
-    const expected=method==='POST'?requestBody(options):Object.fromEntries(url.searchParams);
+    const expected=action==='stt-range'?{}:method==='POST'?requestBody(options):Object.fromEntries(url.searchParams);
     if(Object.keys(basis).some(key=>expected[key]!==undefined&&String(expected[key])!==String(basis[key])))return failure('分析依据已变化，请重新读取后复核',409);
     const result=action==='analysis-basis'?response(basis):await route(url,options);
     if(!result.ok)return result;
@@ -344,7 +401,7 @@
     const raw=typeof input==="string"?input:input?.url,url=new URL(raw,location.href),signal=options.signal||input?.signal;
     if(!url.pathname.startsWith("/api/"))return nativeFetch(input,options);
     const abort=()=>{if(signal?.aborted)throw new DOMException('读取已取消','AbortError');};
-    const method=String(options.method||'GET').toUpperCase(),readPost=/\/(event-waveforms|waveform-density|scatter-selection|waveform-strips|preview|locate)$/.test(url.pathname),reviewPreview=/\/hrv-review\/preview$/.test(url.pathname),mutation=method!=='GET'&&(!readPost||reviewPreview);
+    const method=String(options.method||'GET').toUpperCase(),readPost=/\/(event-waveforms|waveform-density|scatter-selection|waveform-strips|preview|locate|stt-range)$/.test(url.pathname),reviewPreview=/\/hrv-review\/preview$/.test(url.pathname),mutation=method!=='GET'&&(!readPost||reviewPreview);
     const run=async()=>{
       abort();saved={...copy(savedDefault),...JSON.parse(localStorage.getItem(STORE_KEY)||'{}')};const previous=copy(saved);
       try{const result=await clinicalRoute(url,options);if(!mutation)abort();if(!result.ok&&mutation)saved=previous;return result;}

@@ -1,0 +1,49 @@
+.sttr-review {box-sizing:border-box; min-width:0; padding:12px 14px; color:var(--ink-700,#263b45); background:var(--surface,#fff); border:1px solid var(--line,#d5e0e4); border-radius:8px; font:13px/1.5 var(--ui-font,system-ui,sans-serif)}
+.sttr-review *, .sttr-review *::before, .sttr-review *::after {box-sizing:border-box}
+.sttr-review [hidden] {display:none!important}
+.sttr-heading h3 {margin:0; font-size:15px; line-height:1.4}
+.sttr-heading p {margin:4px 0 10px; color:var(--ink-500,#526773); font-size:12px}
+.sttr-range-controls {display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap}
+.sttr-range-controls>label {display:grid; gap:3px; flex:1 1 120px; min-width:100px; font-size:12px}
+.sttr-review input[type=number], .sttr-review select {width:100%; min-width:0; height:34px; border:1px solid var(--line,#cbd9df); border-radius:5px; padding:5px 7px; color:inherit; background:#fff; font:inherit}
+.sttr-review input[type=number] {font-variant-numeric:tabular-nums}
+.sttr-review button {min-height:34px; padding:5px 10px; border:1px solid #087d7b; border-radius:5px; color:#fff; background:#087d7b; font:600 12px/1.4 var(--ui-font,system-ui,sans-serif); cursor:pointer}
+.sttr-review button[data-sttr-action=cancel], .sttr-review button[data-sttr-action=locate] {color:#126665; background:#fff}
+.sttr-review button:disabled {opacity:.5; cursor:default}
+.sttr-review :is(button,input,select,summary):focus-visible {outline:3px solid #72bcb9; outline-offset:2px}
+.sttr-calculation-actions, .sttr-result-actions {display:flex; gap:6px; align-items:center; flex-wrap:wrap}
+.sttr-range-time {margin:5px 0 8px; color:var(--ink-500,#526773); font-size:11px; font-variant-numeric:tabular-nums; overflow-wrap:anywhere}
+.sttr-leads {display:flex; gap:5px 12px; flex-wrap:wrap; padding:6px 8px 7px; border:1px solid var(--line-soft,#e2e9ec); border-radius:5px; min-width:0; margin:0}
+.sttr-leads legend {padding:0 4px; font-size:12px; color:var(--ink-500,#526773)}
+.sttr-leads label {display:inline-flex; gap:4px; align-items:center; min-height:25px; cursor:pointer}
+.sttr-leads input {margin:0; accent-color:#087d7b}
+.sttr-status {min-height:20px; margin:8px 0 5px; color:#126665; font-size:12px; overflow-wrap:anywhere}
+.sttr-result-range {margin:5px 0 6px; color:var(--ink-500,#526773); font-size:12px; font-variant-numeric:tabular-nums}
+.sttr-table-scroll {max-height:310px; overflow:auto; border:1px solid var(--line-soft,#e2e9ec); border-radius:5px}
+.sttr-review table {width:100%; border-collapse:collapse; font-size:12px; font-variant-numeric:tabular-nums}
+.sttr-review th, .sttr-review td {padding:5px 9px; border-bottom:1px solid var(--line-soft,#e2e9ec); text-align:right}
+.sttr-review th:first-child {text-align:left}
+.sttr-review thead th {position:sticky; top:0; background:#f4f8f9; font-weight:650}
+.sttr-review tbody tr:last-child>* {border-bottom:0}
+.sttr-interpretation {margin:6px 0; color:var(--ink-500,#526773); font-size:11px}
+.sttr-review details {margin-top:8px; border-top:1px solid var(--line-soft,#e2e9ec); padding-top:7px}
+.sttr-review summary {cursor:pointer; color:#126665; font-size:12px; font-weight:650}
+.sttr-detail-content {font-size:11px; color:var(--ink-500,#526773); overflow-wrap:anywhere}
+.sttr-detail-content p {margin:7px 0}
+.sttr-coverage {display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:5px 12px; margin:8px 0}
+.sttr-coverage>div {padding:5px 7px; background:#f4f8f9; border-radius:4px}
+.sttr-coverage dt {color:var(--ink-500,#526773)}
+.sttr-coverage dd {margin:1px 0 0; color:var(--ink-700,#263b45); font-weight:600; font-variant-numeric:tabular-nums}
+.sttr-method {margin:7px 0; display:grid; gap:4px}
+.sttr-method>div {display:grid; grid-template-columns:80px minmax(0,1fr); gap:6px}
+.sttr-method dt {font-weight:650}
+.sttr-method dd {margin:0}
+.sttr-lead-reasons {border-top:1px solid var(--line-soft,#e2e9ec); padding-top:2px}
+.sttr-result-actions {margin-top:8px}
+@media(max-width:600px) {
+  .sttr-review {padding:10px; font-size:12px}
+  .sttr-range-controls>label {flex-basis:calc(50% - 4px)}
+  .sttr-calculation-actions {flex:1 1 100%; margin-top:2px}
+  .sttr-leads {gap:5px 10px}
+  .sttr-method>div {grid-template-columns:66px minmax(0,1fr)}
+}

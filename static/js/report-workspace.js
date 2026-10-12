@@ -51,7 +51,7 @@ globalThis.ECGReportWorkspace=(()=>{
       const root=host.closest('#reportV2Content')||host,position=capturePosition(root),token=++previewToken;
       position.focus=host;
       const dialog=document.createElement('dialog');dialog.className='rw-event-preview-dialog';dialog.dataset.reportFullscreen='true';dialog.setAttribute('aria-labelledby','rwEventPreviewTitle');
-      dialog.innerHTML=`<header><div><h2 id="rwEventPreviewTitle">12 导联事件复核</h2><p>${esc(event?.label||'连续波形')}${event?.time_s!==undefined?' · '+esc(formatElapsed(event.time_s)):''}</p></div><button type="button" data-rw-close>返回事件列表</button></header><p class="rw-hint">只读放大当前范围；关闭后返回原事件、筛选与位置。入报、诊断确认与报告审核分别操作。</p><div data-rw-preview-wave role="status">正在读取 12 导联…</div>`;
+      dialog.innerHTML=`<header><div><h2 id="rwEventPreviewTitle">12 导联事件复核</h2><p>${esc(event?.label||'连续波形')}${event?.time_s!==undefined?' · '+esc(formatElapsed(event.time_s)):''}</p></div><button type="button" data-rw-close>返回事件列表</button></header><p class="rw-hint">只读查看；返回后保留原筛选与位置。</p><div data-rw-preview-wave role="status">正在读取 12 导联…</div>`;
       document.body.append(dialog);dialog.querySelector('[data-rw-close]').onclick=()=>dialog.close();
       dialog.addEventListener('close',()=>{if(token===previewToken)previewToken++;dialog.remove();if(isCurrent())restorePosition(position);},{once:true});
       dialog.showModal();
@@ -115,7 +115,7 @@ globalThis.ECGReportWorkspace=(()=>{
     const wave=entry.waveform,spec=entry.strip||{},duration=Number(wave.duration_s),count=spec.visible_beat_count??wave.beats?.length??0;
     const reviewNote=(globalThis.ECGReportEngine||(typeof require==='function'?require('./report-engine.js'):null))?.reviewNote(entry)||'';
     const ticks=Array.from({length:8},(_,i)=>i*duration/7);
-    return `${reviewNote?`<p class="rw-wave-context" data-rhythm-review-note><strong>${esc(reviewNote)}</strong></p>`:''}<p class="rw-wave-context">实际范围 ${esc(formatElapsed(wave.start_s))}–${esc(formatElapsed(wave.start_s+duration))}（记录起点后） · ${duration.toFixed(3)} 秒 · ${count} 搏${spec.warning?' · '+esc(spec.warning):count<5?' · 不足 5 搏，请核对区间':''}</p><p class="rw-hint">逐导联自适应幅度 · 设备单位，电压未校准。横向滚动查看完整波形；下方标尺为该图条内的秒数。</p><div class="rw-wave-scroll" tabindex="0" role="region" aria-label="图条波形，可左右滚动"><div class="rw-wave-canvas">${waveSvg}<svg class="rw-time-axis" viewBox="0 0 1000 28" role="img" aria-label="时间标尺，0 至 ${duration.toFixed(3)} 秒"><path d="M0 1H1000" stroke="currentColor"/>${ticks.map((t,i)=>`<path d="M${i*1000/7} 1v5" stroke="currentColor"/><text x="${i*1000/7}" y="21" font-size="12" text-anchor="${i===0?'start':i===7?'end':'middle'}">${t.toFixed(2)} s</text>`).join('')}</svg></div></div>`;
+    return `${reviewNote?`<p class="rw-wave-context" data-rhythm-review-note><strong>${esc(reviewNote)}</strong></p>`:''}<p class="rw-wave-context">实际范围 ${esc(formatElapsed(wave.start_s))}–${esc(formatElapsed(wave.start_s+duration))}（记录起点后） · ${duration.toFixed(3)} 秒 · ${count} 搏${spec.warning?' · '+esc(spec.warning):count<5?' · 不足 5 搏，请核对区间':''}</p><p class="rw-hint">逐导联自适应幅度 · 设备单位，电压未校准。</p><div class="rw-wave-scroll" tabindex="0" role="region" aria-label="图条波形，可左右滚动"><div class="rw-wave-canvas">${waveSvg}<svg class="rw-time-axis" viewBox="0 0 1000 28" role="img" aria-label="时间标尺，0 至 ${duration.toFixed(3)} 秒"><path d="M0 1H1000" stroke="currentColor"/>${ticks.map((t,i)=>`<path d="M${i*1000/7} 1v5" stroke="currentColor"/><text x="${i*1000/7}" y="21" font-size="12" text-anchor="${i===0?'start':i===7?'end':'middle'}">${t.toFixed(2)} s</text>`).join('')}</svg></div></div>`;
   }
   function bars(title,rows,selected,attribute){
     const max=Math.max(1,...rows.map(x=>x.count));
@@ -133,9 +133,11 @@ globalThis.ECGReportWorkspace=(()=>{
     host?._rwTerminologyRestoreLayout?.();
     if(host){delete host._rwTerminologyController;delete host._rwTerminologyRestoreLayout;}
   }
-  function getTerminologyUsages(host){return host?._rwTerminologyController?.getUsages()??null;}
-  function compose(host,{id,composition,selected,lookup,sections,onPages,onMode,onPreview,renderWave,loadWave,renderAdvanced,terms=[],overview=null,isCurrent=()=>true,termContext=null,onUsages=null}){
+  function getTerminologyUsages(host){return host?._rwTerminologyController?.getUsages()??(host?._rwTerminologyUsages?structuredClone(host._rwTerminologyUsages):null);}
+  function compose(host,{id,composition,selected,lookup,sections,onPages,onMode,onPreview,renderWave,loadWave,renderAdvanced,terms=[],overview=null,isCurrent=()=>true,termContext=null,onUsages=null,showTerminology=false,showAdvanced=false}){
     releaseTerminology(host);
+    // Hiding the assistant does not discard versioned text already saved in a report.
+    host._rwTerminologyUsages=composition.terminology_usages??null;
     view.miniObserver?.disconnect();
     if(caseId===id&&host.querySelector('.rw-workspace')){
       view.position=capturePosition(host);
@@ -170,7 +172,7 @@ globalThis.ECGReportWorkspace=(()=>{
     </div>`;
     if(overview){const panel=document.createElement('aside');panel.className='rw-overview';panel.setAttribute('aria-label','全记录统计总览');panel.innerHTML=`<h3>全记录统计总览</h3><p>当前依据 r${esc(overview.revision??'—')} · 已确认结果</p><table><thead><tr><th>分类</th><th>次数</th><th>搏数</th></tr></thead><tbody>${overview.categories.map(row=>`<tr><th>${esc(row.label)}</th><td>${esc(row.events??'—')}</td><td>${esc(row.beats??'—')}</td></tr>`).join('')}</tbody></table><p>统计独立于选图。未确认候选不计作确诊。</p><section><h4>源报告独立对照</h4><dl><div><dt>有效心搏</dt><dd>${esc(overview.source.total_beats??'—')}</dd></div><div><dt>平均心率</dt><dd>${esc(overview.source.avg_hr??'—')} bpm</dd></div><div><dt>SDNN</dt><dd>${esc(overview.source.sdnn_ms??'—')} ms</dd></div></dl><p>保留源报告摘要；不改写为当前修订统计或诊断。</p></section>`;host.querySelector('.rw-main').append(panel);}
     host.querySelector('.rw-rail fieldset').insertAdjacentHTML('beforeend','<p class="rw-hint">仅影响本次输出，保留所有选图、图注和区间。</p>');
-    host.querySelector('.rw-evidence-heading').insertAdjacentHTML('afterend',`<section class="rw-review-queue" aria-label="入报图条复核状态"><nav aria-label="按复核状态筛选">${Object.entries(reviewLabels).map(([key,label])=>`<button type="button" data-review-filter="${key}" aria-pressed="${reviewFilter===key}">${label} <b>${counts[key]}</b></button>`).join('')}</nav><p role="status">${esc(filter==='all'?'全部类型':groups.get(filter).name)} · ${reviewLabels[reviewFilter]} · 显示 ${visible.length} / ${selected.length} 条</p><details class="rw-review-help"><summary>状态说明</summary><p>计数涵盖全部已选图条；筛选不移除选图，事件确认不代表报告已审核。</p></details>${filter!=='all'||reviewFilter!=='all'?'<button type="button" data-clear-strip-filters>显示全部已选图条</button>':''}</section>`);
+    host.querySelector('.rw-evidence-heading').insertAdjacentHTML('afterend',`<section class="rw-review-queue" aria-label="入报图条复核状态"><nav aria-label="按复核状态筛选">${Object.entries(reviewLabels).map(([key,label])=>`<button type="button" data-review-filter="${key}" aria-pressed="${reviewFilter===key}">${label} <b>${counts[key]}</b></button>`).join('')}</nav><p role="status">${esc(filter==='all'?'全部类型':groups.get(filter).name)} · ${reviewLabels[reviewFilter]} · 显示 ${visible.length} / ${selected.length} 条</p>${filter!=='all'||reviewFilter!=='all'?'<button type="button" data-clear-strip-filters>显示全部已选图条</button>':''}</section>`);
     if(!visible.length&&selected.length)host.querySelector('.rw-selected-strips').innerHTML='<p class="empty-state">当前组合没有匹配图条；其他已选图条仍保留。可切换状态或显示全部已选图条。</p>';
     if(composition.paper?.voltage_estimate)host.querySelector('.rw-heading').insertAdjacentHTML('afterend',`<p class="rw-hint">导出图条使用独立保存的${esc(ECGVoltage.note(composition.paper.voltage_estimate))}网页预览仍为自适应幅度；请在“导联 / 区间”调整导出增益，并用 A4 预览核对。</p>`);
     visible.forEach(({i,e,status})=>{
@@ -179,9 +181,9 @@ globalThis.ECGReportWorkspace=(()=>{
       back.disabled=status==='stale';back.title=status==='stale'?'旧依据无法回看；有对应节律片段时请使用复核片段入口，否则重新筛选':'回看此图条对应的事件';
     });
     visible.forEach(({i,e})=>{if(e?.category==='AF'&&e.rhythm_episode_id)host.querySelector(`[data-back-event="${i}"]`).insertAdjacentHTML('afterend',`<button type="button" data-review-rhythm="${i}">保存草稿并复核片段</button>`);});
-    if(renderAdvanced){const panel=document.createElement('div');panel.className='rw-research';host.querySelector('.rw-workspace').append(panel);renderAdvanced(panel);}
+    if(showAdvanced&&renderAdvanced){const panel=document.createElement('div');panel.className='rw-research';host.querySelector('.rw-workspace').append(panel);renderAdvanced(panel);}
     function redraw(selector){
-      compose(host,{id,composition,selected,lookup,sections,onPages,onMode,onPreview,renderWave,loadWave,renderAdvanced,terms,overview,isCurrent,termContext,onUsages});
+      compose(host,{id,composition,selected,lookup,sections,onPages,onMode,onPreview,renderWave,loadWave,renderAdvanced,terms,overview,isCurrent,termContext,onUsages,showTerminology,showAdvanced});
       host.querySelector(selector)?.focus({preventScroll:true});
     }
     host.querySelectorAll('[data-strip-filter]').forEach(b=>b.onclick=()=>{filter=b.dataset.stripFilter;redraw('[data-strip-filter][aria-pressed="true"]')});
@@ -243,6 +245,7 @@ globalThis.ECGReportWorkspace=(()=>{
     if(save){view.saveObserver?.disconnect();view.saveObserver=new MutationObserver(()=>{const target=host.querySelector('[data-rw-save-state]');if(target)target.textContent=save.textContent;});view.saveObserver.observe(save,{childList:true,characterData:true,subtree:true});}
     if(editor){
       const oldTerms=dock.querySelector('[data-rw-terms]');if(oldTerms){if(oldTerms.dataset.rwCase===String(id)){view.termState.open=oldTerms.open;view.termState.choice=oldTerms.querySelector('[data-rw-term]')?.value;}oldTerms._rwTerminologyController?.destroy();oldTerms.remove();}
+      if(showTerminology){
       const assistant=document.createElement('details');assistant.dataset.rwTerms='';assistant.dataset.rwCase=String(id);assistant.className='rw-terms';
       editor.after(assistant);assistant.open=!!view.termState.open;
       const termsCurrent=()=>assistant.isConnected&&caseId===id&&dock.querySelector('#conclusionEditor')===editor&&isCurrent();
@@ -259,7 +262,7 @@ globalThis.ECGReportWorkspace=(()=>{
         const controller=globalThis.ECGTerminologyTree.mount(treeHost,{
           editor,caseId:id,reportContext:termContext.reportContext??'draft',api:termContext.api,
           usages:composition.terminology_usages||[],isCurrent:termsCurrent,
-          onUsageDirty:usages=>{if(!termsCurrent())return;composition.terminology_usages=usages;onUsages?.(usages);}
+          onUsageDirty:usages=>{if(!termsCurrent())return;composition.terminology_usages=usages;host._rwTerminologyUsages=usages;onUsages?.(usages);}
         });
         const columns=treeHost.querySelector('.tt-columns');if(columns&&treeHost.clientWidth>0&&treeHost.clientWidth<380)columns.style.gridTemplateColumns='minmax(0,1fr)';
         host._rwTerminologyController=controller;assistant._rwTerminologyController=controller;
@@ -270,6 +273,7 @@ globalThis.ECGReportWorkspace=(()=>{
         picker.onchange=()=>{if(!termsCurrent())return;view.termState.choice=picker.value;insert.disabled=!picker.value||editor.readOnly||editor.disabled;};
         insert.onclick=()=>{if(!termsCurrent())return;insertion=insertSelectedText(editor,picker.value);view.termState.insertion=insertion;undo.disabled=!insertion;status.textContent=insertion?'已插入所选文字，原正文保留；需保存草稿。':'无法插入：请检查编辑权限、选择文字及正文长度。';};
         undo.onclick=()=>{if(!termsCurrent())return;if(!undoInsertedText(editor,insertion)){status.textContent='正文已有后续修改，保留当前文字；可在正文中手动撤销。';undo.disabled=true;return;}insertion=null;view.termState.insertion=null;undo.disabled=true;status.textContent='已撤销本次插入，原正文恢复；需保存草稿。';};
+      }
       }
       if(!boundHosts.has(host)){
         boundHosts.add(host);host.addEventListener('scroll',()=>{if(host.querySelector('.rw-workspace'))view.position=capturePosition(host);},true);
