@@ -15,9 +15,13 @@ These corrections do not change diagnostic algorithms, thresholds, labels, units
 
 The frozen baseline and candidate share the same runner, dependencies and byte-verified synthetic inputs, while their work directories and databases remain isolated.
 
-The existing frozen legacy generator renders ten independent 30-minute profiles and ten independent 24-hour profiles, seed 20260812. Each day-long DATA is 276,480,000 bytes; ten total 2,764,800,000 bytes. It renders every absolute sample; no waveform tiling, padding or label rewriting is performed.
+The frozen legacy generator renders ten independent 30-minute profiles; its unchanged waveform/beat engine renders ten independent 24-hour profiles with corrected fictional NN references, seed 20260812. Each day-long DATA is 276,480,000 bytes; ten total 2,764,800,000 bytes. It renders every absolute sample; no waveform tiling, padding or label rewriting is performed.
 
 Four existing tests require day-long inputs: raw/report duration, EBI count and RR timing, the 3600-second twelve-lead window, and the waveform/events/trend/HRV endpoint contract. They run once against genuine day inputs. All other nodes run once against the short inputs. All original assertions remain unchanged. The JUnit merger rejects missing, duplicated, misrouted or collection-error nodes and preserves failed/error outcomes; both baseline and candidate include every original node. SHA256 inventories are verified before and after each full run.
+
+The old fictional LPS generator counted intervals ending at N even when they began at S/V/noise. Default source HRV requires both endpoints N. Only the synthetic generator's SDNN/rMSSD/pNN50 reference population is corrected; native algorithms and the original API tolerance remain unchanged. An independent hand example has NN [800,900,1000,800,900], sample variance 7000 and SDNN 83.67; the old one-endpoint population gives 287.85.
+
+Before new day generation, the frozen and corrected generators build the same ten one-minute profiles. DATA and EBI hashes must match exactly; all XML report content except those three HRV reference text values must match. ASTs outside the reference statistics function must also be identical. Every new whole-day profile then must have all three reported reference metrics equal to unchanged native source HRV. The old running CI source cannot be changed or reused through the available tools; the new commit generates fresh inputs and retains the old run's results.
 
 The continuous M01 doctor source is a separate profile with unclassified AF-like segments. Its labels are retained. It is not substituted for the legacy ten-case label and SDNN contracts.
 

@@ -106,7 +106,7 @@ jobs:
           "ECG_APP_DATA_ROOT=$env:RUNNER_TEMP\doctor-current-work" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Compile supplemental Python and check original browser fixture syntax
         run: |
-          python -m py_compile scripts/run_doctor_scoped_regression.py scripts/generate_doctor_regression_day_inputs.py tests/test_doctor_scoped_regression.py tests/test_qrs_recovery.py
+          python -m py_compile scripts/run_doctor_scoped_regression.py scripts/generate_doctor_regression_day_inputs.py scripts/generate_synthetic_demo.py tests/test_synthetic_hrv_reference.py tests/test_doctor_scoped_regression.py tests/test_qrs_recovery.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --check tests/browser_report_saved_st_note_layout.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -119,11 +119,11 @@ jobs:
           New-Item -ItemType Directory -Path "$env:RUNNER_TEMP\doctor-core" -Force | Out-Null
           $env:ECG_REPORT_ALIGNMENT_EVIDENCE = "$env:RUNNER_TEMP\doctor-core\report-range"
           $env:ECG_REPORT_ST_NOTE_LAYOUT_EVIDENCE = "$env:RUNNER_TEMP\doctor-core\saved-st-note"
-          python -m pytest -q tests/test_hospital_report_interactions.py tests/test_report_saved_st_note_layout.py tests/test_qrs_recovery.py tests/test_doctor_scoped_regression.py --junitxml="$env:RUNNER_TEMP\doctor-core\core.xml"
+          python -m pytest -q tests/test_hospital_report_interactions.py tests/test_report_saved_st_note_layout.py tests/test_qrs_recovery.py tests/test_doctor_scoped_regression.py tests/test_synthetic_hrv_reference.py --junitxml="$env:RUNNER_TEMP\doctor-core\core.xml"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Doctor evaluation tests must all pass
         run: |
-          $doctorTests = @("tests/test_doctor_24h.py", "tests/test_doctor_regression.py", "tests/test_doctor_scoped_regression.py", "tests/test_windows_doctor_build.py", "tests/test_windows_doctor_eval.py", "tests/test_windows_source_identity.py")
+          $doctorTests = @("tests/test_doctor_24h.py", "tests/test_doctor_regression.py", "tests/test_doctor_scoped_regression.py", "tests/test_synthetic_hrv_reference.py", "tests/test_windows_doctor_build.py", "tests/test_windows_doctor_eval.py", "tests/test_windows_source_identity.py")
           if ($doctorTests.Count -eq 0) { throw "Doctor evaluation tests are absent." }
           python -m pytest -q @doctorTests
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -132,7 +132,8 @@ jobs:
       - name: Generate ten independent genuine day-input regression profiles
         run: |
           python scripts/generate_doctor_regression_day_inputs.py `
-            --generator "..\baseline\scripts\generate_synthetic_demo.py" `
+            --generator "scripts\generate_synthetic_demo.py" `
+            --baseline-generator "..\baseline\scripts\generate_synthetic_demo.py" `
             --short-data "$env:RUNNER_TEMP\doctor-regression-input" `
             --output "$env:RUNNER_TEMP\doctor-regression-day-input" `
             --receipt "$env:RUNNER_TEMP\doctor-regression\day-input-receipt.json"
@@ -156,7 +157,7 @@ jobs:
             --short-data "$env:RUNNER_TEMP\doctor-regression-input" `
             --day-data "$env:RUNNER_TEMP\doctor-regression-day-input" `
             --input-receipt "$env:RUNNER_TEMP\doctor-regression\day-input-receipt.json" `
-            --expected-tests 2135 `
+            --expected-tests 2137 `
             --output "$env:RUNNER_TEMP\doctor-current.xml" `
             --receipt "$env:RUNNER_TEMP\doctor-regression\candidate-scopes.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
