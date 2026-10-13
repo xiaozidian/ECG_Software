@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import stat
+import time
 from pathlib import Path
 import subprocess
 import sys
@@ -39,6 +40,7 @@ def metadata_change(source):
     before = file_signature(source)
     mode = source.stat().st_mode
     if os.name == "nt":
+        time.sleep(0.03)  # NTFS metadata-clock resolution; only a temporary test file.
         source.chmod(mode ^ stat.S_IWRITE)
         source.chmod(mode)  # Restore write access; exercise a real Windows attribute change.
     else:

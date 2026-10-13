@@ -1,10 +1,13 @@
 """Read-only source identity; timestamps are cache keys, never content evidence."""
+from contextlib import contextmanager
 from functools import lru_cache
 from functools import wraps
 from hashlib import sha256
 from inspect import signature as function_signature
 from pathlib import Path
 import os
+import secrets
+import threading
 import stat
 import sys
 
@@ -122,10 +125,70 @@ def _windows_change_time_ns(path):
         api.CloseHandle(handle)
 
 
+_SOURCE_LEASES = {}
+_SOURCE_LEASE_LOCK = threading.RLock()
+
+
+def _content_hash(path):
+    value = sha256()
+    with Path(path).open('rb') as stream:
+        while block := stream.read(1024 * 1024):
+            value.update(block)
+    return value.hexdigest()
+
+
+@contextmanager
+def read_locked_sources(paths):
+    """Hold read-only Windows source handles; never alter permissions or data.
+
+    Other readers may open the files, but writing/replacing them is prevented
+    until this context exits. Only callers explicitly owning immutable inputs
+    use this optimization; mutable inputs always obtain fresh content evidence.
+    """
+    if os.name != 'nt':
+        yield
+        return
+    ctypes, api, _ = _windows_metadata_api()
+    acquired = []
+    try:
+        with _SOURCE_LEASE_LOCK:
+            for path in paths:
+                key = str(Path(path).resolve())
+                require_local_file(key)
+                if key in _SOURCE_LEASES:
+                    _SOURCE_LEASES[key]['references'] += 1
+                else:
+                    value = os.path.abspath(key)
+                    if not value.startswith('\\\\?\\'):
+                        value = ('\\\\?\\UNC\\' + value[2:] if value.startswith('\\\\')
+                                 else '\\\\?\\' + value)
+                    handle = api.CreateFileW(value, 0x81, 0x1, None, 3, 0x80, None)
+                    if handle in (None, ctypes.c_void_p(-1).value):
+                        raise OSError(ctypes.get_last_error(), 'Immutable source is busy or unreadable')
+                    _SOURCE_LEASES[key] = dict(handle=handle, references=1, token=secrets.token_hex(16))
+                acquired.append(key)
+        yield
+    finally:
+        with _SOURCE_LEASE_LOCK:
+            for key in reversed(acquired):
+                record = _SOURCE_LEASES[key]
+                record['references'] -= 1
+                if not record['references']:
+                    del _SOURCE_LEASES[key]
+                    api.CloseHandle(record['handle'])
+
+
 def file_signature(path):
     s = Path(path).stat()
-    changed_ns = _windows_change_time_ns(path) if os.name == 'nt' else s.st_ctime_ns
-    return (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, changed_ns)
+    if os.name != 'nt':
+        return (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns)
+    changed_ns = _windows_change_time_ns(path)
+    with _SOURCE_LEASE_LOCK:
+        lease = _SOURCE_LEASES.get(str(Path(path).resolve()))
+        token = ('read_locked', lease['token']) if lease else ('content', _content_hash(path))
+    # Windows clocks can repeat for rapid writes. A held read lease or actual
+    # contents are required; timestamps alone never authorize a cached result.
+    return (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, (changed_ns, token))
 
 
 @lru_cache(maxsize=64)

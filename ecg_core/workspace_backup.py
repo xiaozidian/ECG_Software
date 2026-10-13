@@ -269,6 +269,15 @@ def recovery_epoch(path):
     return row[0] if row else ''
 
 
+class _DetachedConnection(sqlite3.Connection):
+    """A restoration owns its temporary connections and closes every transaction."""
+    def __exit__(self, exc_type, exc_value, traceback):
+        try:
+            return super().__exit__(exc_type, exc_value, traceback)
+        finally:
+            self.close()
+
+
 def restore_backup(path, destination_root, *, actor='本机恢复操作'):
     """Restore saved work to a NEW app-data root; leave originals untouched."""
     from .storage import Storage
@@ -282,7 +291,7 @@ def restore_backup(path, destination_root, *, actor='本机恢复操作'):
             staging = Path(temporary)
             database = staging / 'work.sqlite3'
             manifest = _unpack_verified(path, database)
-            store = Storage(database)
+            store = Storage(database, connection_factory=_DetachedConnection)
             epoch, restored_at = uuid.uuid4().hex, _stamp()
             with closing(store.connect()) as db, db:
                 db.execute('BEGIN IMMEDIATE')

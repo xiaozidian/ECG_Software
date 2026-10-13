@@ -701,7 +701,13 @@ def serve_workspace(identifier, token):
         context = _context("workspace", token)
         context["workspace_id"] = identifier
         _install_guards(app, context)
-        _serve(app, context, state_path)
+        immutable = [source / name for name in SOURCE_FILES]
+        if getattr(sys, "frozen", False):
+            immutable.append(Path(sys.executable))
+        from ecg_core.source_identity import read_locked_sources
+        with read_locked_sources(immutable):
+            validate_source(source=source)
+            _serve(app, context, state_path)
 
 
 class Manager:

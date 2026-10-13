@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "release_id": "0.12.15-platform-compat.20261013+7b6e03516ce6eeb9",
+  "release_id": "0.12.15-platform-compat.20261013+6700f1aca5dfb85b",
   "app_version": "0.12.15-platform-compat.20261013",
-  "source_sha256": "7b6e03516ce6eeb9104a1d5df586ddec73ad9bf2469352dd6100bc1a15af4619",
+  "source_sha256": "6700f1aca5dfb85b8c37b7e37d9db78b67cfe8357558d0a82ade2454711e61fb",
   "production_file_count": 112,
   "files": {
     "CardioInsightMacCandidate.spec": {
@@ -106,12 +106,12 @@
       "sha256": "6a33721d4e3b38d09228d8ce4604675b89a1a92bdb98c6e675824db164ec88c6"
     },
     "ecg_core/source_identity.py": {
-      "bytes": 6667,
-      "sha256": "bca2149a11f87aa5848165ef183894f86b7237e601dfca1a00dd3443d7d22713"
+      "bytes": 9169,
+      "sha256": "548f9712552dcd6c727200be56e134f662a8e37333e0db9b2c735fd3ae615d5a"
     },
     "ecg_core/storage.py": {
-      "bytes": 39776,
-      "sha256": "51392b7edc79379a498298c405c1cc09492da47a5ce94f53353efb8c6a69a8c8"
+      "bytes": 39906,
+      "sha256": "9f8715f1879e50b4b74f2f5a707186015ef959a72918a211e7590c55097334c6"
     },
     "ecg_core/stt.py": {
       "bytes": 26362,
@@ -130,8 +130,8 @@
       "sha256": "9c9e327a28270230d5fbd0614b7c205e9f1f01e9341ebb3b4104930d3bad75b2"
     },
     "ecg_core/workspace_backup.py": {
-      "bytes": 17087,
-      "sha256": "40a5d3420555ef51502965480519d7c787c1fdb5500ef30c8c82130eb88dec15"
+      "bytes": 17440,
+      "sha256": "5432914bbb412a53cf1ed451438dfcb9f87d4dae587cd4c3468b13115ed37f2f"
     },
     "mac_release.py": {
       "bytes": 212,

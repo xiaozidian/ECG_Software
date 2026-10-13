@@ -818,7 +818,13 @@ def main(argv=None):
                         help="Allow developer fixtures; never satisfies the doctor package full-day requirement")
     args = parser.parse_args(argv)
     try:
-        return verify(args.source_root, args.output, args.allow_short)
+        from ecg_core.source_identity import read_locked_sources
+        root = args.source_root.resolve()
+        source_files = [root / CASE_ID / "data" / (CASE_ID + ".DATA"),
+                        root / CASE_ID / "DGS" / (CASE_ID + ".EBI"),
+                        root / CASE_ID / "report_image" / (CASE_ID + "_1.LPS")]
+        with read_locked_sources(source_files):
+            return verify(args.source_root, args.output, args.allow_short)
     except (OSError, ValueError) as error:
         print(f"Validation could not write a report: {error}", file=sys.stderr)
         return 2
