@@ -138,12 +138,14 @@ def _content_hash(path):
 
 
 @contextmanager
-def read_locked_sources(paths):
+def read_locked_sources(paths, *, fresh_content=False):
     """Hold read-only Windows source handles; never alter permissions or data.
 
     Other readers may open the files, but writing/replacing them is prevented
     until this context exits. Only callers explicitly owning immutable inputs
-    use this optimization; mutable inputs always obtain fresh content evidence.
+    use this optimization. Mutable request scopes set fresh_content=True:
+    their bytes are hashed anew once while locked; the hash never survives the
+    last reference closing. Timestamps alone never authorize cached results.
     """
     if os.name != 'nt':
         yield
@@ -165,8 +167,18 @@ def read_locked_sources(paths):
                     handle = api.CreateFileW(value, 0x81, 0x1, None, 3, 0x80, None)
                     if handle in (None, ctypes.c_void_p(-1).value):
                         raise OSError(ctypes.get_last_error(), 'Immutable source is busy or unreadable')
-                    _SOURCE_LEASES[key] = dict(handle=handle, references=1, token=secrets.token_hex(16))
+                    _SOURCE_LEASES[key] = dict(handle=handle, references=1, token=secrets.token_hex(16),
+                                               fresh_content=fresh_content, content_sha256=None,
+                                               digest_lock=threading.Lock())
                 acquired.append(key)
+        # Register every reference before hashing so any failure closes handles.
+        # Hash I/O runs outside the registry lock; different cases can proceed.
+        for key in acquired:
+            record = _SOURCE_LEASES[key]
+            if record.get("fresh_content"):
+                with record["digest_lock"]:
+                    if record["content_sha256"] is None:
+                        record["content_sha256"] = _content_hash(key)
         yield
     finally:
         with _SOURCE_LEASE_LOCK:
@@ -183,9 +195,31 @@ def file_signature(path):
     if os.name != 'nt':
         return (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns)
     changed_ns = _windows_change_time_ns(path)
+    lease_key = str(Path(path).resolve())
     with _SOURCE_LEASE_LOCK:
-        lease = _SOURCE_LEASES.get(str(Path(path).resolve()))
-        token = ('read_locked', lease['token']) if lease else ('content', _content_hash(path))
+        lease = _SOURCE_LEASES.get(lease_key)
+        # Retain a reference while consuming a request lease outside this lock.
+        # This also protects callers that did not acquire their own context.
+        if lease:
+            lease['references'] += 1
+    if lease:
+        try:
+            if lease.get('fresh_content'):
+                with lease['digest_lock']:
+                    if lease['content_sha256'] is None:
+                        lease['content_sha256'] = _content_hash(path)
+                    token = ('content', lease['content_sha256'])
+            else:
+                token = ('read_locked', lease['token'])
+        finally:
+            with _SOURCE_LEASE_LOCK:
+                lease['references'] -= 1
+                if not lease['references']:
+                    del _SOURCE_LEASES[lease_key]
+                    _, api, _ = _windows_metadata_api()
+                    api.CloseHandle(lease['handle'])
+    else:
+        token = ('content', _content_hash(path))
     # Windows clocks can repeat for rapid writes. A held read lease or actual
     # contents are required; timestamps alone never authorize a cached result.
     return (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, (changed_ns, token))
@@ -207,7 +241,16 @@ def file_evidence(path):
         path = str(Path(path).resolve())
         require_local_file(path)
         signature = file_signature(path)
-        hashed = _digest(path, signature)
+        with _SOURCE_LEASE_LOCK:
+            lease = _SOURCE_LEASES.get(path)
+            held_sha = lease.get('content_sha256') if lease and lease.get('fresh_content') else None
+        # A fresh request lease already read these actual bytes while write and
+        # replacement were denied. Reuse that completed SHA, not a timestamp.
+        # The final signature check still covers a lease closing between calls.
+        if held_sha is not None and signature[4][1] == ('content', held_sha):
+            hashed = held_sha
+        else:
+            hashed = _digest(path, signature)
         # Check cached reads too: a replacement can happen between stat and lookup.
         if file_signature(path) != signature:
             raise ReportConflict('文件在校验期间发生变化，请确认文件稳定后重试')

@@ -2,6 +2,16 @@
 
 The 1.0.0 files from [run 38388270486](https://github.com/xiaozidian/ECG_Software/actions/runs/38388270486) remain candidate artifacts. They are not replaced by the supplemental validation changes. The next packaging version is 1.0.1, with a new source commit and new archive hashes only after every mandatory core gate passes. Public main, Pages and the original Mac workstation are unchanged.
 
+## Measured whole-day source read regression and correction
+
+[Supplemental run 38397857679](https://github.com/xiaozidian/ECG_Software/actions/runs/38397857679), commit a1d5b724, retained every node and byte-verified input. Baseline: 1958 passed, 86 failed, 3 fixture errors, 1 skip (2048 total). Candidate: 2128 passed, 3 failed, 3 fixture errors, 1 skip (2135 total). The strict comparison rejected the changed API failure: baseline passed waveform latency but later failed SDNN by 3.29 ms; candidate waveform took 5.8023502 seconds, exceeding the unchanged <1-second assertion.
+
+The mutable Windows source signature repeatedly hashed the complete 276,480,000-byte DATA during one short waveform request. A case-specific temporary read lease now computes fresh contents once while write/replacement access is denied, reuses that completed SHA and the same content cache key inside the request, then releases every reference at teardown. The next request hashes actual bytes again. This never relies on timestamps alone, does not change file permissions and retains the existing immutable evaluation-source nonce mode. Source-write denial during export remains a 409 conflict with no successful export audit; unrelated errors retain their original handling.
+
+Native version becomes 0.12.16-platform-perf.20261013 with a new 112-file production fingerprint; packaging remains the not-yet-built 1.0.1. The original 1.0.0 is retained. Native diagnostic algorithm files, rules, thresholds, units and waveform samples are unchanged.
+
+Before expensive day regression, Windows CI freshly creates one independent full 24-hour M01 and interleaves the old safe repeated-hash fallback and new request lease on the same app/source. Two warmups and at least three measured requests per mode are recorded. The new path must read DATA once and satisfy <1 second on every sample. Payloads retain analysis basis/revision, all beat/annotation fields and every twelve-lead sample; an independent int16 reader verifies all derivations. JSON records timing median/range and actual hash calls/bytes/time; source and temporary DB are removed, never uploaded. Actual results remain pending until that CI gate completes.
+
 ## Minimum platform corrections
 
 - Export both `ECG_CHROME` and `ECG_CHROME_PATH` as the existing system Edge executable. The original report gesture fixture previously selected a Mac-only fallback.
