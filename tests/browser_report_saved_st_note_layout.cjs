@@ -5,7 +5,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),crypto=require('node:crypto');
 const {chromium}=require(process.env.ECG_PLAYWRIGHT_CORE||process.env.PLAYWRIGHT_CORE||'playwright-core');
 const root=path.resolve(__dirname,'..'),read=p=>fs.readFileSync(path.join(root,p),'utf8');
-const fixtureSource=read('tests/browser_report_st_note.cjs');
+const fixtureSource=read('tests/browser_report_st_note.cjs').replace(/\r\n/g,'\n');
 const boundary='\n(async()=>{\n let browser,context;fs.mkdirSync(out,{recursive:true});';
 assert.equal(fixtureSource.split(boundary).length,2,'Public mathematical fixture boundary changed');
 const sandbox={require,process,__dirname,Buffer};

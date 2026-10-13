@@ -1,5 +1,6 @@
 """Independent finite matching oracle and leakage-free input geometry."""
 from functools import lru_cache
+from pathlib import Path
 import random
 
 import pytest
@@ -161,7 +162,7 @@ def test_evaluation_preserves_reference_blind_checkpoint_and_only_marks_success_
         assert (output/'snapshot/scripts/audit_qrs_recovery.py').exists()
         return [dict(samples=samples,gaps=[],chunks=[]) for _ in range(2)]
     def annotations(path,extension):
-        record=path.rsplit('/',1)[-1]
+        record=Path(path).name
         # Both reference and original-QRS reads must follow saved detection.
         with gzip.open(output/f'{record}-detection.json.gz','rt') as stream:
             assert json.load(stream)[0]['samples']==samples

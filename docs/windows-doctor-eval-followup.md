@@ -1,0 +1,40 @@
+# Windows doctor evaluation: core acceptance follow-up
+
+The 1.0.0 files from [run 38388270486](https://github.com/xiaozidian/ECG_Software/actions/runs/38388270486) remain candidate artifacts. They are not replaced by the supplemental validation changes. The next packaging version is 1.0.1, with a new source commit and new archive hashes only after every mandatory core gate passes. Public main, Pages and the original Mac workstation are unchanged.
+
+## Minimum platform corrections
+
+- Export both `ECG_CHROME` and `ECG_CHROME_PATH` as the existing system Edge executable. The original report gesture fixture previously selected a Mac-only fallback.
+- Check out `.cjs` with LF and normalize CRLF before splitting the existing saved-ST mathematical fixture. The boundary assertion is retained.
+- Use `Path(path).name` in the QRS test stub on Windows. The assertions that detection is persisted before references are read, and that downstream failures cannot create a success summary, remain unchanged.
+- Run original report-range and saved-ST pointer tests, plus QRS checkpoint tests, before expensive regression and packaging. Their actual assertions must pass independently of baseline classification.
+
+These corrections do not change diagnostic algorithms, thresholds, labels, units, raw samples or saved physician work.
+
+## Strict short and whole-day regression scopes
+
+The frozen baseline and candidate share the same runner, dependencies and byte-verified synthetic inputs, while their work directories and databases remain isolated.
+
+The existing frozen legacy generator renders ten independent 30-minute profiles and ten independent 24-hour profiles, seed 20260812. Each day-long DATA is 276,480,000 bytes; ten total 2,764,800,000 bytes. It renders every absolute sample; no waveform tiling, padding or label rewriting is performed.
+
+Four existing tests require day-long inputs: raw/report duration, EBI count and RR timing, the 3600-second twelve-lead window, and the waveform/events/trend/HRV endpoint contract. They run once against genuine day inputs. All other nodes run once against the short inputs. All original assertions remain unchanged. The JUnit merger rejects missing, duplicated, misrouted or collection-error nodes and preserves failed/error outcomes; both baseline and candidate include every original node. SHA256 inventories are verified before and after each full run.
+
+The continuous M01 doctor source is a separate profile with unclassified AF-like segments. Its labels are retained. It is not substituted for the legacy ten-case label and SDNN contracts.
+
+## Trusted original template contract gap
+
+The wrapper `tests/test_final_template_linked_contract.py` requires:
+
+- `tests/final_template_linked_math.cjs`: 9 checks
+- `tests/final_template_linked_adapter.cjs`: 6 checks
+- `tests/final_template_linked_morphadapter.cjs`: 3 checks
+
+None was found in all 48 reachable ancestor trees of e2c31137, two additional PR trees, public refs, tags, Releases or seven public source inventories. The wrapper was introduced in commit `666764f56e5491dcfdaa41dcc4822bd078a1e578`, blob `14292b82c2a8221356faa7700889ea475ffe697d`, without those three scripts. The separately published readiness script is another contract and cannot replace them.
+
+The original wrapper is a mandatory gate before building or uploading the next verified package. A baseline-existing fixture error does not satisfy core doctor acceptance. Restore the exact original files from a trusted private code snapshot when the owning environment is available; do not fabricate equivalent scripts or adjust expected check counts.
+
+## Accuracy and environment limits
+
+The two AF research tests require an absent frozen development summary and its bound source snapshot. Private AF validation inputs are not uploaded to public CI. A same-baseline failure remains a documented accuracy-validation gap, never clinical acceptance. No diagnostic rule changes or expanded clinical research are included.
+
+GitHub Windows Server CI and system Edge are available. Physical hospital Windows 10 hardware, architecture, security software and unsigned-package acceptance remain unverified. Mac access and the original ten-case workstation are outside this environment; saved work has not been switched or modified. The separate Mac archive task owns preserving 1.0.0 artifacts.
