@@ -414,7 +414,9 @@ def build(args):
     validate_assets(root)
     output.mkdir(parents=True)
     dist, work = output / "build-dist", output / "build-work"
-    env = dict(os.environ, PYINSTALLER_CONFIG_DIR=str(output / "pyinstaller-cache"))
+    icon_path = create_build_icon(output / "doctor-eval.ico")
+    env = dict(os.environ, PYINSTALLER_CONFIG_DIR=str(output / "pyinstaller-cache"),
+               CARDIOINSIGHT_DOCTOR_BUILD_ICON=str(icon_path))
     run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean",
          "--distpath", dist, "--workpath", work, root / "CardioInsightDoctorEval.spec"], cwd=root, env=env)
     built = dist / APP_NAME

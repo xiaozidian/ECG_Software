@@ -45,3 +45,19 @@ def test_cloud_recall_is_rejected_before_reading_a_source(tmp_path, monkeypatch,
     monkeypatch.setattr(Path, "stat", lambda *a, **k: info)
     with pytest.raises(source.SourceUnavailable):
         source.require_local_file(path)
+
+
+def test_read_lease_blocks_source_rewrite_and_releases_without_changing_permissions(tmp_path):
+    path = tmp_path / "immutable-math.DATA"
+    path.write_bytes(b"A" * 32)
+    original_mode = path.stat().st_mode
+    with source.read_locked_sources([path]):
+        before = source.file_signature(path)
+        with pytest.raises(OSError):
+            path.write_bytes(b"B" * 32)
+        assert path.read_bytes() == b"A" * 32
+        assert source.file_signature(path) == before
+        assert path.stat().st_mode == original_mode
+    path.write_bytes(b"B" * 32)
+    assert path.read_bytes() == b"B" * 32
+    assert path.stat().st_mode == original_mode
