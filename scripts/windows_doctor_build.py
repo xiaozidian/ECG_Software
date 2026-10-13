@@ -378,10 +378,25 @@ def build(args):
         raise PackageError("This build requires native 64-bit Windows Python.")
     if not re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", args.version):
         raise PackageError("Packaging version must contain three nonnegative integer components.")
+    if args.verification_upgrade_version == "auto":
+        components = list(map(int, args.version.split(".")))
+        components[-1] += 1
+        args.verification_upgrade_version = ".".join(map(str, components))
     if args.source_version != "M01-24h-v1":
         raise PackageError("This generator and validator currently support M01-24h-v1 only.")
     if not re.fullmatch(r"[0-9a-f]{40}", args.source_commit):
         raise PackageError("A full source commit SHA is required.")
+    # A release must identify the bytes actually checked out, not a supplied label.
+    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
+    if head != args.source_commit:
+        raise PackageError("Source commit does not match the release checkout.")
+    tracked_inputs = ["app.py", "ecg_core", "templates", "static", "win_doctor_eval.py",
+                      "CardioInsightDoctorEval.spec", "requirements-doctor-build.txt",
+                      "scripts/windows_doctor_build.py", "scripts/generate_doctor_24h.py",
+                      "scripts/verify_doctor_24h.py"]
+    dirty = subprocess.run(["git", "diff", "--quiet", "HEAD", "--", *tracked_inputs], cwd=root)
+    if dirty.returncode != 0:
+        raise PackageError("Release source has uncommitted changes; build a reviewed checkout.")
     output = args.output.resolve()
     if output == root or output in root.parents:
         raise PackageError("Build output must not replace or contain the source checkout.")

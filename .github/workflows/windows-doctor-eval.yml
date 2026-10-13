@@ -5,6 +5,27 @@ on:
     branches:
       - "codex/windows-doctor-eval-x64-*"
   workflow_dispatch:
+    inputs:
+      packaging_version:
+        description: "医生便携包装版本（三段数字）"
+        default: "1.0.0"
+        required: true
+        type: string
+      source_version:
+        description: "独立合成来源版本"
+        default: "M01-24h-v1"
+        required: true
+        type: string
+      regression_baseline:
+        description: "已验收回归基线提交"
+        default: "0bd6e7e7998442bd4072eed15dfef196a7d01357"
+        required: true
+        type: string
+      release_notes:
+        description: "本版变更说明"
+        default: "Windows x64 医生离线评估首版；连续24小时数学示例，独立保存工作。"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -21,6 +42,9 @@ jobs:
     env:
       PYTHONUTF8: "1"
       PYTHONIOENCODING: "utf-8"
+      DOCTOR_PACKAGING_VERSION: ${{ inputs.packaging_version || '1.0.0' }}
+      DOCTOR_SOURCE_VERSION: ${{ inputs.source_version || 'M01-24h-v1' }}
+      DOCTOR_RELEASE_NOTES: ${{ inputs.release_notes || 'Windows x64 医生离线评估首版；连续24小时数学示例，独立保存工作。' }}
     defaults:
       run:
         shell: pwsh
@@ -33,7 +57,7 @@ jobs:
       - name: Checkout unchanged public regression baseline
         uses: actions/checkout@v4
         with:
-          ref: 0bd6e7e7998442bd4072eed15dfef196a7d01357
+          ref: ${{ inputs.regression_baseline || '0bd6e7e7998442bd4072eed15dfef196a7d01357' }}
           path: baseline
       - uses: actions/setup-python@v5
         with:
@@ -101,16 +125,19 @@ jobs:
           python scripts/windows_doctor_build.py `
             --output "$env:RUNNER_TEMP\doctor-eval" `
             --source-commit "${{ github.sha }}" `
-            --version "1.0.0" `
-            --source-version "M01-24h-v1" `
-            --verification-upgrade-version "1.0.1" `
+            --version "$env:DOCTOR_PACKAGING_VERSION" `
+            --source-version "$env:DOCTOR_SOURCE_VERSION" `
+            --release-notes "$env:DOCTOR_RELEASE_NOTES" `
+            --verification-upgrade-version "auto" `
             --ci-run-url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: System Edge full software interaction and retained-source update validation
         run: |
+          $buildReport = Get-Content "$env:RUNNER_TEMP\doctor-eval\build-report.json" -Raw | ConvertFrom-Json
+          $upgradeArchive = $buildReport.verification_upgrade_fixture.archive
           python scripts/verify_windows_doctor_browser.py `
             --package-root "$env:RUNNER_TEMP\doctor-eval\verify-package\CardioInsight-DoctorEval-Windows-x64" `
-            --software-archive "$env:RUNNER_TEMP\doctor-eval\CardioInsight-DoctorEval-Windows-x64-1.0.1-upgrade-fixture.zip" `
+            --software-archive "$env:RUNNER_TEMP\doctor-eval\$upgradeArchive" `
             --output "$env:RUNNER_TEMP\doctor-eval\evidence\browser-validation.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Upload verified portable install, software update and reusable data pack
@@ -118,13 +145,13 @@ jobs:
         with:
           name: CardioInsight-DoctorEval-Windows-x64
           path: |
-            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-1.0.0-full.zip
-            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-1.0.0-full.zip.sha256
-            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-1.0.0-software.zip
-            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-1.0.0-software.zip.sha256
-            ${{ runner.temp }}/doctor-eval/CardioInsight-Synthetic-M01-24h-v1.zip
-            ${{ runner.temp }}/doctor-eval/CardioInsight-Synthetic-M01-24h-v1.zip.sha256
-            ${{ runner.temp }}/doctor-eval/CardioInsight-Synthetic-M01-24h-v1.zip.manifest.json
+            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-${{ env.DOCTOR_PACKAGING_VERSION }}-full.zip
+            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-${{ env.DOCTOR_PACKAGING_VERSION }}-full.zip.sha256
+            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-${{ env.DOCTOR_PACKAGING_VERSION }}-software.zip
+            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-${{ env.DOCTOR_PACKAGING_VERSION }}-software.zip.sha256
+            ${{ runner.temp }}/doctor-eval/CardioInsight-Synthetic-${{ env.DOCTOR_SOURCE_VERSION }}.zip
+            ${{ runner.temp }}/doctor-eval/CardioInsight-Synthetic-${{ env.DOCTOR_SOURCE_VERSION }}.zip.sha256
+            ${{ runner.temp }}/doctor-eval/CardioInsight-Synthetic-${{ env.DOCTOR_SOURCE_VERSION }}.zip.manifest.json
             ${{ runner.temp }}/doctor-eval/build-report.json
           if-no-files-found: error
           retention-days: 14

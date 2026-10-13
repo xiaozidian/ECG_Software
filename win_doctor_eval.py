@@ -279,7 +279,8 @@ def prepare_upgrade(folder):
             source.backup(destination, pages=256, progress=progress, sleep=.05)
             if destination.execute("PRAGMA integrity_check").fetchall() != [("ok",)]:
                 _error("upgrade_snapshot_failed", "升级前工作副本未通过完整性检查，未打开体验。")
-    with open(target, "rb") as stream:
+    with open(target, "r+b") as stream:
+        stream.flush()
         os.fsync(stream.fileno())
     pending = dict(from_version=prior, to_version=current, from_packaging_version=prior_package,
                    to_packaging_version=current_package, snapshot=name,
@@ -302,6 +303,23 @@ def complete_upgrade(folder, pending):
         record["last_upgrade"] = dict(pending, after_schema=after)
         record.pop("upgrade_pending", None)
     _write_json(path, record)
+
+
+def initialize_workspace_database(path):
+    """Create an isolated workspace without retaining constructor SQLite handles."""
+    from ecg_core.storage import Storage
+
+    class InitialStorage(Storage):
+        @contextmanager
+        def connect(self):
+            database = super().connect()
+            try:
+                with database:
+                    yield database
+            finally:
+                database.close()
+
+    InitialStorage(path)
 
 
 class WorkspaceCatalog:
@@ -344,14 +362,13 @@ class WorkspaceCatalog:
         return folder
 
     def new(self):
-        from ecg_core.storage import Storage
         with self.mutex:
             value = self._load()
             identifier = secrets.token_hex(16)
             folder = _plain(self.home / "workspaces" / identifier)
             folder.mkdir(parents=True, exist_ok=False)
             (folder / "data").mkdir()
-            Storage(folder / "data" / "cardioinsight.db")
+            initialize_workspace_database(folder / "data" / "cardioinsight.db")
             record = dict(profile=PROFILE, workspace_id=identifier, selected_dataset="M01",
                           source_kind="mathematical_synthetic", data_root=str(self.source),
                           created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
