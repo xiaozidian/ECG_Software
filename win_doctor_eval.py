@@ -610,7 +610,11 @@ def _install_guards(app, context):
     @app.after_request
     def doctor_headers(response):
         response.headers["Cache-Control"] = "no-store"
-        response.headers["Referrer-Policy"] = "no-referrer"
+        # Native HTML form navigation serializes Origin as null under
+        # no-referrer. Preserve same-origin POST validation on the manager;
+        # cross-port/external destinations still receive no referrer.
+        response.headers["Referrer-Policy"] = (
+            "same-origin" if context["role"] == "manager" else "no-referrer")
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         # This application is an entirely offline loopback workstation.

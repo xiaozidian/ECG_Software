@@ -295,22 +295,50 @@ async def launch(exe, home, source_root=None):
 
 
 async def stop(exe, home):
-    run = await asyncio.to_thread(run_cli, exe, home, "stop", "--saved-work-acknowledged", timeout=240)
-    require(run.returncode == 0, "Graceful doctor stop failed")
-    deadline = time.monotonic() + 180
-    while time.monotonic() < deadline:
-        active = False
+    # Hold synchronization handles before shutdown. Socket/state disappearance
+    # alone does not prove the Windows process has released its workspace locks.
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel.OpenProcess.restype = wintypes.HANDLE
+    kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    kernel.WaitForSingleObject.restype = wintypes.DWORD
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.CloseHandle.restype = wintypes.BOOL
+    handles = []
+    try:
         for state_path in (home / "runtime").glob("*.json"):
             try:
                 state = json.loads(state_path.read_text(encoding="utf-8"))
-                await asyncio.to_thread(health, state)
-                active = True
+                reply = await asyncio.to_thread(health, state)
+                require(reply.get("profile") == "cardioinsight-windows-doctor-eval-v1", "Unexpected shutdown owner")
+                require(all(reply.get(key) == state.get(key) for key in ("role", "pid", "birth")), "Shutdown owner identity changed")
+                require(os.path.normcase(str(await asyncio.to_thread(process_image, state["pid"]))) == os.path.normcase(str(exe.resolve())), "Shutdown owner is not the active doctor EXE")
+                handle = kernel.OpenProcess(0x00100000, False, int(state["pid"]))
+                require(handle, "Cannot observe owned doctor process exit")
+                handles.append(handle)
             except (OSError, ValueError, KeyError, URLError):
-                pass
-        if not active:
-            return
-        await asyncio.sleep(0.15)
-    raise AssertionError("Owned doctor services did not stop gracefully")
+                continue
+        run = await asyncio.to_thread(run_cli, exe, home, "stop", "--saved-work-acknowledged", timeout=240)
+        require(run.returncode == 0, "Graceful doctor stop failed")
+        deadline = time.monotonic() + 180
+        while time.monotonic() < deadline:
+            states = [kernel.WaitForSingleObject(handle, 0) for handle in handles]
+            require(all(value in (0, 258) for value in states), "Owned process exit observation failed")
+            active = False
+            for state_path in (home / "runtime").glob("*.json"):
+                try:
+                    state = json.loads(state_path.read_text(encoding="utf-8"))
+                    await asyncio.to_thread(health, state)
+                    active = True
+                except (OSError, ValueError, KeyError, URLError):
+                    pass
+            if not active and all(value == 0 for value in states):
+                return
+            await asyncio.sleep(0.15)
+        raise AssertionError("Owned doctor services did not exit gracefully")
+    finally:
+        for handle in handles:
+            kernel.CloseHandle(handle)
 
 
 def unpack_software(source_archive, package, destination):
@@ -824,7 +852,7 @@ async def verify(args, receipt):
                             network["cancelled_fetches"] += 1
                     def http_response(response):
                         if response.status >= 400:
-                            network["http_errors"].append({"path": urlsplit(response.url).path, "status": response.status})
+                            network["http_errors"].append({"path": urlsplit(response.url).path, "status": response.status, "origin": response.request.headers.get("origin"), "fetch_site": response.request.headers.get("sec-fetch-site")})
                     def add_page(page):
                         page.set_default_timeout(TIMEOUT_MS)
                         page.set_default_navigation_timeout(TIMEOUT_MS)
@@ -842,7 +870,9 @@ async def verify(args, receipt):
                         manager_state, start_seconds = await launch(active_exe, home, source_root)
                         private_values.append(manager_state["token"])
                         page = await manager_page(context, manager_state)
-                        await page.locator("#continueExperience").click()
+                        async with page.expect_response(lambda response: urlsplit(response.url).path == "/continue") as entry_request:
+                            await page.locator("#continueExperience").click()
+                        require((await entry_request.value).status == 303, "Native manager form could not enter the doctor workspace")
                         await worklist_ready(page)
                         catalog = json.loads((home / "catalog.json").read_text(encoding="utf-8"))
                         workspace_id = catalog["selected_workspace"]

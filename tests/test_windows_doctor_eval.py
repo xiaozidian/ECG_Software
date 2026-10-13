@@ -463,3 +463,32 @@ def test_native_session_cookies_do_not_replace_other_workspaces_or_original_serv
     second_client.set_cookie(name, first_client.get_cookie(name).value)
     assert second_client.get("/read").json == {"actor": None}
     assert name != second.config["SESSION_COOKIE_NAME"] != "session"
+
+def test_manager_form_navigation_preserves_origin_and_keeps_csrf_strict():
+    from types import SimpleNamespace
+    ctx = context(role="manager")
+    starts = []
+    catalog = SimpleNamespace(items=lambda: [], current=lambda: "b" * 32)
+    manager = SimpleNamespace(
+        catalog=catalog,
+        start=lambda identifier: starts.append(identifier) or
+        {"port": 9124, "token": "c" * 64})
+    app = doctor.manager_app(manager, ctx)
+    client, base = opened_client(app, ctx)
+    landing = client.get("/", base_url=base)
+    assert landing.headers["Referrer-Policy"] == "same-origin"
+    assert b'name="_csrf"' in landing.data
+    response = client.post("/continue", base_url=base,
+                           headers={"Origin": base}, data={"_csrf": ctx["token"]})
+    assert response.status_code == 303
+    assert response.headers["Location"].startswith("http://127.0.0.1:9124/_doctor/open?")
+    assert starts == ["b" * 32]
+    for origin, csrf in [(base, ""), (base, "bad"), ("null", ctx["token"]),
+                         ("http://evil.example", ctx["token"])]:
+        rejected = client.post("/continue", base_url=base,
+                               headers={"Origin": origin}, data={"_csrf": csrf})
+        assert rejected.status_code == 403
+    assert starts == ["b" * 32]
+    workspace, _ = guarded_app(context())
+    workspace_client, workspace_base = opened_client(workspace, context())
+    assert workspace_client.get("/", base_url=workspace_base).headers["Referrer-Policy"] == "no-referrer"
