@@ -440,7 +440,8 @@ def inspect_native_hrv(root, manifest, modules, native_case, context):
 
 def inspect_review_workflow(modules):
     with tempfile.TemporaryDirectory(prefix="doctor24h-review-") as folder:
-        storage = modules["Storage"](Path(folder) / "review.sqlite3")
+        from ecg_core.workspace_backup import _DetachedConnection
+        storage = modules["Storage"](Path(folder) / "review.sqlite3", connection_factory=_DetachedConnection)
         review = storage.get_review(CASE_ID)
         require(set(review["pending_steps"]) == {"edit", "stt"}
                 and review["report_status"] == "draft",
@@ -804,7 +805,7 @@ def verify(source_root, output, allow_short=False):
     print(json.dumps(dict(status=result["status"], source=result["source"],
                           output=str(output), passed_checks=sum(row["status"] == "passed"
                                                                for row in checks.rows),
-                          failed_checks=[row["name"] for row in checks.rows
+                          failed_checks=[{"name": row["name"], "error": row.get("error", "")} for row in checks.rows
                                          if row["status"] != "passed"]),
                      ensure_ascii=False, allow_nan=False))
     return 0 if passed else 1
