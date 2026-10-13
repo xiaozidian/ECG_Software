@@ -496,7 +496,8 @@ def _control(state, path="/_doctor/health", payload=None):
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         f"http://127.0.0.1:{state['port']}{path}", data=data,
-        headers={"X-Doctor-Control": state["token"], "Content-Type": "application/json"})
+        headers={"X-Doctor-Control": state["token"], "Content-Type": "application/json",
+                 "X-CardioInsight-Request": "1"})
     try:
         timeout = 135 if path == "/_doctor/stop" else (60 if path == "/_doctor/start" else 2)
         with opener.open(req, timeout=timeout) as response:
