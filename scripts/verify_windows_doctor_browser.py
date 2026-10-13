@@ -25,6 +25,7 @@ import struct
 import subprocess
 import tempfile
 import time
+import traceback
 from urllib.error import URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, build_opener, ProxyHandler
@@ -401,6 +402,7 @@ async def worklist_ready(page):
 async def open_case(page):
     # The real worklist resumes its pending review step (edit, stt, or report).
     # Do not wait for the overview page or override the physician workflow.
+    await worklist_ready(page)
     destination = await page.evaluate("() => state.cases.find(item=>item.case_id==='9900000000000001')?.review_workflow?.next_step||'review'")
     started = time.perf_counter()
     await page.locator("#openFirstCase").click()
@@ -889,12 +891,15 @@ async def verify(args, receipt):
                         first["hrv_24h"], hrv_evidence = await hrv_round(page)
                         record(receipt, "native-24h-hrv-continuous-and-final-a4", hrv_evidence)
 
+                        round_metrics = {"repeat": iteration + 1, "process_first": first, "warm": {}}
+                        rounds.append(round_metrics)
+                        receipt["performance"]["summary"] = metric_summary(rounds)
                         await navigate(page, "dashboard")
-                        warm = {"case_open": await open_case(page)}
+                        warm = round_metrics["warm"]
+                        warm["case_open"] = await open_case(page)
                         warm["editor"], _, _ = await editor_round(page, receipt)
                         warm["stt_60s"], _ = await stt_range(page)
                         warm["hrv_24h"], _ = await hrv_round(page)
-                        rounds.append({"repeat": iteration + 1, "process_first": first, "warm": warm})
                         receipt["performance"]["completed_repeats"] = len(rounds)
                         receipt["performance"]["summary"] = metric_summary(rounds)
                         record(receipt, "frozen-exe-independent-workspace-repeat-" + str(iteration + 1), {"runtime_python_path_absent": True, "manager_and_child_images": "actual-doctor-exe", "full_day": True})
@@ -1046,6 +1051,10 @@ def main():
         receipt["status"] = "passed" if all(check["status"] == "passed" for check in receipt["checks"]) else "failed"
     except Exception as error:
         receipt["status"] = "failed"
+        receipt["failure_location"] = [
+            {"file": Path(frame.filename).name, "function": frame.name, "line": frame.lineno}
+            for frame in traceback.extract_tb(error.__traceback__)
+            if Path(frame.filename).name == Path(__file__).name]
         record(receipt, "browser-verification-completion", {"error": safe_error(error, [str(args.package_root), str(args.output.parent)])}, status="failed")
     finally:
         receipt["completed_utc"] = datetime.now(timezone.utc).isoformat()
