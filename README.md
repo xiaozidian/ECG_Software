@@ -1,6 +1,6 @@
 # CardioInsight Holter
 
-本仓库保存 ECG 软件源码和独立的数学浏览器 Demo。当前代码版本为 `0.12.15-platform-compat.20261013`，生产软件清单包含112个文件。完整来源指纹、方法及验证记录见[Windows持续发布说明](docs/windows-doctor-release.md)与[来源清单](docs/releases/0.12.15-platform-compat.20261013/source-manifest.json)。实际本机安装版本和线上构建结果分别核对；源码更新本身不表示已经切换服务。
+本仓库保存 ECG 软件源码和独立的数学浏览器 Demo。当前代码版本为 `0.12.16-platform-perf.20261013`，生产软件清单包含112个文件。完整来源指纹、方法及验证记录见[Windows持续发布说明](docs/windows-doctor-release.md)与[来源清单](docs/releases/0.12.16-platform-perf.20261013/source-manifest.json)。实际本机安装版本和线上构建结果分别核对；源码更新本身不表示已经切换服务。
 
 软件用于研究与工程验证，自动事件为待医生复核的候选。原波形使用既有200Hz、8存储通道导入口径及12展示导联，设备映射、电压校准和医生金标准尚未独立核验；本版不构成临床验收。
 
@@ -46,7 +46,7 @@ Windows使用`.venv\Scripts\Activate.ps1`，并在启动前设置相应环境变
 
 ## 验证范围
 
-本版说明分别记录全量回归、实际Mac Chrome流程、编译版、数学Demo及对应提交的Actions结果。核心数学验证方法见[核心验证说明](docs/core-verification.md)。一分钟到整日区间均值的同硬件实测及复跑脚本见[本版性能收据](docs/releases/0.12.13-doctor-feedback.20261012/performance.json)；进程首次调用与OS磁盘冷缓存分别说明，不用缓存命中比较全读，也不将核心计时当作网页等待。
+既有记录分别保存各提交的全量回归、Mac Chrome流程、编译版和数学Demo结果；本次Windows核心验收、严格整日回归与请求性能以[专项交付记录](docs/windows-doctor-eval-followup.md)及其Actions收据为准，不沿用旧版本成绩。核心数学验证方法见[核心验证说明](docs/core-verification.md)。0.12.13在Mac上的一分钟到整日区间均值实测及复跑脚本见[历史ST核心性能参考](docs/releases/0.12.13-doctor-feedback.20261012/performance.json)；进程首次调用与OS磁盘冷缓存分别说明，不用缓存命中比较全读，也不将核心计时当作网页等待。
 
 数学参考只能证明相应软件契约与算术；不能证明真实全天设备数据、临床敏感度或特异度。HRT没有合格源事件时间时不制造跳转；QT与无有效搏均值保持未知。
 

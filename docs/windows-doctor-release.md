@@ -1,6 +1,6 @@
 # Windows 医生离线便携版发布流程
 
-本入口直接调用主项目 app.py 和 ecg_core，不维护另一套算法。首版包装版本为1.0.0，目标为Windows 10 x64；医院电脑架构和实机兼容仍待确认。系统浏览器用于界面，不捆绑Python开发环境、Chrome或Electron。
+本入口直接调用主项目 app.py 和 ecg_core，不维护另一套算法。保留的首版1.0.0为候选包，下一包装版本为1.0.1，原生代码为0.12.16-platform-perf.20261013；必须完成本轮独立核心验收后才构建交付。目标为Windows 10 x64；医院电脑架构和实机兼容仍待确认。系统浏览器用于界面，不捆绑Python开发环境、Chrome或Electron。
 
 程序、来源与工作分离：程序在解压目录，固定M01示例在Sources/M01，医生工作在%LOCALAPPDATA%/CardioInsightDoctorEval/workspaces。新体验保留旧工作；每个工作区有独立进程、端口和Cookie。反馈仅含经允许的技术字段，禁止打包来源、整个数据库、报告或自由文字。
 
@@ -11,7 +11,7 @@
 ```powershell
 python -m pip install -r requirements-doctor-build.txt
 $releaseCommit = git rev-parse HEAD
-python scripts/windows_doctor_build.py --output .\build\windows-doctor-1.0.0 --source-commit $releaseCommit --version 1.0.0 --verification-upgrade-version auto
+python scripts/windows_doctor_build.py --output .\build\windows-doctor-1.0.1 --source-commit $releaseCommit --version 1.0.1 --verification-upgrade-version auto
 ```
 
 输出必须为新目录。在项目内使用build、dist或releases子目录，保留旧代码与产物。后续发布传入新包装版本及--release-notes；用--source-root指定已验证的M01来源即可复用全天数据，禁止从任意病例目录递归拼包。来源版本目前仅支持M01-24h-v1；改变来源必须显式增版并更新兼容与验证要求。
@@ -26,10 +26,10 @@ full ZIP用于初次部署；software ZIP不含Sources或工作库；独立sourc
 
 ## 验证边界
 
-关键源变更、过期依据、保存和备份保护必须通过后才构建。全天数学源默认86400秒、200Hz、8存储通道int16，原始DATA为276480000字节；四个其他展示导联沿用现有公式生成。所有源标注都是生成器练习参考，不能作为临床金标准。
+原始报告区间交互、ST备注保存、QRS检查点、关键源变更、过期依据、保存和备份保护必须实际通过后才构建；既有基线失败不能替代核心验收。四项整日原始断言与三份模板联动原始脚本的18项检查也必须通过。缺失模板脚本仅从可信原始代码快照恢复，不重造或削减检查。详见[专项交付记录](windows-doctor-eval-followup.md)。全天数学源默认86400秒、200Hz、8存储通道int16，原始DATA为276480000字节；四个其他展示导联沿用现有公式生成。所有源标注都是生成器练习参考，不能作为临床金标准。
 
 全量回归与同运行器的冻结基线比较；既有失败和缺失公开夹具的设置错误保留记录，新增失败、丢失测试或通过项退化会阻止交付。浏览器验证使用CI安装的系统Edge，覆盖读数、返回、取消重试、保存重开、PDF、工作区隔离和同结构升级。
 
 程序首次与暖读计时使用相同EXE、来源、控件及范围，多次报告中位数和范围，不宣称清空OS磁盘缓存。CI安装有开发工具；剥离PATH和验证加载DLL可以证明冻结运行路径，不能替代干净Windows 10、医院安全策略、签名接受或中文PDF字形与打印验收。当前包未购买签名证书，也不提供联网自动更新服务。
 
-当前平台兼容修复仅涉及Windows内容校验与内置示例只读句柄、备份文件刷新与连接关闭及版本记录；诊断阈值、算法和原始波形保持不变。每版以构建报告和对应CI结果为准，不能沿用上一版成绩。
+当前原生修复涉及Windows请求内一次实际字节校验与临时只读句柄、内置示例只读句柄、备份刷新与连接关闭及版本记录。可变来源在下一请求重新读取实际字节，导出竞争仍拒绝为409冲突；诊断阈值、算法和原始波形保持不变。每版以构建报告和对应CI结果为准，不能沿用上一版成绩。

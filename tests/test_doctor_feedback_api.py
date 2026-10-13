@@ -3,7 +3,9 @@
 All waveform changes, annotations, revisions and reopen operations below target
 the synthetic_case/synthetic_app fixtures, never a patient source or work DB.
 """
+import os
 from copy import deepcopy
+from hashlib import sha256
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 from uuid import uuid4
@@ -793,6 +795,11 @@ def test_mean_uuid_lock_reconciliation_rechecks_current_evidence(
     base = base_for(synthetic_case)
     store = synthetic_app.extensions["storage"]
     body = uuid_mean_payload(client, base)
+    if which == "data":
+        # Keep the original late-source mutation and every reconciliation assert.
+        # Default Windows sharing prevents the write before that checkpoint;
+        # its denial and preserved winner are independently tested below.
+        monkeypatch.setitem(synthetic_app.config, "WINDOWS_REQUEST_SOURCE_LEASES", False)
     original = Storage.create_annotation
     checkpoint = []
     def another_submit_finishes_after_preflight(self, cid, payload, actor, **kwargs):
@@ -819,6 +826,53 @@ def test_mean_uuid_lock_reconciliation_rechecks_current_evidence(
     assert rows(store) == checkpoint[0]
     assert len(rows(store)["annotations"]) == 1
     assert len([item for item in store.list_audit() if item["action"] == "annotation.create"]) == 1
+
+
+@pytest.mark.skipif(os.name != "nt", reason="requires actual Windows request share-mode lease")
+def test_windows_default_source_lease_blocks_uuid_reconciliation_source_write(
+        synthetic_app, synthetic_case, monkeypatch):
+    from ecg_core.storage import Storage
+    assert synthetic_app.config["WINDOWS_REQUEST_SOURCE_LEASES"] is True
+    client = synthetic_app.test_client()
+    base = base_for(synthetic_case)
+    store = synthetic_app.extensions["storage"]
+    cid, paths = synthetic_case[1:]
+    body = uuid_mean_payload(client, base)
+    before_source = {key: sha256(path.read_bytes()).hexdigest() for key, path in paths.items()}
+    original = Storage.create_annotation
+    calls = {"original": 0, "denied": 0}
+    checkpoint, winner = [], []
+
+    def call_original(self, case_id, payload, actor, **kwargs):
+        calls["original"] += 1
+        return original(self, case_id, payload, actor, **kwargs)
+
+    def first_wins_then_source_write_is_attempted(self, case_id, payload, actor, **kwargs):
+        assert self is store
+        first = call_original(self, case_id, payload, actor, **kwargs)
+        assert first["details"] == body["details"]
+        winner.append(first)
+        checkpoint.append(rows(store))
+        try:
+            advance(store, case_id, "data", paths)
+        except PermissionError:
+            calls["denied"] += 1
+            raise
+        return call_original(self, case_id, payload, actor, **kwargs)
+
+    monkeypatch.setattr(Storage, "create_annotation", first_wins_then_source_write_is_attempted)
+    response = client.post(base + "/annotations", json=body)
+    assert response.status_code == 409, response.get_json()
+    assert response.get_json()["code"] == "report_conflict"
+    assert calls == {"original": 1, "denied": 1}
+    assert len(checkpoint) == len(winner) == 1
+    assert rows(store) == checkpoint[0]
+    assert store.list_annotations(cid) == winner
+    assert len([item for item in store.list_audit()
+                if item["action"] == "annotation.create"]) == 1
+    assert {key: sha256(path.read_bytes()).hexdigest() for key, path in paths.items()} == before_source
+    with paths["data"].open("r+b"):
+        pass  # Actual teardown must release the write-denying source handle.
 
 
 @pytest.mark.parametrize("which", ["global", "beat", "stored_basis"])
