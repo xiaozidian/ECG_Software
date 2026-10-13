@@ -44,7 +44,7 @@ Before new day generation, the frozen and corrected generators build the same te
 
 The continuous M01 doctor source is a separate profile with unclassified AF-like segments. Its labels are retained. It is not substituted for the legacy ten-case label and SDNN contracts.
 
-## Trusted original template contract gap
+## Trusted original template contracts restored
 
 The wrapper `tests/test_final_template_linked_contract.py` requires:
 
@@ -54,7 +54,15 @@ The wrapper `tests/test_final_template_linked_contract.py` requires:
 
 None was found in all 48 reachable ancestor trees of e2c31137, two additional PR trees, public refs, tags, Releases or seven public source inventories. The wrapper was introduced in commit `666764f56e5491dcfdaa41dcc4822bd078a1e578`, blob `14292b82c2a8221356faa7700889ea475ffe697d`, without those three scripts. The separately published readiness script is another contract and cannot replace them.
 
-The original wrapper is a mandatory gate before building or uploading the next verified package. A baseline-existing fixture error does not satisfy core doctor acceptance. Restore the exact original files from a trusted private code snapshot when the owning environment is available; do not fabricate equivalent scripts or adjust expected check counts.
+The three original scripts were subsequently restored from a trusted existing production-code snapshot and confirmed against recorded checksums and independent retained code copies. Only pure Node standard-library, in-memory mathematical validation is restored; private validation records, real data and source paths are not published. Exact UTF-8/LF file identities:
+
+| File | Bytes | SHA256 |
+| --- | ---: | --- |
+| final_template_linked_math.cjs | 4264 | 92a407501539c833550e7950db145074bd698188b385f140c67c5ae7ba40d2c6 |
+| final_template_linked_adapter.cjs | 4367 | 33018e100dbb41a289750b9f52026a2ee0f18585087e587fb37f728fd07e1b7c |
+| final_template_linked_morphadapter.cjs | 2815 | 914dfbc4d305d88dd22d4a24ea5ff3d47ec1b2040ea420527fea2a4882e72a58 |
+
+The unchanged original wrapper and 18 checks now run before expensive day generation, and remain mandatory before packaging. A preflight rejects missing original assets; core doctor failures also stop before generation. Product JavaScript is retained. Restoration alone is not a test pass; actual results are pending.
 
 ## Accuracy and environment limits
 
