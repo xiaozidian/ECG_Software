@@ -40,14 +40,21 @@ def test_changed_attribute_is_identified_without_exposing_paths(tmp_path, monkey
     runtime, source = artifact_runtime(tmp_path)
     expected = runtime.files[source]
     actual = list(expected)
-    actual[field] += 1
+    if isinstance(actual[field], tuple):
+        # Windows combines the native change clock and a content/read-lease
+        # identity. Perturb the clock while retaining the identity component.
+        actual[field] = (actual[field][0] + 1, *actual[field][1:])
+    else:
+        actual[field] += 1
     monkeypatch.setattr(provenance, 'file_signature', lambda p: tuple(actual))
     with pytest.raises(ReportConflict, match='重启') as caught:
         runtime.assert_current()
     rows = diagnostic_rows(caplog)
-    assert rows == [{'engine_id': runtime.engine_id, 'changes': [{
+    expected_rows = [{'engine_id': runtime.engine_id, 'changes': [{
         'module': 'ecg_core.config', 'reason': 'metadata_changed',
         'fields': {provenance.SIGNATURE_FIELDS[field]: {'expected': expected[field], 'actual': actual[field]}}}]}]
+    # Structured log JSON serializes tuple identities as arrays.
+    assert rows == json.loads(json.dumps(expected_rows))
     assert source.name not in caplog.text and str(source.parent) not in caplog.text
     assert runtime.engine_id not in str(caught.value)
     assert runtime.files[source] == expected  # Logging never adopts a new build.

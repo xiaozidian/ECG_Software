@@ -1007,6 +1007,7 @@ def main():
     finally:
         receipt["completed_utc"] = datetime.now(timezone.utc).isoformat()
         args.output.write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print("DOCTOR_BROWSER_RECEIPT_JSON=" + json.dumps(receipt, ensure_ascii=False))
     print(json.dumps({"status": receipt["status"], "checks": len(receipt["checks"]), "receipt": args.output.name}, ensure_ascii=False))
     return 0 if receipt["status"] == "passed" else 1
 

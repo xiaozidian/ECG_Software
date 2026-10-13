@@ -110,7 +110,7 @@ jobs:
           python -m pytest -q @doctorTests
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Windows source, stale-evidence and recoverable-backup protection
-        run: python -m pytest -q tests/test_source_integrity.py tests/test_analysis_provenance.py tests/test_runtime_metadata.py tests/test_workspace_backup.py
+        run: python -m pytest -q tests/test_source_integrity.py tests/test_analysis_provenance.py tests/test_runtime_metadata.py tests/test_runtime_guard.py tests/test_workspace_backup.py
       - name: Native directory build, generated 24h source and final ZIP smoke
         run: |
           python scripts/windows_doctor_build.py `
@@ -121,6 +121,15 @@ jobs:
             --release-notes "$env:DOCTOR_RELEASE_NOTES" `
             --verification-upgrade-version "auto" `
             --ci-run-url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: System Edge full software interaction and retained-source update validation
+        run: |
+          $buildReport = Get-Content "$env:RUNNER_TEMP\doctor-eval\build-report.json" -Raw | ConvertFrom-Json
+          $upgradeArchive = $buildReport.verification_upgrade_fixture.archive
+          python scripts/verify_windows_doctor_browser.py `
+            --package-root "$env:RUNNER_TEMP\doctor-eval\verify-package\CardioInsight-DoctorEval-Windows-x64" `
+            --software-archive "$env:RUNNER_TEMP\doctor-eval\$upgradeArchive" `
+            --output "$env:RUNNER_TEMP\doctor-eval\evidence\browser-validation.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Existing complete baseline suite
         working-directory: baseline
@@ -144,15 +153,6 @@ jobs:
             --current "$env:RUNNER_TEMP\doctor-current.xml" `
             --baseline-root "..\baseline" --current-root "." `
             --output "$env:RUNNER_TEMP\doctor-regression\regression-comparison.json"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: System Edge full software interaction and retained-source update validation
-        run: |
-          $buildReport = Get-Content "$env:RUNNER_TEMP\doctor-eval\build-report.json" -Raw | ConvertFrom-Json
-          $upgradeArchive = $buildReport.verification_upgrade_fixture.archive
-          python scripts/verify_windows_doctor_browser.py `
-            --package-root "$env:RUNNER_TEMP\doctor-eval\verify-package\CardioInsight-DoctorEval-Windows-x64" `
-            --software-archive "$env:RUNNER_TEMP\doctor-eval\$upgradeArchive" `
-            --output "$env:RUNNER_TEMP\doctor-eval\evidence\browser-validation.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Upload verified portable install, software update and reusable data pack
         uses: actions/upload-artifact@v4
