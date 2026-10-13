@@ -1,0 +1,36 @@
+# -*- mode: python ; coding: utf-8 -*-
+"""Doctor evaluation software only. Synthetic files are added after the build."""
+from pathlib import Path
+import runpy
+import sys
+from PyInstaller.utils.hooks import collect_all
+
+root = Path(SPECPATH)
+if sys.platform != "win32":
+    raise RuntimeError("Build this spec with native Windows x64 Python.")
+builder = runpy.run_path(str(root / "scripts" / "windows_doctor_build.py"))
+builder["validate_assets"](root)
+icon_path = builder["create_build_icon"](Path(WORKPATH) / "doctor-eval.ico")
+assets = builder["ASSET_FILES"]
+datas = [(str(root / name), str(Path(name).parent)) for name in assets]
+reportlab = collect_all("reportlab")
+datas += reportlab[0]
+a = Analysis(
+    [str(root / "win_doctor_eval.py")],
+    pathex=[str(root)],
+    binaries=reportlab[1],
+    datas=datas,
+    hiddenimports=reportlab[2],
+    hookspath=[], hooksconfig={}, runtime_hooks=[],
+    excludes=["pytest", "IPython", "matplotlib", "pandas", "scipy", "playwright", "psutil", "selenium"],
+    noarchive=False, optimize=0,
+)
+pyz = PYZ(a.pure)
+exe = EXE(
+    pyz, a.scripts, [], exclude_binaries=True, name="CardioInsightDoctorEval",
+    debug=False, bootloader_ignore_signals=False, strip=False, upx=False,
+    icon=str(icon_path), console=True, hide_console="hide-early", disable_windowed_traceback=False, argv_emulation=False,
+    target_arch=None, codesign_identity=None, entitlements_file=None,
+    contents_directory="_internal",
+)
+coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name="CardioInsightDoctorEval")
