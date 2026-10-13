@@ -374,6 +374,7 @@ def run_benchmark(output: Path, *, rounds: int = 3) -> int:
             result["status"] = "passed" if not result["failures"] else "failed"
         result["temporary_source_and_workspace_removed"] = not temporary.exists()
     except Exception as error:
+        result["status"] = "failed"
         result["failures"].append(f"{type(error).__name__}: {error}")
     result["elapsed_seconds"] = time.perf_counter() - started
     output.parent.mkdir(parents=True, exist_ok=True)
