@@ -498,11 +498,14 @@ def _control(state, path="/_doctor/health", payload=None):
         f"http://127.0.0.1:{state['port']}{path}", data=data,
         headers={"X-Doctor-Control": state["token"], "Content-Type": "application/json"})
     try:
-        with opener.open(req, timeout=2) as response:
+        timeout = 135 if path == "/_doctor/stop" else (60 if path == "/_doctor/start" else 2)
+        with opener.open(req, timeout=timeout) as response:
             value = json.load(response)
             return value if isinstance(value, dict) else {}
-    except (OSError, ValueError, urllib.error.URLError):
-        return {}
+    except urllib.error.HTTPError as error:
+        return {"_control_error": "http_" + str(error.code)}
+    except (OSError, ValueError, urllib.error.URLError) as error:
+        return {"_control_error": type(error).__name__}
 
 
 def owned_ready(state, role):
@@ -519,8 +522,10 @@ def _command(*arguments):
 
 
 def _spawn(*arguments):
+    home = _plain(evaluation_home())
+    home.mkdir(parents=True, exist_ok=True)
     options = dict(stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                   stderr=subprocess.DEVNULL, close_fds=True)
+                   stderr=subprocess.DEVNULL, close_fds=True, cwd=str(home))
     if os.name == "nt":
         options["creationflags"] = subprocess.CREATE_NO_WINDOW
     else:
@@ -966,7 +971,7 @@ def request_stop(acknowledged=False):
         return dict(stopping=False, runtime_state="not_running")
     reply = _control(state, "/_doctor/stop", {"saved_work_acknowledged": True})
     if not reply.get("stopping"):
-        _error("stop_failed", "健康确认或优雅退出未完成，未结束任何其他进程。")
+        _error("stop_failed", "健康确认或优雅退出未完成，未结束任何其他进程。 " + reply.get("_control_error", "no_stop_acknowledgement"))
     return reply
 
 
