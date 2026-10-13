@@ -645,9 +645,11 @@ async def download_pdf(page, result, home):
 
 
 async def feedback_check(manager, result, home, states):
-    async with manager.expect_download() as pending:
-        await manager.locator("#exportFeedback").click()
+    async with manager.expect_request(lambda request: urlsplit(request.url).path == "/feedback" and request.method == "POST") as attachment_request:
+        async with manager.expect_download() as pending:
+            await manager.locator("#exportFeedback").click()
     download = await pending.value
+    request = await attachment_request.value
     path = home / "temporary-feedback.zip"
     await download.save_as(path)
     with zipfile.ZipFile(path) as archive:
@@ -670,6 +672,7 @@ async def feedback_check(manager, result, home, states):
     inspect(decoded)
     record(result, "feedback-privacy-inventory", {"members": ["diagnostic.json"], "content_and_token_leaks": 0, "artifact_published": False})
     path.unlink()
+    return request
 
 
 async def persistence_check(page, result, name, annotation_id):
@@ -820,6 +823,8 @@ async def verify(args, receipt):
     }
     network = {"external_requests": 0, "external_hosts": [], "resource_failures": [], "page_errors": [], "intentional_transport_faults": 1, "cancelled_fetches": 0, "http_errors": []}
     receipt["network"] = network
+    failed_resource_requests = []
+    verified_attachment_requests = []
     private_values = [str(package), str(source_root)]
     async with async_playwright() as playwright:
         browser = await playwright.chromium.launch(
@@ -850,6 +855,7 @@ async def verify(args, receipt):
                         error = request.failure or ""
                         if request.resource_type in ("script", "stylesheet", "image", "font", "document"):
                             network["resource_failures"].append({"path": urlsplit(request.url).path, "type": request.resource_type, "error": error})
+                            failed_resource_requests.append(request)
                         elif "ERR_ABORTED" in error:
                             network["cancelled_fetches"] += 1
                     def http_response(response):
@@ -931,7 +937,7 @@ async def verify(args, receipt):
                             require((home / "workspaces" / workspace_id / "data" / "cardioinsight.db").is_file(), "Old workspace database was removed")
                             record(receipt, "new-workspace-preserves-old-work-and-independent-api", {"independent_ports": True, "independent_processes": True, "old_database_preserved": True, "new_work_clean": True})
                             await manager.reload(wait_until="domcontentloaded")
-                            await feedback_check(manager, receipt, home, [manager_state, workspace_state, new_workspace_state])
+                            verified_attachment_requests.append(await feedback_check(manager, receipt, home, [manager_state, workspace_state, new_workspace_state]))
                             workspace_before_upgrade = json.loads((home / "workspaces" / workspace_id / "WORKSPACE.json").read_text(encoding="utf-8"))
                             await context.close()
                             await stop(active_exe, home)
@@ -1016,6 +1022,20 @@ async def verify(args, receipt):
     _, _, final_sources = source_snapshot(package)
     require(final_sources == initial_sources, "Original mathematical source changed during browser verification")
     require(network["external_requests"] == 0, "The doctor page attempted a non-loopback network request")
+    # A native Content-Disposition attachment cancels the document navigation
+    # after the browser starts the download. Exempt only the exact request whose
+    # downloaded ZIP has already passed CRC, member and privacy verification.
+    unexpected_resources = []
+    attachment_aborts = []
+    require(len(failed_resource_requests) == len(network["resource_failures"]), "Resource observation accounting changed")
+    for request, failure in zip(failed_resource_requests, network["resource_failures"]):
+        if (failure["type"] == "document" and failure["error"] == "net::ERR_ABORTED"
+                and any(request is verified for verified in verified_attachment_requests)):
+            attachment_aborts.append({**failure, "download_archive_verified": True})
+        else:
+            unexpected_resources.append(failure)
+    network["verified_attachment_navigation_aborts"] = attachment_aborts
+    network["resource_failures"] = unexpected_resources
     require(not network["resource_failures"], "A local browser resource failed to load")
     require(not network["page_errors"], "Uncaught browser page errors occurred")
     require(not network["http_errors"], "A native HTTP request failed")
