@@ -286,6 +286,12 @@ def test_upgrade_snapshot_preserves_saved_report_and_schema(catalog, monkeypatch
     assert doctor.prepare_upgrade(folder) is None
     assert len(list((folder / "upgrade-snapshots").glob("*.sqlite3"))) == 1
     monkeypatch.setattr(doctor, "_packaging_version", lambda: "1.0.0")
+    # Establish a quiescent physical DB before checking a rejected downgrade;
+    # SQLite can otherwise checkpoint committed WAL when old test handles collect.
+    import gc
+    gc.collect()
+    with closing(sqlite3.connect(database)) as db:
+        db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     before = doctor._hash_file(database)
     with pytest.raises(doctor.DoctorEvalError, match="更新的程序"):
         doctor.prepare_upgrade(folder)
