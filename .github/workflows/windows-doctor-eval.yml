@@ -81,7 +81,18 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -c "import json,subprocess,sys; print('DOCTOR_BUILD_FREEZE_JSON='+json.dumps(subprocess.check_output([sys.executable,'-m','pip','freeze','--all'],text=True).splitlines()))"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Verify unchanged production algorithm source
+      - name: Configure CI-only Node tests with installed system Edge
+        run: |
+          $jsTools = "$env:RUNNER_TEMP\doctor-node-browser"
+          New-Item -ItemType Directory -Path $jsTools -Force | Out-Null
+          npm install --prefix "$jsTools" --no-save --ignore-scripts --no-audit --no-fund playwright-core@1.63.0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $edgeCandidates = @("$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe", "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe")
+          $edgePath = @($edgeCandidates | Where-Object { Test-Path $_ })[0]
+          if (-not $edgePath) { throw "Installed system Microsoft Edge is unavailable." }
+          "ECG_PLAYWRIGHT_CORE=$jsTools\node_modules\playwright-core" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "ECG_CHROME=$edgePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Verify release production source fingerprint
         run: python scripts/verify_public_release.py
       - name: Generate isolated mathematical regression inputs
         run: |
@@ -94,9 +105,22 @@ jobs:
           "ECG_APP_DATA_ROOT=$env:RUNNER_TEMP\doctor-current-work" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Doctor evaluation tests must all pass
         run: |
-          $doctorTests = @("tests/test_doctor_24h.py", "tests/test_doctor_regression.py", "tests/test_windows_doctor_build.py", "tests/test_windows_doctor_eval.py")
+          $doctorTests = @("tests/test_doctor_24h.py", "tests/test_doctor_regression.py", "tests/test_windows_doctor_build.py", "tests/test_windows_doctor_eval.py", "tests/test_windows_source_identity.py")
           if ($doctorTests.Count -eq 0) { throw "Doctor evaluation tests are absent." }
           python -m pytest -q @doctorTests
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Windows source, stale-evidence and recoverable-backup protection
+        run: python -m pytest -q tests/test_source_integrity.py tests/test_analysis_provenance.py tests/test_runtime_metadata.py tests/test_workspace_backup.py
+      - name: Native directory build, generated 24h source and final ZIP smoke
+        run: |
+          python scripts/windows_doctor_build.py `
+            --output "$env:RUNNER_TEMP\doctor-eval" `
+            --source-commit "${{ github.sha }}" `
+            --version "$env:DOCTOR_PACKAGING_VERSION" `
+            --source-version "$env:DOCTOR_SOURCE_VERSION" `
+            --release-notes "$env:DOCTOR_RELEASE_NOTES" `
+            --verification-upgrade-version "auto" `
+            --ci-run-url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Existing complete baseline suite
         working-directory: baseline
@@ -118,18 +142,8 @@ jobs:
           python scripts/compare_doctor_regression.py `
             --baseline "$env:RUNNER_TEMP\doctor-baseline.xml" `
             --current "$env:RUNNER_TEMP\doctor-current.xml" `
+            --baseline-root "..\baseline" --current-root "." `
             --output "$env:RUNNER_TEMP\doctor-regression\regression-comparison.json"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Native directory build, generated 24h source and final ZIP smoke
-        run: |
-          python scripts/windows_doctor_build.py `
-            --output "$env:RUNNER_TEMP\doctor-eval" `
-            --source-commit "${{ github.sha }}" `
-            --version "$env:DOCTOR_PACKAGING_VERSION" `
-            --source-version "$env:DOCTOR_SOURCE_VERSION" `
-            --release-notes "$env:DOCTOR_RELEASE_NOTES" `
-            --verification-upgrade-version "auto" `
-            --ci-run-url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: System Edge full software interaction and retained-source update validation
         run: |

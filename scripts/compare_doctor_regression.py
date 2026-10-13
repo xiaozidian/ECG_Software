@@ -16,14 +16,20 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
-def _message(value: str) -> str:
-    # Only unstable pytest temporary paths and memory addresses are normalized.
+def _message(value: str, checkout_root: Path | None = None) -> str:
+    # Normalize only known checkout paths and unstable diagnostic identifiers.
+    if checkout_root is not None:
+        for prefix in (str(checkout_root.resolve()), checkout_root.resolve().as_posix(),
+                       str(checkout_root.resolve()).replace("\\", "\\\\")):
+            value = value.replace(prefix, "<checkout>")
     value = re.sub(r"(?:[A-Za-z]:)?[/\\][^\s'\"]*pytest-of-[^\s'\"]*", "<pytest-temp>", value)
     value = re.sub(r"0x[0-9A-Fa-f]{6,}", "<address>", value)
+    value = re.sub(r"\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})\b", "<timestamp>", value)
+    value = re.sub(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", "<uuid>", value)
     return " ".join(value.split())
 
 
-def read_junit(path: Path) -> dict[str, dict[str, str]]:
+def read_junit(path: Path, checkout_root: Path | None = None) -> dict[str, dict[str, str]]:
     root = ET.parse(path).getroot()
     if root.tag not in {"testsuites", "testsuite"}:
         raise ValueError("Not a JUnit testsuite document")
@@ -42,16 +48,18 @@ def read_junit(path: Path) -> dict[str, dict[str, str]]:
             if element is not None:
                 status = {"error": "error", "failure": "failed", "skipped": "skipped"}[tag]
                 failure_type = element.get("type", "")
-                message = _message(element.get("message", ""))
+                message = _message(element.get("message", ""), checkout_root)
                 break
         result[node_id] = {
             "status": status, "type": failure_type, "message": message,
         }
     if not result:
         raise ValueError("JUnit contains no testcases")
-    # Pytest interruption/collection failures may appear as a synthetic testcase.
-    if any(node.get("status") == "error" for node in result.values()):
-        raise ValueError("JUnit contains collection or execution errors")
+    # Real collection failures have no testcase class. Fixture errors remain
+    # explicit outcomes and are allowed only when unchanged in the baseline.
+    if any(case.find("error") is not None and not case.get("classname")
+           for case in root.iter("testcase")):
+        raise ValueError("JUnit contains a collection failure")
     return result
 
 
@@ -65,14 +73,14 @@ def compare(baseline: dict, current: dict) -> dict:
         old, new = baseline[node_id], current[node_id]
         if old["status"] == "passed" and new["status"] != "passed":
             regressions.append({"node": node_id, "reason": "formerly passing test no longer passes"})
-        elif old["status"] == "failed":
+        elif old["status"] in {"failed", "error"}:
             if new["status"] == "passed":
                 improvements.append(node_id)
             elif new != old:
                 regressions.append({"node": node_id, "reason": "baseline failure changed"})
             else:
                 unchanged_failures.append(node_id)
-        elif old["status"] == "skipped" and new["status"] == "failed":
+        elif old["status"] == "skipped" and new["status"] in {"failed", "error"}:
             regressions.append({"node": node_id, "reason": "formerly skipped test now fails"})
     for node_id in added:
         if current[node_id]["status"] != "passed":
@@ -105,9 +113,12 @@ def main() -> int:
     parser.add_argument("--baseline", type=Path, required=True)
     parser.add_argument("--current", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--baseline-root", type=Path)
+    parser.add_argument("--current-root", type=Path)
     args = parser.parse_args()
     try:
-        report = compare(read_junit(args.baseline), read_junit(args.current))
+        report = compare(read_junit(args.baseline, args.baseline_root),
+                         read_junit(args.current, args.current_root))
     except (OSError, ValueError, ET.ParseError) as exc:
         report = {
             "schema_version": 1,

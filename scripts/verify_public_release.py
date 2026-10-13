@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-MANIFEST = ROOT / "docs/releases/0.12.14-template-linkage.20261012/source-manifest.json"
+MANIFEST = ROOT / "docs/releases/0.12.15-platform-compat.20261013/source-manifest.json"
 
 
 def verify(root: Path = ROOT) -> dict:

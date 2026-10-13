@@ -4,6 +4,7 @@ from functools import wraps
 from hashlib import sha256
 from inspect import signature as function_signature
 from pathlib import Path
+import os
 import stat
 import sys
 
@@ -39,6 +40,10 @@ def require_local_file(path):
     if sys.platform == 'darwin' and getattr(info, 'st_flags', 0) & 0x40000000:
         raise SourceUnavailable('原始文件尚未完整下载到本地，暂不能读取波形或计算报告。'
                                 '请在访达中将病例文件夹下载并保留在本地，完成后重试。')
+    # Windows cloud recall flags: query attributes only, never hydrate inputs.
+    if os.name == 'nt' and getattr(info, 'st_file_attributes', 0) & 0x441000:
+        raise SourceUnavailable('原始文件尚未完整保留在本地，暂不能读取波形或计算报告。'
+                                '请将合成来源完整解压到普通本机目录，完成后重试。')
     return info
 
 
@@ -68,9 +73,59 @@ def source_read(function):
     return checked
 
 
+@lru_cache(maxsize=1)
+def _windows_metadata_api():
+    """Read Windows metadata through the supported Win32 file-attributes API."""
+    import ctypes
+    from ctypes import wintypes
+
+    class FileBasicInfo(ctypes.Structure):
+        _fields_ = [('CreationTime', ctypes.c_longlong),
+                    ('LastAccessTime', ctypes.c_longlong),
+                    ('LastWriteTime', ctypes.c_longlong),
+                    ('ChangeTime', ctypes.c_longlong),
+                    ('FileAttributes', wintypes.DWORD)]
+
+    api = ctypes.WinDLL('kernel32', use_last_error=True)
+    api.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                               ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD,
+                               wintypes.HANDLE]
+    api.CreateFileW.restype = wintypes.HANDLE
+    api.GetFileInformationByHandleEx.argtypes = [
+        wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+    api.GetFileInformationByHandleEx.restype = wintypes.BOOL
+    api.CloseHandle.argtypes = [wintypes.HANDLE]
+    api.CloseHandle.restype = wintypes.BOOL
+    return ctypes, api, FileBasicInfo
+
+
+def _windows_change_time_ns(path):
+    # Python's Windows st_ctime describes creation, not content/attribute changes.
+    # FileBasicInfo.ChangeTime is the NTFS metadata-change clock. Restoring mtime
+    # cannot therefore make an edited source or program reuse a previous hash.
+    ctypes, api, info_type = _windows_metadata_api()
+    value = os.path.abspath(os.fspath(path))
+    if not value.startswith('\\\\?\\'):
+        value = ('\\\\?\\UNC\\' + value[2:] if value.startswith('\\\\')
+                 else '\\\\?\\' + value)
+    handle = api.CreateFileW(value, 0x80, 0x7, None, 3, 0x80, None)
+    if handle in (None, ctypes.c_void_p(-1).value):
+        raise OSError(ctypes.get_last_error(), 'Windows file metadata is unavailable')
+    try:
+        info = info_type()
+        if not api.GetFileInformationByHandleEx(handle, 0, ctypes.byref(info), ctypes.sizeof(info)):
+            raise OSError(ctypes.get_last_error(), 'Windows file metadata is unavailable')
+        if info.ChangeTime <= 0:
+            raise OSError('Windows file metadata does not provide a change timestamp')
+        return info.ChangeTime * 100 - 11644473600000000000
+    finally:
+        api.CloseHandle(handle)
+
+
 def file_signature(path):
     s = Path(path).stat()
-    return (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns)
+    changed_ns = _windows_change_time_ns(path) if os.name == 'nt' else s.st_ctime_ns
+    return (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, changed_ns)
 
 
 @lru_cache(maxsize=64)

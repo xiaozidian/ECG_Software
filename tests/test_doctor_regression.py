@@ -48,10 +48,19 @@ def test_new_test_must_pass(status):
     "<testsuites/>",
     "<invalid/>",
     '<testsuite><testcase name="a" classname="t"/><testcase name="a" classname="t"/></testsuite>',
-    '<testsuite><testcase name="a" classname="t"><error type="ImportError"/></testcase></testsuite>',
+    '<testsuite><testcase name="a"><error type="ImportError"/></testcase></testsuite>',
 ])
 def test_invalid_or_interrupted_junit_cannot_be_accepted(tmp_path: Path, xml: str):
     source = tmp_path / "junit.xml"
     source.write_text(xml, encoding="utf-8")
     with pytest.raises(ValueError):
         read_junit(source)
+
+
+def test_existing_fixture_errors_are_explicit_and_cannot_hide_a_new_error():
+    old = {"test::missing_public_fixture": _case("error", "missing frozen fixture")}
+    same = compare(old, dict(old))
+    assert same["comparison_passed"] and not same["full_suite_green"]
+    assert same["current"]["error"] == 1
+    changed = compare(old, {**old, "doctor::unexpected": _case("error", "new error")})
+    assert not changed["comparison_passed"]

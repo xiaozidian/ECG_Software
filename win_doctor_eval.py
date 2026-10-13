@@ -674,6 +674,14 @@ def _context(role, token):
                 shutdown=threading.Event())
 
 
+def isolate_workspace_session(app, identifier):
+    """Keep native Flask sessions separate across localhost ports and workspaces."""
+    if not isinstance(identifier, str) or not WORKSPACE_ID.fullmatch(identifier):
+        _error("invalid_workspace", "体验工作区身份无效。")
+    app.config.update(SESSION_COOKIE_NAME="CardioInsightDoctorEval-" + identifier,
+                      SESSION_COOKIE_SAMESITE="Strict")
+
+
 def serve_workspace(identifier, token):
     if not TOKEN.fullmatch(token):
         _error("invalid_token", "启动身份无效。")
@@ -688,6 +696,7 @@ def serve_workspace(identifier, token):
         upgrade = prepare_upgrade(folder)
         from app import create_app
         app = create_app(data_root=source, db_path=folder / "data" / "cardioinsight.db")
+        isolate_workspace_session(app, identifier)
         complete_upgrade(folder, upgrade)
         context = _context("workspace", token)
         context["workspace_id"] = identifier
@@ -770,7 +779,7 @@ def feedback_bytes(value):
 
 LANDING = """<!doctype html><html lang="zh-CN"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CardioInsight 医生离线体验</title>
+<title>CardioInsight 医生离线体验</title><link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <style>body{margin:0;background:#f4f8fa;color:#173642;font:16px/1.6 "Microsoft YaHei",sans-serif}
 main{max-width:720px;margin:7vh auto;padding:32px;background:white;border-radius:22px;
 box-shadow:0 16px 50px #15374512}svg{width:52px;vertical-align:middle;margin-right:12px}
@@ -823,6 +832,15 @@ def manager_app(manager, context):
             "<!doctype html><meta charset=utf-8><title>体验未完成</title>"
             "<p>{{message}}</p><p><a href=/>返回体验入口并重试</a></p>",
             message=str(error)), 503
+
+    @app.get("/favicon.ico")
+    @app.get("/favicon.svg")
+    def doctor_favicon():
+        return Response('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">'
+                        '<rect width="64" height="64" rx="16" fill="#17697b"/>'
+                        '<path d="M8 34h12l6-16 9 30 7-19 5 5h9" fill="none" '
+                        'stroke="white" stroke-width="3" stroke-linejoin="round"/></svg>',
+                        mimetype="image/svg+xml")
 
     @app.get("/")
     def landing():

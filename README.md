@@ -1,8 +1,12 @@
 # CardioInsight Holter
 
-本仓库保存 ECG 软件源码和独立的数学浏览器 Demo。当前代码版本为 `0.12.14-template-linkage.20261012`，生产软件清单包含112个文件。完整来源指纹、方法及验证记录见[本版说明](docs/releases/0.12.14-template-linkage.20261012/README.md)与[来源清单](docs/releases/0.12.14-template-linkage.20261012/source-manifest.json)。实际本机安装版本和线上构建结果分别核对；源码更新本身不表示已经切换服务。
+本仓库保存 ECG 软件源码和独立的数学浏览器 Demo。当前代码版本为 `0.12.15-platform-compat.20261013`，生产软件清单包含112个文件。完整来源指纹、方法及验证记录见[Windows持续发布说明](docs/windows-doctor-release.md)与[来源清单](docs/releases/0.12.15-platform-compat.20261013/source-manifest.json)。实际本机安装版本和线上构建结果分别核对；源码更新本身不表示已经切换服务。
 
 软件用于研究与工程验证，自动事件为待医生复核的候选。原波形使用既有200Hz、8存储通道导入口径及12展示导联，设备映射、电压校准和医生金标准尚未独立核验；本版不构成临床验收。
+
+## Windows 医生离线便携版
+
+Windows x64 便携包直接复用本项目算法和报告，内置一例连续24小时纯数学合成来源。程序、示例与保存工作分离，使用系统浏览器；无需医生安装Python。完整初装、仅软件更新和独立来源分别交付。架构及医院Windows 10实机兼容仍待确认；当前任务源码与已安装Mac、线上版本分别核对，不自动切换已有工作站。构建与升级流程见[发布说明](docs/windows-doctor-release.md)，每版使用实际CI与产物记录。
 
 ## 医生操作
 

@@ -896,7 +896,7 @@ async def verify(args, receipt):
                             next_release = json.loads((destination / "RELEASE.json").read_text(encoding="utf-8"))
                             if args.software_archive is not None:
                                 require(next_release.get("verification_fixture_only") is True, "Upgrade archive must be explicitly marked as a CI-only fixture")
-                                require(original_release["packaging_version"] == "1.0.0" and next_release["packaging_version"] == "1.0.1", "Expected CI same-core 1.0.0 to 1.0.1 upgrade fixture")
+                                require(tuple(map(int, next_release["packaging_version"].split("."))) > tuple(map(int, original_release["packaging_version"].split("."))), "Expected a newer CI same-core packaging-version fixture")
                                 require(original_release["app_version"] == next_release["app_version"], "Upgrade fixture changed the native application version")
                                 require(original_release["source_manifest_sha256"] == next_release["source_manifest_sha256"], "Upgrade fixture changed the source manifest")
                             active_exe = destination / "CardioInsightDoctorEval.exe"

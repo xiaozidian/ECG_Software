@@ -427,3 +427,33 @@ def test_stop_timeout_retains_active_work_and_restores_service(monkeypatch):
     assert doctor.drain_and_close_server(server, ctx, timeout=0) is False
     assert server.accepting
     assert not ctx["shutdown"].is_set()
+
+
+def test_native_session_cookies_do_not_replace_other_workspaces_or_original_service():
+    from flask import Flask, session
+    def application(name, identifier=None):
+        app = Flask(name)
+        app.secret_key = "isolated-mathematical-cookie-test"
+        if identifier:
+            doctor.isolate_workspace_session(app, identifier)
+        @app.get("/seed")
+        def seed():
+            session["actor"] = name
+            return {"actor": name}
+        @app.get("/read")
+        def read():
+            return {"actor": session.get("actor")}
+        return app
+    old = application("original-service")
+    first = application("first-workspace", "1" * 32)
+    second = application("second-workspace", "2" * 32)
+    old_client, first_client, second_client = old.test_client(), first.test_client(), second.test_client()
+    old_client.get("/seed")
+    old_cookie = old_client.get_cookie("session")
+    first_client.set_cookie("session", old_cookie.value)
+    assert first_client.get("/read").json == {"actor": None}
+    first_client.get("/seed")
+    name = first.config["SESSION_COOKIE_NAME"]
+    second_client.set_cookie(name, first_client.get_cookie(name).value)
+    assert second_client.get("/read").json == {"actor": None}
+    assert name != second.config["SESSION_COOKIE_NAME"] != "session"

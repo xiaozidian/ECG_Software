@@ -88,7 +88,8 @@ def _readonly(path):
 
 
 def _sync(path):
-    with open(path, 'rb') as stream:
+    # Windows _commit needs a writable handle; these are our detached copies.
+    with open(path, 'r+b' if os.name == 'nt' else 'rb') as stream:
         os.fsync(stream.fileno())
 
 
