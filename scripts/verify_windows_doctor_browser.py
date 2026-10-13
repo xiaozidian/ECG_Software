@@ -34,7 +34,7 @@ PROFILE = "cardioinsight-doctor-eval-synthetic-24h-v1"
 CASE_ID = "9900000000000001"
 LEADS = ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
 SOURCE_BYTES = 276480000
-TIMEOUT_MS = 600000
+TIMEOUT_MS = 120000
 REPORT_NOTE = "数学软件验收：仅合成 M01；这是未审核工程练习草稿。"
 ANNOTATION_NOTE = "数学软件验收：合成波形人工复核备注；不作临床结论。"
 SNAPSHOT_JS = """() => ({
@@ -371,11 +371,24 @@ async def worklist_ready(page):
 
 
 async def open_case(page):
+    # The real worklist resumes its pending review step (edit, stt, or report).
+    # Do not wait for the overview page or override the physician workflow.
+    destination = await page.evaluate("() => state.cases.find(item=>item.case_id==='9900000000000001')?.review_workflow?.next_step||'review'")
     started = time.perf_counter()
     await page.locator("#openFirstCase").click()
-    await page.wait_for_function("""() => state.caseId==='9900000000000001'
+    await page.wait_for_function("""(destination) => state.caseId==='9900000000000001'
         && !state.caseLoading && state.caseData?.technical?.duration_seconds_raw===86400
-        && state.currentPage==='review' && state.waveform?.leads""")
+        && state.currentPage===destination""", arg=destination)
+    if destination == "edit":
+        await wait_edit(page)
+    elif destination == "stt":
+        await page.wait_for_function("() => state.sttEvidence && document.querySelector('#sttWaveCanvasWrap').dataset.sttWaveState==='ready'")
+    elif destination == "report":
+        await page.wait_for_function("() => state.report && !state.reportSaving && !state.reportLoading")
+    elif destination == "review":
+        await page.wait_for_function("() => state.waveform?.leads")
+    else:
+        require(False, "Unexpected native worklist review destination")
     require(await page.evaluate("() => state.demoReadonly===false && state.includePhi===false"), "Native writable and private doctor mode is required")
     require(await page.evaluate("() => state.caseData.technical.sample_rate_hz") == 200, "Native case must retain 200Hz")
     return time.perf_counter() - started
