@@ -107,6 +107,10 @@ The unchanged original wrapper and 18 checks now run before expensive day genera
 
 ## Accuracy and environment limits
 
-The two AF research tests require an absent frozen development summary and its bound source snapshot. Private AF validation inputs are not uploaded to public CI. A same-baseline failure remains a documented accuracy-validation gap, never clinical acceptance. No diagnostic rule changes or expanded clinical research are included.
+Both remaining failures are FileNotFoundError when `frozen_parameters()` opens `docs/validation/af-entropy-20260929/development-v1/summary.json`. The summary and its source-bound development snapshot are required for the independent LTAFDB research workflow:
+- `test_candidate_thresholds_match_unchanged_frozen_development` would verify protocol `af-entropy-development-v1` and unchanged `entropy`/`entropy-turning` thresholds of -1.35 against the original snapshot.
+- `test_current_workstation_cannot_masquerade_as_frozen_development` would require a source-drift rejection so an evolving workstation cannot claim the frozen build's external-validation result.
+
+Neither assertion can be completed without the private freeze; the missing-file outcome occurs before threshold comparison or source-hash drift rejection. This is an external AF-candidate accuracy/reproducibility and claim-provenance gap, not a completed clinical pass. The native startup and mathematical-source doctor workflows do not import this research evaluator or load its summary. M01 keeps its AF-like section unclassified; physicians can inspect and manually mark ranges under the retained confirmation and saved-evidence protections. Functional mathematical trial is supported by the passed native/core gates; AF diagnostic accuracy on patients is not established. Private freeze inputs are not uploaded, thresholds are not changed, and no replacement summary or validation claim is fabricated.
 
 GitHub Windows Server CI and system Edge are available. Physical hospital Windows 10 hardware, architecture, security software and unsigned-package acceptance remain unverified. Mac access and the original ten-case workstation are outside this environment; saved work has not been switched or modified. The separate Mac archive task owns preserving 1.0.0 artifacts.

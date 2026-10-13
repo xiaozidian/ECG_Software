@@ -20,6 +20,12 @@ python scripts/windows_doctor_build.py --output .\build\windows-doctor-1.0.1 --s
 
 独立分支推送触发windows-doctor-eval.yml；并入主线后可手动传包装版本、来源版本、基线提交和变更说明。构建在Windows运行，记录真实OS、架构、依赖、源提交和文件SHA256。CI-only升级夹具自动递增包装补丁号，复用同一EXE，不能当作第二正式版本。
 
+## 医生启动与软件更新
+
+首次使用完整的1.0.1-full ZIP，解压到普通用户的新目录，保留整个_internal和Sources/M01。双击CardioInsightDoctorEval.exe，或“启动医生评估.cmd”，使用系统浏览器打开本机页面。无需医生安装Python、Chrome或Electron。包内“使用说明.txt”和“版本说明.txt”为中文；“检查医生评估.cmd”查看状态，“停止医生评估.cmd”停止本评估服务。“新建评估工作区.cmd”保留旧工作并创建独立体验。
+
+更新前先保存或取消当前网页修改，再停止评估服务。把1.0.1-software ZIP解压到另一个新目录，保留旧程序和已登记来源、用户工作区；新程序复用原Sources/M01，无需重新复制全天数据。若要求选择来源，明确选择原数学源目录。按提示核验升级备份后使用，不能用旧程序写入已升级的工作库。本轮实测升级仅为同核同结构1.0.1→1.0.2夹具；已有1.0.0跨核升级仍需在独立副本验证，不据此切换现用工作站。
+
 ## 产物与升级
 
 full ZIP用于初次部署；software ZIP不含Sources或工作库；独立source ZIP含固定来源版本与校验。使用说明、版本说明、RELEASE.json、CONTENTS.json和SHA256SUMS.txt在软件包内，ZIP旁另有整个压缩包的.sha256。

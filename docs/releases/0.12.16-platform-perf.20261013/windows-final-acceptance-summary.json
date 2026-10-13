@@ -420,5 +420,26 @@
     "Public main/Pages and the original Mac workstation, cases and saved work are unchanged."
   ],
   "full_suite_green": false,
-  "clinical_acceptance": false
+  "clinical_acceptance": false,
+  "af_validation_gap": {
+    "actual_failure": "FileNotFoundError before frozen threshold or drift assertions",
+    "missing_summary": "docs/validation/af-entropy-20260929/development-v1/summary.json",
+    "bound_snapshot_required": true,
+    "tests": [
+      {
+        "node": "tests.test_ltafdb_validation::test_candidate_thresholds_match_unchanged_frozen_development",
+        "requirement": "Original protocol and entropy/entropy-turning -1.35 thresholds tied to frozen source"
+      },
+      {
+        "node": "tests.test_ltafdb_validation::test_current_workstation_cannot_masquerade_as_frozen_development",
+        "requirement": "Source drift must reject attaching frozen external results to an evolving build"
+      }
+    ],
+    "affected_claims": "External AF-candidate accuracy, research reproducibility and result provenance",
+    "native_startup_depends_on_research_summary": false,
+    "mathematical_trial_scope": "Viewing, manual physician range annotation, saved work and report workflows; no patient diagnostic accuracy claim",
+    "m01_af_like_segment_has_source_diagnosis_label": false,
+    "private_freeze_uploaded": false,
+    "diagnostic_thresholds_changed": false
+  }
 }
