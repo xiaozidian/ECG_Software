@@ -989,6 +989,11 @@ def smoke_test():
 
 
 def main(argv=None):
+    # Frozen CLI helpers must emit Chinese diagnostics without depending on
+    # the Windows console locale; the browser entry remains the normal UI.
+    for stream in (sys.stdout, sys.stderr):
+        if stream is not None and hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(description="CardioInsight Windows 10 x64 医生离线体验")
     parser.add_argument("action", nargs="?", default="launch",
                         choices=["launch", "new", "check", "feedback", "stop",

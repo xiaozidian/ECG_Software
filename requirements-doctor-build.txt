@@ -1,6 +1,32 @@
+# Windows x64 Python 3.12.10; exact dependencies observed in CI 38364314318.
+# Runtime excludes test/build tools; install this lock only on the release builder.
+altgraph==0.17.5
+blinker==1.9.0
+charset-normalizer==3.5.2
+click==8.5.0
+colorama==0.4.6
 Flask==3.1.3
-waitress==3.0.2
-reportlab==5.0.0
+greenlet==3.5.6
+iniconfig==2.3.1
+itsdangerous==2.2.0
+Jinja2==3.1.6
+MarkupSafe==3.0.4
 numpy==2.2.6
-pytest==9.1.1
+packaging==26.3
+pefile==2024.8.26
+pillow==12.3.0
+pip==26.2.1
+playwright==1.63.0
+pluggy==1.6.0
+psutil==7.2.2
+pyee==13.0.1
+Pygments==2.21.0
+pyinstaller-hooks-contrib==2026.8
 pyinstaller==6.21.0
+pytest==9.1.1
+pywin32-ctypes==0.2.3
+reportlab==5.0.0
+setuptools==84.0.0
+typing_extensions==4.16.0
+waitress==3.0.2
+Werkzeug==3.1.9
