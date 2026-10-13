@@ -1,8 +1,10 @@
 # Windows 医生离线便携版发布流程
 
-本入口直接调用主项目 app.py 和 ecg_core，不维护另一套算法。保留的首版1.0.0为候选包，下一包装版本为1.0.1，原生代码为0.12.16-platform-perf.20261013；必须完成本轮独立核心验收后才构建交付。目标为Windows 10 x64；医院电脑架构和实机兼容仍待确认。系统浏览器用于界面，不捆绑Python开发环境、Chrome或Electron。
+本入口直接调用主项目 app.py 和 ecg_core，不维护另一套算法。保留的首版1.0.0为候选包；本轮1.0.1已完成独立核心、整日回归与冻结程序Edge验收并构建，原生代码为0.12.16-platform-perf.20261013。目标为Windows 10 x64；医院电脑架构和实机兼容仍待确认。系统浏览器用于界面，不捆绑Python开发环境、Chrome或Electron。
 
 程序、来源与工作分离：程序在解压目录，固定M01示例在Sources/M01，医生工作在%LOCALAPPDATA%/CardioInsightDoctorEval/workspaces。新体验保留旧工作；每个工作区有独立进程、端口和Cookie。反馈仅含经允许的技术字段，禁止打包来源、整个数据库、报告或自由文字。
+
+本轮实际构建源为`eeda28070fa797918016a989ca400dc030e3047f`，产物、校验值与2145通过/2项既有AF资料缺失失败/1跳过的完整结果见[最终交付记录](windows-doctor-eval-followup.md#final-101-delivery-and-measured-acceptance)。原18项模板契约、4项整日断言和38项冻结Edge流程全部通过；不宣称全量全绿或临床验收。
 
 ## 可重复构建
 

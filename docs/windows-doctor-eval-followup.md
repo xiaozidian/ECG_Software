@@ -1,6 +1,47 @@
 # Windows doctor evaluation: core acceptance follow-up
 
-The 1.0.0 files from [run 38388270486](https://github.com/xiaozidian/ECG_Software/actions/runs/38388270486) remain candidate artifacts. They are not replaced by the supplemental validation changes. The next packaging version is 1.0.1, with a new source commit and new archive hashes only after every mandatory core gate passes. Public main, Pages and the original Mac workstation are unchanged.
+The 1.0.0 files from [run 38388270486](https://github.com/xiaozidian/ECG_Software/actions/runs/38388270486) remain candidate artifacts. They are not replaced by the supplemental validation changes. The final 1.0.1 below was built only after every mandatory core gate passed, with its own tested commit and archive hashes. Public main, Pages and the original Mac workstation are unchanged.
+
+## Final 1.0.1 delivery and measured acceptance
+
+[Run 38421426571](https://github.com/xiaozidian/ECG_Software/actions/runs/38421426571), tested and packaged commit `eeda28070fa797918016a989ca400dc030e3047f`, completed successfully. All mandatory core gates, the original 18 template checks, all four unchanged day-input assertions, 20 source checks and the final ZIP/native-process checks passed. Actual frozen-program interaction in system Edge passed 38/38 checks. Native version is 0.12.16-platform-perf.20261013; the 112-file production SHA256 is `70192814337757ba9d60bc1289f300a8a6da620966e8b0be51072438d9fc9e39`.
+
+Complete regression retained all original nodes and added 100 passing tests. Baseline: 1960 passed, 84 failed, 3 errors, 1 skipped (2048 total). Candidate: 2145 passed, 2 failed, 0 errors, 1 skipped (2148 total). Strict comparison passed with no missing nodes or new regressions. The two unchanged failures require private frozen AF-development evidence; `full_suite_green=false` and clinical acceptance is not claimed.
+
+[Official delivery artifact](https://github.com/xiaozidian/ECG_Software/actions/runs/38421426571/artifacts/11830512329) contains the three formal ZIPs, their SHA256 sidecars, source manifest and build report. It expires on 2026-10-27. The 1.0.2 same-core upgrade fixture is excluded.
+
+| ZIP | Bytes | SHA256 |
+| --- | ---: | --- |
+| CardioInsight-DoctorEval-Windows-x64-1.0.1-full.zip | 201973520 | 8f03e1b731010fce3c8fd28cf2973407f3481adcd843e5687410423559876221 |
+| CardioInsight-DoctorEval-Windows-x64-1.0.1-software.zip | 38090241 | 0ff88170b7650ba8a1880cc1ccc8a6b4dfc3ff6f407fc49b7aa6be2e7b869c78 |
+| CardioInsight-Synthetic-M01-24h-v1.zip | 163882245 | 8dccfd01dd2bd6ca262cf1b295ac69bed03795c42752e5a9d82024dd2421caef |
+
+The outer delivery artifact SHA256 is `fdbf09efdf1d3b369e459bdab18549d4c67fdf1b4f71c12d5dc0f15e12347e3e`. [Public mathematical validation artifact](https://github.com/xiaozidian/ECG_Software/actions/runs/38421426571/artifacts/11830317973), SHA256 `fe0f4ed57fcdd86fb8763416cfff48bfcfa0b642848d927aa73e40fe4f5e76a1`, retains JSON/JUnit/PNG evidence and expires on 2026-10-27. [Machine-readable final summary](releases/0.12.16-platform-perf.20261013/windows-final-acceptance-summary.json) records exact conditions and numbers.
+
+Final same-runner request comparison used one continuous 24-hour M01, a 10-second raw waveform window, all 12 displayed leads and 2000 points per lead, with two warmups per mode followed by three interleaved measurements. No OS disk cache clearing or P95 estimate is claimed.
+
+| Request path | Median seconds | Minimum–maximum | DATA hash calls | DATA hash bytes |
+| --- | ---: | --- | ---: | ---: |
+| Safe repeated-hash fallback | 5.6011460 | 5.5786161–5.6041532 | 20 | 5529600000 |
+| Temporary request lease | 0.5165167 | 0.5156033–0.5176232 | 1 | 276480000 |
+
+The median ratio is 10.8441×. Every optimized sample was below the unchanged one-second limit. Complete diagnostic payloads and independently decoded twelve-lead samples matched. This gain is specific to mutable-source API requests; the managed demonstration source already has a long read lease, so it does not establish a 10.8× startup or whole-UI improvement.
+
+Actual system Edge153.0.4234.48 on Windows Server2025 x64 used the same frozen EXE, source SHA, 1440×1000 viewport and UI sequences for three process-first and three warm rounds. Process-first means a new workspace process and empty mathematical work DB; OS caches were not cleared.
+
+| Native UI operation | Process-first median [min–max], seconds | Warm median [min–max], seconds |
+| --- | --- | --- |
+| Manager start | 1.465 [1.440–1.882] | Not measured separately |
+| Open case | 8.070 [7.804–8.113] | 3.952 [3.820–3.974] |
+| Editor and two twelve-lead returns | 4.117 [4.094–4.124] | 5.763 [5.708–5.850] |
+| ST 60-second range | 11.191 [11.049–11.229] | 3.253 [3.245–3.306] |
+| HRV full 24 hours | 14.820 [14.599–14.994] | 4.906 [4.689–5.034] |
+
+The native ST range returned 12 leads, 68 detected beats, 67 used, one RR-bound exclusion and no missing beats, with native HMAC evidence. Native HRV produced and rendered 24 hourly rows and 98463 NN intervals. Cancellation/retry, save/reopen, PDF download, workspace isolation, feedback privacy and stop/relaunch passed; observed page external requests, resource failures, page errors and HTTP errors were all zero. These are current measurements, not an old/new UI speed claim.
+
+Upgrade acceptance exercises packaging1.0.1→CI-only1.0.2 with identical native core and schema, verified SQLite backup, retained report/annotation and unchanged registered source hashes. It does not prove the actual former native0.12.15/package1.0.0→native0.12.16/package1.0.1 transition or future migrations. The old1.0.0 remains a separate retained candidate.
+
+This final documentation-only record does not alter the tested or packaged source commit, production fingerprint or native bytes. Physical hospital Windows10, a clean no-Python OS, architecture/EDR/unsigned-package acceptance, Chinese PDF glyphs and physical printing remain unverified.
 
 ## Measured whole-day source read regression and correction
 
@@ -8,7 +49,7 @@ The 1.0.0 files from [run 38388270486](https://github.com/xiaozidian/ECG_Softwar
 
 The mutable Windows source signature repeatedly hashed the complete 276,480,000-byte DATA during one short waveform request. A case-specific temporary read lease now computes fresh contents once while write/replacement access is denied, reuses that completed SHA and the same content cache key inside the request, then releases every reference at teardown. After the active lease set closes, a later request hashes actual bytes again. Overlapping read leases share the completed byte proof only while write access remains denied. This never relies on timestamps alone, does not change file permissions and retains the existing immutable evaluation-source nonce mode. Source-write denial during export remains a 409 conflict with no successful export audit; unrelated errors retain their original handling.
 
-Native version becomes 0.12.16-platform-perf.20261013 with a new 112-file production fingerprint; packaging remains the not-yet-built 1.0.1. The original 1.0.0 is retained. Native diagnostic algorithm files, rules, thresholds, units and waveform samples are unchanged.
+Native version becomes 0.12.16-platform-perf.20261013 with a new 112-file production fingerprint; packaging1.0.1 is now built and verified in the final run recorded above. The original 1.0.0 is retained. Native diagnostic algorithm files, rules, thresholds, units and waveform samples are unchanged.
 
 Before expensive day regression, Windows CI freshly creates one independent full 24-hour M01 and interleaves the old safe repeated-hash fallback and new request lease on the same app/source. Two warmups and at least three measured requests per mode are recorded. The new path must read DATA once and satisfy <1 second on every sample. Payloads retain analysis basis/revision, all beat/annotation fields and every twelve-lead sample; an independent int16 reader verifies all derivations. JSON records timing median/range and actual hash calls/bytes/time; source and temporary DB are removed, never uploaded. [Run 38409671975](https://github.com/xiaozidian/ECG_Software/actions/runs/38409671975), native commit 297a52f3, passed this gate. With three measured requests per mode after two warmups each, fallback median was 5.6833219 seconds (5.6462443–5.7315731), and the request lease median was 0.5253432 seconds (0.5249954–0.5258691): 10.8183× by the median. DATA hash calls were 20 versus 1; actual bytes read for hashing were 5,529,600,000 versus 276,480,000 per request. Every optimized sample satisfied the original <1-second limit; all diagnostic payload fields and independent twelve-lead samples matched. These are interleaved requests in one app/process with warmed OS caches, not disk-cold startup or whole-UI timing. Full JSON and JUnit are retained in [validation artifact 11823553772](https://github.com/xiaozidian/ECG_Software/actions/runs/38409671975/artifacts/11823553772), SHA256 1e004ba7adf90028dda5ee7dcbb93c7094c90cc3eb306ea70f0999ac7ba45581.
 
@@ -19,7 +60,7 @@ That same run retained all 2048 baseline and 2147 candidate nodes and verified t
 
 The strict comparator correctly rejected one changed failure: the original same-UUID mean-save race fixture commits its first winner, physically rewrites DATA, records a checkpoint, then calls the second locked reconciliation. The default Windows read lease denied that injected write before the checkpoint, producing a different failure. This is not accepted as a same-baseline success.
 
-Only that disposable fixture's DATA branch now selects the existing safe repeated-byte-hash fallback for its target POST. It retains the actual file mutation, second storage call and every original assertion. A separate Windows default-lease test requires the actual write to be denied, HTTP409/report_conflict, exactly one real committed winner and create audit, unchanged full DB snapshot and all three source hashes, and released handles after request teardown. Both paths run before expensive day generation. Production lease defaults and native bytes are unchanged; the next candidate has 2148 test nodes and remains subject to the same strict comparison. New-run results are pending.
+Only that disposable fixture's DATA branch now selects the existing safe repeated-byte-hash fallback for its target POST. It retains the actual file mutation, second storage call and every original assertion. A separate Windows default-lease test requires the actual write to be denied, HTTP409/report_conflict, exactly one real committed winner and create audit, unchanged full DB snapshot and all three source hashes, and released handles after request teardown. Both paths run before expensive day generation. Production lease defaults and native bytes are unchanged; the next candidate has 2148 test nodes and remains subject to the same strict comparison. The final run above retained all2148 candidate nodes and passed strict comparison.
 
 ## Minimum platform corrections
 
@@ -62,7 +103,7 @@ The three original scripts were subsequently restored from a trusted existing pr
 | final_template_linked_adapter.cjs | 4367 | 33018e100dbb41a289750b9f52026a2ee0f18585087e587fb37f728fd07e1b7c |
 | final_template_linked_morphadapter.cjs | 2815 | 914dfbc4d305d88dd22d4a24ea5ff3d47ec1b2040ea420527fea2a4882e72a58 |
 
-The unchanged original wrapper and 18 checks now run before expensive day generation, and remain mandatory before packaging. A preflight rejects missing original assets; core doctor failures also stop before generation. Product JavaScript is retained. Restoration alone is not a test pass; actual results are pending.
+The unchanged original wrapper and 18 checks now run before expensive day generation, and remain mandatory before packaging. A preflight rejects missing original assets; core doctor failures also stop before generation. Product JavaScript is retained. Actual Windows Node22 validation passed all18 original checks before day generation in the final run.
 
 ## Accuracy and environment limits
 

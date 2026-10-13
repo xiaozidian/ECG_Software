@@ -1,0 +1,424 @@
+{
+  "schema_version": 1,
+  "status": "mandatory_delivery_gates_passed",
+  "packaged_and_tested_commit": "eeda28070fa797918016a989ca400dc030e3047f",
+  "documentation_only_update_after_validation": true,
+  "ci_run_url": "https://github.com/xiaozidian/ECG_Software/actions/runs/38421426571",
+  "ci_job_id": 115380004665,
+  "packaging_version": "1.0.1",
+  "software_version": "0.12.16-platform-perf.20261013",
+  "production_source_identity": {
+    "release_id": "0.12.16-platform-perf.20261013+70192814337757ba",
+    "source_sha256": "70192814337757ba9d60bc1289f300a8a6da620966e8b0be51072438d9fc9e39",
+    "production_files_verified": 112,
+    "clinical_acceptance": false
+  },
+  "source": {
+    "source_id": "M01",
+    "version": "M01-24h-v1",
+    "wholly_synthetic": true,
+    "duration_seconds": 86400,
+    "sample_rate_hz": 200,
+    "sample_count": 17280000,
+    "raw_bytes": 276480000,
+    "manifest_sha256": "b5f6af8f6bbe1c129c3dede735ffd65f819b2738a62e31a3cb2a3698dd293376",
+    "dataset_sha256": "82a232872857da2ea752017c4a14c5565b43255bedc2438252eb125eaaf86bb8",
+    "patient_inputs_read": false
+  },
+  "archives": [
+    {
+      "file": "CardioInsight-DoctorEval-Windows-x64-1.0.1-full.zip",
+      "bytes": 201973520,
+      "sha256": "8f03e1b731010fce3c8fd28cf2973407f3481adcd843e5687410423559876221",
+      "purpose": "initial installation"
+    },
+    {
+      "file": "CardioInsight-DoctorEval-Windows-x64-1.0.1-software.zip",
+      "bytes": 38090241,
+      "sha256": "0ff88170b7650ba8a1880cc1ccc8a6b4dfc3ff6f407fc49b7aa6be2e7b869c78",
+      "purpose": "software only; no Sources or work database"
+    },
+    {
+      "file": "CardioInsight-Synthetic-M01-24h-v1.zip",
+      "bytes": 163882245,
+      "sha256": "8dccfd01dd2bd6ca262cf1b295ac69bed03795c42752e5a9d82024dd2421caef",
+      "purpose": "reusable continuous mathematical source"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": 11830512329,
+      "name": "CardioInsight-DoctorEval-Windows-x64-1.0.1",
+      "bytes": 403953041,
+      "digest": "sha256:fdbf09efdf1d3b369e459bdab18549d4c67fdf1b4f71c12d5dc0f15e12347e3e",
+      "url": "https://github.com/xiaozidian/ECG_Software/actions/runs/38421426571/artifacts/11830512329",
+      "expires_at": "2026-10-27T16:20:10Z"
+    },
+    {
+      "id": 11830317973,
+      "name": "Windows-doctor-eval-public-validation-1.0.1",
+      "bytes": 877095,
+      "digest": "sha256:fe0f4ed57fcdd86fb8763416cfff48bfcfa0b642848d927aa73e40fe4f5e76a1",
+      "url": "https://github.com/xiaozidian/ECG_Software/actions/runs/38421426571/artifacts/11830317973",
+      "expires_at": "2026-10-27T16:20:14Z"
+    }
+  ],
+  "core_delivery_gates": {
+    "report_range": true,
+    "saved_st_note_pointer": true,
+    "qrs_checkpoint_and_no_reference_leak": true,
+    "source_stale_evidence_backup": true,
+    "original_uuid_reconciliation_all_four_parameters": true,
+    "default_windows_lease_write_denial_and_release": true,
+    "original_template_checks_passed": 18,
+    "original_day_assertions_passed": 4,
+    "source_checks_passed": 20,
+    "final_zip_crc_content_self_check_and_native_process_smoke": true
+  },
+  "regression": {
+    "baseline": {
+      "total": 2048,
+      "passed": 1960,
+      "failed": 84,
+      "skipped": 1,
+      "error": 3
+    },
+    "current": {
+      "total": 2148,
+      "passed": 2145,
+      "failed": 2,
+      "skipped": 1,
+      "error": 0
+    },
+    "comparison_passed": true,
+    "full_suite_green": false,
+    "clinical_acceptance": false,
+    "added_test_count": 100,
+    "missing_baseline_tests": [],
+    "regressions": [],
+    "unchanged_baseline_failures": [
+      "tests.test_ltafdb_validation::test_candidate_thresholds_match_unchanged_frozen_development",
+      "tests.test_ltafdb_validation::test_current_workstation_cannot_masquerade_as_frozen_development"
+    ]
+  },
+  "request_performance": {
+    "conditions": {
+      "source": "continuous 86400s M01; 200Hz; 8 int16 storage channels; 276480000 DATA bytes",
+      "waveform_window_seconds": 10,
+      "displayed_leads": 12,
+      "max_points_per_lead": 2000,
+      "measured_requests_per_mode": 3,
+      "warmups_per_mode": 2,
+      "interleaved_same_app_process_hardware_data": true,
+      "os_disk_cache_cleared": false,
+      "p95_reported": false
+    },
+    "status": "passed",
+    "failures": [],
+    "summary": {
+      "fallback": {
+        "requests": 3,
+        "wall_seconds": {
+          "median": 5.6011459999999715,
+          "minimum": 5.5786160999999765,
+          "maximum": 5.604153199999985,
+          "range": 0.025537100000008195
+        },
+        "data_hash_calls": {
+          "median": 20,
+          "minimum": 20,
+          "maximum": 20
+        },
+        "data_hash_bytes": {
+          "median": 5529600000,
+          "minimum": 5529600000,
+          "maximum": 5529600000
+        },
+        "data_hash_seconds_median": 5.273118499999953
+      },
+      "request_lease": {
+        "requests": 3,
+        "wall_seconds": {
+          "median": 0.5165166999999542,
+          "minimum": 0.5156033000000093,
+          "maximum": 0.5176232000000027,
+          "range": 0.002019899999993413
+        },
+        "data_hash_calls": {
+          "median": 1,
+          "minimum": 1,
+          "maximum": 1
+        },
+        "data_hash_bytes": {
+          "median": 276480000,
+          "minimum": 276480000,
+          "maximum": 276480000
+        },
+        "data_hash_seconds_median": 0.26249869999998054
+      },
+      "median_speedup_ratio": 10.844075322250895
+    },
+    "full_diagnostic_payload_equivalence": true,
+    "independent_twelve_lead_sample_equivalence": true,
+    "all_optimized_samples_under_one_second": true
+  },
+  "browser": {
+    "status": "passed",
+    "passed_checks": 38,
+    "check_count": 38,
+    "platform": {
+      "system": "Windows",
+      "release": "2025Server",
+      "version": "10.0.26100",
+      "machine": "AMD64",
+      "pointer_bits": 64,
+      "windows_release": "2025Server",
+      "windows_version": "10.0.26100",
+      "windows_edition": "SP0"
+    },
+    "browser": {
+      "channel": "msedge",
+      "version": "153.0.4234.48",
+      "installed_system_browser": true,
+      "bundled_browser": false,
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      }
+    },
+    "runtime": {
+      "frozen_executable": true,
+      "pe_machine": "AMD64",
+      "python_resolvable_in_runtime_path": false,
+      "python_environment_removed": true,
+      "process_images_match_frozen_exe": true
+    },
+    "performance": {
+      "clock": "time.perf_counter",
+      "unit": "seconds",
+      "repeats": 3,
+      "conditions": {
+        "browser": "installed Microsoft Edge; same viewport; same executable and M01 SHA256",
+        "process_first": "new native workspace process and empty mathematical work database per repeat; OS disk cache not cleared",
+        "warm": "same workspace process; same UI controls, endpoints and ranges after one matching sequence",
+        "sequence": [
+          "case_open",
+          "editor",
+          "stt_60s",
+          "hrv_24h"
+        ],
+        "no_algorithm_or_response_replacement": true,
+        "fault_injection_excluded_from_timings": true
+      },
+      "rounds": [
+        {
+          "repeat": 1,
+          "process_first": {
+            "manager_start": 1.881648800000221,
+            "case_open": 8.07010930000024,
+            "editor": 4.1165147000001525,
+            "stt_60s": 11.048987099999977,
+            "hrv_24h": 14.819836399999986
+          },
+          "warm": {
+            "case_open": 3.819734000000153,
+            "editor": 5.707985500000177,
+            "stt_60s": 3.2448002000000997,
+            "hrv_24h": 4.906355300000087
+          }
+        },
+        {
+          "repeat": 2,
+          "process_first": {
+            "manager_start": 1.4395145999997112,
+            "case_open": 7.804463599999963,
+            "editor": 4.124182800000199,
+            "stt_60s": 11.191122199999882,
+            "hrv_24h": 14.994410200000402
+          },
+          "warm": {
+            "case_open": 3.9520142000001215,
+            "editor": 5.763257999999951,
+            "stt_60s": 3.2525638999995863,
+            "hrv_24h": 5.034154099999796
+          }
+        },
+        {
+          "repeat": 3,
+          "process_first": {
+            "manager_start": 1.4653997999998865,
+            "case_open": 8.112955500000226,
+            "editor": 4.0943569000000934,
+            "stt_60s": 11.228712499999801,
+            "hrv_24h": 14.599128800000017
+          },
+          "warm": {
+            "case_open": 3.973623899999893,
+            "editor": 5.849775900000168,
+            "stt_60s": 3.306282900000042,
+            "hrv_24h": 4.688780599999973
+          }
+        }
+      ],
+      "summary": {
+        "process_first": {
+          "manager_start": {
+            "samples_seconds": [
+              1.881648800000221,
+              1.4395145999997112,
+              1.4653997999998865
+            ],
+            "median_seconds": 1.4653997999998865,
+            "min_seconds": 1.4395145999997112,
+            "max_seconds": 1.881648800000221
+          },
+          "case_open": {
+            "samples_seconds": [
+              8.07010930000024,
+              7.804463599999963,
+              8.112955500000226
+            ],
+            "median_seconds": 8.07010930000024,
+            "min_seconds": 7.804463599999963,
+            "max_seconds": 8.112955500000226
+          },
+          "editor": {
+            "samples_seconds": [
+              4.1165147000001525,
+              4.124182800000199,
+              4.0943569000000934
+            ],
+            "median_seconds": 4.1165147000001525,
+            "min_seconds": 4.0943569000000934,
+            "max_seconds": 4.124182800000199
+          },
+          "stt_60s": {
+            "samples_seconds": [
+              11.048987099999977,
+              11.191122199999882,
+              11.228712499999801
+            ],
+            "median_seconds": 11.191122199999882,
+            "min_seconds": 11.048987099999977,
+            "max_seconds": 11.228712499999801
+          },
+          "hrv_24h": {
+            "samples_seconds": [
+              14.819836399999986,
+              14.994410200000402,
+              14.599128800000017
+            ],
+            "median_seconds": 14.819836399999986,
+            "min_seconds": 14.599128800000017,
+            "max_seconds": 14.994410200000402
+          }
+        },
+        "warm": {
+          "case_open": {
+            "samples_seconds": [
+              3.819734000000153,
+              3.9520142000001215,
+              3.973623899999893
+            ],
+            "median_seconds": 3.9520142000001215,
+            "min_seconds": 3.819734000000153,
+            "max_seconds": 3.973623899999893
+          },
+          "editor": {
+            "samples_seconds": [
+              5.707985500000177,
+              5.763257999999951,
+              5.849775900000168
+            ],
+            "median_seconds": 5.763257999999951,
+            "min_seconds": 5.707985500000177,
+            "max_seconds": 5.849775900000168
+          },
+          "stt_60s": {
+            "samples_seconds": [
+              3.2448002000000997,
+              3.2525638999995863,
+              3.306282900000042
+            ],
+            "median_seconds": 3.2525638999995863,
+            "min_seconds": 3.2448002000000997,
+            "max_seconds": 3.306282900000042
+          },
+          "hrv_24h": {
+            "samples_seconds": [
+              4.906355300000087,
+              5.034154099999796,
+              4.688780599999973
+            ],
+            "median_seconds": 4.906355300000087,
+            "min_seconds": 4.688780599999973,
+            "max_seconds": 5.034154099999796
+          }
+        }
+      }
+    },
+    "network": {
+      "external_requests": 0,
+      "external_hosts": [],
+      "resource_failures": [],
+      "page_errors": [],
+      "intentional_transport_faults": 1,
+      "cancelled_fetches": 15,
+      "http_errors": [],
+      "verified_attachment_navigation_aborts": [
+        {
+          "path": "/feedback",
+          "type": "document",
+          "error": "net::ERR_ABORTED",
+          "download_archive_verified": true
+        }
+      ]
+    },
+    "full_input_stt_60s": {
+      "duration_s": 60,
+      "lead_count": 12,
+      "counts": {
+        "detected_count": 68,
+        "excluded_count": 1,
+        "missing_count": 0,
+        "reason_counts": {
+          "rr_outside_legacy_bounds": 1
+        },
+        "used_count": 67
+      },
+      "receipt_kind": "native-stt-range-hmac-v1"
+    },
+    "native_hrv_24h": {
+      "actual_duration_s": 86400,
+      "native_hourly_rows": 24,
+      "rendered_hourly_rows": 24,
+      "nn_count": 98463
+    }
+  },
+  "upgrade_validation": {
+    "kind": "fixture_same_schema_upgrade",
+    "from_packaging_version": "1.0.1",
+    "to_packaging_version": "1.0.2",
+    "same_native_executable_core_and_schema": true,
+    "source_sha256_unchanged": true,
+    "registered_source_not_copied": true,
+    "sqlite_online_backup_integrity_and_sha256_verified": true,
+    "report_and_annotation_preserved": true,
+    "old_wrapper_rejected_newer_workspace_before_write": true,
+    "fixture_is_user_deliverable": false,
+    "actual_1_0_0_to_1_0_1_cross_core_upgrade_verified": false
+  },
+  "limits": [
+    "Windows 10 compatibility target and actual CI operating system are reported separately.",
+    "Process-first timings do not claim a cleared OS disk cache.",
+    "ST partial-lead fault injection checks rendering only; native ST/HRV measurements use unmodified full mathematical input.",
+    "The upgrade test covers the current same schema and frozen core; it does not prove future migrations.",
+    "The CI machine can have Python and Visual Studio installed: a stripped runtime PATH and bundled DLL observations do not constitute clean Windows 10, hospital EDR or unsigned-executable acceptance.",
+    "PDF download structure is checked; Chinese glyph appearance and physical printing require visual review.",
+    "Two unchanged AF frozen-development tests lack private validation material; no diagnostic threshold change or private input upload.",
+    "The actual old native 0.12.15/package1.0.0 to native0.12.16/package1.0.1 cross-core upgrade was not exercised.",
+    "Public main/Pages and the original Mac workstation, cases and saved work are unchanged."
+  ],
+  "full_suite_green": false,
+  "clinical_acceptance": false
+}
