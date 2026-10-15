@@ -2317,11 +2317,25 @@ function renderEditOverview() {
   ctx.clearRect(0,0,w,h);ctx.fillStyle="#fff";ctx.fillRect(0,0,w,h);ctx.strokeStyle="#e4eaed";ctx.beginPath();ctx.moveTo(m.l,m.t+plotHeight+.5);ctx.lineTo(w-m.r,m.t+plotHeight+.5);ctx.stroke();data.forEach((item,index)=>{const bh=item.count/max*plotHeight;ctx.fillStyle=index%2?"#42b7b1":"#168f8b";ctx.fillRect(m.l+index*barW+1,m.t+plotHeight-bh,Math.max(1,barW-2),bh)});ctx.font=`12px ${UI_FONT}`;ctx.fillStyle="#71828c";ctx.fillText("300",m.l,h-5);ctx.textAlign="right";ctx.fillText("2000 ms",w-m.r,h-5);ctx.textAlign="left";$("#editHistogramRange").textContent="300–2000 ms";
 }
 
+function drawTemplateScatterPoints(ctx,data,descriptor,m,plotW,plotH) {
+  const bounds=data.bounds,custom=new Set(descriptor.sample_indices||[]),snap=globalThis.ECGLinkedSelection?.snapshot();
+  const filtered=snap?.scope?.caseId===state.caseId&&snap.scope.caseToken===state.caseRequestId&&snap.kind==='samples';
+  const context=globalThis.ECGTemplateLinkedView?.context(),samples=context?.snap.selectionGeneration===snap?.selectionGeneration?context.samples:snap?.samples||[],members=new Set(filtered?samples:[]);
+  ctx.save();ctx.beginPath();ctx.rect(m.l,m.t,plotW,plotH);ctx.clip();
+  for(const point of data.points||[]){
+    const x=m.l+(point.x-bounds.x_min)/Math.max(1,bounds.x_max-bounds.x_min)*plotW,y=m.t+plotH-(point.y-bounds.y_min)/Math.max(1,bounds.y_max-bounds.y_min)*plotH;
+    const inSource=descriptor.type==='source'?point.group===descriptor.group:custom.has(point.sample_index),selected=filtered&&inSource&&members.has(point.sample_index);
+    const style=globalThis.ECGTemplateLinkedMath?.scatterStyle(data.points.length,inSource,selected,filtered)||{radius:inSource?1.35:.85,alpha:inSource?.65:.18};
+    ctx.globalAlpha=style.alpha;ctx.fillStyle=inSource?descriptor.color:'#71828c';ctx.beginPath();ctx.arc(x,y,style.radius,0,Math.PI*2);ctx.fill();
+  }
+  ctx.restore();
+}
+
 function renderEditScatter() {
   const data=state.editScatterData;if(!data)return;
   const canvas=$("#editScatterCanvas"),canvasData=canvasContext(canvas,editCanvasHeight(canvas,190,88)),ctx=canvasData.ctx,width=canvasData.width,height=canvasData.height,m={l:31,r:9,t:10,b:22},plotW=width-m.l-m.r,plotH=height-m.t-m.b,bounds=data.bounds||{x_min:0,x_max:2000,y_min:0,y_max:2000},selected=editDescriptor(),selectedSet=new Set(selected.type==="custom"?selected.sample_indices:[]);
   ctx.clearRect(0,0,width,height);ctx.fillStyle="#f8fafb";ctx.fillRect(0,0,width,height);ctx.strokeStyle="#dbe5e8";[0,.25,.5,.75,1].forEach(f=>{const x=m.l+plotW*f,y=m.t+plotH*f;ctx.beginPath();ctx.moveTo(x,m.t);ctx.lineTo(x,m.t+plotH);ctx.moveTo(m.l,y);ctx.lineTo(m.l+plotW,y);ctx.stroke();});ctx.strokeStyle="#adc0c7";ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(m.l,m.t+plotH);ctx.lineTo(m.l+plotW,m.t);ctx.stroke();ctx.setLineDash([]);
-  for(const point of data.points||[]){const x=m.l+(point.x-bounds.x_min)/Math.max(1,bounds.x_max-bounds.x_min)*plotW,y=m.t+plotH-(point.y-bounds.y_min)/Math.max(1,bounds.y_max-bounds.y_min)*plotH,isSelected=selected.type==="source"?point.group===selected.group:selectedSet.has(point.sample_index);ctx.fillStyle=isSelected?selected.color:"rgba(113,130,140,.18)";const radius=isSelected?2.1:1.05;ctx.beginPath();ctx.arc(x,y,radius,0,Math.PI*2);ctx.fill();}
+  drawTemplateScatterPoints(ctx,data,selected,m,plotW,plotH);
   ctx.fillStyle="#71828c";ctx.font=`12px ${UI_FONT}`;ctx.fillText("RR(i+1)",3,10);ctx.fillText("0",m.l-10,m.t+plotH+3);ctx.textAlign="right";ctx.fillText(`${Math.round(bounds.x_min)}–${Math.round(bounds.x_max)} ms · RR(i)`,width-m.r,height-4);ctx.textAlign="left";
 }
 
@@ -2466,7 +2480,7 @@ function renderEditLibraryAnalytics() {
   const trend=$("#editLibraryTrendCanvas"),points=state.trend?.points||[];
   if(trend){const {ctx,width,height}=canvasContext(trend,editCanvasHeight(trend,54,42)),total=Math.max(1,Number(state.caseData?.technical?.duration_seconds_raw)||1),values=points.map(item=>Number(item.hr)).filter(Number.isFinite),min=Math.min(...values,40),max=Math.max(...values,120),range=Math.max(1,max-min);ctx.clearRect(0,0,width,height);ctx.strokeStyle="#dce6e9";ctx.beginPath();ctx.moveTo(0,height-8);ctx.lineTo(width,height-8);ctx.stroke();ctx.strokeStyle="#2780b8";ctx.beginPath();points.forEach((item,index)=>{const x=Number(item.time_s)/total*width,y=4+(max-Number(item.hr))/range*(height-14);index?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();}
   const scatter=$("#editLibraryScatterCanvas"),scatterData=state.editScatterData;
-  if(scatter&&scatterData){const {ctx,width,height}=canvasContext(scatter,editCanvasHeight(scatter,146,74)),m={l:20,r:6,t:6,b:16},bounds=scatterData.bounds,plotW=width-m.l-m.r,plotH=height-m.t-m.b,descriptor=editDescriptor(),custom=new Set(descriptor.sample_indices||[]);ctx.clearRect(0,0,width,height);ctx.fillStyle="#f8fafb";ctx.fillRect(0,0,width,height);ctx.strokeStyle="#dce6e9";[0,.5,1].forEach(f=>{ctx.beginPath();ctx.moveTo(m.l+plotW*f,m.t);ctx.lineTo(m.l+plotW*f,m.t+plotH);ctx.moveTo(m.l,m.t+plotH*f);ctx.lineTo(m.l+plotW,m.t+plotH*f);ctx.stroke()});for(const point of scatterData.points||[]){const x=m.l+(point.x-bounds.x_min)/Math.max(1,bounds.x_max-bounds.x_min)*plotW,y=m.t+plotH-(point.y-bounds.y_min)/Math.max(1,bounds.y_max-bounds.y_min)*plotH,active=descriptor.type==="source"?point.group===descriptor.group:custom.has(point.sample_index);ctx.fillStyle=active?descriptor.color:"rgba(113,130,140,.18)";ctx.fillRect(x,y,active?2:1,active?2:1);}}
+  if(scatter&&scatterData){const {ctx,width,height}=canvasContext(scatter,editCanvasHeight(scatter,146,74)),m={l:20,r:6,t:6,b:16},bounds=scatterData.bounds,plotW=width-m.l-m.r,plotH=height-m.t-m.b,descriptor=editDescriptor(),custom=new Set(descriptor.sample_indices||[]);ctx.clearRect(0,0,width,height);ctx.fillStyle="#f8fafb";ctx.fillRect(0,0,width,height);ctx.strokeStyle="#dce6e9";[0,.5,1].forEach(f=>{ctx.beginPath();ctx.moveTo(m.l+plotW*f,m.t);ctx.lineTo(m.l+plotW*f,m.t+plotH);ctx.moveTo(m.l,m.t+plotH*f);ctx.lineTo(m.l+plotW,m.t+plotH*f);ctx.stroke()});drawTemplateScatterPoints(ctx,scatterData,descriptor,m,plotW,plotH);}
 }
 
 function renderEditLibraryDeck() {
