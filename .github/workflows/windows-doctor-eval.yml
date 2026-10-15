@@ -8,7 +8,7 @@ on:
     inputs:
       packaging_version:
         description: "医生便携包装版本（三段数字）"
-        default: "1.0.1"
+        default: "1.0.2"
         required: true
         type: string
       source_version:
@@ -23,7 +23,7 @@ on:
         type: string
       release_notes:
         description: "本版变更说明"
-        default: "Windows x64 核心流程补验版；严格分流30分钟与24小时数学输入，原模板契约缺失时阻止交付。"
+        default: "自由套索、细圆散点与联动保护；保留Windows全天性能改动及独立医生工作区。"
         required: true
         type: string
 
@@ -42,9 +42,9 @@ jobs:
     env:
       PYTHONUTF8: "1"
       PYTHONIOENCODING: "utf-8"
-      DOCTOR_PACKAGING_VERSION: ${{ inputs.packaging_version || '1.0.1' }}
+      DOCTOR_PACKAGING_VERSION: ${{ inputs.packaging_version || '1.0.2' }}
       DOCTOR_SOURCE_VERSION: ${{ inputs.source_version || 'M01-24h-v1' }}
-      DOCTOR_RELEASE_NOTES: ${{ inputs.release_notes || 'Windows x64 核心流程补验版；严格分流30分钟与24小时数学输入，原模板契约缺失时阻止交付。' }}
+      DOCTOR_RELEASE_NOTES: ${{ inputs.release_notes || '自由套索、细圆散点与联动保护；保留Windows全天性能改动及独立医生工作区。' }}
     defaults:
       run:
         shell: pwsh
@@ -136,7 +136,7 @@ jobs:
           }
       - name: Mandatory original template linked contracts must all pass
         run: |
-          python -m pytest -q tests/test_final_template_linked_contract.py --junitxml="$env:RUNNER_TEMP\doctor-core\template-original.xml"
+          python -m pytest -q tests/test_final_template_linked_contract.py tests/test_template_lasso.py --junitxml="$env:RUNNER_TEMP\doctor-core\template-original.xml"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Doctor evaluation tests must all pass
         run: |
@@ -178,7 +178,7 @@ jobs:
             --short-data "$env:RUNNER_TEMP\doctor-regression-input" `
             --day-data "$env:RUNNER_TEMP\doctor-regression-day-input" `
             --input-receipt "$env:RUNNER_TEMP\doctor-regression\day-input-receipt.json" `
-            --expected-tests 2148 `
+            --expected-tests 2149 `
             --output "$env:RUNNER_TEMP\doctor-current.xml" `
             --receipt "$env:RUNNER_TEMP\doctor-regression\candidate-scopes.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -48,7 +48,7 @@ jobs:
       - name: Verify doctor AF segments, interval ST means and simplified report protections
         run: python -m pytest -q tests/test_stt_range.py tests/test_doctor_feedback_api.py tests/test_local_review_signed_mean.py tests/test_rhythm_range_editor.py tests/test_doctor_feedback_browser.py tests/test_report_workspace_simplified.py tests/test_report_st_note.py tests/test_report_saved_st_note_layout.py tests/test_dashboard_icons.py -p no:cacheprovider --junitxml=build/core-verification/doctor-feedback-junit.xml
       - name: Verify centered template twelve-lead navigation and asynchronous return ownership
-        run: python -m pytest -q tests/test_template_twelve_linkage.py tests/test_demo_waveform_retry.py -p no:cacheprovider --junitxml=build/core-verification/template-twelve-linkage-junit.xml
+        run: python -m pytest -q tests/test_template_lasso.py tests/test_final_template_linked_contract.py tests/test_template_twelve_linkage.py tests/test_demo_waveform_retry.py -p no:cacheprovider --junitxml=build/core-verification/template-twelve-linkage-junit.xml
       - name: Retain source identity and test evidence
         if: always()
         uses: actions/upload-artifact@v4

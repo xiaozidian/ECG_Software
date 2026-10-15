@@ -911,6 +911,9 @@ async def verify(args, receipt):
                         record(receipt, "frozen-exe-independent-workspace-repeat-" + str(iteration + 1), {"runtime_python_path_absent": True, "manager_and_child_images": "actual-doctor-exe", "full_day": True})
 
                         if iteration == 0:
+                            from verify_lasso_browser import verify_lasso
+                            lasso = await verify_lasso(page, source_root, screenshots / "mathematical-free-lasso.png")
+                            record(receipt, "native-free-lasso-complete-cohort", lasso)
                             await fault_checks(page, receipt, selector, sample)
                             annotation_id = await save_math_work(page, receipt)
                             await download_pdf(page, receipt, home)
