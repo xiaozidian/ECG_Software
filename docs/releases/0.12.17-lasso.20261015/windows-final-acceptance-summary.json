@@ -1,0 +1,127 @@
+{
+  "packaging_version": "1.0.2",
+  "source_commit": "af54df43700af53c97c72dfa0203bfe0c5acb2c8",
+  "ci_run_url": "https://github.com/xiaozidian/ECG_Software/actions/runs/38719645725",
+  "production_source_identity": {
+    "clinical_acceptance": false,
+    "production_files_verified": 112,
+    "release_id": "0.12.17-lasso.20261015+658919366e55094a",
+    "source_sha256": "658919366e55094ad4a50b5873e627c360df7a2cd73529af1f5771fd9f03f5aa"
+  },
+  "packages": [
+    {
+      "file": "CardioInsight-DoctorEval-Windows-x64-1.0.2-full.zip",
+      "bytes": 201976110,
+      "sha256": "788687f15a6adf4e991ba9bdb9bcd63362485465c56c39847268e4fb1b4ea293"
+    },
+    {
+      "file": "维护归档/原始产物/CardioInsight-DoctorEval-Windows-x64-1.0.2-software.zip",
+      "bytes": 38092826,
+      "sha256": "ef2ee59de28d982f6e651c50462dafc8963b1f4ae1a33ec6f7a3b86ad22d40c8"
+    }
+  ],
+  "regression": {
+    "total": 2149,
+    "passed": 2146,
+    "failed": 2,
+    "skipped": 1,
+    "error": 0
+  },
+  "full_suite_green": false,
+  "unchanged_baseline_failures": [
+    "tests.test_ltafdb_validation::test_candidate_thresholds_match_unchanged_frozen_development",
+    "tests.test_ltafdb_validation::test_current_workstation_cannot_masquerade_as_frozen_development"
+  ],
+  "resume_attestation": {
+    "status": "passed",
+    "kind": "unchanged-source-regression-reuse-only",
+    "prior_run": 38710973555,
+    "prior_commit": "f86d81f38ea62ef40dd6e0ab3809f7eb1098b34d",
+    "current_commit": "af54df43700af53c97c72dfa0203bfe0c5acb2c8",
+    "prior_run_conclusion": "failure",
+    "prior_failed_step": "System Edge full software interaction and retained-source update validation",
+    "prior_verified_steps": [
+      "Set up job",
+      "Checkout doctor evaluation branch",
+      "Checkout unchanged public regression baseline",
+      "Run actions/setup-python@v5",
+      "Run actions/setup-node@v4",
+      "Create clean isolated Windows build environment",
+      "Install pinned doctor build dependencies and CI-only browser test tools",
+      "Configure CI-only Node tests with installed system Edge",
+      "Verify release production source fingerprint",
+      "Generate isolated mathematical regression inputs",
+      "Compile supplemental Python and check original browser fixture syntax",
+      "Core report range, saved ST note, scope accounting and Windows checkpoint tests",
+      "Core doctor checks block delivery even if baseline already fails",
+      "Require trusted original template assets before expensive day generation",
+      "Mandatory original template linked contracts must all pass",
+      "Doctor evaluation tests must all pass",
+      "Windows source, stale-evidence and recoverable-backup protection",
+      "Original-source Windows request latency and full-output equivalence",
+      "Generate ten independent genuine day-input regression profiles",
+      "Existing complete baseline suite across strict short and day scopes",
+      "Complete candidate suite across identical strict short and day scopes",
+      "Reject new failures or lost tests relative to baseline",
+      "Every original day-input assertion must pass independently of baseline",
+      "Native directory build, generated 24h source and final ZIP smoke"
+    ],
+    "changed_paths": [
+      ".github/workflows/windows-lasso-acceptance.yml",
+      "scripts/verify_lasso_browser.py",
+      "scripts/verify_windows_lasso_resume.py"
+    ],
+    "all_other_tracked_files_byte_identical": true,
+    "evidence_artifact_id": 11962854727,
+    "evidence_sha256": "4ae31f5f53c18f619fa52e776d05e9395db3026a7c2704fdbc4c8e7507c0f826",
+    "candidate": {
+      "total": 2149,
+      "passed": 2146,
+      "failed": 2,
+      "error": 0,
+      "skipped": 1
+    },
+    "full_suite_green": false,
+    "native_build_and_entire_browser_suite_must_run_again": true,
+    "clinical_acceptance": false
+  },
+  "native_browser_checks": 39,
+  "lasso": {
+    "checks": [
+      "concave-pointer-lasso-exact-full-EBI-cohort-and-linked-panels",
+      "escape-cancels-drag-and-preserves-cohort",
+      "library-lasso-preserves-independent-clinical-targets",
+      "empty-selection-is-empty-linked-population",
+      "repeat-selection-retains-exact-membership",
+      "resized-pointer-coordinates-and-wheel-cancellation",
+      "clear-restores-full-population-without-changing-clinical-targets"
+    ],
+    "selected_full_cohort": 21609,
+    "bounding_box_cohort": 38199,
+    "oracle": "independent struct EBI reader and even-odd polygon",
+    "clinical_targets_preserved": true
+  },
+  "ci_artifacts": [
+    {
+      "id": 11965310040,
+      "name": "CardioInsight-DoctorEval-Windows-x64-1.0.2",
+      "size_in_bytes": 403958192,
+      "digest": "sha256:51e32ada42c8bd11d1d7b25e4bd34d0c4a81665c9f6821ad51130e472627525c",
+      "expires_at": "2026-10-29T10:30:28Z"
+    },
+    {
+      "id": 11964975482,
+      "name": "Windows-doctor-eval-public-validation-1.0.2",
+      "size_in_bytes": 1254506,
+      "digest": "sha256:166a668f3e30676e8e4765b334492060d8bf17c76b6ab9559e01193c921e7fda",
+      "expires_at": "2026-10-29T10:30:32Z"
+    }
+  ],
+  "limitations": [
+    "Hospital Windows 10 physical acceptance pending",
+    "Unsigned program and EDR acceptance pending",
+    "Chinese physical printing pending",
+    "Actual 1.0.1 to 1.0.2 cross-core upgrade not validated; same-core 1.0.2 to CI-only 1.0.3 fixture tested",
+    "Two historical AF frozen-development files absent; no clinical accuracy acceptance"
+  ]
+}

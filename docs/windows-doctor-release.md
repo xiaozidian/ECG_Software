@@ -1,10 +1,8 @@
 # Windows 医生离线便携版发布流程
 
-本入口直接调用主项目 app.py 和 ecg_core，不维护另一套算法。保留的首版1.0.0为候选包；本轮1.0.1已完成独立核心、整日回归与冻结程序Edge验收并构建，原生代码为0.12.16-platform-perf.20261013。目标为Windows 10 x64；医院电脑架构和实机兼容仍待确认。系统浏览器用于界面，不捆绑Python开发环境、Chrome或Electron。
+本入口直接调用主项目 app.py 和 ecg_core，不维护另一套算法。当前交付1.0.2，核心0.12.17-lasso.20261015，新增自由套索并保留Windows性能分支。目标为Windows10 x64；原生验收使用Windows Server2025系统Edge，医院实机仍待确认。实际提交、完整回归复用依据、39项成品检查及SHA256见[1.0.2同步记录](windows-lasso-sync-20261015.md)。
 
-程序、来源与工作分离：程序在解压目录，固定M01示例在Sources/M01，医生工作在%LOCALAPPDATA%/CardioInsightDoctorEval/workspaces。新体验保留旧工作；每个工作区有独立进程、端口和Cookie。反馈仅含经允许的技术字段，禁止打包来源、整个数据库、报告或自由文字。
-
-本轮实际构建源为`eeda28070fa797918016a989ca400dc030e3047f`，产物、校验值与2145通过/2项既有AF资料缺失失败/1跳过的完整结果见[最终交付记录](windows-doctor-eval-followup.md#final-101-delivery-and-measured-acceptance)。原18项模板契约、4项整日断言和38项冻结Edge流程全部通过；不宣称全量全绿或临床验收。
+程序在解压目录，固定M01示例在Sources/M01，医生工作在%LOCALAPPDATA%/CardioInsightDoctorEval/workspaces。新体验保留旧工作；每个工作区有独立进程、端口和Cookie。旧1.0.1交付与证据见[历史记录](windows-doctor-eval-followup.md#final-101-delivery-and-measured-acceptance)。
 
 ## 可重复构建
 
@@ -13,7 +11,7 @@
 ```powershell
 python -m pip install -r requirements-doctor-build.txt
 $releaseCommit = git rev-parse HEAD
-python scripts/windows_doctor_build.py --output .\build\windows-doctor-1.0.1 --source-commit $releaseCommit --version 1.0.1 --verification-upgrade-version auto
+python scripts/windows_doctor_build.py --output .\build\windows-doctor-1.0.2 --source-commit $releaseCommit --version 1.0.2 --verification-upgrade-version auto
 ```
 
 输出必须为新目录。在项目内使用build、dist或releases子目录，保留旧代码与产物。后续发布传入新包装版本及--release-notes；用--source-root指定已验证的M01来源即可复用全天数据，禁止从任意病例目录递归拼包。来源版本目前仅支持M01-24h-v1；改变来源必须显式增版并更新兼容与验证要求。
@@ -22,9 +20,9 @@ python scripts/windows_doctor_build.py --output .\build\windows-doctor-1.0.1 --s
 
 ## 医生启动与软件更新
 
-首次使用完整的1.0.1-full ZIP，解压到普通用户的新目录，保留整个_internal和Sources/M01。双击CardioInsightDoctorEval.exe，或“启动医生评估.cmd”，使用系统浏览器打开本机页面。无需医生安装Python、Chrome或Electron。包内“使用说明.txt”和“版本说明.txt”为中文；“检查医生评估.cmd”查看状态，“停止医生评估.cmd”停止本评估服务。“新建评估工作区.cmd”保留旧工作并创建独立体验。
+首次使用完整的1.0.2-full ZIP，解压到普通用户的新目录，保留整个_internal和Sources/M01。双击CardioInsightDoctorEval.exe，或“启动医生评估.cmd”，使用系统浏览器打开本机页面。无需医生安装Python、Chrome或Electron。包内“使用说明.txt”和“版本说明.txt”为中文；“检查医生评估.cmd”查看状态，“停止医生评估.cmd”停止本评估服务。“新建评估工作区.cmd”保留旧工作并创建独立体验。
 
-更新前先保存或取消当前网页修改，再停止评估服务。把1.0.1-software ZIP解压到另一个新目录，保留旧程序和已登记来源、用户工作区；新程序复用原Sources/M01，无需重新复制全天数据。若要求选择来源，明确选择原数学源目录。按提示核验升级备份后使用，不能用旧程序写入已升级的工作库。本轮实测升级仅为同核同结构1.0.1→1.0.2夹具；已有1.0.0跨核升级仍需在独立副本验证，不据此切换现用工作站。
+更新前先保存或取消当前网页修改，再停止评估服务。把1.0.2-software ZIP解压到另一个新目录，保留旧程序和已登记来源、用户工作区；新程序复用原Sources/M01，无需重新复制全天数据。若要求选择来源，明确选择原数学源目录。按提示核验升级备份后使用，不能用旧程序写入已升级的工作库。本轮实测升级仅为同核同结构1.0.2→1.0.3夹具；已有1.0.1跨核升级仍需在独立副本验证，不据此切换现用工作站。
 
 ## 产物与升级
 
