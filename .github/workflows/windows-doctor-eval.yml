@@ -1,0 +1,249 @@
+name: Windows doctor evaluation portable x64
+
+on:
+  push:
+    branches:
+      - "codex/windows-doctor-eval-x64-*"
+  workflow_dispatch:
+    inputs:
+      packaging_version:
+        description: "医生便携包装版本（三段数字）"
+        default: "1.0.2"
+        required: true
+        type: string
+      source_version:
+        description: "独立合成来源版本"
+        default: "M01-24h-v1"
+        required: true
+        type: string
+      regression_baseline:
+        description: "已验收回归基线提交"
+        default: "0bd6e7e7998442bd4072eed15dfef196a7d01357"
+        required: true
+        type: string
+      release_notes:
+        description: "本版变更说明"
+        default: "自由套索、细圆散点与联动保护；保留Windows全天性能改动及独立医生工作区。"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-doctor-eval-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Public Windows CI x64 (Windows 10 physical validation pending)
+    runs-on: windows-latest
+    timeout-minutes: 120
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: "utf-8"
+      DOCTOR_PACKAGING_VERSION: ${{ inputs.packaging_version || '1.0.2' }}
+      DOCTOR_SOURCE_VERSION: ${{ inputs.source_version || 'M01-24h-v1' }}
+      DOCTOR_RELEASE_NOTES: ${{ inputs.release_notes || '自由套索、细圆散点与联动保护；保留Windows全天性能改动及独立医生工作区。' }}
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: project
+    steps:
+      - name: Checkout doctor evaluation branch
+        uses: actions/checkout@v4
+        with:
+          path: project
+      - name: Checkout unchanged public regression baseline
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.regression_baseline || '0bd6e7e7998442bd4072eed15dfef196a7d01357' }}
+          path: baseline
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12.10"
+          architecture: x64
+          cache: pip
+          cache-dependency-path: project/requirements-doctor-build.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Create clean isolated Windows build environment
+        run: |
+          python -m venv "$env:RUNNER_TEMP\doctor-build-env"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "$env:RUNNER_TEMP\doctor-build-env\Scripts" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Install pinned doctor build dependencies and CI-only browser test tools
+        run: |
+          python -m pip install -r requirements-doctor-build.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -c "import json,subprocess,sys; print('DOCTOR_BUILD_FREEZE_JSON='+json.dumps(subprocess.check_output([sys.executable,'-m','pip','freeze','--all'],text=True).splitlines()))"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Configure CI-only Node tests with installed system Edge
+        run: |
+          $jsTools = "$env:RUNNER_TEMP\doctor-node-browser"
+          New-Item -ItemType Directory -Path $jsTools -Force | Out-Null
+          npm install --prefix "$jsTools" --no-save --ignore-scripts --no-audit --no-fund playwright-core@1.63.0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $edgeCandidates = @("$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe", "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe")
+          $edgePath = @($edgeCandidates | Where-Object { Test-Path $_ })[0]
+          if (-not $edgePath) { throw "Installed system Microsoft Edge is unavailable." }
+          "ECG_PLAYWRIGHT_CORE=$jsTools\node_modules\playwright-core" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "ECG_CHROME=$edgePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "ECG_CHROME_PATH=$edgePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Verify release production source fingerprint
+        run: python scripts/verify_public_release.py
+      - name: Generate isolated mathematical regression inputs
+        run: |
+          $regressionInput = "$env:RUNNER_TEMP\doctor-regression-input"
+          python ..\baseline\scripts\generate_synthetic_demo.py `
+            --output "$regressionInput" --cases 10 --duration-minutes 30 --seed 20260812
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "ECG_DATA_ROOT=$regressionInput" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "ECG_ALLOW_PHI=0" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "ECG_APP_DATA_ROOT=$env:RUNNER_TEMP\doctor-current-work" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Compile supplemental Python and check original browser fixture syntax
+        run: |
+          python -m py_compile scripts/run_doctor_scoped_regression.py scripts/generate_doctor_regression_day_inputs.py scripts/generate_synthetic_demo.py scripts/verify_windows_request_source_perf.py tests/test_windows_request_source_lease.py tests/test_synthetic_hrv_reference.py app.py ecg_core/source_identity.py tests/test_doctor_scoped_regression.py tests/test_qrs_recovery.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --check tests/browser_report_saved_st_note_layout.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --check tests/browser_hospital_report_interactions.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Core report range, saved ST note, scope accounting and Windows checkpoint tests
+        id: core_doctor
+        continue-on-error: true
+        run: |
+          New-Item -ItemType Directory -Path "$env:RUNNER_TEMP\doctor-core" -Force | Out-Null
+          $env:ECG_REPORT_ALIGNMENT_EVIDENCE = "$env:RUNNER_TEMP\doctor-core\report-range"
+          $env:ECG_REPORT_ST_NOTE_LAYOUT_EVIDENCE = "$env:RUNNER_TEMP\doctor-core\saved-st-note"
+          python -m pytest -q tests/test_hospital_report_interactions.py tests/test_report_saved_st_note_layout.py tests/test_qrs_recovery.py tests/test_doctor_scoped_regression.py tests/test_synthetic_hrv_reference.py tests/test_windows_request_source_lease.py tests/test_doctor_feedback_api.py::test_mean_uuid_lock_reconciliation_rechecks_current_evidence tests/test_doctor_feedback_api.py::test_windows_default_source_lease_blocks_uuid_reconciliation_source_write --junitxml="$env:RUNNER_TEMP\doctor-core\core.xml"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Core doctor checks block delivery even if baseline already fails
+        env:
+          CORE_DOCTOR_OUTCOME: ${{ steps.core_doctor.outcome }}
+        run: |
+          if ($env:CORE_DOCTOR_OUTCOME -ne "success") { throw "Core doctor range/ST/checkpoint tests failed; baseline classification cannot authorize delivery." }
+      - name: Require trusted original template assets before expensive day generation
+        run: |
+          $contracts = @("tests/final_template_linked_math.cjs", "tests/final_template_linked_adapter.cjs", "tests/final_template_linked_morphadapter.cjs")
+          foreach ($contract in $contracts) {
+            if (-not (Test-Path -LiteralPath $contract -PathType Leaf)) {
+              throw "Missing original template contract $contract. Restore the exact trusted original; substitute scripts are not accepted."
+            }
+          }
+      - name: Mandatory original template linked contracts must all pass
+        run: |
+          python -m pytest -q tests/test_final_template_linked_contract.py tests/test_template_lasso.py --junitxml="$env:RUNNER_TEMP\doctor-core\template-original.xml"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Doctor evaluation tests must all pass
+        run: |
+          $doctorTests = @("tests/test_doctor_24h.py", "tests/test_doctor_regression.py", "tests/test_doctor_scoped_regression.py", "tests/test_synthetic_hrv_reference.py", "tests/test_windows_request_source_lease.py", "tests/test_windows_doctor_build.py", "tests/test_windows_doctor_eval.py", "tests/test_windows_source_identity.py")
+          if ($doctorTests.Count -eq 0) { throw "Doctor evaluation tests are absent." }
+          python -m pytest -q @doctorTests
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Windows source, stale-evidence and recoverable-backup protection
+        run: python -m pytest -q tests/test_source_integrity.py tests/test_analysis_provenance.py tests/test_runtime_metadata.py tests/test_runtime_guard.py tests/test_workspace_backup.py
+      - name: Original-source Windows request latency and full-output equivalence
+        run: |
+          python scripts/verify_windows_request_source_perf.py --output "$env:RUNNER_TEMP\doctor-core\windows-request-source-perf.json" --rounds 3
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Generate ten independent genuine day-input regression profiles
+        run: |
+          python scripts/generate_doctor_regression_day_inputs.py `
+            --generator "scripts\generate_synthetic_demo.py" `
+            --baseline-generator "..\baseline\scripts\generate_synthetic_demo.py" `
+            --short-data "$env:RUNNER_TEMP\doctor-regression-input" `
+            --output "$env:RUNNER_TEMP\doctor-regression-day-input" `
+            --receipt "$env:RUNNER_TEMP\doctor-regression\day-input-receipt.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Existing complete baseline suite across strict short and day scopes
+        run: |
+          $env:ECG_APP_DATA_ROOT = "$env:RUNNER_TEMP\doctor-baseline-work"
+          python scripts/run_doctor_scoped_regression.py `
+            --checkout "..\baseline" `
+            --short-data "$env:RUNNER_TEMP\doctor-regression-input" `
+            --day-data "$env:RUNNER_TEMP\doctor-regression-day-input" `
+            --input-receipt "$env:RUNNER_TEMP\doctor-regression\day-input-receipt.json" `
+            --expected-tests 2048 `
+            --output "$env:RUNNER_TEMP\doctor-baseline.xml" `
+            --receipt "$env:RUNNER_TEMP\doctor-regression\baseline-scopes.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Complete candidate suite across identical strict short and day scopes
+        run: |
+          python scripts/run_doctor_scoped_regression.py `
+            --checkout "." `
+            --short-data "$env:RUNNER_TEMP\doctor-regression-input" `
+            --day-data "$env:RUNNER_TEMP\doctor-regression-day-input" `
+            --input-receipt "$env:RUNNER_TEMP\doctor-regression\day-input-receipt.json" `
+            --expected-tests 2149 `
+            --output "$env:RUNNER_TEMP\doctor-current.xml" `
+            --receipt "$env:RUNNER_TEMP\doctor-regression\candidate-scopes.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Reject new failures or lost tests relative to baseline
+        run: |
+          New-Item -ItemType Directory -Path "$env:RUNNER_TEMP\doctor-regression" -Force | Out-Null
+          python scripts/compare_doctor_regression.py `
+            --baseline "$env:RUNNER_TEMP\doctor-baseline.xml" `
+            --current "$env:RUNNER_TEMP\doctor-current.xml" `
+            --baseline-root "..\baseline" --current-root "." `
+            --output "$env:RUNNER_TEMP\doctor-regression\regression-comparison.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Every original day-input assertion must pass independently of baseline
+        run: |
+          $scopes = Get-Content "$env:RUNNER_TEMP\doctor-regression\candidate-scopes.json" -Raw | ConvertFrom-Json
+          if ($scopes.day.total -ne 4 -or $scopes.day.passed -ne 4 -or $scopes.day.failed -ne 0 -or $scopes.day.error -ne 0 -or $scopes.day.skipped -ne 0) { throw "Original day-input assertions did not all pass." }
+      - name: Native directory build, generated 24h source and final ZIP smoke
+        run: |
+          python scripts/windows_doctor_build.py `
+            --output "$env:RUNNER_TEMP\doctor-eval" `
+            --source-commit "${{ github.sha }}" `
+            --version "$env:DOCTOR_PACKAGING_VERSION" `
+            --source-version "$env:DOCTOR_SOURCE_VERSION" `
+            --release-notes "$env:DOCTOR_RELEASE_NOTES" `
+            --verification-upgrade-version "auto" `
+            --ci-run-url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: System Edge full software interaction and retained-source update validation
+        run: |
+          $buildReport = Get-Content "$env:RUNNER_TEMP\doctor-eval\build-report.json" -Raw | ConvertFrom-Json
+          $upgradeArchive = $buildReport.verification_upgrade_fixture.archive
+          python scripts/verify_windows_doctor_browser.py `
+            --package-root "$env:RUNNER_TEMP\doctor-eval\verify-package\CardioInsight-DoctorEval-Windows-x64" `
+            --software-archive "$env:RUNNER_TEMP\doctor-eval\$upgradeArchive" `
+            --output "$env:RUNNER_TEMP\doctor-eval\evidence\browser-validation.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload verified portable install, software update and reusable data pack
+        uses: actions/upload-artifact@v4
+        with:
+          name: CardioInsight-DoctorEval-Windows-x64-${{ env.DOCTOR_PACKAGING_VERSION }}
+          path: |
+            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-${{ env.DOCTOR_PACKAGING_VERSION }}-full.zip
+            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-${{ env.DOCTOR_PACKAGING_VERSION }}-full.zip.sha256
+            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-${{ env.DOCTOR_PACKAGING_VERSION }}-software.zip
+            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-${{ env.DOCTOR_PACKAGING_VERSION }}-software.zip.sha256
+            ${{ runner.temp }}/doctor-eval/CardioInsight-Synthetic-${{ env.DOCTOR_SOURCE_VERSION }}.zip
+            ${{ runner.temp }}/doctor-eval/CardioInsight-Synthetic-${{ env.DOCTOR_SOURCE_VERSION }}.zip.sha256
+            ${{ runner.temp }}/doctor-eval/CardioInsight-Synthetic-${{ env.DOCTOR_SOURCE_VERSION }}.zip.manifest.json
+            ${{ runner.temp }}/doctor-eval/build-report.json
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+      - name: Upload public mathematical validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-doctor-eval-public-validation-${{ env.DOCTOR_PACKAGING_VERSION }}
+          path: |
+            ${{ runner.temp }}/doctor-regression/*.json
+            ${{ runner.temp }}/doctor-core/**/*.json
+            ${{ runner.temp }}/doctor-core/**/*.png
+            ${{ runner.temp }}/doctor-core/*.xml
+            ${{ runner.temp }}/doctor-baseline*.xml
+            ${{ runner.temp }}/doctor-current*.xml
+            ${{ runner.temp }}/doctor-eval/evidence/*.json
+            ${{ runner.temp }}/doctor-eval/evidence/browser-screenshots/*.png
+          if-no-files-found: ignore
+          retention-days: 14

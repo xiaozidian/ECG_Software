@@ -239,7 +239,14 @@ def _statistics_for(beats: tuple[Beat, ...], total_seconds: int) -> dict[str, fl
     valid = [beat for beat in beats if beat.group != 34]
     rr_values = [beat.rr_ms for beat in valid if beat.rr_ms > 0]
     heart_rates = [60000 / rr for rr in rr_values]
-    nn = [beat.rr_ms for beat in beats if beat.group == 1 and 300 <= beat.rr_ms <= 2000]
+    # Source HRV is defined on adjacent N-N intervals, including its bounds.
+    # Only fictional LPS reference statistics change; beat labels/times and
+    # DATA/EBI generation remain identical.
+    nn = [
+        current.rr_ms
+        for previous, current in zip(beats, beats[1:])
+        if previous.group == current.group == 1 and 300 <= current.rr_ms <= 2000
+    ]
     nn_diffs = [nn[index] - nn[index - 1] for index in range(1, len(nn))]
     return {
         "total_beats": len(valid),

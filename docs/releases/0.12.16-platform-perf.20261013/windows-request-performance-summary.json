@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "kind": "windows_request_source_performance_console_summary",
+  "status": "performance_gate_passed_full_regression_rejected_fixture",
+  "native_version": "0.12.16-platform-perf.20261013",
+  "native_commit": "297a52f36c3dc2897af6c92eee1063185b8fb80b",
+  "production_source_sha256": "70192814337757ba9d60bc1289f300a8a6da620966e8b0be51072438d9fc9e39",
+  "run_id": 38409671975,
+  "job_id": 115338386900,
+  "run_url": "https://github.com/xiaozidian/ECG_Software/actions/runs/38409671975",
+  "original_full_receipt": {
+    "artifact_id": 11823553772,
+    "sha256": "1e004ba7adf90028dda5ee7dcbb93c7094c90cc3eb306ea70f0999ac7ba45581",
+    "expires_at": "2026-10-27T14:49:03Z"
+  },
+  "method": {
+    "source": "one freshly generated continuous mathematical M01",
+    "duration_s": 86400,
+    "sampling_rate_hz": 200,
+    "stored_channels": 8,
+    "raw_bytes": 276480000,
+    "start_s": 0,
+    "window_s": 10,
+    "displayed_leads": 12,
+    "max_points_per_lead": 2000,
+    "filter": "raw",
+    "analysis": "edited",
+    "same_app_and_source": true,
+    "interleaved": true,
+    "warmups_per_mode": 2,
+    "measured_requests_per_mode": 3,
+    "os_disk_cache_cleared": false,
+    "metadata_catalogue_lookup_isolated": true,
+    "p95_reported": false
+  },
+  "summary": {
+    "fallback": {
+      "requests": 3,
+      "wall_seconds": {
+        "median": 5.68332190000001,
+        "minimum": 5.646244299999978,
+        "maximum": 5.731573099999991,
+        "range": 0.08532880000001342
+      },
+      "data_hash_calls": {
+        "median": 20,
+        "minimum": 20,
+        "maximum": 20
+      },
+      "data_hash_bytes": {
+        "median": 5529600000,
+        "minimum": 5529600000,
+        "maximum": 5529600000
+      },
+      "data_hash_seconds_median": 5.35833300000013
+    },
+    "request_lease": {
+      "requests": 3,
+      "wall_seconds": {
+        "median": 0.5253432000000089,
+        "minimum": 0.524995400000023,
+        "maximum": 0.5258691000000226,
+        "range": 0.0008736999999996442
+      },
+      "data_hash_calls": {
+        "median": 1,
+        "minimum": 1,
+        "maximum": 1
+      },
+      "data_hash_bytes": {
+        "median": 276480000,
+        "minimum": 276480000,
+        "maximum": 276480000
+      },
+      "data_hash_seconds_median": 0.2676044000000388
+    },
+    "median_speedup_ratio": 10.818302968421241
+  },
+  "original_assertions": {
+    "each_optimized_request_under_1_second": true,
+    "optimized_DATA_hash_calls_exactly_1": true,
+    "all_12_lead_samples_independently_equal": true,
+    "diagnostic_payload_analysis_basis_and_revision_equal": true,
+    "source_handles_released": true,
+    "temporary_source_and_workspace_removed": true
+  },
+  "full_regression": {
+    "baseline": {
+      "total": 2048,
+      "passed": 1959,
+      "failed": 85,
+      "skipped": 1,
+      "error": 3
+    },
+    "candidate": {
+      "total": 2147,
+      "passed": 2140,
+      "failed": 3,
+      "skipped": 1,
+      "error": 3
+    },
+    "comparison_passed": false,
+    "regressions": [
+      {
+        "node": "tests.test_doctor_feedback_api::test_mean_uuid_lock_reconciliation_rechecks_current_evidence[data]",
+        "reason": "baseline failure changed"
+      }
+    ],
+    "day_original_nodes_passed": 4,
+    "day_original_nodes_total": 4
+  },
+  "real_cases_read": false,
+  "clinical_acceptance": false,
+  "verified_1_0_1_software_built": false
+}

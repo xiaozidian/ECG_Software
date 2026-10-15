@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-MANIFEST = ROOT / 'docs/releases/0.12.14-template-linkage.20261012/source-manifest.json'
+MANIFEST = ROOT / 'docs/releases/0.12.17-lasso.20261015/source-manifest.json'
 
 
 def digest(path: Path) -> str:
@@ -68,7 +68,7 @@ def test_static_demo_builder(tmp_path: Path) -> None:
     assert all(0 <= b['sample_index'] < 600 * 200 for b in case['beats'])
     html = (output / 'index.html').read_text(encoding='utf-8')
     assert 'data-demo-readonly="true"' in html and 'data-allow-phi="false"' in html
-    assert re.search(r'v0\.12\.14\s+数学Demo', html), 'the visible short version must identify this software version'
+    assert re.search(r"v" + re.escape(source["app_version"].split("-", 1)[0]) + r"\s+数学Demo", html), 'the visible short version must identify this software version'
     assert '纯数学合成' in html and '修改仅存本浏览器' in html and '不构成疾病金标准' in html
     assert '{{' not in html and '{%' not in html
     assert html.index('mathematical-4314/case-data.js') < html.index('js/demo-api.js') < html.index('js/app.js')
