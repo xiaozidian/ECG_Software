@@ -64,7 +64,23 @@ async def verify_lasso(page, source_root, screenshot):
             clinical:[...state.editSelectedSamples],linked:ECGTemplateLinkedView.context()?.samples,
             density:morphologyWorkbench.privateSnapshot()?.linked,stats:ECGTemplateLinkedView.stats()})""")
 
+    async def settled(canvas):
+        # Returning from HRV starts loadEdit but retains the previous scatter
+        # object until all current workspace reads finish. Wait for its cleared
+        # waveform to become current before a gesture can own that workspace.
+        await page.wait_for_function("""() => state.currentPage==='edit'
+            && state.editWaveform?.leads && state.editReadIdentity?.analysis_basis
+            && Math.abs(state.editWaveform.start_s-state.editStart)<0.006
+            && Math.abs(state.editWaveform.duration_s-state.editDuration)<0.006
+            && ECGTemplateLinkedView.context() && state.editScatterData?.points?.length
+            && morphologyWorkbench.privateSnapshot()?.ready
+            && morphologyWorkbench.privateSnapshot()?.linked?.phase!=='loading'
+            && document.querySelector('#editTemplateGallery .occurrence-wave svg')""")
+        await page.locator('#'+canvas).scroll_into_view_if_needed()
+        await frame()
+
     async def draw(polygon, canvas='editScatterCanvas', release=True):
+        await settled(canvas)
         points = await page.evaluate("""({polygon,canvas}) => {
             const c=document.getElementById(canvas),r=c.getBoundingClientRect(),b=state.editScatterData.bounds,
                 lib=canvas.includes('Library'),left=lib?20:31,top=lib?6:10,
@@ -106,17 +122,27 @@ async def verify_lasso(page, source_root, screenshot):
     await page.mouse.up()
     await frame()
     assert (await state())['selection']['samples'] == expected
+    assert (await state())['clinical'] == clinical
     checks.append('escape-cancels-drag-and-preserves-cohort')
 
     await page.locator('#editLibraryMode').click()
     await frame()
     assert (await state())['selection']['samples'] == expected
+    # The existing desktop workspace deliberately keeps separate clinical
+    # selections per mode. Make an explicit target in the library, then test
+    # lasso invariance there and restoration of the cluster target on return.
+    await settled('editLibraryScatterCanvas')
+    await page.locator('#editTemplateGallery .occurrence-open').first.click()
+    await settled('editLibraryScatterCanvas')
+    library_clinical = (await state())['clinical']
+    assert library_clinical, 'Exercise a nonempty clinical target in both views'
     library_request, library = await select(shape, 'editLibraryScatterCanvas')
     assert library['selection']['samples'] == oracle(source_root, library_request)[0]
-    assert library['clinical'] == clinical
+    assert library['clinical'] == library_clinical
     checks.append('library-lasso-preserves-independent-clinical-targets')
     await page.locator('#editClusterMode').click()
-    await frame()
+    await settled('editScatterCanvas')
+    assert (await state())['clinical'] == clinical
 
     _, empty = await select([[100,1500],[300,1500],[300,1700],[100,1700],[100,1500]])
     assert empty['selection']['samples'] == [] and empty['linked'] == []
