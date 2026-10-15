@@ -5,3 +5,5 @@
 生产身份见 [source-manifest.json](source-manifest.json)，共112文件。未修改临床算法、阈值或源波形。公共网页仅构建数学合成输入，既有浏览器工作存储命名空间保持不变。
 
 源码与已验收本机0.12.14-lasso版本的112文件逐字节一致。合并后本机专项检查11项通过，含原模板契约、24项真实浏览器12导联检查的测试入口、散点与数学Demo构建。线上最终身份以部署后来源清单及实际浏览器验证为准。
+
+已发布至 [Cloudflare Demo](https://ecg-software.pages.dev/) 和 [GitHub Pages](https://xiaozidian.github.io/ECG_Software/)，构建提交 `04f8d69ec2eecfaa6f6ea7d7b3548fa04bfa4feb`。两站各76个可访问文件正文哈希与本地构建一致，Chrome155、DPR2下各完成6组实际指针检查：套索联动密度/分布、所选搏12导联与返回、Escape取消、模板库圈选、清空及资源同源检查；无页面错误或外部请求。线上本次圈选547搏，临床改型勾选保持为空。所有网页证据仅使用数学合成病例。

@@ -456,5 +456,5 @@
   },
   "base_release_id": "0.12.14-template-linkage.20261012+359938bacc872031",
   "base_source_sha256": "359938bacc872031b3ac74433cff005587989ce805f1bda65afbab732a6997eb",
-  "publicly_published": false
+  "publicly_published": true
 }

@@ -16,7 +16,7 @@
 
 ## 数学 Demo
 
-[GitHub Pages](https://xiaozidian.github.io/ECG_Software/)由`.github/workflows/pages.yml`构建发布。载荷只由数学函数、固定种子及明确人工标签生成：600秒、200Hz、8存储通道。构建不读取本机病例、工作库、来源报告、医院素材或旧演示载荷。
+[Cloudflare Demo](https://ecg-software.pages.dev/)和[GitHub Pages](https://xiaozidian.github.io/ECG_Software/)提供同一数学构建；GitHub Pages由`.github/workflows/pages.yml`构建发布。载荷只由数学函数、固定种子及明确人工标签生成：600秒、200Hz、8存储通道。构建不读取本机病例、工作库、来源报告、医院素材或旧演示载荷。
 
 Demo适配器仅在浏览器自己的版本命名空间保存数学操作；ST均值从完整数学原始输入计算。浏览器数学摘要与原生HMAC凭据明确区分。Demo不提供真实病例保存、Python诊断后端或原生工作库恢复。浏览器打印与本机后端PDF是不同实现，分别验收。
 
