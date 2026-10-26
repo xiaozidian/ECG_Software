@@ -2,7 +2,7 @@
 /* Hospital overview: a single time cursor, full-cohort plots and reversible review. */
 const overviewWorkbench=(()=>{
   const E=ECGOverviewEngine,qs=s=>document.querySelector(s),esc=escapeHtml;
-  const ui={id:null,revision:null,rows:[],rhythm:null,range:null,hour:0,af:false,episode:null,ratio:false,log:false,hist:null,bin:null,mode:'rr',bound:2000,size:1.4,guides:true,selectionMode:'box',scatter:[],polygon:[],contextTime:0,ruler:null,rulerPoints:[],showEvents:true,loadToken:0,densityToken:0,densityKey:null,density:null};
+  const ui={id:null,revision:null,rows:[],rhythm:null,range:null,hour:0,af:false,episode:null,ratio:false,log:false,hist:null,bin:null,mode:'rr',bound:null,size:1.4,guides:true,selectionMode:'box',scatter:[],polygon:[],contextTime:0,ruler:null,rulerPoints:[],showEvents:true,loadToken:0,densityToken:0,densityKey:null,density:null};
   const geometries=new WeakMap(),run=fn=>Promise.resolve().then(fn).catch(handleError),copy=x=>JSON.parse(JSON.stringify(x));
   let coverage=null,coveragePage=0,coverageBusy=false,coverageMessage='',coverageRun=0,coverageFocus=-1,overviewReady=false;
   let episodeFilter='all',episodePage=0,episodeNavigation=0,episodeEditor=null;
@@ -29,15 +29,15 @@ const overviewWorkbench=(()=>{
   function mount(){
     const page=qs('#page-review'),grid=page.querySelector('.analysis-grid');if(!grid)return;
     page.classList.add('overview-workbench');
-    const tools=document.createElement('div');tools.className='ov-commandbar';tools.innerHTML=`<div><strong>全程总览</strong><output id="ovStatus" aria-live="polite">正在读取逐搏数据</output></div><div>${button('房颤 / 房扑分析','af-open','class="button secondary"')}${button('跳转时间','jump')}${button('清除选区','clear-range')}<output id="ovRange"></output></div>`;grid.before(tools);
+    const tools=document.createElement('div');tools.className='ov-commandbar';tools.innerHTML=`<div><strong>全程总览</strong><output id="ovStatus" aria-live="polite">正在读取逐搏数据</output></div><div>${button('房颤 / 房扑分析','af-open','class="button secondary"')}${button('全记录留图','full-retain')}${button('RR 候选池','rr-pool')}${button('跳转时间','jump')}${button('清除选区','clear-range')}<output id="ovRange"></output></div>`;grid.before(tools);
     const settings=document.createElement('details');settings.className='ov-settings';settings.innerHTML='<summary>病例信息 / 波形设置</summary><div></div>';settings.lastElementChild.append(qs('#caseHero'),page.querySelector('.review-toolbar'));tools.firstElementChild.append(settings);
     const histogram=document.createElement('section');histogram.className='ov-histogram';histogram.innerHTML=`<header><div role="group" aria-label="直方图类型">${button('全程 RR 直方图','hist-rr','aria-pressed="true"')}${button('全程 R/R 直方图','hist-ratio','aria-pressed="false"')}</div><label><input id="ovLog" type="checkbox">优化显示（对数）模式</label><output id="ovHistInfo">横轴 RR（ms）· 纵轴心搏数</output></header><canvas id="ovHistogram" height="104" tabindex="0" aria-label="全程 RR 直方图，点击柱形筛选心搏；左右键切换柱形"></canvas>`;grid.before(histogram);
     const trends=document.createElement('div');trends.className='ov-trends';trends.innerHTML=lane('ovFullHR','全程心率趋势图','hr')+lane('ovHourHR','小时心率趋势图','hr',true)+lane('ovFullRR','全程 RR 散点图','rr')+lane('ovHourRR','小时 RR 散点图','rr',true);
     const main=grid.querySelector('.analysis-main');main.prepend(trends);main.querySelector('.trend-strip-card').classList.add('ov-legacy-trend');
     const stats=document.createElement('section');stats.className='ov-statistics';stats.innerHTML='<h2>结论统计 · 全程参考</h2><dl id="ovStatistics"></dl><details><summary>查看统计口径与限制</summary><p>全程诊断统计保留原口径，不随浏览选集改变。源报告单独保留；当前统计与报告按同一修订重算。长 RR 为候选，不等同确诊停搏。</p><p id="ovStatisticsMethod"></p></details>';grid.querySelector('.scatter-review-card').after(stats);
-    const scatterHead=document.createElement('div');scatterHead.className='ov-scatter-options';scatterHead.innerHTML=`<label>范围<select id="ovScatterRange"><option value="2000">0–2000 ms</option><option value="3000">0–3000 ms</option><option value="5000">0–5000 ms</option></select></label>${button('散点操作','menu-scatter','data-canvas="scatterCanvas" aria-label="Lorenz 散点图操作"')}<output id="ovScatterCount"></output>`;qs('.scatter-plot-pane').prepend(scatterHead);
+    const scatterHead=document.createElement('div');scatterHead.className='ov-scatter-options';scatterHead.innerHTML=`<label>范围<select id="ovScatterRange"><option value="auto">自动全量</option><option value="2000">0–2000 ms</option><option value="3000">0–3000 ms</option><option value="5000">0–5000 ms</option></select></label>${button('散点操作','menu-scatter','data-canvas="scatterCanvas" aria-label="Lorenz 散点图操作"')}<output id="ovScatterCount"></output>`;qs('.scatter-plot-pane .scatter-canvas-wrap').after(scatterHead);
     const scatterTools=document.createElement('div');scatterTools.className='ov-scatter-tools';scatterTools.innerHTML=`<div role="group" aria-label="散点选择方式">${button('点选','selection:point','aria-pressed="false"')}${button('框选','selection:box','aria-pressed="true"')}${button('圈选','selection:lasso','aria-pressed="false"')}</div>${button('取消','cancel-gesture','disabled aria-label="取消本次拖动" aria-keyshortcuts="Escape"')}<output id="ovGestureStatus" role="status" aria-live="polite"></output>`;scatterHead.after(scatterTools);
-    const modePicker=document.createElement('label');modePicker.className='ov-scatter-mode-picker';modePicker.innerHTML=`类型<select id="ovScatterMode" aria-label="散点图类型">${[...qs('.scatter-mode-grid').querySelectorAll('[data-scatter-mode]')].map(b=>`<option value="${esc(b.dataset.scatterMode)}">${esc(b.textContent)}</option>`).join('')}</select>`;qs('.scatter-mode-grid').before(modePicker);modePicker.querySelector('select').onchange=e=>{const b=[...qs('.scatter-mode-grid').querySelectorAll('[data-scatter-mode]')].find(b=>b.dataset.scatterMode===e.target.value);if(b)b.click();};
+    const modePicker=document.createElement('label');modePicker.className='ov-scatter-mode-picker';modePicker.title='默认全记录、所有有效心搏类型；伪差不作为有效 RR 配对';modePicker.innerHTML=`类型<select id="ovScatterMode" aria-label="散点图类型">${[...qs('.scatter-mode-grid').querySelectorAll('[data-scatter-mode]')].map(b=>`<option value="${esc(b.dataset.scatterMode)}">${esc(b.textContent)}</option>`).join('')}</select>`;scatterHead.prepend(modePicker);modePicker.querySelector('select').onchange=e=>{const b=[...qs('.scatter-mode-grid').querySelectorAll('[data-scatter-mode]')].find(b=>b.dataset.scatterMode===e.target.value);if(b)b.click();};
     qs('#scatterCanvas').dataset.ovPlot='scatter';qs('#scatterCanvas').setAttribute('aria-label','Lorenz 相邻 RR 散点图；拖动框选，右键或 Shift+F10 编辑选中心搏');
     const metrics=document.createElement('div');metrics.id='ovBeatMetrics';metrics.className='ov-beat-metrics';metrics.tabIndex=0;metrics.setAttribute('role','list');metrics.setAttribute('aria-label','当前窗口每搏心率 bpm 与 RR ms；高密度时可横向滚动');metrics.title='当前窗口每搏心率 bpm 与 RR ms；左右键可横向查看';metrics.innerHTML='<div class="ov-beat-metrics-list"></div>';metrics.addEventListener('keydown',event=>{if(['ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();event.stopPropagation();metrics.scrollLeft+=(event.key==='ArrowLeft'?-1:1)*(event.shiftKey?metrics.clientWidth/2:48);}});qs('#waveformScroller').before(metrics);
     const navigator=document.createElement('details');navigator.className='ov-navigator';navigator.open=innerWidth<=1000||innerHeight>780;navigator.innerHTML='<summary><strong>连续波形导航 · II</strong><output id="ovNavigatorTime"></output></summary><canvas id="ovNavigator" height="60" tabindex="0" aria-label="当前窗口前后连续波形导航；点击定位，左右键移动"></canvas>';navigator.addEventListener('toggle',()=>{if(navigator.open)run(navigatorWave)});qs('#waveformCard').after(navigator);
@@ -58,7 +58,7 @@ const overviewWorkbench=(()=>{
     main.querySelector('.ov-trends').after(density);
     density.addEventListener('toggle',()=>requestAnimationFrame(()=>{linked?.draw();draw();}));
     if(globalThis.ECGOverviewLinkedView&&globalThis.ECGLinkedSelection){
-      linked=globalThis.ECGOverviewLinkedView.create({getState:()=>state,api,qs,esc,formatTime:formatElapsed,formatNumber:fmtNumber,getMode:()=>ui.mode,drawChanged:()=>draw(),drawStrip:drawOverviewMini,getMiniHeight:()=>innerWidth>=1100?112:154,invalidateLegacy:invalidateScatterStripLoads,onSnapshot:(snapshot,event)=>{if(event.change!=='focus'){ui.range=snapshot.origin==='overview-time-range'&&snapshot.timeBounds?[snapshot.timeBounds.start_s,snapshot.timeBounds.end_s]:null;if(snapshot.origin!=='overview-histogram')ui.bin=null;if(!String(snapshot.origin||'').startsWith('overview-'))ui.polygon=[];}}});
+      linked=globalThis.ECGOverviewLinkedView.create({getState:()=>state,api,qs,esc,formatTime:formatElapsed,formatNumber:fmtNumber,getMode:()=>ui.mode,drawChanged:()=>draw(),drawStrip:drawOverviewMini,getMiniHeight:()=>ECGOccurrenceCard.geometry.waveHeight+42,preview:(card,row,c,current)=>ECGReviewCandidates.preview({identity:c,item:row,isCurrent:current}),invalidateLegacy:invalidateScatterStripLoads,onSnapshot:(snapshot,event)=>{if(event.change!=='focus'){ui.range=snapshot.origin==='overview-time-range'&&snapshot.timeBounds?[snapshot.timeBounds.start_s,snapshot.timeBounds.end_s]:null;if(snapshot.origin!=='overview-histogram')ui.bin=null;if(!String(snapshot.origin||'').startsWith('overview-'))ui.polygon=[];}}});
       globalThis.ecgOverviewLinked=linked;
       renderScatterSelectionList=()=>linked.renderMini();
       new IntersectionObserver(entries=>{if(entries.some(entry=>entry.isIntersecting))linked.renderMini();}).observe(qs('#scatterSelectionList'));
@@ -100,7 +100,7 @@ const overviewWorkbench=(()=>{
     invalidateEvidence('正在读取逐搏数据；旧覆盖结果已清除。');qs('#ovStatus').textContent='正在核对逐搏、片段与波形依据…';
     try{const [data,rhythm]=await ECGAnalysisConsistency.read(api,id,['overview','rhythm-review'].map(kind=>basis=>api(ECGAnalysisConsistency.url(id,kind,{},basis))));if(token!==ui.loadToken||id!==state.caseId||caseToken!==state.caseRequestId)return;
       if(data.revision!==rhythm.beat_revision)throw Error('逐搏与节律版本不一致，请重新载入后复核');
-      if(ui.id!==id){rememberEpisodeForm();episodeFilter='all';episodePage=0;episodeEditor=null;ui.range=null;ui.episode=null;ui.bin=null;ui.densityKey=null;ui.rulerPoints=[];ui.mode=state.scatterMode;ui.rangeBounds=null}
+      if(ui.id!==id){rememberEpisodeForm();episodeFilter='all';episodePage=0;episodeEditor=null;ui.range=null;ui.episode=null;ui.bin=null;ui.densityKey=null;ui.rulerPoints=[];ui.mode=state.scatterMode;ui.bound=null;qs('#ovScatterRange').value='auto';ui.rangeBounds=null}
       ui.id=id;ui.caseToken=caseToken;ui.identity=ECGAnalysisConsistency.identity(data);ui.revision=data.revision;ui.rows=E.decode(data);ui.rhythm=rhythm;ui.estimated=data.estimated_beats;ui.settings=data.settings;ui.hist=E.histogram(ui.rows,ui.ratio);ui.hour=hour();
       ui.statistics=E.stats(ui.rows,ui.settings?.pause||2.5,data.duration_s);
       ui.maxHR=200;ui.maxRR=2000;for(const r of ui.rows){if(E.valid(r)){ui.maxHR=Math.max(ui.maxHR,Math.ceil(r.hr/50)*50);ui.maxRR=Math.max(ui.maxRR,Math.ceil(r.rr_ms/500)*500)}}
@@ -175,6 +175,12 @@ const overviewWorkbench=(()=>{
     if(focused!==null&&focused!==undefined&&focused/200>=start&&focused/200<end){const x=l+(focused/200-start)/(end-start)*w;ctx.strokeStyle='#a86920';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(x,t);ctx.lineTo(x,t+h);ctx.stroke();}
     ctx.restore();
   }
+  function selectHistogramBin(index){
+    ui.bin=E.clamp(index,0,ui.hist.bins.length-1);
+    const bin=ui.hist.bins[ui.bin];
+    selectSamples(bin.samples,{origin:'overview-histogram',sourcePopulation:{view:'overview',kind:ui.ratio?'rr-ratio-bin':'rr-bin',bin:ui.bin,start:bin.start,end:ui.bin===ui.hist.bins.length-1?null:bin.end,fullCount:bin.count}});
+    drawHistogram();
+  }
   function drawHistogram(){
     const canvas=qs('#ovHistogram');if(!canvas.getClientRects().length||!ui.hist)return;const g=prepare(canvas,76),{ctx,l,w,h,t,height}=g,bins=ui.hist.bins,max=Math.max(1,...bins.map(x=>x.count)),scale=v=>ui.log?Math.log10(v+1)/Math.log10(max+1):v/max;
     ctx.fillStyle='#526773';ctx.textAlign='right';for(const f of [0,.5,1]){const value=ui.log?Math.round((max+1)**f-1):Math.round(max*f),y=t+h*(1-f);ctx.fillText(fmtNumber(value),l-5,y+3);ctx.strokeStyle='#e2eaed';ctx.beginPath();ctx.moveTo(l,y);ctx.lineTo(l+w,y);ctx.stroke()}ctx.textAlign='left';
@@ -197,15 +203,15 @@ const overviewWorkbench=(()=>{
     // Measure the current CSS slot after reserving square RR axes, keeping
     // painted coordinates and pointer coordinates equal while controls scroll.
     const height=af?Math.max(110,canvas.clientWidth-30):Math.max(1,canvas.getBoundingClientRect().height);
-    const points=E.pairs(ui.rows,af?'rr':ui.mode,ui.hour).filter(r=>!af||(r.time_s>=span()[0]&&r.time_s<=span()[1])),g=prepare(canvas,height),{ctx,l,w,h,t}=g,bound=ui.bound;
+    const points=E.pairs(ui.rows,af?'rr':ui.mode,ui.hour).filter(r=>!af||(r.time_s>=span()[0]&&r.time_s<=span()[1])),g=prepare(canvas,height),{ctx,l,w,h,t}=g,bound=ECGReviewTools.scatterBound(points,ui.bound);
     if(!af){ui.scatter=points;state.scatterData={mode:ui.mode,points,bounds:{x_min:0,x_max:bound,y_min:0,y_max:bound},hour_start_s:ui.hour};qs('#scatterLoading').hidden=true;if(ui.rangeBounds!==bound){ui.rangeBounds=bound;initializeScatterRangeInputs(state.scatterData.bounds)}}geometries.set(canvas,{...g,kind:'scatter',points,bound});
     ctx.strokeStyle='#d1dde2';ctx.strokeRect(l,t,w,h);ctx.fillStyle='#526773';ctx.fillText('RR(i+1) · ms',l+4,t+10);ctx.fillText('0',l-12,t+h+12);ctx.textAlign='right';ctx.fillText(bound+' ms · RR(i)',l+w,t+h+14);ctx.textAlign='left';ctx.fillText(String(bound),1,t+8);
     ctx.save();ctx.beginPath();ctx.rect(l,t,w,h);ctx.clip();
     if(ui.guides){ctx.setLineDash([4,4]);ctx.strokeStyle='#9fb0b8';for(const slope of [.5,1,2]){ctx.beginPath();ctx.moveTo(l,t+h);ctx.lineTo(l+w,t+h-h*slope);ctx.stroke()}ctx.setLineDash([])}
-    for(const r of points){if(r.x>bound||r.y>bound)continue;ctx.fillStyle=state.scatterSelectedSet.has(r.sample_index)?'#d08a2e':colors[r.class_code]||'#854a9b';ctx.fillRect(l+r.x/bound*w,t+h-r.y/bound*h,ui.size,ui.size)}
+    for(const r of points){if(r.x>bound||r.y>bound)continue;ctx.fillStyle=state.scatterSelectedSet.has(r.sample_index)?'#d08a2e':linked?.snapshot()?.kind==='samples'?'#d3dfe1':colors[r.class_code]||'#854a9b';ctx.fillRect(l+r.x/bound*w,t+h-r.y/bound*h,ui.size,ui.size)}
     const focused=points.find(r=>r.sample_index===state.scatterFocusedSample);if(focused&&focused.x<=bound&&focused.y<=bound){ctx.strokeStyle='#0c6464';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(l+focused.x/bound*w,t+h-focused.y/bound*h,4,0,Math.PI*2);ctx.stroke();}
     if(ui.polygon.length){ctx.strokeStyle='#078986';ctx.fillStyle='rgba(11,146,144,.12)';ctx.beginPath();ui.polygon.forEach(([x,y],i)=>i?ctx.lineTo(l+x/bound*w,t+h-y/bound*h):ctx.moveTo(l+x/bound*w,t+h-y/bound*h));ctx.closePath();ctx.fill();ctx.stroke()}ctx.restore();
-    if(!af)qs('#ovScatterCount').textContent=`${fmtNumber(points.length)} 个相邻 RR 配对 · 已选 ${fmtNumber(state.scatterSelectedSamples.length)} 搏`;
+    if(!af)qs('#ovScatterCount').textContent=`${fmtNumber(points.filter(r=>r.x<=bound&&r.y<=bound).length)} / ${fmtNumber(points.length)} 个相邻 RR 配对 · 已选 ${fmtNumber(state.scatterSelectedSamples.length)} 搏`;
   }
   function selectSamples(samples,details={}){
     if(linked?.active()){linked.select(samples,details);return;}
@@ -247,7 +253,7 @@ const overviewWorkbench=(()=>{
     if(kind==='rr')ui.episode=ui.rhythm?.document.episodes.find(x=>x.start_s<=ui.contextTime&&x.end_s>ui.contextTime)?.id||null;
     const codes=['N','S','V','X','A','C','P','O','OTHER'],types=action=>codes.map(c=>button(`${c} · ${ECGBeatEngine.types[c].name}`,action+':'+c)).join('');let html='';
     if(kind==='rr')html=button('添加房颤段','af-add:AF')+button('添加房扑段','af-add:AFL')+button('删除当前房颤 / 房扑','af-delete-current',ui.episode?'':'disabled')+button('移除选区内的房颤 / 房扑','af-cut')+button('移除所有房颤 / 房扑段','af-clear')+button('标记为全程房颤','af-all:AF')+button('标记为全程房扑','af-all:AFL')+button('重分析房颤（全程 RR 候选）','af-screen')+button('重分析选择区段房颤','af-screen-range')+button('设置选项 / 筛查方法','af-settings')+button('进入房颤编辑与分析','af-open');
-    if(kind==='scatter')html=group('修改心拍',types('beat'))+button('排除房颤 / 房扑','af-exclude-scatter')+button('手动批量添加 QRS 波','edit:insert')+button('自动向前插入候选','edit:detect-before')+button('自动向后插入候选','edit:detect-after')+group('修改前一心搏',types('previous'))+group('修改后一心搏',types('next'))+group('散点图类型',[['n','N 散点'],['s','S 散点'],['v','V 散点'],['hour','小时散点'],['nn','N–N 散点'],['rr','R–R 散点']].map(([k,v])=>button(v,'mode:'+k)).join(''))+group('框选模式',button('矩形框选','selection:box')+button('自由圈选','selection:lasso')+button('单点定位','selection:point'))+group('显示范围',[2000,3000,5000].map(n=>button('0–'+n+' ms','bound:'+n)).join(''))+group('散点大小',[1,1.4,2.4,3.4].map(n=>button(n+' px','size:'+n)).join(''))+button((ui.guides?'隐藏':'显示')+'辅助线','guides');
+    if(kind==='scatter')html=group('修改心拍',types('beat'))+button('排除房颤 / 房扑','af-exclude-scatter')+button('手动批量添加 QRS 波','edit:insert')+button('自动向前插入候选','edit:detect-before')+button('自动向后插入候选','edit:detect-after')+group('修改前一心搏',types('previous'))+group('修改后一心搏',types('next'))+group('散点图类型',[['n','N 散点'],['s','S 散点'],['v','V 散点'],['hour','小时散点'],['nn','N–N 散点'],['rr','R–R 散点']].map(([k,v])=>button(v,'mode:'+k)).join(''))+group('框选模式',button('矩形框选','selection:box')+button('自由圈选','selection:lasso')+button('单点定位','selection:point'))+group('显示范围',button('自动全量','bound:auto')+[2000,3000,5000].map(n=>button('0–'+n+' ms','bound:'+n)).join(''))+group('散点大小',[1,1.4,2.4,3.4].map(n=>button(n+' px','size:'+n)).join(''))+button((ui.guides?'隐藏':'显示')+'辅助线','guides');
     if(kind==='hr')html=button('插入图条','strip')+button('插入缩略图条','strip-short')+group('即时打印图条',button('三导联图条','print:3')+button('十二导联图条','print:12'))+button('插入心搏','edit:insert')+button('选择起始位置','range-anchor')+button('删除前面区段的标记','delete-before')+button('删除后面区段的标记','delete-after')+button('测量尺','ruler:measure')+button('分规尺','ruler:divider')+button('平行尺','ruler:parallel')+button('跳转到时间','jump')+button('转到诊断图','diagnostic')+button('转到全览图','af-close')+button((ui.showEvents?'隐藏':'显示')+'患者事件','events')+button('设为最快心率图条','bookmark:fastest')+button('设为最慢心率图条','bookmark:slowest')+button('设为最快窦性心率图条','bookmark:fastest_nn')+button('设为最慢窦性心率图条','bookmark:slowest_nn')+button('重分析房早','pac-screen')+button('设置选项','edit:settings');
     const menu=qs('#ovMenu');menu.innerHTML=`<header><strong>${kind==='rr'?'房颤 / 房扑':kind==='hr'?'心率与图条':'Lorenz 散点操作'}</strong>${button('关闭','menu-close','aria-label="关闭菜单"')}</header><p>${formatElapsed(span()[0])}–${formatElapsed(span()[1])}${kind==='scatter'?' · 已选 '+state.scatterSelectedSamples.length+' 搏':''}</p><div class="ov-menu-body">${html}</div>`;
     menu.hidden=false;try{menu.showPopover()}catch(_){}menu.style.left=Math.max(8,Math.min(x,innerWidth-menu.offsetWidth-12))+'px';menu.style.top=Math.max(8,Math.min(y,innerHeight-menu.offsetHeight-12))+'px';menu.querySelector('button')?.focus({preventScroll:true});
@@ -527,7 +533,7 @@ const overviewWorkbench=(()=>{
     ctx.save();ctx.strokeStyle='#b9671d';ctx.fillStyle='#965119';ctx.lineWidth=1;
     if(ui.ruler==='parallel'){points.forEach(p=>{const y=p.y*height;ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(width,y);ctx.stroke()})}
     else {const delta=points.length===2?Math.abs(points[1].time-points[0].time):0,positions=ui.ruler==='divider'&&delta>.02?Array.from({length:Math.min(120,Math.ceil(wave.duration_s/delta)+3)},(_,i)=>points[0].time+(i-Math.ceil((points[0].time-wave.start_s)/delta))*delta):points.map(p=>p.time);positions.forEach(t=>{const x=xAt(t);ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,height);ctx.stroke()})}
-    if(points.length===2){const delta=Math.abs(points[1].time-points[0].time),leadCount=(globalThis.ECGChartInspection?.names(wave.leads)||Object.keys(wave.leads)).length,sameLead=Math.floor(points[0].y*leadCount)===Math.floor(points[1].y*leadCount),amplitude=Math.abs(points[1].y-points[0].y)*leadCount*1000/.31/(state.gain/10),text=ui.ruler==='parallel'?(sameLead?`Δ幅度 ${amplitude.toFixed(1)} 设备标度（未溯源）`:'请在同一导联内放置两条平行线'):`Δt ${(delta*1000).toFixed(0)} ms${delta>0?' · '+(60/delta).toFixed(1)+' bpm':''}`;ctx.fillStyle='#fff8ed';ctx.fillRect(40,height-28,Math.min(330,width-40),24);ctx.fillStyle='#965119';ctx.fillText(text,48,height-12)}ctx.restore();
+    if(points.length===2){const delta=Math.abs(points[1].time-points[0].time),leadCount=(globalThis.ECGChartInspection?.names(wave.leads)||Object.keys(wave.leads)).length,sameLead=Math.floor(points[0].y*leadCount)===Math.floor(points[1].y*leadCount),amplitude=Math.abs(points[1].y-points[0].y)*leadCount*1000/.31/(state.gain/10),text=ui.ruler==='parallel'?(sameLead?`Δ幅度 ${amplitude.toFixed(1)} 设备标度（未溯源）`:'请在同一导联内放置两条平行线'):`Δt ${(delta*1000).toFixed(0)} ms${delta>0?' · '+Math.round(60/delta)+' bpm':''}`;ctx.fillStyle='#fff8ed';ctx.fillRect(40,height-28,Math.min(330,width-40),24);ctx.fillStyle='#965119';ctx.fillText(text,48,height-12)}ctx.restore();
   }
   async function action(value,element){
     const [key,...tail]=value.split(':'),arg=tail.join(':');if(key.startsWith('menu-')&&key!=='menu-close')return showMenu(key.slice(5),null,element?.dataset.canvas);
@@ -587,7 +593,7 @@ const overviewWorkbench=(()=>{
     if(key==='edit')return beatEditor.invoke(arg,{time:ui.contextTime,samples:state.scatterSelectedSamples});
     if(key==='mode'){cancelGesture();ui.mode=arg;state.scatterMode=arg;ui.polygon=[];ui.bin=null;if(linked?.active())linked.clear('overview-mode-change');else clearScatterSelection();document.querySelectorAll('[data-scatter-mode]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.scatterMode===arg)));draw();return}
     if(key==='selection'){if(!['box','lasso','point'].includes(arg))throw Error('散点选择方式无效');cancelGesture();ui.selectionMode=arg;ui.polygon=[];syncScatterTools();drawScatter();return}
-    if(key==='bound'){cancelGesture();ui.polygon=[];ui.bound=Number(arg);qs('#ovScatterRange').value=arg;drawScatter();if(ui.af)drawScatter(qs('#ovAFLorenz'));return}
+    if(key==='bound'){cancelGesture();ui.polygon=[];ui.bound=arg==='auto'?null:Number(arg);qs('#ovScatterRange').value=arg;drawScatter();if(ui.af)drawScatter(qs('#ovAFLorenz'));return}
     if(key==='size'){cancelGesture();ui.size=Number(arg);drawScatter();return}
     if(key==='guides'){cancelGesture();ui.guides=!ui.guides;drawScatter();return}
     if(key==='jump')return dialog('跳转到记录时间',`<label>记录开始后的秒数<input name="time" type="number" step=".005" min="0" max="${duration()}" value="${state.start.toFixed(3)}" required></label><p>例如 3600 表示 D1 01:00:00。最大 ${duration().toFixed(3)} 秒。</p>`,data=>{seek(Number(data.get('time')));qs('#ovDialog').close()},'定位');
@@ -599,13 +605,15 @@ const overviewWorkbench=(()=>{
     if(key==='events'){ui.showEvents=!ui.showEvents;qs('#annotationList').closest('article').hidden=!ui.showEvents;draw();return}
     if(key==='pac-screen')return screenPAC();
     if(key==='preview-beat'){seek(Number(arg));qs('#ovDialog').style.maxHeight='42vh';qs('#waveformCard').scrollIntoView({block:'end'});return}
+    if(key==='full-retain')return ECGFullRecordRetain.open();
+    if(key==='rr-pool')return ECGReviewCandidates.pool();
     if(key==='strip'||key==='strip-short')return insertStrip(key==='strip-short');
     if(key==='print')return printStrip(Number(arg));
     if(key==='bookmark'){
       const row=ui.rows.reduce((a,b)=>!a||Math.abs(b.time_s-ui.contextTime)<Math.abs(a.time_s-ui.contextTime)?b:a,null),index=ui.rows.indexOf(row);if(!row||!E.valid(row))throw Error('当前位置没有有效 RR');
       if(arg.endsWith('_nn')&&(row.class_code!=='N'||ui.rows[index-1]?.class_code!=='N'))throw Error('此处不是连续正常心搏 NN 间期');
       const doc=copy(ui.rhythm.document),label='医生指定'+({fastest:'最快心率',slowest:'最慢心率',fastest_nn:'最快窦性心率',slowest_nn:'最慢窦性心率'})[arg];doc.bookmarks[arg]=row.time_s;
-      return dialog('指定心率报告图条',`<p>${label}：${formatElapsed(row.time_s)} · ${row.hr.toFixed(1)} bpm。</p><p>保存定位书签，并创建该时刻前后 10 秒的报告图条加入草稿。不修改全记录数学极值；报告仍需核对和保存。</p>`,async()=>{await saveRhythm(doc);await insertStrip(false,label,[Math.max(0,row.time_s-3),Math.min(duration(),row.time_s+7)])});
+      return dialog('指定心率报告图条',`<p>${label}：${formatElapsed(row.time_s)} · ${Math.round(row.hr)} bpm。</p><p>保存定位书签，并创建该时刻前后 10 秒的报告图条加入草稿。不修改全记录数学极值；报告仍需核对和保存。</p>`,async()=>{await saveRhythm(doc);await insertStrip(false,label,[Math.max(0,row.time_s-3),Math.min(duration(),row.time_s+7)])});
     }
     if(key==='bookmark-jump'){seek(Number(arg));return}
   }
@@ -650,7 +658,7 @@ const overviewWorkbench=(()=>{
       if(!dragCurrent(job))return;
       if(g.kind==='density'){const current=linked?.gatePoint(event,canvas);if(dist>=4&&current)run(()=>linked.gate(canvas,job.densityPoint,current));return;}
       if(job.button===2){if(dist>=4){linked?.timeInterval(...span());seek(span()[0],true);}showMenu('rr',event,canvas.id);return;}
-      if(g.kind==='hist'){ui.bin=E.clamp(Math.floor((point.x-g.l)/g.w*ui.hist.bins.length),0,ui.hist.bins.length-1);selectSamples(ui.hist.bins[ui.bin].samples,{origin:'overview-histogram',sourcePopulation:{view:'overview',kind:ui.ratio?'rr-ratio-bin':'rr-bin',bin:ui.bin,start:ui.hist.bins[ui.bin].start,end:ui.hist.bins[ui.bin].end,fullCount:ui.hist.bins[ui.bin].count}});drawHistogram();return}
+      if(g.kind==='hist'){selectHistogramBin(Math.floor((point.x-g.l)/g.w*ui.hist.bins.length));return}
       if(g.kind==='scatter'){
         if(dist<4||ui.selectionMode==='point'){const [x,y]=scatterAt(event,canvas),distance=r=>Math.hypot((r.x-x)/g.bound*g.w,(r.y-y)/g.bound*g.h),nearest=g.points.filter(r=>r.x<=g.bound&&r.y<=g.bound).reduce((a,b)=>!a||distance(b)<distance(a)?b:a,null);ui.polygon=[];if(nearest&&distance(nearest)<=14){selectSamples([nearest.sample_index],{origin:'overview-point',focusSample:nearest.sample_index});seek(nearest.time_s)}}
         else selectSamples(g.points.filter(r=>inside(r.x,r.y,ui.polygon)).map(r=>r.sample_index),{origin:'overview-box'});return;
@@ -671,7 +679,7 @@ const overviewWorkbench=(()=>{
       const canvas=own(event.target);if(!canvas)return;
       if(event.shiftKey&&event.key==='F10'){const g=geometries.get(canvas);if(['rr','hr','scatter'].includes(g?.kind)){showMenu(g.kind,null,canvas.id);event.preventDefault();event.stopImmediatePropagation()}return}
       if(event.key==='Escape'){if(cancelGesture()){event.preventDefault();event.stopImmediatePropagation();return;}ui.range=null;ui.polygon=[];ui.densityBox=null;ui.bin=null;linked?.clear('overview-escape');draw();event.preventDefault();event.stopImmediatePropagation();return}
-      if(['ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();event.stopImmediatePropagation();const direction=event.key==='ArrowLeft'?-1:1;if(canvas.id==='ovHistogram'){ui.bin=E.clamp((ui.bin??0)+direction,0,ui.hist.bins.length-1);selectSamples(ui.hist.bins[ui.bin].samples,{origin:'overview-histogram'});drawHistogram()}else seek(state.start+direction*(event.shiftKey?60:state.duration))}
+      if(['ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();event.stopImmediatePropagation();const direction=event.key==='ArrowLeft'?-1:1;if(canvas.id==='ovHistogram'){selectHistogramBin((ui.bin??0)+direction)}else seek(state.start+direction*(event.shiftKey?60:state.duration))}
     },true);
     window.addEventListener('afterprint',()=>document.body.classList.remove('ov-print-strip'));
     new ResizeObserver(()=>requestAnimationFrame(()=>{draw();linked?.draw();linked?.refresh();linked?.renderMini();run(navigatorWave)})).observe(qs('#page-review'));

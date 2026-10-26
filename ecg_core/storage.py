@@ -5,6 +5,7 @@ from .terminology import normalize_terminology_usages
 import sqlite3
 from .review_workflow import ReportConflict
 from .clinical_analysis import normalize_selection
+from .review_candidates import EvidenceCandidateMixin
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -62,6 +63,7 @@ def normalize_hrv_reference(value):
 
 
 def normalize_report_composition(value: dict | None) -> dict:
+    from .report_curation import narrative_templates
     from .advanced_analysis import normalize_options
     from .signal_profile import normalize_voltage_estimate
     if value is None:
@@ -110,6 +112,7 @@ def normalize_report_composition(value: dict | None) -> dict:
         raise ValueError("paper 图条设置不受支持")
     return {
         **normalize_selection(value),
+        **({"narrative_templates": narrative_templates(value["narrative_templates"])} if "narrative_templates" in value else {}),
         **({"terminology_usages": normalize_terminology_usages(value["terminology_usages"])} if "terminology_usages" in value else {}),
         **({"hrv_review_reference": normalize_hrv_reference(value["hrv_review_reference"])} if "hrv_review_reference" in value else {}),
         "advanced_options": normalize_options(value.get('advanced_options')),
@@ -141,12 +144,13 @@ def utc_now() -> str:
 from .review_workflow import ReviewWorkflowMixin
 
 
-class Storage(ReviewWorkflowMixin):
+class Storage(ReviewWorkflowMixin, EvidenceCandidateMixin):
     def __init__(self, path: Path):
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
         self.initialize_review()
+        self.initialize_candidates()
         with self.connect() as db:
             if "details" not in {r[1] for r in db.execute("PRAGMA table_info(annotations)")}:
                 db.execute("ALTER TABLE annotations ADD COLUMN details TEXT NOT NULL DEFAULT '{}'")

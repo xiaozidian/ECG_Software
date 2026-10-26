@@ -104,6 +104,30 @@ class EditedRecords:
         self.document=document
         self.duration=duration
 
+    def prepare_read_snapshot(self):
+        # Known scalar rows can use dict.copy; unusual nested extension values
+        # retain full deepcopy semantics. Check once before publishing a snapshot.
+        scalar = (str, int, float, bool, type(None))
+        self._scalar_read_rows = all(type(value) in scalar
+            for row in self.beats + self.markers for value in row.values())
+        return self
+
+    def clone_for_read(self):
+        """Detach all writable rows/documents; share only immutable numeric tuples."""
+        result = object.__new__(type(self))
+        if getattr(self, '_scalar_read_rows', False):
+            result.beats = [row.copy() for row in self.beats]
+            result.markers = [row.copy() for row in self.markers]
+        else:
+            result.beats, result.markers = copy.deepcopy((self.beats, self.markers))
+        result.by_sample = {row['sample_index']: row for row in result.beats}
+        result.records = self.records
+        result.record_samples = self.record_samples
+        result.document = copy.deepcopy(self.document)
+        result.duration = self.duration
+        result.excluded_rhythm_intervals = copy.deepcopy(getattr(self, 'excluded_rhythm_intervals', ()))
+        return result
+
 
 def select(rows, payload):
     choice=payload.get("selection", {})

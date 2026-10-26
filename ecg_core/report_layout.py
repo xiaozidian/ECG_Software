@@ -93,11 +93,11 @@ def resolve_strip(index, event, settings=None):
     start = max(0, min(anchor - length / 2, total - length))
     end = start + length
     pause_start_sample = None
-    if event.get('category') == 'pause':
+    if event.get('category') in ('pause','rr_candidate'):
         # Re-read the current endpoints rather than trusting a saved event's
         # cached RR or supplied coordinates. Noise remains an interval boundary.
         pairs = [(a,b) for a,b in valid_rr_pairs(index['rows'], index['duration_s'])
-                 if b['sample_index'] == event['start_sample'] and b['rr_ms'] > 2500]
+                 if b['sample_index'] == event['start_sample'] and (b['rr_ms'] > 2500 if event.get('category')=='pause' else a['sample_index']==event.get('candidate_context',{}).get('rr_start_sample'))]
         if len(pairs) != 1:
             raise ValueError('长 RR 的 R 峰依据已变化，请重新选择事件')
         pause_start_sample = pairs[0][0]['sample_index']
@@ -113,7 +113,7 @@ def resolve_strip(index, event, settings=None):
         if end>total or not start<=anchor<end:
             raise ValueError('人工区间须在记录范围内，并包含当前事件定位心搏')
         if pause_start_sample is not None and round(start*200)>pause_start_sample:
-            raise ValueError('停搏候选入图须包含完整长 RR 间期的两个 R 峰')
+            raise ValueError('RR 候选入图须包含完整间期的两个 R 峰（原始计时点）')
         if count(start,end)<min(5,len(times)):
             raise ValueError('人工入报区间至少包含 5 个可用心搏，请向外拖动橘色边界')
     if not manual and count(start, end) < 5 and times:
@@ -147,7 +147,7 @@ def prepare_strip(index, event, settings, reader):
     return {**event, "strip": spec, "waveform": wave, "context": context}
 
 
-def report_statistics(index, start_time, settings):
+def report_statistics(index, start_time, settings, pause_edges_ms=None):
     """Beat counts by actual clock hour; pattern episodes assigned to onset hour.
 
     Runs and repeating patterns are overlapping descriptors, not extra beats or
@@ -197,5 +197,8 @@ def report_statistics(index, start_time, settings):
         end = t + length
         hourly.append({"label": dt.strftime("%m-%d %H:%M") if dt else f"+{t / 3600:g}h", "start_s": t, "end_s": end, **aggregate(t, end)})
         t = end
-    return {"summary": aggregate(0, index["duration_s"]), "hourly": hourly, "settings": settings,
+    from .review_candidates import rr_distribution
+    distribution=rr_distribution(index['rows'],index['duration_s'],pause_edges_ms)
+    for bucket in distribution['bins']:bucket.pop('samples')
+    return {"pause_distribution":distribution,"summary": aggregate(0, index["duration_s"]), "hourly": hourly, "settings": settings,
             "method": "当前修订逐搏统计；心率由有效 RR 计算。成对、短阵和联律按起点计次，模式可重叠，不与总心搏相加；长 RR 为阈值候选，房颤/房扑仅计医生已确认片段。"}

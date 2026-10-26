@@ -33,6 +33,7 @@
     inRecord.forEach(r=>counts[code(r)]=(counts[code(r)]||0)+1);
     return {total:inRecord.length,valid:beats.length,counts,rr_interval_count:rr.length,pauses:rr.filter(r=>r.rr_ms>2500).length,pause_over3:rr.filter(r=>r.rr_ms>3000).length,alert_pauses:rr.filter(r=>r.rr_ms>=pause*1000).length};
   }
+  const pauseEdges=value=>quality.pauseEdges(value),rrDistribution=(rows,duration,edges)=>quality.rrDistribution(rows,duration,edges);
   function cut(episodes,start,end){
     return episodes.flatMap(x=>{
       if(x.end_s<=start||x.start_s>=end)return [{...x}];
@@ -131,6 +132,6 @@
     }
     return {width,height,bins:Array.from(bins),total:samples.length,included:positions.length,skipped_edges:samples.length-positions.length,clipped_points:clipped,lead,x_min_s:-1,x_max_s:1,amplitude_limit:limit,units:'device_unit',unit_label:'设备单位',calibration_verified:false,sample_indices:selected,population_samples:[...samples],method:'R 对齐 · 全集合计数 · 10 ms 栅格 · 去固定基线 · 无逐搏增益归一化'};
   }
-  const api={rhythmSummary:quality.rhythmSummary,clamp,code,valid,decode,pairs,histogram,stats,cut,validateDocument,annotations,initialEpisodes,screenAF,screenAFResult,planAFRescreen,density,densitySamples};
+  const api={pauseEdges,rrDistribution,rhythmSummary:quality.rhythmSummary,clamp,code,valid,decode,pairs,histogram,stats,cut,validateDocument,annotations,initialEpisodes,screenAF,screenAFResult,planAFRescreen,density,densitySamples};
   root.ECGOverviewEngine=api;if(typeof module!=='undefined')module.exports=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

@@ -51,12 +51,20 @@ const beatEditor=(()=>{
   }
   function registerOccurrence(card,item,scope){
     occurrenceCards.set(card,{item,scope});
-    card.oncontextmenu=event=>{event.preventDefault();event.stopPropagation();occurrenceContext(card,event).catch(handleError)};
+    card.oncontextmenu=event=>{event.preventDefault();event.stopPropagation();miniMenu(card,event)};
     card.ondblclick=event=>{
       if(event.ctrlKey||event.metaKey||!scope.isCurrent?.())return;
       event.preventDefault();event.stopPropagation();
       openEditTwelveLead(card.querySelector('.occurrence-open')||card,item,{expectedScope:scope.identity,isCurrent:scope.isCurrent}).catch(handleError);
     };
+  }
+  function miniMenu(card,event){
+    const value=occurrenceCards.get(card);if(!value)return;const {item,scope}=value;
+    ECGOccurrenceCard.menu({card,event,item,isCurrent:scope.isCurrent,
+      onPreview:()=>ECGReviewCandidates.preview({identity:{...scope.identity,case_id:state.caseId},item,isCurrent:scope.isCurrent}),
+      onLeads:leads=>scope.onLeads?.(leads),
+      onCandidate:()=>ECGReviewCandidates.choose({identity:{...scope.identity,case_id:state.caseId},item,population:{origin:'edit-card'},isCurrent:scope.isCurrent}),
+      onPool:()=>ECGReviewCandidates.pool(),onEdit:()=>occurrenceContext(card,event)});
   }
   async function request(suffix,method="GET",body,scope=owner()){
     requireOwner(scope);
@@ -318,7 +326,7 @@ const beatEditor=(()=>{
       if(occurrenceCard&&occurrenceCards.has(occurrenceCard)&&!event.repeat){
         const menuKey=event.key==='ContextMenu'||event.shiftKey&&event.key==='F10',code=event.key.toUpperCase();
         if(menuKey||(!event.ctrlKey&&!event.metaKey&&!event.altKey&&E.types[code])){
-          event.preventDefault();event.stopImmediatePropagation();occurrenceContext(occurrenceCard,null,menuKey,code).catch(handleError);return;
+          event.preventDefault();event.stopImmediatePropagation();if(menuKey)miniMenu(occurrenceCard,null);else occurrenceContext(occurrenceCard,null,false,code).catch(handleError);return;
         }
       }
       if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="z"&&["review","edit"].includes(state.currentPage)){
@@ -338,7 +346,9 @@ const beatEditor=(()=>{
     ["#waveformCanvas","#editWaveformCanvas","#editLibraryWaveformCanvas"].forEach(id=>{
       const canvas=$(id);if(!canvas)return;const bar=document.createElement("div");bar.className="beat-edit-history";
       bar.innerHTML='<span data-editor-status>心搏修订</span><button type="button" data-history="undo" title="⌘ / Ctrl+Z">撤销</button><button type="button" data-history="redo" title="⌘ / Ctrl+Shift+Z">重做</button>';
-      canvas.parentElement.appendChild(bar);bar.setAttribute("aria-label","心搏修订历史");bar.querySelectorAll("button").forEach(b=>b.onclick=()=>{if(busy||committing)return;begin({caseId:state.caseId,surface:id==="#waveformCanvas"?"review":"edit"});perform(b.dataset.history).catch(handleError)});
+      const controls=canvas.parentElement.querySelector('.clinical-beat-toolbar');
+      if(controls)controls.append(bar);else canvas.closest('.waveform-card')?.querySelector('.waveform-foot')?.append(bar);
+      bar.setAttribute("aria-label","心搏修订历史");bar.querySelectorAll("button").forEach(b=>b.onclick=()=>{if(busy||committing)return;begin({caseId:state.caseId,surface:id==="#waveformCanvas"?"review":"edit"});perform(b.dataset.history).catch(handleError)});
     });
     refreshHistory();
   }

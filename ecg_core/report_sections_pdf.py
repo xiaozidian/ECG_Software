@@ -30,7 +30,7 @@ def documents(case, report, keys):
             leads=list(e.get('st_trends',{}).items())
             if not leads:add(key,['当前没有可用的 ST-T 研究性测量数据；不能解释为正常。'])
             for i in range(0,len(leads),3):add(key,['设备单位，非 mV；未校准的研究性趋势，空缺不补线，不生成缺血或复极诊断。'],[dict(title=lead+' · '+PAGE_TITLES[key]+' / 相对小时',points=[dict(x=p['time_s']/3600,y=p.get('deviation_units' if key=='st_trend' else 't_amplitude_units')) for p in points]) for lead,points in leads[i:i+3]])
-        if key=='st_events':add(key,['ST-T 研究性候选清单，未确认诊断；幅度为设备单位，非 mV。'],rows=[f"{clock(meta,r.get('start_s',0))} · {r.get('type',r.get('label','ST-T 候选'))} · {'/'.join(r.get('leads',[]))} · {number(r.get('duration_s'))} 秒 · 偏移 {number(r.get('peak_deviation_units'))}" for r in e.get('st_events',[])])
+        if key=='st_events':add(key,[e.get('st_evaluation',{}).get('label','未评估')+'：'+e.get('st_evaluation',{}).get('note','未提供可核实的评估状态；不能解释为正常。'),'ST-T 研究性候选清单，未确认诊断；幅度为设备单位，非 mV。'],rows=[f"{clock(meta,r.get('start_s',0))} · {r.get('type',r.get('label','ST-T 候选'))} · {'/'.join(r.get('leads',[]))} · {number(r.get('duration_s'))} 秒 · 偏移 {number(r.get('peak_deviation_units'))}" for r in e.get('st_events',[])])
         if key in ('hrv_time','hrv_frequency'):
             if not d:raise ValueError('HRV 数据尚未加载')
             periods=[d['periods'][k] for k in ('full','day','night')];rows=[]

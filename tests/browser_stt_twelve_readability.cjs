@@ -32,7 +32,7 @@ assert(start >= 0 && end > start, 'Repository ST-T section is missing');
 const section = template.slice(start, end).replace('class="page"', 'class="page active stt-review-layout"');
 const styleNames = ['app.css', 'stt-review-layout.css', 'chart-inspection.css', 'desktop-workspace.css'];
 const styles = styleNames.map(name => read('static/css/' + name)).join('\n');
-const chart = read('static/js/chart-inspection.js');
+const chart = read('static/js/chart-inspection.js'),tools = read('static/js/clinical-review-tools.js');
 const layout = read('static/js/stt-review-layout.js');
 const artifactRoot = process.env.ECG_STT_EVIDENCE
   ? path.resolve(process.env.ECG_STT_EVIDENCE)
@@ -54,7 +54,7 @@ const html = '<!doctype html><html><head><meta charset="utf-8"><style>' + styles
       page.on('pageerror', error => pageErrors.push(error.message));
       await page.route('**/*', route => {network.push(route.request().method()); return route.abort();});
       await page.setContent(html);
-      await page.evaluate(({chart, layout, functions}) => {
+      await page.evaluate(({chart, layout, functions,tools}) => {
         globalThis.$ = (selector, parent = document) => parent.querySelector(selector);
         globalThis.$$ = (selector, parent = document) => [...parent.querySelectorAll(selector)];
         globalThis.UI_FONT = 'Arial';
@@ -124,11 +124,11 @@ const html = '<!doctype html><html><head><meta charset="utf-8"><style>' + styles
         globalThis.handleError = error => {throw error;};
         globalThis.formatElapsedPrecise = value => String(value.toFixed(3));
         globalThis.formatElapsed = value => String(value);
-        (0, eval)(chart); (0, eval)(layout); (0, eval)(functions);
+        (0, eval)(tools); (0, eval)(chart); (0, eval)(layout); (0, eval)(functions);
         $('#sttReviewNote').value = 'unsaved mathematical note';
         $('#sttOpenTwelveLead').addEventListener('click', () => {globalThis.__transition = openSttTwelveLead();});
         renderSttWaveform(); bindSttInteraction();
-      }, {chart, layout, functions});
+      }, {chart, layout, functions,tools});
       await page.waitForFunction(() => {
         const canvas = document.querySelector('#sttWaveformCanvas');
         return Math.abs(canvas.height - canvas.getBoundingClientRect().height * devicePixelRatio) <= 1;
@@ -142,7 +142,7 @@ const html = '<!doctype html><html><head><meta charset="utf-8"><style>' + styles
         const item = await page.evaluate(() => {
           const source = JSON.stringify(__fullLeads), marks = JSON.stringify(sttLandmarkFractions()), note = $('#sttReviewNote').value;
           state.sttLeads = ALL_LEADS.slice(); state.sttWaveform = __wave(ALL_LEADS);
-          const values = JSON.stringify(sttMeasurementValues()); renderSttWaveform();
+          const values = JSON.stringify(sttMeasurementValues()); ECGReviewTools.waveDomain(state.sttWaveform,JSON.stringify([state.caseId,'stt-raw']),true);renderSttWaveform();
           const canvas = $('#sttWaveformCanvas'), rect = canvas.getBoundingClientRect(), slot = $('#sttWaveCanvasWrap');
           const paths = __paint.paths;
           if (paths.length !== 12 || paths.some(points => points.length !== 2000)) throw Error('Source sample paths were truncated');
@@ -177,7 +177,7 @@ const html = '<!doctype html><html><head><meta charset="utf-8"><style>' + styles
         const rect = $('#sttWaveformCanvas').getBoundingClientRect(), fraction = .4;
         return {x: rect.left + 54 + (rect.width - 72) * fraction,
           y: rect.top + 24 + 64 * 10 + 32, scrollTop: slot.scrollTop,
-          value: __fullLeads.V5[Math.round(fraction * 1999)]};
+          value: __fullLeads.V5[Math.round(fraction * 2000)]};
       });
       assert(hover.scrollTop > 0);
       await page.mouse.move(hover.x, hover.y);

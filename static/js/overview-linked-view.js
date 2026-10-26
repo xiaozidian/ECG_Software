@@ -12,14 +12,24 @@
     function originalPairs(mode='rr',hour=0){const key=mode+':'+(mode==='hour'?hour:0);if(!pairs.has(key))pairs.set(key,E.pairs(rows,mode,hour));return pairs.get(key);}
     function selected(snapshot){return snapshot?.kind==='samples'?snapshot.samples.filter(s=>bySample.has(s)):samples;}
     function selectedHistogram(snapshot,ratio=false){const original=histogram(ratio),set=new Set(selected(snapshot));return {...original,bins:original.bins.map(b=>{const members=b.samples.filter(s=>set.has(s));return {...b,samples:members,count:members.length};})};}
-    return {rows,bySample,samples,histogram,originalPairs,selected,selectedHistogram,
+    const previousSample=new Map(samples.slice(1).map((sample,i)=>[sample,samples[i]]));
+    return {rows,bySample,samples,previousSample,histogram,originalPairs,selected,selectedHistogram,
       selectedPairs:(snapshot,mode='rr',hour=0)=>{const set=new Set(selected(snapshot));return originalPairs(mode,hour).filter(r=>set.has(r.sample_index));},
       interval:(start,end)=>samples.filter(s=>s/200>=start&&s/200<end)};
+  }
+  function rrMiniWindow(index,sample){
+    const row=index.bySample.get(sample),previous=index.previousSample.get(sample);
+    if(!row||!Number.isFinite(row.rr_ms)||row.rr_ms<=0||previous===undefined||sample-previous<=300)return null;
+    const remaining=24000-(sample-previous);
+    if(remaining<=0)throw Error('此相邻间期超出120秒小图范围，请分窗核对原始心搏；未截断显示为完整RR');
+    const before=Math.min(100,Math.floor(remaining/2)),after=Math.min(sample-previous+before,remaining-before),startSample=Math.max(0,previous-before);
+    return {start:startSample/200,duration:(sample+after-startSample)/200,previous_sample:previous};
   }
   function create(options){
     const {getState,api,qs,esc,formatTime,formatNumber,drawChanged,drawStrip}=options;
     const central=()=>root.ECGLinkedSelection;
     const plots=new WeakMap(),bitmaps=new WeakMap(),cache=new Map(),pending=new Map(),failed=new Set();
+    let miniLeads=['II','V1','V5'];
     let context=null,index=null,snapshot=null,unsubscribe=null,densityKey='',data={},message='尚未读取',phase='loading',miniKey='',gateBox=null,refreshRun=0;
     const lanes=new Map();
     const active=()=>context&&index&&scopeKey(snapshot?.scope)===scopeKey(context)&&getState().caseId===context.caseId&&getState().caseRequestId===context.caseToken;
@@ -142,16 +152,26 @@
       try{const d=await densityRequest(lead,c,members,ticket,viewKey,bounds,g.limit);if(d&&central().isCurrent(ticket,viewKey))select(d.sample_indices,{origin:'overview-density-gate',sourcePopulation:{view:'overview',mode:options.getMode?.()||'rr',lead,gate:bounds,fullCount:index.samples.length}});}
       catch(error){if(active()&&central().isCurrent(ticket,viewKey)&&error.name!=='AbortError'){message=error.message;draw();}}
     }
-    function stripViewKey(){return scopeKey(context)+':'+getState().filter;}
+    function stripViewKey(){return scopeKey(context)+':'+getState().filter+':'+miniLeads.join(',');}
     async function loadMini(samples){
       if(!presented()||!samples.length)return;
-      const c={...context},viewBase=stripViewKey(),generation=snapshot.selectionGeneration,viewKey=viewBase+':'+generation+':'+samples.join(','),lane='overview.strips.'+samples[0];
+      const c={...context},filterMode=getState().filter,viewBase=stripViewKey(),generation=snapshot.selectionGeneration,viewKey=viewBase+':'+generation+':'+samples.join(','),lane='overview.strips.'+samples[0];
       const ticket=central().beginLane(lane,viewKey,{focusSensitive:false});lanes.set(lane,{ticket,viewKey});samples.forEach(s=>pending.set(s,ticket));
       try{
-        const result=await api('/api/cases/'+encodeURIComponent(c.caseId)+'/waveform-strips',{method:'POST',signal:ticket.signal,body:JSON.stringify({sample_indices:samples,pre_s:1.5,post_s:2.5,leads:['II','V1','V5'],max_points:800,filter:getState().filter,analysis_basis:c.analysis_basis,analysis_revision:c.analysis_revision,revision:c.beatRevision})});
+        const ranges=new Map(samples.map(sample=>[sample,rrMiniWindow(index,sample)])),ordinary=samples.filter(sample=>!ranges.get(sample)),extended=samples.filter(sample=>ranges.get(sample)),items=new Map();let next=0;
+        // The waveform GET returns clinical basis but no beat_revision. Read a
+        // complete source/beat identity before and after; never invent that field.
+        const checkExtendedScope=async()=>{const proof=await api('/api/cases/'+encodeURIComponent(c.caseId)+'/evidence-candidates',{signal:ticket.signal});assertIdentity(proof,c);if(proof.case_id!==c.caseId)throw Error('小波形返回了另一病例的依据，未显示');};
+        if(extended.length)await checkExtendedScope();
         if(!presented()||stripViewKey()!==viewBase||!central().isCurrent(ticket,viewKey))return;
-        assertIdentity(result,c);if(!sameSamples(result.items?.map(r=>r.sample_index),samples))throw Error('小波形返回的心搏集合不一致');
-        for(const item of result.items){cache.set('strip:'+viewBase+':'+item.sample_index,item);failed.delete(item.sample_index);}
+        await Promise.all([
+          (async()=>{if(!ordinary.length)return;const result=await api('/api/cases/'+encodeURIComponent(c.caseId)+'/waveform-strips',{method:'POST',signal:ticket.signal,body:JSON.stringify({sample_indices:ordinary,pre_s:2,post_s:2,leads:miniLeads,max_points:800,filter:filterMode,analysis_basis:c.analysis_basis,analysis_revision:c.analysis_revision,revision:c.beatRevision})});assertIdentity(result,c);if(!sameSamples(result.items?.map(r=>r.sample_index),ordinary))throw Error('小波形返回的心搏集合不一致');result.items.forEach(item=>items.set(item.sample_index,item));})(),
+          ...Array.from({length:Math.min(4,extended.length)},async()=>{while(next<extended.length){if(!presented()||stripViewKey()!==viewBase||!central().isCurrent(ticket,viewKey))return;const sample=extended[next++],range=ranges.get(sample),params=new URLSearchParams({start:range.start,duration:range.duration,leads:miniLeads.join(','),max_points:12000,filter:filterMode,analysis_basis:c.analysis_basis,analysis_revision:c.analysis_revision});const wave=await api('/api/cases/'+encodeURIComponent(c.caseId)+'/waveform?'+params,{signal:ticket.signal});if(wave.analysis_basis!==c.analysis_basis||wave.analysis_revision!==c.analysis_revision)throw Error('小波形的记录或复核依据已变化，未显示');const present=new Set((wave.beats||[]).map(row=>row.sample_index));if(!present.has(range.previous_sample)||!present.has(sample))throw Error('RR小图未取得原相邻心搏的两个计时点，请重新读取；未显示不完整RR');items.set(sample,{...wave,sample_index:sample});}})
+        ]);
+        if(extended.length)await checkExtendedScope();
+        if(!presented()||stripViewKey()!==viewBase||!central().isCurrent(ticket,viewKey))return;
+        if(!sameSamples([...items.keys()].sort((a,b)=>a-b),[...samples].sort((a,b)=>a-b)))throw Error('小波形返回的心搏集合不一致');
+        for(const sample of samples){cache.set('strip:'+viewBase+':'+sample,items.get(sample));failed.delete(sample);}
         while(cache.size>1024){const oldest=[...cache.keys()].find(k=>k.startsWith('strip:'));if(!oldest)break;cache.delete(oldest);}
       }catch(error){if(presented()&&stripViewKey()===viewBase&&central().isCurrent(ticket,viewKey)&&error.name!=='AbortError'){samples.forEach(s=>failed.add(s));message='小波形读取失败：'+error.message;draw();}}
       finally{for(const s of samples)if(pending.get(s)===ticket)pending.delete(s);if(lanes.get(lane)?.ticket===ticket)lanes.delete(lane);if(presented()&&stripViewKey()===viewBase&&central().isCurrent(ticket,viewKey))renderMini();}
@@ -167,11 +187,21 @@
       empty.hidden=true;virtual.hidden=false;const height=options.getMiniHeight?.()||154;virtual.style.height=samples.length*height+'px';
       const start=Math.max(0,Math.floor(viewport.scrollTop/height)-2),end=Math.min(samples.length,start+Math.ceil(viewport.clientHeight/height)+5),visible=samples.slice(start,end);
       const focused=document.activeElement?.closest?.('[data-scatter-sample]')?.dataset.scatterSample;
-      virtual.innerHTML=visible.map((sample,offset)=>{const strip=cache.get('strip:'+key+':'+sample),row=index.bySample.get(sample),activeCard=sample===state.scatterFocusedSample,label=row.class_code||'',failure=failed.has(sample);return `<button type="button" class="scatter-strip-card${activeCard?' active':''}" style="top:${(start+offset)*height+4}px" data-scatter-sample="${sample}" data-jump-time="${sample/200}"${activeCard?' aria-current="true"':''} aria-label="${formatTime(sample/200)}，${esc(label)}，RR ${row.rr_ms||'—'} ms，${explicit?'选集':'全量'}第 ${start+offset+1} 搏"><div class="scatter-strip-meta"><span class="scatter-beat-badge ${esc(label)}">${esc(label)}</span><strong>${formatTime(sample/200)}</strong><small title="RR ${row.rr_ms||'—'} ms · ${start+offset+1}/${samples.length}">RR ${row.rr_ms||'—'} ms</small></div>${strip?`<canvas data-strip-canvas="${sample}" aria-hidden="true"></canvas>`:`<div class="scatter-strip-placeholder">${failure?'读取失败，点击重试':'正在读取真实三导联…'}</div>`}</button>`;}).join('');
+      virtual.innerHTML=visible.map((sample,offset)=>{const strip=cache.get('strip:'+key+':'+sample),row=index.bySample.get(sample),activeCard=sample===state.scatterFocusedSample,label=row.class_code||'',failure=failed.has(sample);return `<button type="button" class="scatter-strip-card${activeCard?' active':''}" style="top:${(start+offset)*height+4}px" data-scatter-sample="${sample}" data-jump-time="${sample/200}"${activeCard?' aria-current="true"':''} aria-label="${formatTime(sample/200)}，${esc(label)}，RR ${row.rr_ms||'—'} ms，${explicit?'选集':'全量'}第 ${start+offset+1} 搏"><div class="scatter-strip-meta"><span class="scatter-beat-badge ${esc(label)}">${esc(label)}</span><strong>${formatTime(sample/200)}</strong><small title="RR ${row.rr_ms||'—'} ms · ${start+offset+1}/${samples.length}">RR ${row.rr_ms||'—'} ms</small></div>${strip?`<span class="occurrence-wave">${root.ECGOccurrenceCard.svg(strip,{...row,label:'RR 小图'},{width:Math.max(170,viewport.clientWidth-24),height:root.ECGOccurrenceCard.geometry.waveHeight,annotations:'none',centerSample:sample})}</span>`:`<div class="scatter-strip-placeholder">${failure?'读取失败，点击重试':'正在读取真实三导联…'}</div>`}</button>`;}).join('');
       if(focused)virtual.querySelector('[data-scatter-sample="'+focused+'"]')?.focus({preventScroll:true});
-      for(const canvas of virtual.querySelectorAll('canvas[data-strip-canvas]'))drawStrip(canvas,cache.get('strip:'+key+':'+canvas.dataset.stripCanvas));
+      virtual.querySelectorAll('[data-scatter-sample]').forEach(card=>{card.oncontextmenu=e=>{e.preventDefault();e.stopPropagation();menuMini(card,e);};card.onkeydown=e=>{if(e.key==='ContextMenu'||e.shiftKey&&e.key==='F10'){e.preventDefault();e.stopPropagation();menuMini(card,e);}};});
       const rect=viewport.getBoundingClientRect?.(),layoutVisible=viewport.clientHeight>0&&(!viewport.getClientRects||viewport.getClientRects().length>0),onScreen=layoutVisible&&(!rect||rect.bottom>0&&rect.top<(root.innerHeight||Infinity)&&rect.right>0&&rect.left<(root.innerWidth||Infinity));
       if(presented()&&onScreen){const missing=visible.filter(s=>!cache.has('strip:'+key+':'+s)&&!pending.has(s)&&!failed.has(s));if(missing.length&&new Set(pending.values()).size<2)loadMini(missing.slice(0,16));}
+    }
+    function menuMini(card,event){
+      const sample=Number(card.dataset.scatterSample),row=index?.bySample.get(sample),c={...context},generation=snapshot?.selectionGeneration;
+      const current=()=>presented()&&scopeKey(context)===scopeKey(c)&&snapshot.selectionGeneration===generation&&cohort().includes(sample);
+      if(!row||!current())return;const population=snapshot.sourcePopulation||{};
+      root.ECGOccurrenceCard.menu({card,event,item:row,isCurrent:current,
+        onPreview:()=>options.preview?.(card,row,c,current),
+        onLeads:leads=>{miniLeads=[...leads];miniKey='';renderMini();},
+        onCandidate:()=>root.ECGReviewCandidates.choose({identity:c,item:row,isCurrent:current,population:{origin:snapshot.origin==='overview-histogram'?'overview-histogram':'overview-card',...(population.kind==='rr-bin'?{rr_bounds_ms:[population.start,population.end]}:{})}}),
+        onPool:()=>root.ECGReviewCandidates.pool(c)});
     }
     function retryMini(sample){failed.delete(sample);renderMini();}
     function inspect(){return {scope:context?{...context}:null,kind:snapshot?.kind||null,generation:snapshot?.selectionGeneration??null,focusGeneration:snapshot?.focusGeneration??null,samples:[...cohort()],density:Object.fromEntries(Object.entries(data).map(([lead,d])=>[lead,{lead,total:d.total,included:d.included,skipped_edges:d.skipped_edges,amplitude_limit:d.amplitude_limit,population_samples:[...d.population_samples],bins:[...d.bins]}])),phase};}
@@ -179,5 +209,5 @@
       index:()=>index,snapshot:()=>snapshot,active,cohort,currentSet,inspect,
       dispose:()=>{cancel();unsubscribe?.();}};
   }
-  const api={indexRows,sameSamples,scopeKey,create};root.ECGOverviewLinkedView=api;if(typeof module!=='undefined')module.exports=api;
+  const api={indexRows,rrMiniWindow,sameSamples,scopeKey,create};root.ECGOverviewLinkedView=api;if(typeof module!=='undefined')module.exports=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

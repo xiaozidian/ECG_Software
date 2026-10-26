@@ -410,6 +410,8 @@ def build_stt_review(conclusion: str, waveform_path=None, records=None, duration
         "reason_code": None if analysis else "waveform_not_supplied",
         "reasons": [] if analysis else ["未向筛查引擎提供原始波形与心搏定位数据"],
     }
+    from .evaluation_status import stt_status
+    automatic["evaluation"] = stt_status(automatic)
     return {
         "schema_version": "stt-screening-review-v2",
         "review_mode": "automatic_screening_with_physician_review" if analysis else "manual_review_only",

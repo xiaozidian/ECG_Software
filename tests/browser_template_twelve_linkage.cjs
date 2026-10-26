@@ -69,6 +69,7 @@ function installFixture() {
         bins: Array.from({length: 960}, (_, i) => i % 43 === 0 ? 2 : 0),
         total: selected.length, included: selected.length, sample_indices: selected,
         population_samples: selected, amplitude_limit: 180, skipped_edges: 0};
+      if(query.leads)value={...identity(),population_samples:selected,items:query.leads.split(',').map(lead=>({...value,lead}))};
     } else if (kind === 'overview') {
       value = {...identity(), duration_s: 300, rows: samples.map(s => [s, 800, 'N']),
         settings: {lead: 'II', pause: 2.5}, estimated_beats: false};

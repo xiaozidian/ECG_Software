@@ -130,6 +130,7 @@ def test_builder_timeout_is_not_misreported_as_busy():
 def test_busy_api_is_retryable_and_owner_result_remains_valid(synthetic_app, synthetic_case, monkeypatch):
     import app as server
     cache=synthetic_app.extensions['clinical_query_cache'];cache.wait_seconds=.01
+    synthetic_app.extensions['read_evidence_cache'].wait_seconds=.01
     original=server.build_index;entered=threading.Event();release=threading.Event();calls=[]
     def blocked(*args,**kwargs):
         calls.append(1);entered.set()
@@ -209,10 +210,10 @@ def test_query_pagination_and_category_changes_reuse_private_index(synthetic_app
         response=client.get(base+suffix)
         assert response.status_code == 200,response.json
     assert len(calls) == 1
-    # Consumers elsewhere never receive the cache-owned object.
+    # Statistics is another detached read projection of the same private index.
     assert client.get(base+'/report-statistics').status_code == 200
-    assert len(calls) == 2
-    assert client.get(base+'/report-events').status_code == 200 and len(calls) == 2
+    assert len(calls) == 1
+    assert client.get(base+'/report-events').status_code == 200 and len(calls) == 1
 
 
 @pytest.mark.parametrize('change',['source-data','source-ebi','source-lps','beat','template','rhythm','annotation','patient','review'])
@@ -255,17 +256,19 @@ def test_revision_change_never_publishes_mixed_index(synthetic_app, synthetic_ca
     cid=synthetic_case[1];client=synthetic_app.test_client();url=f'/api/cases/{cid}/report-events'
     name='build_index' if change=='during-build' else 'query_index'
     if change=='during-hit':assert client.get(url).status_code==200
-    original=getattr(server,name)
+    owner = synthetic_app.extensions['read_evidence_cache'] if change=='during-hit' else server
+    name = 'read' if change=='during-hit' else name
+    original=getattr(owner,name)
     def racing(*args,**kwargs):
         result=original(*args,**kwargs)
         synthetic_app.extensions['storage'].audit('synthetic','beat_override.editor',cid)
         return result
-    monkeypatch.setattr(server,name,racing)
+    monkeypatch.setattr(owner,name,racing)
     response=client.get(url)
     assert response.status_code==409,response.json
     if change=='during-build':
         assert synthetic_app.extensions['clinical_query_cache'].retention()['entries']==0
-    monkeypatch.setattr(server,name,original)
+    monkeypatch.setattr(owner,name,original)
     assert client.get(url).status_code==200
 
 

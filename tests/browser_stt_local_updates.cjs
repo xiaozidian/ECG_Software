@@ -52,9 +52,9 @@ function harness(){
     if(conflict)return Promise.resolve(response({error:'波形或事件依据已变化，请重新加载后复核'},409));
     return Promise.resolve(response(kind==='analysis-basis'?{...h.basis}:body(kind)));
   };
-  const context=h.ctx=vm.createContext({state,$,$$,fetch,ECGReadRequests:Reads.create(),ECGAnalysisConsistency:C,AbortController,URLSearchParams,
+  const context=h.ctx=vm.createContext({state,$,$$,fetch,ECGReadRequests:Reads.create(),ECGAnalysisConsistency:C,ECGReportSections:require('../static/js/report-sections.js'),AbortController,URLSearchParams,
     ALL_LEADS:leads,withPhi:x=>x,escapeHtml:String,formatElapsed:v=>`D1 ${Number(v).toFixed(0)}s`,fmtNumber:String,
-    document:{body:{classList:classes()}},window:{scrollTo(){}},ECGReviewTools:{shouldConfirmNavigation:()=>false},
+    document:{body:{classList:classes()}},window:{scrollTo(){}},ECGReviewTools:{...require('../static/js/clinical-review-tools.js'),shouldConfirmNavigation:()=>false},
     markWorkflowVisited(){},renderCaseWorkflow(){},updateWaveformModeUI(){},updateZoomControls(){},
     loadWaveform:async()=>{},loadScatter:async()=>{},enterWaveformFullscreen:async()=>{state.waveformExpanded=true;},
     ECGReportConsistency:{receive(){}},clinicalWorkflow:{receive(){},writable:()=>true,refresh:async()=>{},allowLeave:()=>true},

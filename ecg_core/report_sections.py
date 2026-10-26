@@ -74,6 +74,8 @@ def rr_derivatives(rows, excluded=()):
         hrt=dict(source_events=source_events,eligible_pvc=len(onsets),to_pct=round(sum(onsets)/len(onsets),4) if len(onsets)>=5 else None,ts_ms_per_rr=round(max(slopes),4) if len(onsets)>=5 else None,tachogram=[dict(x=i+1,y=round(v,4)) for i,v in enumerate(average)],method='HRT 研究性计算：孤立 V，前 5 / 后 20 个正常间期；排除完整间期与房颤/房扑区间的交集、伪差及不连续数据；正常间期相邻差≤200 ms，恢复间期相对前5个正常间期均值偏差≤20%。TO 为逐事件均值，TS 为平均恢复序列前 15 间期内 5 点最大回归斜率。少于 5 个合格事件不报 TO/TS；不输出风险等级。'),
         dc=dict(anchor_count=len(anchors),dc_ms=round((prsa[30]+prsa[31]-prsa[29]-prsa[28])/4,4) if len(anchors)>=20 else None,prsa=[dict(x=i-30,y=round(v,4)) for i,v in enumerate(prsa)],method='DC 研究性 PRSA：T=1，L=30；减速锚点增幅 0–5%，只用连续正常 N-N、排除异常节律区段。DC=(X0+X1-X-1-X-2)/4；少于 20 个锚点不报告值。阈值为软件质量控制，不是诊断标准。'))
 
+from .evaluation_status import stt_status
+
 def evidence(index, st=None):
     rows=sorted(qrs_rows(index['rows']),key=lambda r:r['sample_index'])
     rows=[dict(r,time_s=r['sample_index']/200) for r in rows]
@@ -87,7 +89,7 @@ def evidence(index, st=None):
     stride=max(1,(len(points)+7999)//8000)
     counts=Counter(r['class_code'] for r in rows if r['class_code'] in ('P','PA','PV','PD','PF'))
     st=st or {};trends=(st.get('analysis') or {}).get('trends',{}).get('leads',{})
-    return dict(sections=[dict(key=k,title=v,available=k not in UNAVAILABLE,reason=UNAVAILABLE.get(k,'')) for k,v in PAGE_TITLES.items()],scatter=dict(points=points[::stride],total=len(points),stride=stride),pacing=dict(counts=dict(counts),total=sum(counts.values()),method='仅统计当前起搏类型标记；不检测夺获失败、感知异常或器械故障。'),af_summary=summary,af=[dict(time_s=e['time_s'],end_s=e['end_s'],label=e['label'],status=e.get('rhythm_status',e['diagnosis_status'])) for e in af],st_trends=trends,st_events=st.get('automatic_candidates',{}).get('items',[]),**derivatives)
+    return dict(st_evaluation=stt_status(st.get('automatic_candidates')),sections=[dict(key=k,title=v,available=k not in UNAVAILABLE,reason=UNAVAILABLE.get(k,'')) for k,v in PAGE_TITLES.items()],scatter=dict(points=points[::stride],total=len(points),stride=stride),pacing=dict(counts=dict(counts),total=sum(counts.values()),method='仅统计当前起搏类型标记；不检测夺获失败、感知异常或器械故障。'),af_summary=summary,af=[dict(time_s=e['time_s'],end_s=e['end_s'],label=e['label'],status=e.get('rhythm_status',e['diagnosis_status'])) for e in af],st_trends=trends,st_events=st.get('automatic_candidates',{}).get('items',[]),**derivatives)
 
 def validate_pages(composition):
     pages=selected_pages(composition)

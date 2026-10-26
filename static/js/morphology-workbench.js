@@ -140,13 +140,51 @@ const morphologyWorkbench=(()=>{
     const form=qs('#morphTemplateForm'),mark=formContext,ownedFocus=returnFocus===true&&form.contains(document.activeElement);
     formSlot=null;formContext=null;form.hidden=true;if(ownedFocus)focusFormTrigger(mark);
   }
+  const densityBatches=new Map(),densitySignalIds=new WeakMap();let nextDensitySignal=0;
+  function densityRead(id,params,body,options,signal){
+    const lead=params.get('lead'),common=new URLSearchParams(params);common.delete('lead');
+    if(signal&&!densitySignalIds.has(signal))densitySignalIds.set(signal,++nextDensitySignal);
+    const key=JSON.stringify([id,common.toString(),body,signal?densitySignalIds.get(signal):null]);
+    let batch=densityBatches.get(key);
+    if(!batch){
+      batch={waiters:[],params:common,body,options,signal};densityBatches.set(key,batch);
+      // Coalesce only concurrent reads with identical case, complete evidence,
+      // population, amplitude/gate settings and cancellation owner.
+      Promise.resolve().then(async()=>{
+        densityBatches.delete(key);
+        const leads=[...new Set(batch.waiters.map(w=>w.lead))];
+        try{
+          const chunks=[];for(let i=0;i<leads.length;i+=2)chunks.push(leads.slice(i,i+2));
+          const responses=await Promise.all(chunks.map(async names=>{
+            const p=new URLSearchParams(batch.params);p.set(names.length>1?'leads':'lead',names.join(','));
+            return {names,response:await api('/api/cases/'+encodeURIComponent(id)+'/waveform-density?'+p,
+              {method:'POST',...batch.options,...(batch.signal?{signal:batch.signal}:{}),body:JSON.stringify(batch.body)})};
+          }));
+          const values=batch.waiters.map(w=>{
+            const {names,response}=responses.find(r=>r.names.includes(w.lead));
+            if(names.length===1)return batch.waiters.filter(x=>x.lead===w.lead).length===1?response:
+              (typeof structuredClone==='function'?structuredClone(response):JSON.parse(JSON.stringify(response)));
+            const item=response.items?.find(d=>d.lead===w.lead);
+            if(!item||!Array.isArray(response.population_samples))throw Error('双导联密度结果不完整，请重新读取');
+            const ownItem=batch.waiters.filter(x=>x.lead===w.lead).length===1?item:
+              (typeof structuredClone==='function'?structuredClone(item):JSON.parse(JSON.stringify(item)));
+            return {...ownItem,population_samples:response.population_samples.slice(),source_total:response.source_total,
+              revision:response.revision,case_id:response.case_id,analysis_basis:response.analysis_basis,
+              analysis_revision:response.analysis_revision,beat_revision:response.beat_revision};
+          });
+          batch.waiters.forEach((w,i)=>w.resolve(values[i]));
+        }catch(error){batch.waiters.forEach(w=>w.reject(error));}
+      });
+    }
+    return new Promise((resolve,reject)=>batch.waiters.push({lead,resolve,reject}));
+  }
   async function request(s,lead,payload={},gate=null,options={}){
     const params=new URLSearchParams({...s.params,lead});if(gate)params.set('gate',gate.join(','));
     // A successful save rebases this same session object. Keep the request's
     // identity immutable so a late response cannot inherit the newer revision.
     const expected={id:s.id,revision:s.revision,basis:s.basis,analysisRevision:s.analysisRevision},signal=options.signal||s.readController?.signal;
     if(signal?.aborted){const error=Error('密度读取已取消');error.name='AbortError';throw error;}
-    const d=await api('/api/cases/'+encodeURIComponent(expected.id)+'/waveform-density?'+params,{method:'POST',...options,...(signal?{signal}:{}),body:JSON.stringify({revision:expected.revision,beat_revision:expected.revision,...(expected.basis?{analysis_basis:expected.basis}:{}),...(expected.analysisRevision!==undefined?{analysis_revision:expected.analysisRevision}:{}),...payload})});
+    const d=await densityRead(expected.id,params,{revision:expected.revision,beat_revision:expected.revision,...(expected.basis?{analysis_basis:expected.basis}:{}),...(expected.analysisRevision!==undefined?{analysis_revision:expected.analysisRevision}:{}),...payload},options,signal);
     if(d.revision!==expected.revision){const error=Error('心搏修订版本已变化，请刷新病例后重新框选');error.code='STALE_REVISION';throw error;}
     if(globalThis.ECGLinkedSelection&&expected.analysisRevision!==undefined?(String(d.beat_revision)!==String(expected.revision)||String(d.analysis_basis)!==String(expected.basis)||String(d.analysis_revision)!==String(expected.analysisRevision)):(d.analysis_basis!==undefined&&String(d.analysis_basis)!==String(expected.basis)||d.analysis_revision!==undefined&&String(d.analysis_revision)!==String(expected.analysisRevision))){const error=Error('密度临床依据已变化，请重新读取');error.code='STALE_REVISION';throw error;}
     return d;

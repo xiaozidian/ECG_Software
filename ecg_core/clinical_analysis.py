@@ -12,7 +12,7 @@ from .rr_quality import nn_intervals, interval_mask, annotation_exclusions, cons
 from collections import Counter
 from datetime import datetime, timedelta
 
-CATEGORIES = [('fastest','最快心率'),('slowest','最慢心率'),('S','房早事件'),('V','室早事件'),('pause','停搏事件'),('rate','心率异常'),('AF','房颤事件'),('ST','ST段事件'),('other','其他事件')]
+CATEGORIES = [('fastest','最快心率'),('slowest','最慢心率'),('S','房早事件'),('V','室早事件'),('pause','长 RR 候选'),('rr_candidate','最长 RR 间期候选'),('rate','心率异常'),('AF','房颤事件'),('ST','ST段事件'),('other','其他事件')]
 PATTERNS = [('all','全部'),('single','单发'),('couplet','成对'),('triplet','连续三发'),('run','连续多发'),('tachycardia','心动过速'),('bigeminy','二联律'),('nnp','三联律（NNP）'),('npp','三联律（NPP）'),('quadrigeminy','四联律')]
 EXTREME_CANDIDATE_LIMIT = 200
 PERIODIC_VERSION = 'periodic-v2'
@@ -117,7 +117,7 @@ def build_index(feed, templates=(), annotations=(), review=None):
         for key,direction in [('fastest',1),('slowest',-1)]:
             ranked=sorted(usable,key=lambda r:(direction*r['rr_ms'],r['sample_index'],r['id']))[:EXTREME_CANDIDATE_LIMIT]
             for rank,r in enumerate(ranked,1):
-                item=make(key,name,name+' '+dict(CATEGORIES)[key]+f" {int(r['hr']) if float(r['hr']).is_integer() else r['hr']} bpm",[r])
+                item=make(key,name,name+' '+dict(CATEGORIES)[key]+f" {math.floor(r['hr']+0.5)} bpm",[r])
                 item['candidate_rank']=rank
     for previous,r in pairs:
         if r['rr_ms']>2500:
@@ -144,7 +144,7 @@ def build_index(feed, templates=(), annotations=(), review=None):
                 item['diagnosis_status'] = 'pending'  # Whole-editor approval cannot confirm a source run.
             i=j
     for r in rows+markers:
-        if r['class_code'] not in ('N','S','V','A','M','C','H'):
+        if r['class_code'] not in ('N','S','V','A','M','C','H','X'):
             make('other',r['class_code'],r.get('name',r['class_code']),[r])
     def kind_not_rhythm(d):return d['kind'] not in ('AF','AFL')
     for a in findings:
@@ -170,7 +170,7 @@ def build_index(feed, templates=(), annotations=(), review=None):
             item['range_statistics'] = copy.deepcopy(d['range_statistics'])
             item['end_s'] = (end + 1) / 200  # New range statistics use [start, end+1).
     events.sort(key=lambda x:(x['start_sample'],x['event_id']))
-    return dict(events=events,rows=rows+markers,templates=list(templates),basis_versions=basis,data_version=bv+'-'+av+'-rr-quality-v3-'+PERIODIC_VERSION+'-af-end-v1-status-v2',beat_version=bv,duration_s=feed.duration)
+    return dict(quality_control=dict(artifact_count=sum(r['class_code']=='X' for r in rows+markers),artifact_samples=[r['sample_index'] for r in rows+markers if r['class_code']=='X'],role='quality_control_only'),events=events,rows=rows+markers,templates=list(templates),basis_versions=basis,data_version=bv+'-'+av+'-rr-quality-v3-'+PERIODIC_VERSION+'-af-end-v1-status-v2-no-artifact-v1',beat_version=bv,duration_s=feed.duration)
 
 def event_time_bins(index, items, params, time_of=None):
     """Clock-aligned half-open buckets; histogram precedes the time filter."""
@@ -223,23 +223,28 @@ def query_index(index,params,occurrences=False):
     if raw_occurrences:
         # Filter/sort references first. A 24-card page must not allocate a rich
         # event object for each of the roughly 100,000 beats in a daily record.
-        items=[r for r in index['rows'] if (code=='all' or r['class_code']==code)
+        items=[r for r in index['rows'] if (code=='all' or (r['class_code'] not in ('N','S','V') if code=='other' else r['class_code']==code))
                and (samples is None or r['sample_index'] in samples)]
     else:
         items=[e for e in events if (selected_ids is not None and e['event_id'] in selected_ids) or (selected_ids is None and (e['category']==('AF' if code in ('A','M','C','H') else code) if occurrences else category=='all' or e['category']==category) and (e['subtype']==mode if mode!='all' else not e['pattern_only']) and (e['category'] not in ('fastest','slowest') or fast=='BOTH' or e['subtype']==fast))]
         if samples is not None:items=[e for e in items if any(s in samples for s in e['target_samples'])]
     pause_band=params.get('pause_band','all')
-    if pause_band not in ('all','over3','2.5to3'):raise ValueError('无效的长 RR 筛选范围')
+    if pause_band not in ('all','over3','2.5to3','b0','b1','b2'):raise ValueError('无效的长 RR 筛选范围')
     pauses=[e for e in events if e['category']=='pause']
     pause_counts={'all':len(pauses),'over3':sum(e['rr_ms']>3000 for e in pauses),'2.5to3':sum(e['rr_ms']<=3000 for e in pauses)}
+    from .review_candidates import rr_distribution
+    pause_distribution=rr_distribution(index['rows'],index['duration_s'],params.get('pause_edges_ms'))
     if not occurrences and category=='pause' and selected_ids is None and pause_band!='all':
-        items=[e for e in items if (e['rr_ms']>3000 if pause_band=='over3' else e['rr_ms']<=3000)]
+        if pause_band.startswith('b'):
+            bucket=pause_distribution['bins'][int(pause_band[1])]
+            items=[e for e in items if e['rr_ms']>=bucket['lower_ms'] and (bucket['upper_ms'] is None or e['rr_ms']<bucket['upper_ms'])]
+        else:items=[e for e in items if (e['rr_ms']>3000 if pause_band=='over3' else e['rr_ms']<=3000)]
     rate_candidates=not occurrences and category in ('fastest','slowest') and selected_ids is None
     raw_spacing=params.get('candidate_spacing_s',0)
     if isinstance(raw_spacing,bool) or not isinstance(raw_spacing,(str,int,float)) or raw_spacing not in (0,7,30,60,'0','7','30','60'):
         raise ValueError('候选定位点间隔须为 0、7、30 或 60 秒')
     spacing=int(raw_spacing) if rate_candidates else 0
-    sort_order=params.get('sort','hr_desc') if rate_candidates else 'time'
+    sort_order=params.get('sort','hr_asc') if category=='rr_candidate' else params.get('sort','hr_desc') if rate_candidates else 'time'
     if sort_order not in ('hr_desc','hr_asc','time'):raise ValueError('无效的候选排序方式')
     if raw_occurrences:
         items.sort(key=lambda r:(r['sample_index'],r['id']))
@@ -292,7 +297,7 @@ def query_index(index,params,occurrences=False):
         focus = dict(focus_index=target)
     page=items[offset:offset+limit]
     if raw_occurrences:page=[occurrence_item(r,index,code,template) for r in page]
-    return dict(**focus,candidate_spacing_s=spacing,candidate_unspaced_total=unspaced_total,candidate_hidden_count=unspaced_total-len(items),time_bins=time_bins,time_filter=bounds,unfiltered_total=unfiltered_total,pause_counts=pause_counts,pause_band=pause_band,sort_order=sort_order,candidate_limit=EXTREME_CANDIDATE_LIMIT if rate_candidates else None,confirmed_category_counts=confirmed_counts,confirmed_beat_counts=confirmed_beats,time_counts=dict(time_counts),items=page,total=len(items),offset=offset,limit=limit,category_counts=counts,subtype_counts=dict(subtypes),beat_counts=dict(beats),basis_versions=index['basis_versions'],data_version=index['data_version'])
+    return dict(**focus,candidate_spacing_s=spacing,candidate_unspaced_total=unspaced_total,candidate_hidden_count=unspaced_total-len(items),time_bins=time_bins,time_filter=bounds,unfiltered_total=unfiltered_total,pause_counts=pause_counts,pause_distribution=pause_distribution,pause_band=pause_band,sort_order=sort_order,candidate_limit=EXTREME_CANDIDATE_LIMIT if rate_candidates else None,confirmed_category_counts=confirmed_counts,confirmed_beat_counts=confirmed_beats,time_counts=dict(time_counts),items=page,total=len(items),offset=offset,limit=limit,category_counts=counts,subtype_counts=dict(subtypes),beat_counts=dict(beats),basis_versions=index['basis_versions'],data_version=index['data_version'])
 
 def hrv_windows(feed,start_time,window=0):
     """NN intervals must lie wholly inside a statistical window; gaps break differences."""
@@ -323,6 +328,7 @@ def hrv_windows(feed,start_time,window=0):
     return dict(window_index=window,window_count=max(1,math.ceil(duration/86400)),start_s=lo,end_s=hi,actual_duration_s=hi-lo,clock_available=clock is not None,periods={'full':period('24小时窗口' if hi-lo==86400 else '当前记录（不足24小时）',[(lo,hi)]),'day':period('日间 06:00–22:00（清醒代理）',day),'night':period('夜间 22:00–06:00',night)},hourly=hourly,method='修订后连续 N-N；窗口内直接计算；缺失时段留空；日间是清醒时段代理')
 
 def normalize_selection(raw):
+    from .report_curation import strip_curation
     if not isinstance(raw,dict):raise ValueError('报告选择必须为对象')
     result={'schema_version':2,'selected_events':[],'category_reviews':{},'diagnosis_blocks':[]}
     entries=raw.get('selected_events',[])
@@ -334,7 +340,7 @@ def normalize_selection(raw):
         seen.add(entry['event_id'])
         for field in ('basis_version','caption'):
             if not isinstance(entry.get(field,''),str) or len(entry.get(field,''))>500:raise ValueError('无效图条字段')
-        result['selected_events'].append({**{k:entry.get(k,'') for k in ('event_id','basis_version','caption')}, **strip_settings(entry)})
+        result['selected_events'].append({**{k:entry.get(k,'') for k in ('event_id','basis_version','caption')}, **strip_settings(entry), **strip_curation(entry)})
     result['strip_defaults'] = strip_settings(raw.get('strip_defaults'))
     reviews=raw.get('category_reviews',{})
     if not isinstance(reviews,dict) or any(k not in dict(CATEGORIES) or not isinstance(v,str) or len(v)>100 for k,v in reviews.items()):raise ValueError('无效分类筛选状态')
@@ -344,12 +350,18 @@ def normalize_selection(raw):
     for b in blocks:
         if not isinstance(b,dict) or any(not isinstance(b.get(k,''),str) or len(b.get(k,''))>2000 for k in ('key','text')):raise ValueError('无效诊断文字')
         result['diagnosis_blocks'].append({k:b.get(k,False if k in ('manual','needs_review','acknowledged') else '') for k in ('key','text','manual','needs_review','acknowledged')})
+    from .review_candidates import pause_edges
+    result['pause_edges_ms']=pause_edges(raw.get('pause_edges_ms'))
     return result
 
 def validate_report(index,composition,review,approving=False):
+    from .report_curation import strip_curation
     lookup={e['event_id']:e for e in index['events']};selected=[]
     for entry in composition.get('selected_events',[]):
         e=lookup.get(entry['event_id'])
+        if entry['event_id'].startswith('other:X:') or (e and e.get('category')=='other' and e.get('subtype')=='X'):
+            if approving:raise ValueError('伪差仅用于质控，请移除历史伪差图条后再审核')
+            continue
         if e is None or e['basis_version']!=entry['basis_version']:
             if approving:raise ValueError('已选图条因诊断修订失效，请重新筛选')
             continue
@@ -360,7 +372,7 @@ def validate_report(index,composition,review,approving=False):
         if approving and e['diagnosis_status']!='confirmed':raise ValueError('请先完成编辑／ST-T诊断确认')
         spec=strip_settings(entry)
         if 'range_start_s' in spec: resolve_strip(index,e,spec)
-        selected.append({**e,'caption':entry.get('caption') or e['label'], **spec})
+        selected.append({**e,'caption':entry.get('caption') or e['label'], **spec, **strip_curation(entry)})
     if approving:
         counts=query_index(index,{'fast_slow_mode':composition.get('fast_slow_mode','rr')})['category_counts']
         missing=[label for key,label in CATEGORIES if counts[key] and composition.get('category_reviews',{}).get(key)!=index['basis_versions'][key]]

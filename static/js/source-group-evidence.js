@@ -3,7 +3,7 @@
 globalThis.ECGSourceGroupEvidence=(()=>{
   let closeCurrent=null;
   function clear(){closeCurrent?.();closeCurrent=null;}
-  function mount(host,{item,loadWave,onLocate,isCurrent}){
+  function mount(host,{item,loadWave,onLocate,isCurrent,recordStart=null}){
     clear();
     const samples=item.target_samples||[];
     if(samples.length<2){host.hidden=true;return;}
@@ -26,8 +26,8 @@ globalThis.ECGSourceGroupEvidence=(()=>{
         const wave=await loadWave({start:Math.max(0,sample/200-3),duration:6,filter:'raw',max_points:1500,leads:twelve?'I,II,III,aVR,aVL,aVF,V1,V2,V3,V4,V5,V6':'II,V1,V5'},controller.signal);
         if(request!==sequence||!current())return;
         if(wave.stride!==1||wave.filter!=='raw')throw Error('未取得逐采样原始片段，不能作为本区证据');
-        waveHost.innerHTML=ECGOccurrenceCard.svg(wave,{sample_index:sample,label:'组合逐搏原始证据'},{width:900,height:(twelve?12:3)*70});
-        status.textContent=`第 ${index+1} / ${samples.length} 源搏 · 采样 ${sample} · 记录后 ${(sample/200).toFixed(3)} 秒 · ${wave.duration_s} 秒原始片段 · 步进 1 · 设备单位 u，未校准`;
+        waveHost.innerHTML=ECGOccurrenceCard.svg(wave,{sample_index:sample,label:'组合逐搏原始证据'},{width:Math.max(600,waveHost.clientWidth||900),height:(twelve?12:3)*70+(twelve?48:24),columns:1,timeAxis:true,recordStart,domain:ECGReviewTools.waveDomain(wave,JSON.stringify([wave.case_id,wave.data_version,wave.analysis_basis,wave.analysis_revision,item.event_id,item.basis_version,'source-group']))});
+        status.textContent=ECGReviewTools.waveMeta(wave,recordStart,ECGReviewTools.waveDomain(wave,JSON.stringify([wave.case_id,wave.data_version,wave.analysis_basis,wave.analysis_revision,item.event_id,item.basis_version,'source-group'])))+` · 第 ${index+1} / ${samples.length} 源搏 · 采样 ${sample} · 记录后 ${(sample/200).toFixed(3)} 秒 · ${wave.duration_s} 秒原始片段 · 步进 1 · 设备单位 u，未校准`;
       }catch(error){
         if(request!==sequence||!current()||error.name==='AbortError')return;
         status.textContent='原始证据读取失败：'+error.message+'；可重试，组合目标未改变。';q('[data-sg-retry]').hidden=false;
@@ -37,6 +37,7 @@ globalThis.ECGSourceGroupEvidence=(()=>{
     q('[data-sg-prev]').onclick=()=>move(index-1);q('[data-sg-next]').onclick=()=>move(index+1);
     function go(){const n=Number(input.value);input.setCustomValidity(Number.isSafeInteger(n)&&n>=1&&n<=samples.length?'':`请输入 1–${samples.length} 的整数`);if(input.reportValidity())move(n-1);}
     input.oninput=()=>input.setCustomValidity('');input.onkeydown=e=>{e.stopPropagation();if(e.key==='Enter'){e.preventDefault();go();}};q('[data-sg-go]').onclick=go;
+    waveHost.ondblclick=e=>{if(e.button===0&&current()&&!twelve){e.preventDefault();twelve=true;read();}};
     q('[data-sg-twelve]').onclick=()=>{if(current()){twelve=!twelve;read();}};
     q('[data-sg-locate]').onclick=()=>{if(current())onLocate(samples[index]/200);};
     q('[data-sg-retry]').onclick=read;q('[data-sg-close]').onclick=clear;

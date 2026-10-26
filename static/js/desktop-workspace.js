@@ -73,7 +73,7 @@ const desktopWorkspace=(()=>{
           let waveIndex=0;values=records.map((r,i)=>({record:r,wave:r?waves[waveIndex++]:null,total:source[i].total}));cache.set(key,values);while(cache.size>8)cache.delete(cache.keys().next().value);
         }
         if(!current())return;
-        host.querySelectorAll('.workspace-master-card').forEach((card,i)=>{const v=values[i],slot=card.querySelector('.workspace-master-wave');card.querySelector('header span').textContent=fmtNumber(v.total)+' 搏';card.dataset.populationCount=String(v.total);if(v.record&&v.wave){const width=slot.clientWidth||170;slot.innerHTML=ECGOccurrenceCard.svg(v.wave,{...v.record,label:v.record.class_code||v.record.label},{width,height:90});card.dataset.representativeSample=String(v.record.sample_index);card.dataset.representativeCode=v.record.class_code||v.record.label;slot.setAttribute('aria-label','完整集合 '+v.total+' 搏；代表位置 '+formatElapsed(v.record.sample_index/200));}else slot.textContent='该集合没有心搏';});
+        host.querySelectorAll('.workspace-master-card').forEach((card,i)=>{const v=values[i],slot=card.querySelector('.workspace-master-wave');card.querySelector('header span').textContent=fmtNumber(v.total)+' 搏';card.dataset.populationCount=String(v.total);if(v.record&&v.wave){const width=slot.clientWidth||170;slot.innerHTML=ECGOccurrenceCard.svg(v.wave,{...v.record,label:v.record.class_code||v.record.label},{width,height:132,annotations:'none',centerSample:v.record.sample_index});card.dataset.representativeSample=String(v.record.sample_index);card.dataset.representativeCode=v.record.class_code||v.record.label;slot.setAttribute('aria-label','完整集合 '+v.total+' 搏；代表位置 '+formatElapsed(v.record.sample_index/200));}else slot.textContent='该集合没有心搏';});
       }catch(error){if(!current()||error.name==='AbortError')return;host.querySelectorAll('.workspace-master-wave').forEach(slot=>{slot.replaceChildren(document.createTextNode('波形读取失败 '));const retry=document.createElement('span');retry.className='workspace-master-retry';retry.textContent='点击重试';slot.append(retry);});host.dataset.failed='true';}
     }
     load();
@@ -87,15 +87,17 @@ const desktopWorkspace=(()=>{
   function schedule(){if(!frame)frame=requestAnimationFrame(()=>{frame=0;arrange()});}
   function arrange(){
     const page=q('#page-edit'),library=state.editMode==='library';if(page?.classList.contains('workspace-library')!==library)page?.classList.toggle('workspace-library',library);
+    const preview=q('.workspace-master-preview'),compact=innerWidth>=1100&&innerHeight<=780;
+    if(preview&&preview.dataset.compact!==String(compact)){preview.dataset.compact=String(compact);preview.open=!compact;}
     if(state.currentPage!=='edit'&&controller&&!controller.signal.aborted){controller.abort();deckKey='';deckToken++;}
     const panel=q('.edit-gallery-panel'),filters=q('#occurrenceFilters');if(panel&&filters&&library){
       let tools=q('#workspaceOccurrenceTools');if(!tools){tools=document.createElement('div');tools.id='workspaceOccurrenceTools';panel.prepend(tools);}
       const nodes=['#occurrenceFilters','#occurrenceViewControls','.occurrence-actions'].map(q).filter(Boolean);nodes.forEach((el,i)=>{if(tools.children[i]!==el)tools.insertBefore(el,tools.children[i]||null);});
       const slider=q('#v2EditTime'),wave=q('.edit-library-wave-panel');if(slider&&wave&&slider.parentElement!==wave)wave.append(slider);
       const toolbar=q('#occurrenceSelectionToolbar');if(toolbar&&toolbar.parentElement===panel&&tools.nextSibling!==toolbar)tools.after(toolbar);
-      // Reserve an integral number of unchanged 142px card rows. The rest is
+      // Reserve complete readable three-lead card rows. The rest is
       // owned by the continuous-wave slot, without cropping a card at 720px.
-      if(innerWidth>=1100){const h=Math.max(142,panel.clientHeight-tools.offsetHeight-(toolbar?.offsetHeight||0)),rows=Math.floor(h/142),gallery=q('#editTemplateGallery');if(gallery.dataset.workspaceRows!==String(rows)){gallery.dataset.workspaceRows=String(rows);clinicalUI.renderOccurrences();}}
+      if(innerWidth>=1100){const row=ECGOccurrenceCard.geometry.row,h=Math.max(row,panel.clientHeight-tools.offsetHeight-(toolbar?.offsetHeight||0)),rows=Math.max(1,Math.floor(h/row)),gallery=q('#editTemplateGallery');if(gallery.dataset.workspaceRows!==String(rows)){gallery.dataset.workspaceRows=String(rows);clinicalUI.renderOccurrences();}}
     }
     if(!library){
       const pageHeading=page?.querySelector(':scope>.page-heading');
@@ -106,17 +108,25 @@ const desktopWorkspace=(()=>{
         const controls=q('#occurrenceViewControls'),actions=q('.occurrence-actions');
         if(controls)heading.after(controls);if(actions)gallery.before(actions);tools.remove();
       }
+      const selection=q('#occurrenceSelectionToolbar'),buttons=selection?.querySelector(':scope>div');
+      if(buttons){const menu=document.createElement('details');menu.className='workspace-selection-menu';const label=document.createElement('summary');label.textContent='所选操作';menu.append(label,buttons);selection.append(menu);}
+      const scope=selection?.querySelector('p');if(scope)scope.title=scope.textContent;
       if(innerWidth>=1100&&gallery&&panel){
         const stack=panel.parentElement,style=getComputedStyle(panel),stackStyle=getComputedStyle(stack),gap=Number.parseFloat(stackStyle.rowGap)||0;
         // Some controls share a grid row. Budget their occupied span, rather
         // than summing both heights and starving the continuous-wave canvas.
         const controls=Math.ceil(gallery.getBoundingClientRect().top-panel.getBoundingClientRect().top+(Number.parseFloat(style.paddingBottom)||0)+(Number.parseFloat(style.borderBottomWidth)||0));
         const wave=q('.edit-waveform-panel'),canvas=q('#editWaveformCanvas');
-        const canvasMinimum=Number.parseFloat(stackStyle.getPropertyValue('--cluster-wave-canvas-height'))||221;
-        const waveChrome=wave&&canvas?Math.max(0,wave.getBoundingClientRect().height-canvas.getBoundingClientRect().height):0;
+        const canvasMinimum=170;
+        // Measure controls directly: an overflowing canvas must not make the
+        // chrome budget negative and grow itself on the next resize pass.
+        const waveChrome=wave?['.edit-wave-toolbar','.clinical-beat-toolbar','#v2EditTime','.edit-wave-foot'].reduce((h,s)=>h+(wave.querySelector(s)?.getBoundingClientRect().height||0),2):0;
         const overview=stack.querySelector(':scope>.edit-overview-panel'),overviewHeight=overview?.getBoundingClientRect().height||72;
-        const maximum=Math.max(controls+142,stack.clientHeight-overviewHeight-gap*2-waveChrome-canvasMinimum),available=Math.max(142,maximum-controls),rows=Math.max(1,Math.floor(available/142)),height=Math.ceil(controls+rows*142);
+        const row=ECGOccurrenceCard.geometry.row,maximum=Math.max(controls+row,stack.clientHeight-overviewHeight-gap*2-waveChrome-canvasMinimum),available=Math.max(row,maximum-controls),rows=Math.max(1,Math.floor(available/row)),height=Math.ceil(controls+rows*row);
         if(stack.style.getPropertyValue('--cluster-gallery-height')!==height+'px')stack.style.setProperty('--cluster-gallery-height',height+'px');
+        const canvasHeight=Math.max(canvasMinimum,Math.min(240,stack.clientHeight-overviewHeight-gap*2-height-waveChrome));
+        stack.style.setProperty('--cluster-wave-canvas-height',Math.floor(canvasHeight)+'px');
+        stack.style.setProperty('--cluster-wave-height',Math.floor(canvasHeight)+waveChrome+'px');
         if(gallery.dataset.workspaceRows!==String(rows)){gallery.dataset.workspaceRows=String(rows);clinicalUI.renderOccurrences();}
       }
     }
@@ -156,8 +166,10 @@ const desktopWorkspace=(()=>{
       event.preventDefault();event.stopPropagation();
       const tab=q(event.key==='Home'?'#editClusterMode':event.key==='End'?'#editLibraryMode':state.editMode==='cluster'?'#editLibraryMode':'#editClusterMode');tab.click();tab.focus({preventScroll:true});
     });
-    const inline=q('.edit-library-wave-wrap>.clinical-beat-toolbar');inline.hidden=true;
+    const inline=q('.edit-library-wave-wrap>.clinical-beat-toolbar');inline.hidden=false;
     const heading=q('.edit-library-deck-panel .edit-panel-heading');heading.querySelector('h2').textContent='形态主模板库';heading.querySelector('p').textContent='实际保存的形态模板；无模板时仅显示分类代表波形';
+    const deck=q('#editLibraryDeck'),preview=document.createElement('details');preview.className='workspace-master-preview';
+    const summary=document.createElement('summary');summary.textContent='查看分类 / 模板代表波形';deck.before(preview);preview.append(summary,deck);
     const filter=q('.edit-library-filter-panel');filter.querySelector('h2').textContent='全天心率定位';filter.querySelector('p').textContent='HR 趋势，不是形态分布';q('#editLibraryTypeStrip').hidden=true;
     q('.edit-library-density-panel').setAttribute('aria-label','当前完整集合双导联密度');q('.edit-library-density-panel figure:first-child small').textContent='完整集合';q('.edit-library-density-panel figure:nth-of-type(2) figcaption span').textContent='完整集合';
     const retry=document.createElement('button');retry.id='workspaceDensityRetry';retry.type='button';retry.textContent='重读密度';retry.onclick=()=>morphologyWorkbench.refresh(true);const densityNote=q('.edit-library-density-panel>p');retry.title=densityNote.textContent;densityNote.remove();q('.edit-library-density-panel').append(retry);
@@ -179,7 +191,7 @@ const desktopWorkspace=(()=>{
     const help=document.createElement('details');help.className='workspace-keyboard-help';help.innerHTML='<summary>快捷键</summary>';help.append(rail.querySelector('.keyboard-card'));q('.ov-commandbar>div:last-child').append(help);
     const range=q('.scatter-keyboard-select');range.classList.add('workspace-scatter-range');
     const mode=q('.ov-scatter-mode-picker'),controls=document.createElement('div');controls.className='workspace-scatter-controls';
-    range.before(controls);if(mode)controls.append(mode);controls.append(range);
+    const options=q('.ov-scatter-options');options.after(controls);controls.append(range);
     const summary=range.querySelector('summary');summary.textContent='键盘选区';summary.setAttribute('aria-label','键盘范围选择');
   }
   document.addEventListener('DOMContentLoaded',mount);

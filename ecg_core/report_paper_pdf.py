@@ -15,6 +15,15 @@ def number(x):
     return '—' if x is None else f'{x:g}' if isinstance(x, (int, float)) else str(x)
 
 
+def bpm(value):
+    import math
+    if value is None or isinstance(value, bool):return '—'
+    try:
+        numeric=float(value)
+        return str(math.floor(numeric+.5)) if math.isfinite(numeric) else '—'
+    except (TypeError,ValueError):return '—'
+
+
 def wrap_text(text, width=53, conservative=False):
     lines = []
     for source in str(text or '（未填写）').split('\n'):
@@ -112,11 +121,11 @@ def build_paper_pdf(case, report, font):
         line(95,67,95,137)
         line(0,102,190,102)
         line(0,137,190,137)
-        hr = lambda p: f"{number(p['hr'])} 次/分（{clock(meta,p['time_s'])[5:]}）" if p else '—'
+        hr = lambda p: f"{bpm(p['hr'])} 次/分（{clock(meta,p['time_s'])[5:]}）" if p else '—'
         text(2,68,'概要',10)
         pairs(2,74,[('总心搏数',str(s.get('total','—'))+' 搏'),('伪差',str(s.get('noise','—'))+' 个'),('室性/室上性心搏',f"{s.get('V',{}).get('total','—')} / {s.get('S',{}).get('total','—')} 搏"),('最长 RR',f"{number(s['longest']['rr_ms']/1000)} 秒" if s.get('longest') else '—'),('发生时间',clock(meta,s['longest']['time_s'])[5:] if s.get('longest') else '—'),('长 RR 候选',f"{s.get('pause','—')} 次 >2.5s；其中 {s.get('pause_over3','—')} 次 >3s")],28)
         text(97,68,'心率',10)
-        pairs(97,74,[('最慢心率',hr(s.get('slowest'))),('平均心率',number(s.get('avg_hr'))+' 次/分'),('最快心率',hr(s.get('fastest'))),('快心率心搏',f"{s.get('tachy_beats','—')} 搏（≥{opts.get('tachy','—')} bpm）"),('慢心率心搏',f"{s.get('brady_beats','—')} 搏（≤{opts.get('brady','—')} bpm）"),('已确认房颤/房扑',str(s.get('af','—'))+' 段')],30)
+        pairs(97,74,[('最慢心率',hr(s.get('slowest'))),('平均心率',bpm(s.get('avg_hr'))+' 次/分'),('最快心率',hr(s.get('fastest'))),('快心率心搏',f"{s.get('tachy_beats','—')} 搏（≥{opts.get('tachy','—')} bpm）"),('慢心率心搏',f"{s.get('brady_beats','—')} 搏（≤{opts.get('brady','—')} bpm）"),('已确认房颤/房扑',str(s.get('af','—'))+' 段')],30)
         for code, x, title in [('V',2,'室性心搏'),('S',97,'室上性心搏')]:
             d = s.get(code,{})
             text(x,103,title,10)
@@ -127,6 +136,8 @@ def build_paper_pdf(case, report, font):
         source=case.get('summary',{})
         text(2,153,f"频域（源报告独立对照）：LF/HF {number(source.get('lf_hf'))} · LF {number(source.get('lf'))} · HF {number(source.get('hf'))}；— 表示未提供或样本不足。",7)
         lines(0,160,wrap_text(stats.get('method','当前修订结果，须医生复核。')+' 所有自动结果仍须医生核对。',74),7,3.2)
+        bins=stats.get('pause_distribution',{}).get('bins',[])
+        if bins:text(0,170,'长 RR 互斥统计：'+'；'.join(f"{b['label']} {b['count']} 次" for b in bins)+'（含下界；不改检测阈值）',7)
         heading('报告结论',174)
         box(0,181,190,86)
         lines(2,183,conclusion,10,4.9)
@@ -163,7 +174,7 @@ def build_paper_pdf(case, report, font):
         for ri,r in enumerate(rows+([dict(summary,label='总计')] if final else [])):
             y=32+ri*7.9
             if ri==len(rows):line(0,y-1,190,y-1)
-            values=[r.get('label',''),r.get('total'),r.get('min_hr'),r.get('avg_hr'),r.get('max_hr')]
+            values=[r.get('label',''),r.get('total'),bpm(r.get('min_hr')),bpm(r.get('avg_hr')),bpm(r.get('max_hr'))]
             for code in ['V','S']:values.extend(r.get(code,{}).get(k) for k in ['single','couplet','run','bigeminy','trigeminy','total','pct'])
             values.extend([r.get('af'),f"{r.get('pause','—')}/{r.get('pause_over3','—')}"])
             for col,v in enumerate(values):
@@ -187,7 +198,7 @@ def build_paper_pdf(case, report, font):
         millis=round((start-int(start))*1000)
         text(12,top,clock(meta,start)+(f'.{millis:03}' if millis else ''),8)
         text(100,top+4.5,entry.get('display_caption') or entry.get('caption') or entry.get('label','心电图条'),9,'center')
-        text(187,top,'HR: '+number(entry.get('hr'))+' bpm',8,'right')
+        text(187,top,'HR: '+bpm(entry.get('hr'))+' bpm',8,'right')
         left,w=12,segment.get('width_mm',175)
         review_note=strip_review_note(entry)
         note_space=4 if review_note else 0
@@ -200,7 +211,7 @@ def build_paper_pdf(case, report, font):
             x=left+(beat['sample_index']/200-start)/duration*w
             if start<=beat['sample_index']/200<start+duration-1e-8:
                 text(x,top+10,beat.get('class_code',''),6,'center')
-                text(x,top+12.5,number(round(beat['hr'])) if beat.get('hr') else '—',5.5,'center')
+                text(x,top+12.5,bpm(beat.get('hr')),5.5,'center')
                 text(x,top+15,number(beat.get('rr_ms')),5.5,'center')
         def trace(values,x,y,width,scale,center,half,sample_rate=None,seconds=None,offset=0):
             if not values:return False
@@ -264,8 +275,11 @@ def build_paper_pdf(case, report, font):
         pages.append(sheet);batch=[];units=0
     caption_notes=[]
     for i,original in enumerate(report.get('selected_waveforms',[])):
+        if original.get('print_enabled') is False:continue
         mode=report.get('composition',{}).get('fast_slow_mode','rr')
         if original.get('category') in ('fastest','slowest') and mode!='both' and original.get('subtype')!=mode.upper():continue
+        if original.get('notes'):
+            caption_notes.extend(wrap_text(f"图条 {i+1} 注释：{original['notes']}",53,bool(alias))+[''])
         entry=dict(original)
         caption=entry.get('caption') or entry.get('label','心电图条')
         caption_lines=wrap_text(caption,46,bool(alias))

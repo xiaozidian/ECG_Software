@@ -27,14 +27,14 @@
     const spec=settings(raw),total=Math.max(.005,index.duration_s),anchor=Math.min(Math.max(0,event.start_sample/200),total),length=Math.min(total,spec.duration_s),rows=beatRows(index),times=rows.map(r=>r.sample_index/200);
     let start=Math.max(0,Math.min(anchor-length/2,total-length)),end=start+length;
     let pauseStartSample=null;
-    if(event.category==='pause'){
-      const pairs=intervalPairs(index.rows,index.duration_s).filter(([,b])=>b.sample_index===event.start_sample&&b.rr_ms>2500);
+    if(['pause','rr_candidate'].includes(event.category)){
+      const pairs=intervalPairs(index.rows,index.duration_s).filter(([a,b])=>b.sample_index===event.start_sample&&(event.category==='pause'?b.rr_ms>2500:a.sample_index===event.candidate_context?.rr_start_sample));
       if(pairs.length!==1)throw Error('长 RR 的 R 峰依据已变化，请重新选择事件');
       pauseStartSample=pairs[0][0].sample_index;
       start=Math.max(0,Math.min(start,pauseStartSample/200-.2));end=Math.min(total,Math.max(end,anchor+.3));
     }
     const manual='range_start_s' in spec;
-    if(manual){start=spec.range_start_s;end=spec.range_end_s;if(end>total||!(start<=anchor&&anchor<end))throw Error('人工区间须在记录范围内，并包含当前事件定位心搏');if(pauseStartSample!==null&&Math.round(start*200)>pauseStartSample)throw Error('停搏候选入图须包含完整长 RR 间期的两个 R 峰');if(times.filter(t=>t>=start&&t<end).length<Math.min(5,times.length))throw Error('人工入报区间至少包含 5 个可用心搏，请向外拖动橘色边界')}
+    if(manual){start=spec.range_start_s;end=spec.range_end_s;if(end>total||!(start<=anchor&&anchor<end))throw Error('人工区间须在记录范围内，并包含当前事件定位心搏');if(pauseStartSample!==null&&Math.round(start*200)>pauseStartSample)throw Error('RR 候选入图须包含完整间期的两个 R 峰（原始计时点）');if(times.filter(t=>t>=start&&t<end).length<Math.min(5,times.length))throw Error('人工入报区间至少包含 5 个可用心搏，请向外拖动橘色边界')}
     if(!manual&&times.filter(t=>t>=start&&t<end).length<5&&times.length){
       const n=Math.min(5,times.length),found=times.findIndex(t=>t>=anchor),pivot=found<0?times.length-1:found,candidates=[];
       for(let i=Math.max(0,pivot-n);i<Math.min(pivot+1,times.length-n+1);i++){
@@ -49,7 +49,7 @@
     return {...spec,start_s:start,end_s:end,actual_duration_s:actual,visible_beats:visible,visible_beat_count:visible.length,warning,
       context_start_s:Math.max(0,Math.min(anchor-Math.max(30,actual*3)/2,total-Math.min(total,Math.max(30,actual*3)))),context_duration_s:Math.min(total,Math.max(30,actual*3))};
   }
-  function statistics(index,startTime,opts){
+  function statistics(index,startTime,opts,pauseEdges=null){
     const rows=beatRows(index),parsed=Date.parse(String(startTime).replace(' ','T').slice(0,19)+'Z'),clock=Number.isFinite(parsed)?parsed:null,round=x=>Math.round(x*100)/100;
     const quality=globalThis.ECGRRQuality||(typeof require==='function'?require('./rr-quality.js'):null);
     const rrRows=quality.validRRRows(index.rows,index.duration_s),rateRows=rrRows.filter(quality.consistentRate),episodes=quality.rhythmEpisodes(index.events);
@@ -66,7 +66,8 @@
     }
     const hourly=[];let t=0;
     while(t<index.duration_s){const dt=clock!==null?new Date(clock+t*1000):null,length=Math.min(index.duration_s-t,3600-(dt?dt.getUTCMinutes()*60+dt.getUTCSeconds()+dt.getUTCMilliseconds()/1000:t%3600)),end=t+length;hourly.push({label:dt?dt.toISOString().slice(5,16).replace('T',' '):`+${t/3600}h`,start_s:t,end_s:end,...aggregate(t,end)});t=end;}
-    return {summary:aggregate(0,index.duration_s),hourly,settings:opts,method:'当前修订逐搏统计；心率由有效 RR 计算。成对、短阵和联律按起点计次，模式可重叠，不与总心搏相加；长 RR 为阈值候选，房颤/房扑仅计医生已确认片段。'};
+    const pause_distribution=quality.rrDistribution(index.rows,index.duration_s,pauseEdges);pause_distribution.bins.forEach(b=>delete b.samples);
+    return {pause_distribution,summary:aggregate(0,index.duration_s),hourly,settings:opts,method:'当前修订逐搏统计；心率由有效 RR 计算。成对、短阵和联律按起点计次，模式可重叠，不与总心搏相加；长 RR 为阈值候选，房颤/房扑仅计医生已确认片段。'};
   }
   const api={leads,defaults,reviewNote,intervalPairs,settings,resolve,statistics};globalThis.ECGReportEngine=api;if(typeof module!=='undefined')module.exports=api;
 })();

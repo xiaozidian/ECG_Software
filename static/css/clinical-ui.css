@@ -31,10 +31,10 @@ body:has(#page-edit.active){overflow-y:auto;overflow-x:hidden}
 #page-edit .occurrence-actions button{min-height:28px;padding:4px 8px;font:inherit}
 #page-edit .occurrence-viewport{height:var(--occ-height,284px);min-height:var(--occ-height,284px);flex:0 0 var(--occ-height,284px);overflow-x:hidden!important;overflow-y:auto!important;overscroll-behavior-x:contain;overscroll-behavior-y:auto}
 #page-edit .occurrence-lane{height:252px}
-#page-edit .occurrence-tile{height:136px;padding:4px;border:2px solid #bacbd2;background:#fff;border-radius:2px}
+#page-edit .occurrence-tile{height:176px;padding:4px;border:2px solid #bacbd2;background:#fff;border-radius:2px}
 #page-edit .occurrence-open strong{font-size:11px;line-height:15px}
-#page-edit .occurrence-wave{height:90px;min-height:90px;color:#334750;font-size:12px}
-#page-edit .occurrence-open{height:100%;display:grid;grid-template-rows:20px 90px 14px;color:#172126;cursor:pointer}
+#page-edit .occurrence-wave{height:132px;min-height:132px;color:#334750;font-size:12px}
+#page-edit .occurrence-open{margin:0;width:100%;min-width:0;height:100%;display:grid;grid-template-rows:20px 132px 14px;color:#172126;cursor:pointer}
 #page-edit .occurrence-card-heading{display:flex;align-items:center;gap:5px;line-height:18px}
 #page-edit .occurrence-open .occurrence-code{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:18px;padding:0 3px;border:1px solid #344951;background:#fff;color:#162831;font:700 13px/1 ui-monospace,monospace}
 #page-edit .occurrence-group-count{font-size:11px;color:#455c66}
@@ -113,3 +113,40 @@ body:has(#page-edit.active){overflow-y:auto;overflow-x:hidden}
 @media(max-width:900px){.v2-report-pages,.v2-strip-pages{padding:10px 4px;gap:16px}.v2-paper-sheet{padding:5mm;grid-template-rows:22px minmax(0,1fr);gap:5px}.v2-strip-page-grid{gap:5px}.v2-strip-page .v2-strip{padding:4px}.v2-strip-page .v2-strip>header div,.v2-strip-page .v2-strip label{display:none}.v2-report-title{margin:8px 0 12px}.v2-report-meta dt,.v2-report-meta dd{padding:4px}.v2-paper-section{margin-top:10px}}
 
 .source-group-evidence{margin-top:12px;padding:10px;border:1px solid #c6d7dc;background:#fff;font-size:12px}.source-group-evidence summary{font-weight:650;cursor:pointer}.source-group-controls{display:flex;align-items:center;flex-wrap:wrap;gap:7px}.source-group-controls input{width:85px}.source-group-controls button{min-height:32px}.source-group-evidence svg{display:block;width:100%;height:auto}.source-group-evidence [data-sg-status]{overflow-wrap:anywhere}
+
+/* Focus keeps the complete continuous trace and horizontal navigation together. */
+#page-edit #editWorkbench .edit-waveform-panel.edit-wave-focus{position:fixed;inset:84px 12px 12px 84px;width:auto;height:auto!important;z-index:35;display:flex;flex-direction:column;background:#fff;border:1px solid #b8cbd1;overflow:hidden}
+#page-edit #editWorkbench .edit-wave-focus .edit-wave-canvas-wrap{flex:1;min-height:260px;height:auto}
+#page-edit #editWorkbench .edit-wave-focus .edit-wave-canvas-wrap>canvas{height:calc(100% - 28px)!important;min-height:210px}
+#page-edit #editWorkbench .edit-wave-focus .edit-wave-toolbar{height:auto;min-height:42px}
+#page-edit.workspace-library .edit-library-wave-panel.edit-wave-focus{position:fixed;inset:84px 12px 12px 84px;width:auto;height:auto!important;z-index:35;background:#fff;border:1px solid #b8cbd1;overflow:hidden}
+#page-edit.workspace-library .edit-wave-focus .edit-library-wave-wrap{flex:1;min-height:260px;height:auto}
+#page-edit.workspace-library .edit-wave-focus #editLibraryWaveformCanvas{flex:1;min-height:210px}
+[data-edit-wave-focus],[data-edit-amplitude-fit],[data-overview-amplitude-fit]{font-size:12px;line-height:18px;min-height:26px;border:1px solid #c8d7dc;border-radius:4px;background:#fff;color:#254650;padding:2px 8px}
+
+[data-overview-amplitude-fit],[data-edit-amplitude-fit]{white-space:nowrap;flex-shrink:0}
+#page-edit .clinical-beat-toolbar .beat-edit-history,#page-review .waveform-foot .beat-edit-history{position:static;flex:0 0 auto;margin-left:auto;background:transparent;border:0;padding:0;font-size:12px;z-index:auto}
+#page-edit .clinical-beat-toolbar{flex-wrap:wrap;height:auto;min-height:32px}
+#page-edit .clinical-beat-toolbar>span{margin-right:4px}
+#page-edit .edit-wave-actions{flex-wrap:wrap;row-gap:4px}
+.workspace-selection-menu{position:relative;flex:0 0 auto;font-size:12px}
+.workspace-selection-menu summary{cursor:pointer;white-space:nowrap;border:1px solid #cbdadf;border-radius:4px;padding:3px 7px;line-height:18px;background:#fff}
+.workspace-selection-menu>div{position:absolute;z-index:25;top:100%;right:0;display:flex;flex-wrap:wrap;gap:6px;width:300px;padding:10px;background:#fff;border:1px solid #cbdadf;box-shadow:0 5px 15px #15384325;border-radius:4px}
+.workspace-selection-menu:not([open])>div{display:none}
+@media(min-width:1100px) and (max-width:1600px){#page-edit:not(.workspace-library) #occurrenceLeadNames{display:none}}
+#page-review #waveMeta{font-size:12px;white-space:nowrap}
+#page-edit #editWaveMeta{font-size:12px;white-space:nowrap}
+
+.full-record-retain{width:min(1200px,calc(100vw - 32px));max-height:calc(100dvh - 24px);padding:12px}
+.full-record-retain>header h2{font-size:18px;margin:0}
+.full-record-retain>p{margin:4px 0;font-size:12px;line-height:18px}
+.full-record-position{display:flex;align-items:center;gap:8px;margin:4px 0}
+.full-record-position label{display:flex;align-items:center;gap:8px;font-size:12px}
+.full-record-method{font-size:12px;margin:4px 0}
+.full-record-retain .report-range-editor{margin-top:4px;padding:4px}
+.full-record-retain .report-range-editor>header{font-size:12px;padding:2px 0}
+.full-record-retain .report-range-editor>header>span{display:none}
+.full-record-detail-clock{margin:4px 0;font-size:12px;line-height:18px}
+.full-record-retain .range-error:empty{display:none}
+.full-record-retain .range-actions{display:flex;gap:6px;margin:4px 0}
+.full-record-retain .range-actions button{min-height:28px;font-size:12px;padding:4px 8px}

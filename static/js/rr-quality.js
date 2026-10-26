@@ -47,8 +47,18 @@
     const qrs=qrsRows(rows),valid=intervalMask(qrs);
     return qrs.filter((r,i)=>valid[i]&&r.sample_index/200<duration);
   }
+  function pauseEdges(value=null){
+    if(value===null||value===undefined||value==='')return [2500,3000,4000];
+    if(typeof value==='string')value=value.split(',').map(x=>x.trim()===''?NaN:Number(x));
+    if(!Array.isArray(value)||value.length!==3||value.some(x=>!Number.isInteger(x)||x<1||x>60000)||!(value[0]<value[1]&&value[1]<value[2]))throw Error('请设置三个递增的整数毫秒统计边界（1–60000）');
+    return [...value];
+  }
+  function rrDistribution(rows,duration,edges=null){
+    edges=pauseEdges(edges);const valid=validRRRows(rows,duration);
+    return {edges_ms:edges,bins:edges.map((lo,i)=>{const hi=i<2?edges[i+1]:null,chosen=valid.filter(r=>r.rr_ms>=lo&&(hi===null||r.rr_ms<hi));return {key:String(i),lower_ms:lo,upper_ms:hi,label:hi===null?'≥'+lo/1000+' s':'['+lo/1000+', '+hi/1000+') s',count:chosen.length,samples:chosen.map(r=>r.sample_index)};}),valid_rr_count:valid.length,method:'互斥统计分箱：含下界、不含上界；末箱含下界。只统计有效原始相邻 RR；不改变 >2.5 s 检测阈值，不等同停搏诊断。'};
+  }
   function consistentRate(row){
     return Number.isFinite(row.hr)&&row.hr>0&&Number.isFinite(row.rr_ms)&&row.rr_ms>0&&Math.abs(row.hr-60000/row.rr_ms)<=.051;
   }
-  const api={rhythmEpisodes,rhythmSummary,qrsRows,annotationExclusions,intervalMask,nnIntervals,validRRRows,consistentRate,fiveMinuteBlocks};root.ECGRRQuality=api;if(typeof module!=='undefined')module.exports=api;
+  const api={pauseEdges,rrDistribution,rhythmEpisodes,rhythmSummary,qrsRows,annotationExclusions,intervalMask,nnIntervals,validRRRows,consistentRate,fiveMinuteBlocks};root.ECGRRQuality=api;if(typeof module!=='undefined')module.exports=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

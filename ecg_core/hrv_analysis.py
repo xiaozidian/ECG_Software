@@ -144,7 +144,7 @@ def analyze_hrv(feed, start_time, window=0, st_trends=None):
                 if a<=rate<b: rate_groups[i].extend(values);counts[i]+=1;break
     result.update(method=METHOD,trend=trend,rate_sdnn=[{'hr_range':label,'minute_bins':counts[i],'sdnn_ms':rnd(sd(rate_groups[i]))} for i,(_,_,label) in enumerate(ranges)],
                   st_trends=st_trends or {},st_units='device',st_calibrated=False,
-                  risk_note='SDNN 仅为统计参考，不单独给出高/中/低风险或诊断；须结合记录时长、节律、伪差及临床情况。',
+                  risk_note='SDNN 仅为统计参考，不单独给出高/中/低风险或诊断；须结合记录时长、节律、伪差及临床情况。儿科参考范围尚未验证；不得套用成人正常标签，需结合年龄、有效 NN 比例与排除规则。',
                   schema_version='hrv-evidence-v1')
     return result
 

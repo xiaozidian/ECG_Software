@@ -314,7 +314,7 @@ body:has(#page-review.active) .case-workflow-context small,body:has(#page-review
   #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .scatter-selection-pane{height:100%;min-height:0;overflow:hidden}
   #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .scatter-pane-heading{height:24px;min-height:24px;padding:0 4px}
   #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) #scatterSelectionList{min-height:0;max-height:none;flex:1;height:0}
-  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .scatter-strip-card{left:3px;right:3px;width:calc(100% - 6px);height:108px;border-radius:4px}
+  #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .scatter-strip-card{left:3px;right:3px;width:calc(100% - 6px);height:168px;min-height:168px;border-radius:4px}
   #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .scatter-strip-meta{height:23px;padding:0 3px;gap:3px;font-size:9px;flex-wrap:nowrap}
   #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .scatter-strip-meta strong{font-size:9px;white-space:nowrap}
   #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .scatter-strip-meta small{font-size:9px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
@@ -374,3 +374,10 @@ body:has(#page-review.active) .case-workflow-context small,body:has(#page-review
 .ov-beat-metric>span{display:block}
 .ov-beat-metrics[data-overflow=true]{box-shadow:inset -8px 0 8px -8px #078987}
 .ov-beat-metrics:focus-visible{outline:2px solid var(--ov-accent);outline-offset:-2px}
+
+/* Meeting review: filters below evidence; hidden proxy buttons keep keyboard/gesture contracts. */
+#page-review.overview-workbench .scatter-mode-grid{display:none}
+#page-review.overview-workbench .ov-scatter-options .ov-scatter-mode-picker{display:flex;align-items:center;gap:5px;margin:0;font-size:11px}
+#page-review.overview-workbench .ov-scatter-mode-picker select{min-height:28px;font:inherit;max-width:none;min-width:100px}
+#page-review.overview-workbench .ov-scatter-options{padding:4px 0 0;border-top:1px solid var(--ov-line)}
+#page-review.overview-workbench .workspace-scatter-controls{display:block;height:auto;min-height:28px}

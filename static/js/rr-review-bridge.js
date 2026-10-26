@@ -35,7 +35,7 @@
           if(wave?.case_id!==id||!Number.isInteger(wave?.stride)||wave.stride<=0||!Number.isFinite(fs)||fs<=0||!Number.isFinite(wave?.start_s)||!Number.isFinite(wave?.duration_s)||wave.duration_s<=0||!wave.beats?.some(b=>b.sample_index===target.sample_index))throw Error('原始证据缺少目标心搏，未使用最近邻替代');
           if(!['II','V1','V5'].every(lead=>Array.isArray(wave.leads?.[lead])&&wave.leads[lead].length===wave.leads.II.length&&wave.leads[lead].length&&wave.leads[lead].every(Number.isFinite)))throw Error('原始三导联证据不完整，未显示');
           if(!['raw','raw overview'].includes(wave.filter))throw Error('返回的证据不是原始波形，未显示');
-          lastEvidence={wave,target,guard:stillCurrent};renderEvidence();
+          lastEvidence={wave,target,identity,guard:stillCurrent};renderEvidence();
           if(guard.reveal)node.scrollIntoView({block:'nearest'});
           return {located:true};
         }catch(error){
@@ -54,17 +54,19 @@
   function renderEvidence(){
     const value=lastEvidence;if(!value||!value.guard()||!evidenceNode?.isConnected)return;
     const {wave,target}=value,fs=wave.sample_rate_hz,left=target.interval_start_sample/fs,ends=wave.start_s+wave.duration_s,offWindow=left<wave.start_s||left>=ends;
-    const time=s=>typeof formatElapsedPrecise==='function'?formatElapsedPrecise(s):`${s.toFixed(3)} s`;
+    const time=s=>ECGReviewTools.clockLabel(state.caseData?.metadata?.start_time,s);
     const width=Math.max(1,evidenceNode.clientWidth-24);
     evidenceNode.setAttribute('data-rr-target',String(target.sample_index));evidenceNode.setAttribute('aria-busy','false');
-    evidenceNode.innerHTML=`<div class="card-header"><h2>所选间期 · 原始连续波形</h2><button type="button" class="button secondary" data-rr-return>返回间期列表</button></div><div class="rrv-wave-stage">${waveSvg(wave,target,width)}</div><p class="rrv-wave-caption">${esc(time(wave.start_s))}–${esc(time(ends))} · II / V1 / V5 · 原始波形 · 设备单位 u，未校准${wave.stride>1?` · 显示步长 ${wave.stride} 样本`:''}${offWindow?' · 前搏在当前窗口外；本窗展示精确终搏，不覆盖完整间期':''}</p>`;
+    evidenceNode.innerHTML=`<div class="card-header"><h2>所选间期 · 原始连续波形</h2><button type="button" class="button secondary" data-rr-return>返回间期列表</button></div><div class="rrv-wave-stage">${waveSvg(wave,target,width)}</div><p class="rrv-wave-caption">${esc(ECGReviewTools.waveMeta(wave,state.caseData?.metadata?.start_time,ECGReviewTools.waveDomain(wave,JSON.stringify([state.caseId,value.identity,'rr-raw']))))} · II / V1 / V5${wave.stride>1?` · 显示步长 ${wave.stride} 样本`:''}${offWindow?' · 前搏在当前窗口外；本窗展示精确终搏，不覆盖完整间期':''}</p>`;
+    ECGReportWorkspace.bindTwelveWave(evidenceNode.querySelector('.rrv-wave-stage'),{wave,event:{sample_index:target.sample_index},recordStart:state.caseData?.metadata?.start_time,domain:ECGReviewTools.waveDomain(wave,JSON.stringify([state.caseId,value.identity,'rr-raw'])),isCurrent:value.guard,
+      readWave:()=>api(ECGAnalysisConsistency.url(state.caseId,'waveform',{start:wave.start_s,duration:wave.duration_s,leads:'I,II,III,aVR,aVL,aVF,V1,V2,V3,V4,V5,V6',filter:'raw',max_points:Math.max(5000,Object.values(wave.leads)[0].length)},value.identity))});
     evidenceNode.querySelector('[data-rr-return]').onclick=()=>{if(value.guard()){const row=document.querySelector('#rrReviewWorkbench tr[aria-selected="true"]');row?.scrollIntoView({block:'nearest'});row?.focus({preventScroll:true});}};
   }
   function waveSvg(wave,target,width){
-    const fs=wave.sample_rate_hz,rowHeight=88,entries=['II','V1','V5'].map(lead=>[lead,wave.leads[lead]]),height=rowHeight*entries.length;
-    const x=sample=>(sample/fs-wave.start_s)/wave.duration_s*width,left=x(target.interval_start_sample),right=x(target.sample_index);
-    const marks=[[left,'前搏','#2678b9'],[right,'终搏','#bc6500']].filter(([at])=>at>=0&&at<width);
-    return `<svg style="display:block;width:100%;height:${height}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="所选原始 RR 间期的精确三导联波形"><rect width="100%" height="100%" fill="white"/><rect x="${Math.max(0,left)}" y="0" width="${Math.max(0,Math.min(width,right)-Math.max(0,left))}" height="${height}" fill="#e8f5f2"/>${entries.map(([lead,values],j)=>{const peak=Math.max(50,...values.map(Math.abs)),mid=j*rowHeight+rowHeight/2;return `<path d="M0 ${mid}H${width}" stroke="#e4ecef"/><text x="3" y="${j*rowHeight+17}" font-size="12" fill="#1c5961">${lead}</text><polyline fill="none" stroke="#244f59" stroke-width="1.1" points="${values.map((v,i)=>`${(i*(wave.stride||1)/fs/wave.duration_s*width).toFixed(3)},${(mid-v/peak*rowHeight*.36).toFixed(3)}`).join(' ')}"/>`}).join('')}${marks.map(([at,label,color])=>`<path d="M${at} 0V${height}" stroke="${color}" stroke-width="1.5"/><text x="${Math.max(4,Math.min(width-36,at+4))}" y="14" font-size="12" fill="${color}">${label}</text>`).join('')}</svg>`;
+    const domain=ECGReviewTools.waveDomain(wave,JSON.stringify([state.caseId,lastEvidence?.identity,'rr-raw']));
+    const svg=ECGOccurrenceCard.svg(wave,{sample_index:target.sample_index,label:'所选精确 RR 原始证据'},{width,height:288,timeAxis:true,recordStart:state.caseData?.metadata?.start_time,domain}),x=sample=>24+(sample/wave.sample_rate_hz-wave.start_s)/wave.duration_s*(width-48),a=x(target.interval_start_sample),b=x(target.sample_index);
+    const overlay=`<g data-rr-interval><rect x="${Math.max(24,a)}" y="22" width="${Math.max(0,Math.min(width-24,b)-Math.max(24,a))}" height="242" fill="#087e7e" fill-opacity=".08"/>${[[a,'前搏','#2678b9'],[b,'终搏','#bc6500']].filter(([at])=>at>=24&&at<=width-24).map(([at,label,color])=>`<path d="M${at} 22V264" stroke="${color}"/><text x="${Math.max(24,Math.min(width-60,at+3))}" y="30" fill="${color}" font-size="11">${label}</text>`).join('')}</g>`;
+    return svg.replace('</svg>',overlay+'</svg>');
   }
   root.ecgRRBridge={load,dispose,snapshot:()=>workbench?.snapshot()??null};
 })(globalThis);

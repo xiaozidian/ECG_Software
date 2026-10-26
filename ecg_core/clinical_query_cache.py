@@ -97,11 +97,11 @@ class ClinicalQueryCache:
 
 
 class WaveformBeatCache(ClinicalQueryCache):
-    """Private EditedRecords for waveform labels only, never for mutable analyses.
+    """Private construction shared through label projections or detached read feeds.
 
     Reuse the proven single-flight/LRU machinery, but count all retained feed
     collections. The limit is structural units, not a measured byte/RSS bound.
-    Callers must only project small label windows, not return the owned feed.
+    Callers must project labels or clone a read feed, never return the owned feed.
     """
     busy_message = '当前波形心搏索引仍在读取，请稍后重新读取；未返回旧数据。'
 
@@ -114,6 +114,10 @@ class WaveformBeatCache(ClinicalQueryCache):
                 + len(feed.record_samples) + len(feed.by_sample)
                 + len(feed.document['changes'])
                 + len(getattr(feed, 'excluded_rhythm_intervals', ())))
+
+    def clone(self, key, build):
+        """An independent mutable read feed, never the privately retained object."""
+        return self._get(key, build).clone_for_read()
 
 
 class ClinicalEvidenceCache(ClinicalQueryCache):

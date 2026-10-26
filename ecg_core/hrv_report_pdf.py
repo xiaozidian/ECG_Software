@@ -1,11 +1,12 @@
 """A4 HRV evidence pages. Consumes computed values only; no clinical inference."""
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
-from .report_paper_pdf import wrap_text
+from .report_paper_pdf import wrap_text, bpm
 
 
 def make_hrv_pages(c, font, data):
     def n(value): return '—' if value is None else str(round(value,2)) if isinstance(value,(float,int)) else str(value)
+    def y_number(value, key): return bpm(value) if key in ('hr', 'avg_hr', 'min_hr', 'max_hr') else n(value)
     def text(x,y,value,size=7,align='left'):
         c.setFont(font,size);c.setFillGray(0)
         method=c.drawCentredString if align=='center' else c.drawRightString if align=='right' else c.drawString
@@ -24,7 +25,7 @@ def make_hrv_pages(c, font, data):
         xx=lambda v:x+l+v/xmax*pw
         yy=lambda v:y+t+(hi-v)/(hi-lo)*ph
         line(x+l,y+t,x+l,y+h-b);line(x+l,y+h-b,x+w-r,y+h-b)
-        text(x,y,unit,5.5);text(x+l-1,y+t,n(hi),5,'right');text(x+l-1,y+h-b-1,n(lo),5,'right');text(x+l,y+h-b+1,'0',5);text(x+w-r,y+h-b+1,n(xmax),5,'right')
+        text(x,y,unit,5.5);text(x+l-1,y+t,y_number(hi,ykey),5,'right');text(x+l-1,y+h-b-1,y_number(lo,ykey),5,'right');text(x+l,y+h-b+1,'0',5);text(x+w-r,y+h-b+1,n(xmax),5,'right')
         c.setStrokeGray(0);c.setLineWidth(.5)
         if bars:
             bw=max(.15,min(2.4,pw/max(1,len(points))*.8))
@@ -47,7 +48,7 @@ def make_hrv_pages(c, font, data):
         for i,(_,label) in enumerate(columns):text(x+(i+.5)*width,y+.5,label,size,'center')
         line(x,y+rowh,x+w,y+rowh)
         for j,row in enumerate(rows):
-            for i,(key,_) in enumerate(columns):text(x+(i+.5)*width,y+(j+1)*rowh+.5,n(row.get(key)),size,'center')
+            for i,(key,_) in enumerate(columns):text(x+(i+.5)*width,y+(j+1)*rowh+.5,y_number(row.get(key),key),size,'center')
         line(x,y+(len(rows)+1)*rowh,x+w,y+(len(rows)+1)*rowh)
     periods=[data['periods'][key] for key in ('full','day','night')]
     hours=[dict(h,hour=(h['start_s']-data['start_s'])/3600,power=h['frequency']['total_ms2']) for h in data['hourly']]
@@ -104,7 +105,7 @@ def make_hrv_pages(c, font, data):
                         if not entry:text(148,at+4,'无可用候选',6);continue
                         wave=entry['waveform'];values=wave['leads'].get('II',[])
                         # Small raw trace with its rate; no fabricated calibration.
-                        text(148,at,('最快 ' if category=='fastest' else '最慢 ' if category=='slowest' else '')+n(entry.get('hr'))+' bpm',5)
+                        text(148,at,('最快 ' if category=='fastest' else '最慢 ' if category=='slowest' else '')+bpm(entry.get('hr'))+' bpm',5)
                         if values:
                             peak=max(50,max(abs(v) for v in values));path=c.beginPath()
                             for vi,v in enumerate(values):
@@ -138,7 +139,7 @@ def make_hrv_pages(c, font, data):
                 if key=='label':
                     parts=str(r[key]).split();text(width/2,y,parts[-1],6.3,'center')
                     if len(parts)>1:text(width/2,y+2.3,parts[0],6.3,'center')
-                else:text(offset+width/2,y+.5,n(r.get(key)),6.3,'center')
+                else:text(offset+width/2,y+.5,y_number(r.get(key),key),6.3,'center')
                 offset+=width
         end=top+5+len(detail)*row_height;line(0,end,190,end)
         prose(0,end+3,'S 房早 / V 室早。单发、成对、短阵及联律按起点计次，模式可重叠；总数为心搏数。Δ 为每小时最大绝对 ST 偏移，保留正负、设备单位，非 mV。房颤/扑仅计医生确认片段；房室阻滞暂无可靠统计，显示 —。HRV 为 N-N，极值小图为 RR 候选；首尾小时按实际覆盖，候选不等同确诊。',75,6.5,3)

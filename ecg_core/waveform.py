@@ -68,6 +68,36 @@ def _derive(channels: list[list[int]]) -> dict[str, list[float]]:
 
 
 @source_read
+def read_waveform_overview(path: Path, leads=None, bins=1000):
+    """Every raw sample contributes to a bounded min/max envelope, including QS.
+
+    Only one bin is in memory. This is a navigation envelope, not a diagnostic
+    resampling, and never replaces or rewrites the source signal.
+    """
+    import numpy as np
+    path=Path(path); selected=_selected_leads(leads)
+    if type(bins) is not int or not 50 <= bins <= 1600: raise ValueError('全览分箱须为50–1600')
+    total=require_waveform_file(path).st_size//(CHANNEL_COUNT*2)
+    boundaries=[i*total//min(total,bins) for i in range(min(total,bins)+1)]
+    output={lead:[] for lead in selected}
+    with path.open('rb') as stream:
+        for a,b in zip(boundaries,boundaries[1:]):
+            raw=stream.read((b-a)*CHANNEL_COUNT*2)
+            if len(raw)!=(b-a)*CHANNEL_COUNT*2: raise SourceInvalid('全记录波形读取不完整')
+            values=np.frombuffer(raw,dtype='<i2').reshape((-1,CHANNEL_COUNT))
+            for lead in selected:
+                if lead in ('I','II'): v=values[:,('I','II').index(lead)]
+                elif lead.startswith('V'): v=values[:,int(lead[1:])+1]
+                else:
+                    one,two=values[:,0].astype(np.float64),values[:,1].astype(np.float64)
+                    v={'III':lambda:two-one,'aVR':lambda:-(one+two)/2,'aVL':lambda:one-two/2,'aVF':lambda:two-one/2}[lead]()
+                output[lead].append([float(v.min()),float(v.max())])
+    return dict(start_s=0,total_duration_s=total/SAMPLE_RATE,total_samples=total,
+        sample_rate_hz=SAMPLE_RATE,bin_edges_s=[s/SAMPLE_RATE for s in boundaries],
+        leads=output,**raw_signal_metadata(),method='全记录原始采样逐箱最小/最大包络；仅用于时间导航，请在局部原始波形复核；不改变采样、增益、R点或RR。')
+
+
+@source_read
 def read_waveform(
     path: Path,
     start_s: float,
