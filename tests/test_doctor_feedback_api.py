@@ -5,6 +5,7 @@ the synthetic_case/synthetic_app fixtures, never a patient source or work DB.
 """
 import os
 from copy import deepcopy
+from hashlib import sha256
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 from uuid import uuid4

@@ -3,6 +3,7 @@ from contextlib import closing
 from copy import deepcopy
 from hashlib import sha256
 import json
+import os
 from pathlib import Path
 import sqlite3
 import subprocess
@@ -80,7 +81,9 @@ def test_online_backup_contains_committed_wal_only(workspace, tmp_path):
         assert snapshot['report_drafts'] == before['report_drafts']
         writer.rollback()
     assert backup.verify_backup(created['path'])['verified']
-    assert Path(created['path']).stat().st_mode & 0o077 == 0
+    assert Path(created['path']).is_file()
+    if os.name != 'nt':
+        assert Path(created['path']).stat().st_mode & 0o077 == 0  # POSIX only.
     assert before['report_drafts'] == dump_tables(workspace.path)['report_drafts']
 
 
