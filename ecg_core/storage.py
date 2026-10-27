@@ -145,7 +145,8 @@ from .review_workflow import ReviewWorkflowMixin
 
 
 class Storage(ReviewWorkflowMixin, EvidenceCandidateMixin):
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, *, connection_factory=sqlite3.Connection):
+        self._connection_factory = connection_factory
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
@@ -156,7 +157,7 @@ class Storage(ReviewWorkflowMixin, EvidenceCandidateMixin):
                 db.execute("ALTER TABLE annotations ADD COLUMN details TEXT NOT NULL DEFAULT '{}'")
 
     def connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.path, timeout=10)
+        connection = sqlite3.connect(self.path, timeout=10, factory=self._connection_factory)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys=ON")
         return connection

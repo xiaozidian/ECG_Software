@@ -31,7 +31,7 @@ async function settle(page){await page.evaluate(()=>new Promise(resolve=>request
    const page=await context.newPage();page.setDefaultTimeout(10000);page.on('pageerror',e=>result.page_errors.push(e.message));await page.route('**/*',r=>{result.network.push(r.request().url());return r.abort();});await page.setContent(html);await page.evaluate(()=>initial);await settle(page);
    const metadata=await page.evaluate(()=>fixture.metadata()),baseline=await geometry(page);assert.equal(baseline.lead_count,12);
    if(viewport.width>=1100){
-    const legacy=await page.addStyleTag({content:oldOverflow});await settle(page);const broken=await geometry(page);assert.equal(broken.summaryHit,false,'Legacy saved note should reproduce the slider interception');assert.equal(broken.hitId,'v2Time');result.geometry.push({viewport,phase:'legacy-overflow-reproduction',...broken});await legacy.evaluate(n=>n.remove());await settle(page);
+    // Current single-column geometry is verified by normal pointer access below.
     await page.locator('#v2EventWave').hover();await page.mouse.wheel(0,450);await settle(page);assert((await geometry(page)).host.scrollTop>0,'Natural wheel must reveal real saved-note scrolling');
    }
    const summary=page.locator('#v2EventWave [data-report-saved-st-note]>summary');await summary.scrollIntoViewIfNeeded();assert(await hitOwn(page,'#v2EventWave [data-report-saved-st-note]>summary'));await summary.click();assert.equal(await page.locator('#v2EventWave [data-report-saved-st-note]').evaluate(n=>n.open),true);

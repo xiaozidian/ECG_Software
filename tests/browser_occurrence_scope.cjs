@@ -24,7 +24,7 @@ function fixture(){
   qs:selector=>nodes.get(selector)||null,document:{activeElement:{tagName:'BODY'},createElement:node},
   occurrenceGrid:()=>({first:0,last:1,visibleFirst:1,visibleLast:1,width:170,height:142,contentHeight:142,columns:1,row:142}),
   syncEditTimeSlider(){},syncOccurrenceJump(){},occurrenceViewControls(){},releaseOccurrenceWaves(){},modeLabel:()=> 'all',
-  beatEditor:{renderOccurrenceToolbar(){},registerOccurrence(card,item,scope){card.editScope=scope;}},ECGOccurrenceCard:{leads:()=>['II','V1'],syncSelection(){}},
+  beatEditor:{renderOccurrenceToolbar(){},registerOccurrence(card,item,scope){card.editScope=scope;}},ECGOccurrenceCard:{geometry:require('../static/js/occurrence-card.js').geometry,leads:()=>['II','V1'],syncSelection(){}},
   eventWaveKey:()=> 'synthetic-key',thumbnailCache:{retain(){}},esc:String,formatElapsed:String,svg:wave=>'<svg>'+wave.marker+'</svg>',
   eventWave:(event,id,leads)=>{let resolve;const promise=new Promise(done=>resolve=done);reads.push({event,id,leads,resolve});return promise;}});
  vm.runInContext(render,ctx);

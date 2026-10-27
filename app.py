@@ -16,7 +16,7 @@ import webbrowser
 from hashlib import sha256
 from pathlib import Path
 
-from flask import Flask, abort, jsonify, render_template, request, send_file, session
+from flask import Flask, abort, g, jsonify, render_template, request, send_file, session
 from waitress import serve
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -43,11 +43,11 @@ from ecg_core.report_layout import prepare_strip, report_statistics
 from ecg_core.clinical_analysis import build_index, query_index, hrv_windows, validate_report
 from ecg_core.clinical_query_cache import ClinicalQueryCache, ClinicalQueryBusy, WaveformBeatCache, ClinicalEvidenceCache
 from ecg_core.storage import normalize_report_composition
-from ecg_core.repository import CaseNotFound, CaseRepository
+from ecg_core.repository import CASE_ID_RE, CaseNotFound, CaseRepository
 from ecg_core.storage import Storage
 from ecg_core.review_workflow import ReportConflict
 from ecg_core.analysis_provenance import AnalysisRuntime, digest as provenance_digest
-from ecg_core.source_identity import SourceUnavailable, SourceInvalid, SourceReadError
+from ecg_core.source_identity import SourceUnavailable, SourceInvalid, SourceReadError, read_locked_sources
 from ecg_core.workspace_backup import (BackupError, BACKUP_NAME, create_backup,
     verify_backup, list_backups, recovery_epoch)
 from ecg_core.beat_editor import BeatEditorStore, EditedRecords, TYPES, apply_operation, propose_qrs, integer
@@ -188,6 +188,7 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
     )
     app.config.update(
         TESTING=testing,
+        WINDOWS_REQUEST_SOURCE_LEASES=True,
         JSON_AS_ASCII=False,
         MAX_CONTENT_LENGTH=4 * 1024 * 1024,
         SECRET_KEY=os.environ.get("ECG_SECRET_KEY") or os.urandom(32),
@@ -253,6 +254,44 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         if workspace_epoch and request.method in {"POST", "PUT", "PATCH", "DELETE"}:
             if request.headers.get('X-CardioInsight-Workspace') != workspace_epoch:
                 return jsonify({'error': '工作区已从备份恢复，旧页面不能继续提交；请重新打开网页并复核恢复的内容'}), 409
+
+    @app.before_request
+    def lease_case_sources_for_request():
+        # Temporary sharing flags, never filesystem permission changes. The
+        # disabled path retains the former fresh-content validation for CI A/B.
+        if os.name != 'nt' or not app.config['WINDOWS_REQUEST_SOURCE_LEASES']:
+            return
+        case_id = (request.view_args or {}).get('case_id')
+        if not isinstance(case_id, str) or not CASE_ID_RE.fullmatch(case_id) or not resolved_root:
+            return
+        root = resolved_root.resolve()
+        folder = (root / case_id).resolve()
+        if folder.parent != root or not folder.is_dir():
+            return  # Existing case_or_404 retains its normal rejection.
+        paths = (folder / 'data' / (case_id + '.DATA'),
+                 folder / 'DGS' / (case_id + '.EBI'),
+                 folder / 'report_image' / (case_id + '_1.LPS'))
+        context = read_locked_sources(paths, fresh_content=True)
+        try:
+            context.__enter__()
+        except OSError as error:
+            raise SourceReadError('原始文件正在使用或不可读取，请确认来源完整且稳定后重试。') from error
+        g.case_source_read_context = context
+        g.case_source_read_paths = {str(path.resolve()) for path in paths}
+
+    @app.teardown_request
+    def release_case_source_request_lease(error=None):
+        context = g.pop('case_source_read_context', None)
+        if context is not None:
+            context.__exit__(None, None, None)
+        g.pop('case_source_read_paths', None)
+
+    def denied_source_write(error):
+        if not isinstance(error, PermissionError):
+            return False
+        paths = g.get('case_source_read_paths', set())
+        return any(value and str(Path(value).resolve()) in paths
+                   for value in (getattr(error, 'filename', None), getattr(error, 'filename2', None)))
 
     def include_phi_authorized() -> bool:
         return app.config["ALLOW_PHI"] and _bool_arg("include_phi") and bool(session.get("phi_authorized"))
@@ -503,8 +542,16 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
     def source_invalid(error):
         return jsonify({"error": str(error), "code": error.code}), 422
 
+    @app.errorhandler(PermissionError)
+    def denied_source_write_error(error):
+        if denied_source_write(error):
+            return report_conflict(ReportConflict('计算期间原始文件写入被拒绝，请确认来源稳定后重新读取；未生成导出结果。'))
+        raise error  # Unrelated DB/program errors keep their original handling.
+
     @app.errorhandler(SourceReadError)
     def source_read_error(error):
+        if denied_source_write(error.__cause__):
+            return report_conflict(ReportConflict('计算期间原始文件写入被拒绝，请确认来源稳定后重新读取；未生成导出结果。'))
         return jsonify({"error": str(error), "code": error.code}), 503
 
     @app.errorhandler(ClinicalQueryBusy)

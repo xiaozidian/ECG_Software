@@ -109,6 +109,9 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
       await context.mountRange(target, event, entry, state.caseId);
     }
   });
+  context.document.addEventListener=()=>{};
+  vm.runInContext(fs.readFileSync('static/js/report-strip-editor.js','utf8'),context);
+  context.ECGOccurrenceCard=require('../static/js/occurrence-card.js');
   vm.runInContext(fs.readFileSync('static/js/report-range-editor.js', 'utf8'), context);
   production(context, 'selectEvent');
   production(context, 'reportStrip', true);

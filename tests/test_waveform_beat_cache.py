@@ -48,9 +48,17 @@ def test_windows_leads_and_continuous_view_share_one_private_feed(synthetic_app,
     result = cache.project(key, lambda: pytest.fail('unexpected build'), lambda x: visible_beats(x, 28, 6))
     result[0]['class_code'] = 'X'
     assert wave(client, cid).json['items'][0]['beats'][0]['class_code'] == 'N'
-    # Other mutable analysis paths never receive the cached object.
+    # Other reads now clone the construction; writable rows/documents never
+    # alias the cache even though immutable numeric tuples can be reused.
     assert client.get(f'/api/cases/{cid}/report-statistics').status_code == 200
-    assert len(calls) > 1
+    assert len(calls) == 1
+    a = cache.clone(key, lambda: pytest.fail('unexpected build'))
+    b = cache.clone(key, lambda: pytest.fail('unexpected build'))
+    a.beats[0]['class_code'] = 'X'
+    a.document['settings']['pause'] = 99
+    assert b.beats[0]['class_code'] == 'N' and b.document['settings']['pause'] != 99
+    assert a.by_sample[a.beats[0]['sample_index']] is a.beats[0]
+    assert a.records is b.records and isinstance(a.records, tuple)
     before = len(calls)
     assert wave(client, cid).status_code == 200 and len(calls) == before
 
@@ -77,7 +85,10 @@ def test_edit_neighbors_markers_and_undo_equal_fresh_feed(synthetic_app, synthet
         items = response.json['items'] if endpoint == 'event-waveforms' else [response.json]
         for item in items:
             expected = visible_beats(feed, item['start_s'], item['duration_s'])
-            if endpoint == 'waveform':
+            # Both annotated batch thumbnails and the continuous waveform have
+            # always included explicit nonbeat markers. The single legacy
+            # event-waveform route deliberately returns beats only.
+            if endpoint in ('waveform', 'event-waveforms'):
                 expected += [r for r in feed.markers if item['start_s'] <= r['time_s'] <= item['start_s'] + item['duration_s']]
                 expected.sort(key=lambda r: r['sample_index'])
             assert item['beats'] == expected

@@ -29,8 +29,9 @@ function setup(){
     const query=new URL(url,'http://synthetic.invalid').searchParams;
     const samples=(payload.samples||localPopulation).filter(s=>!(payload.exclude_samples||[]).includes(s));
     const included=localMode==='edges'?0:samples.length;
-    return {revision:localMode==='stale'?payload.revision+1:payload.revision,lead:query.get('lead'),width:1,height:1,bins:[included],amplitude_limit:100,
-      population_samples:samples,total:samples.length,included,skipped_edges:samples.length-included,sample_indices:query.has('gate')?samples.slice(0,2):samples};
+    const data=lead=>({revision:localMode==='stale'?payload.revision+1:payload.revision,lead,width:1,height:1,bins:[included],amplitude_limit:100,
+      population_samples:samples,total:samples.length,included,skipped_edges:samples.length-included,sample_indices:query.has('gate')?samples.slice(0,2):samples});
+    return query.has('leads')?{revision:localMode==='stale'?payload.revision+1:payload.revision,population_samples:samples,items:query.get('leads').split(',').map(data)}:data(query.get('lead'));
   };
   const context=vm.createContext({state,api,ECGMorphologyGroups:require('../static/js/morphology-groups.js'),URLSearchParams,
     escapeHtml:String,fmtNumber:String,editClassLabel:source=>source==='source-N'?'N · 正常心搏':source,UI_FONT:'sans-serif',

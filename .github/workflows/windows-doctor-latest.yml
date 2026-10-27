@@ -1,0 +1,149 @@
+name: Windows latest workstation doctor package 1.0.3
+
+on:
+  push:
+    branches: ["codex/windows-doctor-eval-x64-20261027"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: windows-doctor-latest-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Native Windows x64 package and current workstation acceptance
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: "utf-8"
+      ECG_ALLOW_PHI: "0"
+      DOCTOR_PACKAGING_VERSION: "1.0.3"
+      DOCTOR_SOURCE_VERSION: "M01-24h-v1"
+      DOCTOR_RELEASE_NOTES: "同步10月26日最新工作站优化：全宽单列十二导联、统一三导联双击展开、四类先全部再展开、模板联动、HRV与报告草稿。"
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: project
+    steps:
+      - name: Checkout doctor evaluation branch
+        uses: actions/checkout@v4
+        with:
+          path: project
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12.10"
+          architecture: x64
+          cache: pip
+          cache-dependency-path: project/requirements-doctor-build.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Create clean isolated Windows build environment
+        run: |
+          python -m venv "$env:RUNNER_TEMP\doctor-build-env"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "$env:RUNNER_TEMP\doctor-build-env\Scripts" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Install pinned doctor build dependencies and CI-only browser test tools
+        run: |
+          python -m pip install -r requirements-doctor-build.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -c "import json,subprocess,sys; print('DOCTOR_BUILD_FREEZE_JSON='+json.dumps(subprocess.check_output([sys.executable,'-m','pip','freeze','--all'],text=True).splitlines()))"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Configure CI-only Node tests with installed system Edge
+        run: |
+          $jsTools = "$env:RUNNER_TEMP\doctor-node-browser"
+          New-Item -ItemType Directory -Path $jsTools -Force | Out-Null
+          npm install --prefix "$jsTools" --no-save --ignore-scripts --no-audit --no-fund playwright-core@1.63.0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $edgeCandidates = @("$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe", "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe")
+          $edgePath = @($edgeCandidates | Where-Object { Test-Path $_ })[0]
+          if (-not $edgePath) { throw "Installed system Microsoft Edge is unavailable." }
+          "ECG_PLAYWRIGHT_CORE=$jsTools\node_modules\playwright-core" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "ECG_CHROME=$edgePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "ECG_CHROME_PATH=$edgePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Verify release production source fingerprint
+        run: python scripts/verify_public_release.py
+      - name: Generate only the existing continuous mathematical M01 input
+        run: |
+          python scripts/generate_doctor_24h.py --output "$env:RUNNER_TEMP\doctor-math-M01"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "ECG_DATA_ROOT=$env:RUNNER_TEMP\doctor-math-M01" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "ECG_APP_DATA_ROOT=$env:RUNNER_TEMP\doctor-regression-work" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Current workstation and Windows protection scope without PDF operations
+        run: python scripts/run_windows_release_tests.py --output "$env:RUNNER_TEMP\doctor-core"
+      - name: Original-source Windows request latency and full-output equivalence
+        run: |
+          python scripts/verify_windows_request_source_perf.py --output "$env:RUNNER_TEMP\doctor-core\windows-request-source-perf.json" --rounds 3
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Native directory build, generated 24h source and final ZIP smoke
+        run: |
+          python scripts/windows_doctor_build.py `
+            --output "$env:RUNNER_TEMP\doctor-eval" `
+            --source-commit "${{ github.sha }}" `
+            --version "$env:DOCTOR_PACKAGING_VERSION" `
+            --source-root "$env:RUNNER_TEMP\doctor-math-M01" `
+            --source-version "$env:DOCTOR_SOURCE_VERSION" `
+            --release-notes "$env:DOCTOR_RELEASE_NOTES" `
+            --verification-upgrade-version "auto" `
+            --ci-run-url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: System Edge full software interaction and retained-source update validation
+        run: |
+          $buildReport = Get-Content "$env:RUNNER_TEMP\doctor-eval\build-report.json" -Raw | ConvertFrom-Json
+          $upgradeArchive = $buildReport.verification_upgrade_fixture.archive
+          python scripts/verify_windows_doctor_browser.py `
+            --package-root "$env:RUNNER_TEMP\doctor-eval\verify-package\CardioInsight-DoctorEval-Windows-x64" `
+            --software-archive "$env:RUNNER_TEMP\doctor-eval\$upgradeArchive" `
+            --output "$env:RUNNER_TEMP\doctor-eval\evidence\browser-validation.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Fetch verified previous 1.0.2 software for actual saved-work upgrade
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/fetch_previous_doctor_release.py --output "$env:RUNNER_TEMP\doctor-previous"
+      - name: Actual 1.0.2 to 1.0.3 cross-core upgrade preserves synthetic saved work
+        run: |
+          python scripts/verify_windows_actual_upgrade.py `
+            --previous "$env:RUNNER_TEMP\doctor-previous\package\CardioInsight-DoctorEval-Windows-x64" `
+            --current "$env:RUNNER_TEMP\doctor-eval\verify-package\CardioInsight-DoctorEval-Windows-x64" `
+            --output "$env:RUNNER_TEMP\doctor-eval\evidence\actual-upgrade.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload verified portable install, software update and reusable data pack
+        uses: actions/upload-artifact@v4
+        with:
+          name: CardioInsight-DoctorEval-Windows-x64-${{ env.DOCTOR_PACKAGING_VERSION }}
+          path: |
+            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-${{ env.DOCTOR_PACKAGING_VERSION }}-full.zip
+            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-${{ env.DOCTOR_PACKAGING_VERSION }}-full.zip.sha256
+            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-${{ env.DOCTOR_PACKAGING_VERSION }}-software.zip
+            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-${{ env.DOCTOR_PACKAGING_VERSION }}-software.zip.sha256
+            ${{ runner.temp }}/doctor-eval/CardioInsight-Synthetic-${{ env.DOCTOR_SOURCE_VERSION }}.zip
+            ${{ runner.temp }}/doctor-eval/CardioInsight-Synthetic-${{ env.DOCTOR_SOURCE_VERSION }}.zip.sha256
+            ${{ runner.temp }}/doctor-eval/CardioInsight-Synthetic-${{ env.DOCTOR_SOURCE_VERSION }}.zip.manifest.json
+            ${{ runner.temp }}/doctor-eval/build-report.json
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+      - name: Upload public mathematical validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-doctor-eval-public-validation-${{ env.DOCTOR_PACKAGING_VERSION }}
+          path: |
+            ${{ runner.temp }}/doctor-regression/*.json
+            ${{ runner.temp }}/doctor-core/**/*.json
+            ${{ runner.temp }}/doctor-core/**/*.png
+            ${{ runner.temp }}/doctor-core/*.xml
+            ${{ runner.temp }}/doctor-previous/fetch-receipt.json
+            ${{ runner.temp }}/doctor-baseline*.xml
+            ${{ runner.temp }}/doctor-current*.xml
+            ${{ runner.temp }}/doctor-eval/evidence/*.json
+            ${{ runner.temp }}/doctor-eval/evidence/browser-screenshots/*.png
+          if-no-files-found: ignore
+          retention-days: 14

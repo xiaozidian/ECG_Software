@@ -13,9 +13,9 @@ const record=(name,data={})=>result.checks.push({name,...data});
   await page.route('**/*',r=>{result.external_requests.push(r.request().url());return r.abort();});
   await page.setContent('<!doctype html><html lang="zh"><head><meta charset="utf-8"></head><body><main id="reportV2Content"><section id="fixtureRange"></section></main></body></html>');
   await page.addStyleTag({content:fs.readFileSync('static/css/clinical-review-tools.css','utf8')+'\n'+fs.readFileSync('static/css/report-workspace.css','utf8')+'\nbody{margin:0;padding:20px;font:12px sans-serif}#fixtureRange{width:1100px}.report-range-stage{height:360px}.report-range-stage svg{height:100%}'});
-  for(const file of ['chart-inspection.js','report-range-editor.js','report-workspace.js','report-consistency.js'])await page.addScriptTag({content:fs.readFileSync('static/js/'+file,'utf8')});
+  for(const file of ['clinical-review-tools.js','occurrence-card.js','chart-inspection.js','report-range-editor.js','report-workspace.js','report-consistency.js'])await page.addScriptTag({content:fs.readFileSync('static/js/'+file,'utf8')});
   await page.evaluate(()=>{
-    globalThis.formatElapsed=s=>'D1 '+s.toFixed(3);globalThis.ECGReviewTools={markSvg:()=>''};globalThis.fixtureCurrent=true;
+    globalThis.formatElapsed=s=>'D1 '+s.toFixed(3);globalThis.fixtureCurrent=true;
     const names=ECGChartInspection.order;
     globalThis.fixtureWave={start_s:0,duration_s:15,sample_rate_hz:200,stride:2,leads:Object.fromEntries(names.map((name,j)=>[name,Array.from({length:1500},(_,i)=>80*Math.sin(i/9+j/7)+25*Math.sin(i/31))])),beats:Array.from({length:20},(_,i)=>({sample_index:i*150,class_code:'N'}))};
     globalThis.fixtureEntry={sample_index:1200,strip:{start_s:5,end_s:12},inReport:true};
@@ -40,8 +40,9 @@ const record=(name,data={})=>result.checks.push({name,...data});
   const dialog=page.locator('.rw-event-preview-dialog[open]');await dialog.waitFor();await dialog.locator('polyline[data-lead]').first().waitFor();
   const geometry=await dialog.boundingBox();assert.equal(geometry.x,0);assert.equal(geometry.y,0);assert.equal(geometry.width,1440);assert.equal(geometry.height,900);
   assert.deepEqual(await dialog.locator('polyline[data-lead]').evaluateAll(n=>n.map(p=>p.dataset.lead)),['I','II','III','aVR','aVL','aVF','V1','V2','V3','V4','V5','V6']);
-  const clipped=await dialog.locator('.rw-twelve-wave').evaluate(svg=>{const b=svg.getBoundingClientRect();return b.top<0||b.bottom>innerHeight||b.left<0||b.right>innerWidth;});assert.equal(clipped,false);
-  const allPointsExact=await dialog.locator('.rw-twelve-wave').evaluate(svg=>ECGChartInspection.order.every((name,j)=>{const values=fixtureWave.leads[name],amp=Math.max(50,...values.map(Math.abs)),mid=(j+.5)*30,expected=values.map((value,i)=>`${(42+Math.min(1,i*fixtureWave.stride/fixtureWave.sample_rate_hz/fixtureWave.duration_s)*958).toFixed(3)},${(mid-value*30*.38/amp).toFixed(3)}`).join(' ');return svg.querySelector(`[data-lead="${name}"]`).getAttribute('points')===expected;}));assert(allPointsExact);
+  const shape=await dialog.locator('.rw-twelve-wave').evaluate(svg=>({columns:svg.dataset.columns,width:svg.getBoundingClientRect().width,height:svg.viewBox.baseVal.height,
+    exact:ECGChartInspection.order.every(name=>{const row=svg.querySelector(`[data-wave-lead="${name}"]`),points=row.querySelector('polyline').getAttribute('points').split(' ').map(p=>p.split(',').map(Number)),values=fixtureWave.leads[name],scale=Number(row.dataset.waveScale),baseline=Number(row.dataset.waveBaseline),left=Number(svg.dataset.plotLeft),width=Number(svg.dataset.plotWidth);return points.length===values.length&&points.every(([x,y],i)=>Math.abs(x-left-i*fixtureWave.stride/fixtureWave.sample_rate_hz/fixtureWave.duration_s*width)<.0011&&Math.abs(y-(baseline-values[i]*scale))<.0011);})}));
+  assert.equal(shape.columns,'1');assert(shape.width>1300);assert(shape.height>=720);assert(shape.exact);
   await page.screenshot({path:path.join(out,'mathematical-twelve-fullscreen.png')});
   await page.keyboard.press('Escape');assert.equal(await page.evaluate(()=>JSON.stringify(ECGReportRange.pending())),pending);assert.equal(await page.evaluate(()=>JSON.stringify(fixtureEntry.strip)),baseline);
   record('double-click-fills-viewport-with-twelve-exact-source-arrays-and-preserves-pending',{viewport:[1440,900],dialog:geometry});
