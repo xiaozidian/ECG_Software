@@ -700,6 +700,15 @@ async def persistence_check(page, result, name, annotation_id):
 async def fault_checks(page, result, editor_selector, sample):
     await navigate(page, "edit")
     await wait_edit(page)
+    # Category/report verification reopens the case. Locate the original
+    # mathematical occurrence through the UI before reusing a virtualized card.
+    position = re.search(r'data-occ-index="([0-9]+)"', editor_selector)
+    require(position is not None, "Original occurrence position is missing")
+    await page.locator("#occJump").fill(str(int(position.group(1)) + 1))
+    await page.locator("#occGo").click()
+    await page.locator(editor_selector + " .occurrence-wave svg").wait_for()
+    require(await page.locator(editor_selector).evaluate("(n)=>n.occurrenceItem.sample_index") == sample,
+            "Reopened source occurrence differs from original native sample")
     gate = asyncio.Event()
     seen = asyncio.Event()
     finished = asyncio.Event()
@@ -774,6 +783,10 @@ async def fault_checks(page, result, editor_selector, sample):
     # This explicitly scoped renderer check removes one lead's trend points from
     # a real mathematical response. It does not invent means or diagnoses and is
     # separate from all native-algorithm and performance checks.
+    await navigate(page, "stt")
+    await page.wait_for_function("() => state.sttEvidence && document.querySelector('#sttWaveCanvasWrap').dataset.sttWaveState==='ready'")
+    expected_capability = await page.locator("#sttCapabilityBadge").inner_text()
+    require(expected_capability and expected_capability != "尚无当前结果", "Native capability was not ready before the rendering-only fault")
     partial = {"done": False}
     async def partial_trend(route):
         response = await route.fetch(timeout=TIMEOUT_MS)
@@ -792,7 +805,7 @@ async def fault_checks(page, result, editor_selector, sample):
         require("无有效块" in await row.inner_text(), "Missing V6 trend was presented as a normal numeric trend")
         require(await page.locator("#sttTrendRows .stt-trend-row").count() == 12, "Partial response removed another lead's capability row")
         require(await page.locator("#sttMeasurementList").inner_text() != "", "Partial trend response removed manual measurements")
-        require(await page.locator("#sttCapabilityBadge").inner_text() == "自动筛查 · 待医生确认", "One missing trend disabled all native screening capability")
+        require(await page.locator("#sttCapabilityBadge").inner_text() == expected_capability, "One missing trend changed the actual native capability state")
         record(result, "stt-partial-lead-rendering-fault-injection", {"injected_change": "V6 trend points removed", "scope": "rendering-only", "native_algorithm_result": False, "diagnosis_values_fabricated": False})
     finally:
         await page.unroute("**/api/cases/*/stt-review?*", partial_trend)
