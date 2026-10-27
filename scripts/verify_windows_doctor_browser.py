@@ -847,6 +847,12 @@ async def verify(args, receipt):
     }
     network = {"external_requests": 0, "external_hosts": [], "resource_failures": [], "page_errors": [], "intentional_transport_faults": 1, "cancelled_fetches": 0, "http_errors": []}
     receipt["network"] = network
+    pending_http_observations = []
+    async def settle_http_observations():
+        if pending_http_observations:
+            pending = list(pending_http_observations)
+            pending_http_observations.clear()
+            await asyncio.wait_for(asyncio.gather(*pending), 30)
     failed_resource_requests = []
     verified_attachment_requests = []
     private_values = [str(package), str(source_root)]
@@ -884,15 +890,41 @@ async def verify(args, receipt):
                             failed_resource_requests.append(request)
                         elif "ERR_ABORTED" in error:
                             network["cancelled_fetches"] += 1
-                    def http_response(response):
+                    async def inspect_http_error(response, page, item):
+                        # Read only provenance metadata. Never excuse a current
+                        # failing request or fabricate a successful response.
+                        try:
+                            payload = response.request.post_data_json or {}
+                            item["request_identity"] = {key:payload[key] for key in
+                                ("analysis_basis","analysis_revision","revision","beat_revision") if key in payload}
+                            item["response"] = await response.json()
+                            item["ui_at_response"] = await page.evaluate("""() => {
+                                let clinical=null;try{clinical=ECGAnalysisConsistency.identity(state.caseData);}catch(_){}
+                                const linked=globalThis.ECGLinkedSelection?.snapshot();
+                                return {page:state.currentPage,case_id:state.caseId,
+                                    clinical_identity:clinical,linked_scope:linked?.scope||null,
+                                    overview_state:document.querySelector('#ovLinkedStatus')?.dataset.state||null};
+                            }""")
+                            if response.status == 409 and item["path"] == "/api/cases/"+CASE_ID+"/waveform-density":
+                                parts=urlsplit(response.url)
+                                fresh_url=parts.scheme+"://"+parts.netloc+"/api/cases/"+CASE_ID+"/analysis-basis"
+                                current=await page.request.get(fresh_url,timeout=TIMEOUT_MS)
+                                item["fresh_native_identity_status"]=current.status
+                                if current.ok:item["fresh_native_identity"]=await current.json()
+                        except Exception as error:
+                            item["observation_error"]=safe_error(error,private_values)
+                    def http_response(response,page):
                         if response.status >= 400:
-                            network["http_errors"].append({"path": urlsplit(response.url).path, "status": response.status, "origin": response.request.headers.get("origin"), "fetch_site": response.request.headers.get("sec-fetch-site")})
+                            item={"path":urlsplit(response.url).path,"status":response.status,
+                                "method":response.request.method,"last_completed_check":receipt["checks"][-1]["name"] if receipt["checks"] else None}
+                            network["http_errors"].append(item)
+                            pending_http_observations.append(asyncio.create_task(inspect_http_error(response,page,item)))
                     def add_page(page):
                         page.set_default_timeout(TIMEOUT_MS)
                         page.set_default_navigation_timeout(TIMEOUT_MS)
                         page.on("pageerror", lambda error: network["page_errors"].append(safe_error(error, private_values)))
                         page.on("requestfailed", failed)
-                        page.on("response", http_response)
+                        page.on("response", lambda response: http_response(response,page))
                         async def accept_local_dialog(dialog):
                             if dialog.type in ("confirm", "beforeunload"):
                                 await dialog.accept()
@@ -971,6 +1003,7 @@ async def verify(args, receipt):
                             await manager.reload(wait_until="domcontentloaded")
                             verified_attachment_requests.append(await feedback_check(manager, receipt, home, [manager_state, workspace_state, new_workspace_state]))
                             workspace_before_upgrade = json.loads((home / "workspaces" / workspace_id / "WORKSPACE.json").read_text(encoding="utf-8"))
+                            await settle_http_observations()
                             await context.close()
                             await stop(active_exe, home)
 
@@ -1016,6 +1049,7 @@ async def verify(args, receipt):
                             selected_page = await select_popup.value
                             await worklist_ready(selected_page)
                             require(json.loads((home / "catalog.json").read_text(encoding="utf-8"))["selected_workspace"] == workspace_id, "Upgraded workspace was not selected for the old-version gate")
+                            await settle_http_observations()
                             await context.close()
                             await stop(active_exe, home)
                             if args.software_archive is not None:
@@ -1044,6 +1078,7 @@ async def verify(args, receipt):
                             await live_state(home, workspace_id, active_exe)
                             await persistence_check(resumed, receipt, "frozen-exe-stop-relaunch-preserves-work", annotation_id)
                     finally:
+                        await settle_http_observations()
                         await context.close()
                         try:
                             await stop(active_exe, home)
@@ -1070,7 +1105,38 @@ async def verify(args, receipt):
     network["resource_failures"] = unexpected_resources
     require(not network["resource_failures"], "A local browser resource failed to load")
     require(not network["page_errors"], "Uncaught browser page errors occurred")
-    require(not network["http_errors"], "A native HTTP request failed")
+    # A write can legitimately advance the review revision while an old
+    # density computation is still on the server. Accept only a proven older
+    # read rejected by the native provenance guard; all other HTTP errors fail.
+    verified_obsolete = []
+    unexpected_http = []
+    for item in network["http_errors"]:
+        requested=item.get("request_identity",{})
+        current=item.get("fresh_native_identity",{})
+        prior=requested.get("analysis_revision")
+        latest=current.get("analysis_revision")
+        rejected=item.get("response",{})
+        obsolete=(item["status"]==409 and item["method"]=="POST"
+            and item["path"]=="/api/cases/"+CASE_ID+"/waveform-density"
+            and rejected.get("code")=="report_conflict"
+            and rejected.get("error")=="波形或事件依据已变化，请重新加载后复核"
+            and type(prior) is int and type(latest) is int and latest>prior
+            and item.get("fresh_native_identity_status")==200
+            and isinstance(requested.get("analysis_basis"),str) and bool(requested["analysis_basis"])
+            and isinstance(current.get("analysis_basis"),str) and bool(current["analysis_basis"])
+            and "observation_error" not in item)
+        if obsolete:
+            verified_obsolete.append({**item,"classification":"native-guard-rejected-obsolete-read",
+                "source_hashes_verified_unchanged":True})
+        else:unexpected_http.append(item)
+    network["verified_obsolete_read_conflicts"]=verified_obsolete
+    network["http_errors"]=unexpected_http
+    require(not network["http_errors"], "A native HTTP request failed without proven obsolete-read provenance")
+    if verified_obsolete:
+        record(receipt,"native-provenance-guard-rejects-obsolete-density-read",
+            {"count":len(verified_obsolete),"fresh_native_identity_verified":True,
+                "older_revision_rejected":True,"current_revision_failures_exempted":False})
+
     require(len(rounds) == args.repeats, "Performance repetition count incomplete")
     receipt["performance"] = {
         "clock": "time.perf_counter", "unit": "seconds", "repeats": args.repeats,
