@@ -18,7 +18,7 @@ const api=async(url,opts={})=>{
   if(url.endsWith('/beats'))return {items:[{sample_index:200,time_s:1,class_code:'N'}],markers:[]};
   return method==='POST'?preview:{...info};
 };
-const ctx=vm.createContext({state,$,api,escapeHtml:String,ECGBeatEngine:require('../static/js/beat-engine.js'),
+const ctx=vm.createContext({state,$,api,escapeHtml:String,ECGAnalysisConsistency:require('../static/js/analysis-consistency.js'),waveMenuGeometry:(canvas,wave)=>({l:0,w:500,start:wave.start_s,duration:wave.duration_s}),nearestBeatForRelabel:(canvas,wave)=>wave.beats[0],ECGBeatEngine:require('../static/js/beat-engine.js'),
   document:{createElement(){dialog=node();return dialog},body:{appendChild(){}},querySelectorAll:s=>s==='[data-history]'?histories:s==='.beat-edit-history'?[historyBar]:[],addEventListener:(name,fn)=>listeners[name]=fn,activeElement:{tagName:'BODY'}},
   clinicalWorkflow:{writable:()=>true,refresh:async()=>refreshes++},handleError:e=>errors.push(e.message),formatElapsedPrecise:String,
   clinicalUI:{occurrenceBookmark:()=>({id:'A',caseToken:1,sample:20000})},
@@ -33,6 +33,17 @@ const writes=()=>calls.filter(c=>c.method==='PUT');
 function cardForEditable(){const card=node();ctx.editor.registerOccurrence(card,{sample_index:200,time_s:1,class_code:'N'},{code:'N',samples:async()=>[200,400],isCurrent:()=>currentScope});return card;}
 const toolbarSummary={sourceLabel:'N · 全部',totalRecords:3,visibleRecords:3,visibleSampleCount:4,selectedCount:2,lead:'II',revision:1};
 async function run(){
+  if(scenario.startsWith('readonly-')){
+    state.currentPage='report';state.caseData={case_id:'A',analysis_revision:1,clinical_identity:{analysis_basis:'math',analysis_revision:9},beat_editor_history:{revision:1},beat_editor_settings:{lead:'II',search_seconds:20}};
+    const wave={analysis_basis:'math',analysis_revision:9,start_s:0,duration_s:7,sample_rate_hz:200,leads:{II:[0,1,0]},beats:[{sample_index:200,time_s:1,class_code:'N'}]};
+    if(scenario==='readonly-stale-basis')wave.analysis_basis='changed';
+    if(scenario==='readonly-other-case')wave.case_id='B';
+    if(scenario==='readonly-missing-snapshot')delete state.caseData.beat_editor_history;
+    await ctx.editor.open({preventDefault(){},clientX:250,clientY:40},node(),wave,'report',false,{readOnly:true});
+    if(['readonly-stale-basis','readonly-other-case'].includes(scenario)){assert.equal(calls.length,0);assert.equal($('#beatRelabelMenu').hidden,true);assert(errors.length);return;}
+    assert.equal($('#beatRelabelMenu').hidden,false);assert.equal(calls.length,scenario==='readonly-missing-snapshot'?1:0);
+    const beforeCalls=calls.length;listeners.keydown({key:'V',target:{closest:()=>null},preventDefault(){},stopImmediatePropagation(){}});await tick();assert.equal(calls.length,beforeCalls);assert.equal(writes().length,0);assert(errors.some(x=>x.includes('只读')));return;
+  }
   if(scenario.startsWith('history-')){
     assert(histories.every(b=>b.disabled),'no current history must disable both buttons');
     state.caseData={case_id:'A',analysis_revision:3,beat_editor_history:{revision:3,can_undo:true,can_redo:false}};ctx.editor.refreshHistory();assert.equal(histories[0].disabled,false);assert.equal(histories[1].disabled,true);assert.equal(calls.length,0,'rendering history must not request or calculate evidence');

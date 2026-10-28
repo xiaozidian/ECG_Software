@@ -11,6 +11,18 @@ const beatEditor=(()=>{
     if(data?.case_id===state.caseId&&data.beat_editor_history?.revision===data.analysis_revision)return data.beat_editor_history;
     return historySnapshot?.caseId===state.caseId&&historySnapshot.caseToken===state.caseRequestId?historySnapshot.value:null;
   }
+  function readOnlySnapshot(wave){
+    const data=state.caseData;
+    if(wave.case_id!==undefined&&wave.case_id!==state.caseId)throw Error('只读波形来自其他病例，请重新选择');
+    // This is the already displayed case snapshot, not a new cache. A read-only
+    // menu cannot edit beats and needs no all-record editor reconstruction.
+    if(state.caseLoading||data?.case_id!==state.caseId||!data.clinical_identity||
+       !Number.isSafeInteger(data.analysis_revision)||!data.beat_editor_settings||
+       data.beat_editor_history?.revision!==data.analysis_revision||
+       wave.analysis_basis===undefined||wave.analysis_revision===undefined)return null;
+    ECGAnalysisConsistency.assertSame(data.clinical_identity,wave);
+    return {revision:data.analysis_revision,settings:{...data.beat_editor_settings},can_undo:false,can_redo:false};
+  }
   const basisKey=()=>JSON.stringify([state.caseData?.clinical_identity||null,state.caseData?.analysis_revision??null]);
   function begin(value){context={...value,caseToken:state.caseRequestId,basisKey:basisKey()};info=null;}
   function owner(){
@@ -146,7 +158,7 @@ const beatEditor=(()=>{
     if(!anchor)selected.clear();
     state.beatRelabelTarget=anchor?{...anchor,caseId:state.caseId,surface}:null;
     syncSelection();
-    try{const result=await request("");if(token!==openToken||context.caseId!==state.caseId)return;info=result;context.revision=result.revision;renderMenu();$("#beatRelabelMenu [data-editor-code]:not(:disabled)")?.focus({preventScroll:true})}catch(error){handleError(error)}
+    try{const result=(context.readOnly&&readOnlySnapshot(waveform))||await request("");if(token!==openToken||context.caseId!==state.caseId)return;info=result;context.revision=result.revision;renderMenu();$("#beatRelabelMenu [data-editor-code]:not(:disabled)")?.focus({preventScroll:true})}catch(error){handleError(error)}
   }
   function close(){openToken++;closeBeatRelabelMenu()}
   function showDialog(title,content,accept,acceptLabel="预览修改"){
