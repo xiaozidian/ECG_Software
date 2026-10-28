@@ -198,7 +198,15 @@
       const result=await api('/api/cases/'+encodeURIComponent(scope.caseId)+'/waveform-strips',{method:'POST',signal:ticket.signal,body:JSON.stringify({sample_indices:samples,leads,pre_s:.6,post_s:1,max_points:800,analysis_basis:scope.analysis_basis,analysis_revision:scope.analysis_revision,beat_revision:scope.beatRevision})});
       if(!C().isCurrent(ticket,viewKey())||cardKey!==k||!active())return;assertResponse(scope,result);
       if(result.items.length!==samples.length||result.items.some(x=>!samples.includes(x.sample_index)))throw Error('波形返回集合不完整');
-      for(const item of result.items){cardWaves.set(item.sample_index,item);const target=host.querySelector('[data-linked-wave="'+item.sample_index+'"]');if(target)target.innerHTML=ECGOccurrenceCard.svg(item,{sample_index:item.sample_index,target_samples:[item.sample_index],label:item.class_code||item.label||'心搏'}, {height:132,annotations:'none',centerSample:item.sample_index});}
+      for(const item of result.items){
+        cardWaves.set(item.sample_index,item);const target=host.querySelector('[data-linked-wave="'+item.sample_index+'"]'),row=rowMap.get(item.sample_index);
+        if(!target||!row)continue;
+        target.innerHTML=ECGOccurrenceCard.svg(item,{sample_index:item.sample_index,target_samples:[item.sample_index],label:item.class_code||item.label||'心搏'}, {height:132,annotations:'none',centerSample:item.sample_index});
+        const isCurrent=()=>active()&&sameRows()&&cardKey===k&&target.isConnected&&C().isCurrent(ticket,viewKey());
+        beatEditor.bindWaveSurface(target,{wave:{...item,beats:[row]},anchorSample:item.sample_index,isCurrent,
+          sampleScope:visible=>{if(!isCurrent())throw Error('联动选集已变化，请重新右击');return [...(visible?samples:c.samples)];},
+          onPreview:()=>openEditTwelveLead(target.closest('[data-linked-sample]').querySelector('[data-linked-focus]')||target,row,{expectedScope:scope,isCurrent})});
+      }
       syncCards();
     }catch(error){if(error.name!=='AbortError'&&C().isCurrent(ticket,viewKey())&&cardKey===k){host.querySelectorAll('[data-linked-wave]').forEach(x=>x.textContent='波形读取失败；请关闭再打开重试。');cardKey=null;message(error.message,true);}}
   }
