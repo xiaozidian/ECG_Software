@@ -277,12 +277,40 @@ globalThis.ECGReportWorkspace=(()=>{
     }
     const rowWaves=new Map();
     function readRow(row){if(!rowWaves.has(row.s.event_id))rowWaves.set(row.s.event_id,Promise.resolve().then(()=>{if(!isCurrent())throw Error('报告视图已变化');return loadWave(row.e,row.s);}).catch(error=>{rowWaves.delete(row.s.event_id);throw error;}));return rowWaves.get(row.s.event_id);}
-    function updateMiniScale(node){const width=Number(node.dataset.nativeWidth),height=Number(node.dataset.nativeHeight);if(!width||!height)return;const scale=Math.min(1,node.clientWidth/width,node.clientHeight/height),label=node.closest('.rw-strip')?.querySelector('[data-rw-mini-scale]');node.dataset.thumbnailScale=String(scale);if(label)label.textContent=`缩略预览 · 等比 ${Math.round(scale*100)}% · 双击查看完整导联`;}
-    if(typeof ResizeObserver!=='undefined')view.miniResizeObserver=new ResizeObserver(entries=>entries.forEach(({target})=>updateMiniScale(target)));
+    function updateMiniSize(node){node._rwRenderMini?.();}
+    if(typeof ResizeObserver!=='undefined')view.miniResizeObserver=new ResizeObserver(entries=>entries.forEach(({target})=>updateMiniSize(target)));
     function loadMini(row){
-      const {s,i,status}=row,node=host.querySelector(`[data-rw-mini="${i}"]`);if(!node||node.dataset.loaded||status==='stale'||!isCurrent())return;
+      const {s,i,status}=row,node=host.querySelector(`[data-rw-mini="${i}"]`);
+      if(!node||node.dataset.loaded||status==='stale'||!isCurrent())return;
       node.dataset.loaded='loading';node.textContent='正在读取本条真实波形…';
-      return readRow(row).then(entry=>{if(!node.isConnected||caseId!==id||!isCurrent())return;const projected=globalThis.ECGReportStripEditor.project(entry),domain=ECGReviewTools.waveDomain(entry.waveform,JSON.stringify([id,row.e.event_id,row.e.basis_version,'selected-strip'])),card=globalThis.ECGOccurrenceCard||(typeof require==='function'?require('./occurrence-card.js'):null),many=projected.strip.leads.length>6;node.closest('.rw-strip').classList.toggle('rw-many-leads',many);const height=projected.strip.leads.length*64+48;node.style.height='144px';node.style.minHeight='144px';node.dataset.nativeWidth=String(Math.max(240,node.clientWidth||600));node.dataset.nativeHeight=String(height);node.innerHTML=card.svg(projected.waveform,row.e,{width:Math.max(240,node.clientWidth||600),height,rowHeight:64,timeAxis:true,columns:1,recordStart,domain});const thumbnail=node.querySelector('svg');thumbnail.setAttribute('preserveAspectRatio','xMidYMid meet');thumbnail.style.maxWidth=node.dataset.nativeWidth+'px';thumbnail.style.maxHeight=height+'px';updateMiniScale(node);view.miniResizeObserver?.observe(node);node.dataset.loaded='ready';host.querySelector(`[data-rw-mini-range="${i}"]`).textContent=`${preciseTime(entry.waveform.start_s)} — ${preciseTime(entry.waveform.start_s+entry.waveform.duration_s)} · ${entry.strip.visible_beat_count} 搏 · 本条显示与入报 ${entry.strip.leads.join(' / ')} · 设备单位 u，未校准`;const open=mountEventPreview(node,{event:row.e,title:'12 导联 · 本条入报时间窗',loadingLabel:'正在读取十二导联…',loadWave:()=>Promise.resolve(entry.waveform),renderWave:wave=>reviewWaveSvg(wave,row.e,{recordStart,domain}),isCurrent:()=>node.isConnected&&caseId===id&&isCurrent()});bindWavePreview(node,open,()=>node.isConnected&&caseId===id&&isCurrent());if(typeof beatEditor!=='undefined')beatEditor.bindWaveSurface(node,{wave:projected.waveform,onPreview:open,readOnly:true,isCurrent:()=>node.isConnected&&caseId===id&&isCurrent()});}).catch(error=>{if(!node.isConnected||caseId!==id||!isCurrent())return;delete node.dataset.loaded;node.textContent='图条读取失败：'+error.message;const retry=document.createElement('button');retry.type='button';retry.textContent='重试本条波形';retry.onclick=()=>loadMini(row);node.append(retry);});
+      return readRow(row).then(entry=>{
+        if(!node.isConnected||caseId!==id||!isCurrent())return;
+        const projected=globalThis.ECGReportStripEditor.project(entry),domain=ECGReviewTools.waveDomain(entry.waveform,JSON.stringify([id,row.e.event_id,row.e.basis_version,'selected-strip']));
+        const card=globalThis.ECGOccurrenceCard||(typeof require==='function'?require('./occurrence-card.js'):null);
+        node.closest('.rw-strip').classList.toggle('rw-many-leads',projected.strip.leads.length>6);
+        node._rwRenderMini=()=>{
+          if(!node.isConnected||caseId!==id||!isCurrent())return;
+          const style=getComputedStyle(node),rect=node.getBoundingClientRect();
+          const width=Math.max(1,rect.width-(parseFloat(style.borderLeftWidth)||0)-(parseFloat(style.borderRightWidth)||0)),height=node.clientHeight||190;
+          if(Math.abs(Number(node.dataset.nativeWidth)-width)<.01&&Number(node.dataset.nativeHeight)===height)return;
+          // One shared preview gain is based on twelve rows for every lead count.
+          // Add/reposition rows, never scale the whole twelve-lead image to fit.
+          const pixelGain=((height-48)/12-4)/(2*domain),relativeGain=pixelGain/(26/domain);
+          node.dataset.nativeWidth=String(width);node.dataset.nativeHeight=String(height);node.dataset.thumbnailScale='1';
+          node.innerHTML=card.svg(projected.waveform,row.e,{width,height,timeAxis:true,columns:1,recordStart,domain,pixelGain,reportPreview:true});
+          const label=node.closest('.rw-strip')?.querySelector('[data-rw-mini-scale]');
+          if(label){label.textContent=`全宽缩略预览 · 幅值 ${Math.round(relativeGain*100)}% · 双击原比例`;label.title='缩略图共用时间轴和预览增益；完整诊断图保留原显示增益。设备单位未校准。';}
+        };
+        updateMiniSize(node);view.miniResizeObserver?.observe(node);node.dataset.loaded='ready';
+        host.querySelector(`[data-rw-mini-range="${i}"]`).textContent=`${preciseTime(entry.waveform.start_s)} — ${preciseTime(entry.waveform.start_s+entry.waveform.duration_s)} · ${entry.strip.visible_beat_count} 搏 · 本条显示与入报 ${entry.strip.leads.join(' / ')} · 设备单位 u，未校准`;
+        const open=mountEventPreview(node,{event:row.e,title:'12 导联 · 本条入报时间窗',loadingLabel:'正在读取十二导联…',loadWave:()=>Promise.resolve(entry.waveform),renderWave:wave=>reviewWaveSvg(wave,row.e,{recordStart,domain}),isCurrent:()=>node.isConnected&&caseId===id&&isCurrent()});
+        bindWavePreview(node,open,()=>node.isConnected&&caseId===id&&isCurrent());
+        if(typeof beatEditor!=='undefined')beatEditor.bindWaveSurface(node,{wave:projected.waveform,onPreview:open,readOnly:true,isCurrent:()=>node.isConnected&&caseId===id&&isCurrent()});
+      }).catch(error=>{
+        if(!node.isConnected||caseId!==id||!isCurrent())return;
+        delete node.dataset.loaded;node.textContent='图条读取失败：'+error.message;
+        const retry=document.createElement('button');retry.type='button';retry.textContent='重试本条波形';retry.onclick=()=>loadMini(row);node.append(retry);
+      });
     }
     if(typeof IntersectionObserver!=='undefined'){view.miniObserver=new IntersectionObserver(entries=>entries.forEach(entry=>{if(entry.isIntersecting){const row=visible.find(r=>String(r.i)===entry.target.dataset.rwMini);if(row)loadMini(row);}}),{root:host.querySelector('.rw-selected-strips'),rootMargin:'0px'});host.querySelectorAll('[data-rw-mini]').forEach(node=>view.miniObserver.observe(node));}else visible.forEach(loadMini);
     function loadRow(row){

@@ -75,7 +75,7 @@ const result = { scope: 'new scatter and report lead geometry; isolated mathemat
         const card=svg.closest('.rw-strip').getBoundingClientRect();
         return { count: svg.querySelectorAll('[data-wave-lead]').length, width: card.width, height: card.height,
           containerHeight: svg.parentElement.getBoundingClientRect().height, xMatrix: matrix.a, yMatrix: matrix.d,
-          rowHeight: svg.dataset.fixedRowHeight, sourceStart: svg.dataset.sourceStart, sourceDuration: svg.dataset.sourceDuration,
+          preview: svg.dataset.reportPreview, sourceStart: svg.dataset.sourceStart, sourceDuration: svg.dataset.sourceDuration,
           sampleRate: svg.dataset.sampleRate, stride: svg.dataset.stride, columns: svg.dataset.columns,
           gain: Number(group.dataset.waveScale),
           x: Array.from(poly.points, p => p.x) };
@@ -92,14 +92,14 @@ const result = { scope: 'new scatter and report lead geometry; isolated mathemat
     const three = await choose('three'); const one = await choose('one'); const twelve = await choose('all');
     result.report_geometry = Object.fromEntries(Object.entries({ three, one, twelve }).map(([key, value]) => { const { x, ...metadata } = value; return [key, metadata]; }));
     for (const current of [one, twelve]) {
-      assert(Math.abs(current.gain - three.gain) < 1e-8, 'native diagnostic gain must remain constant');
+      assert(Math.abs(current.gain - three.gain) < 1e-8, 'shared thumbnail gain must remain constant');
       assert(Math.abs(current.width - three.width) < .1, 'lead count must not change card width');
       assert(Math.abs(current.height - three.height) < .1, 'lead count must not change thumbnail card height');
-      assert.equal(current.containerHeight,144);assert(Math.abs(current.xMatrix-current.yMatrix)<1e-6,'thumbnail preview must scale uniformly');
+      assert.equal(current.containerHeight,192);assert(Math.abs(current.xMatrix-1)<.01&&Math.abs(current.yMatrix-1)<.01,'thumbnail must draw directly into the full frame');
       assert.equal(current.x.length, three.x.length);
       assert(current.x.every((x, i) => Math.abs(x - three.x[i]) < .1), 'native diagnostic time coordinates must remain constant');
       for (const key of ['sourceStart', 'sourceDuration', 'sampleRate', 'stride']) assert.equal(current[key], three[key]);
-      assert.equal(current.columns, '1'); assert.equal(current.rowHeight, '64');
+      assert.equal(current.columns, '1'); assert.equal(current.preview, 'full-width');
     }
     for (const current of [three, one, twelve]) { delete current.x; delete current.values; }
     result.report_geometry = { three, one, twelve };
@@ -113,7 +113,7 @@ const result = { scope: 'new scatter and report lead geometry; isolated mathemat
     assert.deepEqual(await page.evaluate(() => structuredClone(state.reportComposition.selected_events)), expected);
     const reopened = await geometry();
     assert.equal(reopened.count, 12); assert(Math.abs(reopened.gain - twelve.gain) < 1e-8);
-    result.checks.push('report-1-3-12-leads-equal-thumbnail-frame-uniform-scale-and-autosave-reopen-keep-native-time-gain-and-source-samples');
+    result.checks.push('report-1-3-12-leads-equal-thumbnail-frame-full-width-and-autosave-reopen-keep-source-time-and-shared-preview-gain');
     assert.deepEqual(result.errors, []); assert.deepEqual(result.forbidden, []);
     result.passed = true;
   } catch (e) { result.passed = false; result.error = String(e.stack || e); throw e; }

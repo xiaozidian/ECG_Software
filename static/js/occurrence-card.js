@@ -22,13 +22,13 @@
     card.dataset.current=String(samples.includes(state.editSelectedSample));
     if(button){button.setAttribute('aria-pressed',partial?'mixed':String(all));if(samples.includes(state.editSelectedSample))button.setAttribute('aria-current','true');else button.removeAttribute('aria-current');}
   }
-  function svg(wave,item={}, {width=240,height=geometry.waveHeight,inset=24,timeAxis=false,annotations='shared',centerSample=null,columns=1,domain=null,recordStart=null,rowHeight=null,pixelGain=null}={}){
+  function svg(wave,item={}, {width=240,height=geometry.waveHeight,inset=24,timeAxis=false,annotations='shared',centerSample=null,columns=1,domain=null,recordStart=null,rowHeight=null,pixelGain=null,reportPreview=false}={}){
     width=Math.max(1,Number(width)||240);height=Math.max(1,Number(height)||geometry.waveHeight);
     const order=['I','II','III','aVR','aVL','aVF','V1','V2','V3','V4','V5','V6'];
     const names=[...order.filter(name=>Object.hasOwn(wave.leads||{},name)),...Object.keys(wave.leads||{}).filter(name=>!order.includes(name))];
     // Twelve leads always share one full-width time axis, including legacy callers.
     const fixedRows=Number.isFinite(rowHeight)&&rowHeight>=32;
-    const entries=names.map(name=>[name,wave.leads[name]]),sharedTwelve=names.length>6,sharedLane=fixedRows||sharedTwelve,annotationHeight=sharedLane&&annotations!=='none'?24:0;
+    const entries=names.map(name=>[name,wave.leads[name]]),sharedTwelve=names.length>6,sharedLane=fixedRows||sharedTwelve||reportPreview,annotationHeight=sharedLane&&annotations!=='none'?24:0;
     if(fixedRows)height=annotationHeight+entries.length*rowHeight+(timeAxis?24:0);
     const plotHeight=height-(timeAxis?24:0),row=(plotHeight-annotationHeight)/Math.max(1,entries.length),fs=wave.sample_rate_hz||200,stride=tools.sampleStride(wave),sourceDuration=wave.duration_s;
     // Display-only centered viewport. Keep every source sample and original timing.
@@ -38,7 +38,7 @@
     const displayWave={...wave,start_s:displayStart,duration_s:duration};
     const left=Math.min(inset,width/4),plotWidth=width-2*left,anchor=left+(item.sample_index/fs-displayStart)/duration*plotWidth;
     const label=`${item.label||'心搏'}，${duration}秒，设备单位 u，${domain?'锁定幅度 ±'+domain+' u':'各导联自适应幅度'}${stride>1?'，步进 '+stride+' 采样的概览，请回看完整波形':''}`;
-    let output=`<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" ${fixedRows?`data-fixed-row-height="${rowHeight}" height="${height}"`:''} data-columns="1" data-sample-rate="${fs}" data-stride="${stride}" data-amplitude-domain="${domain||'adaptive'}" data-record-start="${escape(recordStart||'')}" data-annotations="${annotations==='none'?'none':'shared'}" data-display-start="${displayStart}" data-display-duration="${duration}" data-source-start="${wave.start_s}" data-source-duration="${sourceDuration}" data-plot-left="${left}" data-plot-width="${plotWidth}" aria-label="${escape(label)}"><rect width="100%" height="100%" fill="#fff"/>`;
+    let output=`<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" ${fixedRows?`data-fixed-row-height="${rowHeight}" height="${height}"`:''} ${reportPreview?'data-report-preview="full-width"':''} data-columns="1" data-sample-rate="${fs}" data-stride="${stride}" data-amplitude-domain="${domain||'adaptive'}" data-record-start="${escape(recordStart||'')}" data-annotations="${annotations==='none'?'none':'shared'}" data-display-start="${displayStart}" data-display-duration="${duration}" data-source-start="${wave.start_s}" data-source-duration="${sourceDuration}" data-plot-left="${left}" data-plot-width="${plotWidth}" aria-label="${escape(label+(reportPreview?'，全宽缩略预览，诊断比例请展开':''))}"><rect width="100%" height="100%" fill="#fff"/>`;
     const sourceLeft=left+(wave.start_s-displayStart)/duration*plotWidth,sourceRight=left+(wave.start_s+sourceDuration-displayStart)/duration*plotWidth;
     for(const [x,w] of [[left,sourceLeft-left],[sourceRight,left+plotWidth-sourceRight]])if(w>.01)output+=`<g class="occurrence-unavailable"><rect x="${x}" y="0" width="${w}" height="${plotHeight}" fill="#f2f4f5"/><title>此显示范围没有载入波形；未补零或推断心搏</title></g>`;
     const step=plotWidth/duration*.2;
@@ -47,10 +47,11 @@
     if(anchor>=left&&anchor<=left+plotWidth)output+=`<line class="occurrence-anchor" x1="${anchor}" x2="${anchor}" y1="0" y2="${plotHeight}" stroke="#d18427" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
     entries.forEach(([name,values],j)=>{
       const shape=tools.waveRow(values,{top:annotationHeight+j*row,bottom:annotationHeight+(j+1)*row,annotated:annotations!=='none'&&j===0,sharedLabelY:sharedLane?3:null,domain});
+      if(reportPreview){shape.baseline=annotationHeight+(j+.5)*row;shape.signalTop=annotationHeight+j*row+2;shape.signalBottom=annotationHeight+(j+1)*row-2;shape.labelY=3;}
       if(Number.isFinite(pixelGain)&&pixelGain>0){shape.scale=pixelGain;shape.overflow=values.some(value=>{const y=shape.baseline-Number(value)*pixelGain;return y<shape.signalTop-1e-6||y>shape.signalBottom+1e-6;});}
       const {baseline,scale}=shape;
       const points=values.map((value,i)=>`${(left+(wave.start_s-displayStart+i*stride/fs)/duration*plotWidth).toFixed(3)},${(baseline-value*scale).toFixed(3)}`).join(' ');
-      output+=`<g data-wave-lead="${escape(name)}" data-wave-scale="${scale}" data-wave-baseline="${baseline}" data-wave-overflow="${Boolean(shape.overflow)}" data-signal-top="${shape.signalTop}" data-signal-bottom="${shape.signalBottom}"><polyline opacity="${shape.overflow?0:1}" data-lead="${escape(name)}" fill="none" stroke="#172126" stroke-width="1.15" vector-effect="non-scaling-stroke" points="${points}"/><text class="ecg-lead-name" x="2" y="${annotationHeight+j*row+13}" font-size="11" fill="#36454d">${escape(name)}</text>`;
+      output+=`<g data-wave-lead="${escape(name)}" data-wave-scale="${scale}" data-wave-baseline="${baseline}" data-wave-overflow="${Boolean(shape.overflow)}" data-signal-top="${shape.signalTop}" data-signal-bottom="${shape.signalBottom}"><polyline opacity="${shape.overflow?0:1}" data-lead="${escape(name)}" fill="none" stroke="#172126" stroke-width="1.15" vector-effect="non-scaling-stroke" points="${points}"/><text class="ecg-lead-name" x="2" y="${reportPreview?shape.baseline+3:annotationHeight+j*row+13}" font-size="${reportPreview?9:11}" fill="#36454d">${escape(name)}</text>`;
       if(shape.overflow)output+=`<text x="${left+24}" y="${baseline}" font-size="12" fill="#a52727">幅度超范围，请适应当前幅度后复核</text>`;
       for(const beat of (annotations!=='none'&&j===0?wave.beats||[item]:[])){
         const p=tools.fiducialPosition(beat,displayWave,values,{left,width:plotWidth,...shape});if(!p)continue;
