@@ -48,7 +48,7 @@ async def verify(args,result):
         m=doctor_source.validate_source(fixture);assert m['kind']=='mathematical_deidentified_fixture' and m['patient_inputs_read'] is False
         before={p.relative_to(fixture).as_posix():digest(p) for p in fixture.rglob('*') if p.is_file()}
         program=unpack(args.software_archive,work/'original-program');verify_content_manifest(program)
-        exe=program/'CardioInsightDoctorEval.exe';active=exe;home=work/'doctor-home';context=None
+        exe=program/'CardioInsightDoctorEval.exe';active=exe;home=work/'doctor-home';context=None;page=None
         async with async_playwright() as p:
             browser=await p.chromium.launch(channel='msedge',headless=True)
             result['edge']=browser.version
@@ -71,10 +71,20 @@ async def verify(args,result):
                 await navigate(page,'stt')
                 await page.wait_for_function("()=>state.sttEvidence && document.querySelector('#sttWaveCanvasWrap').dataset.sttWaveState==='ready'")
                 await page.locator('#sttFinding').select_option('无法判读');await page.locator('#sttReviewNote').fill(NOTE)
-                await page.locator('#sttSignalChecked').check();await page.locator('#saveSttAnnotation').click()
+                await page.locator('#sttSignalChecked').check()
+                async with page.expect_response(lambda r:urlsplit(r.url).path.endswith('/annotations') and r.request.method=='POST') as saved:
+                    await page.locator('#saveSttAnnotation').click()
+                response=await saved.value;assert response.ok
+                annotation=await response.json();assert type(annotation.get('id')) is int
                 await page.wait_for_function('()=>!state.sttSaving')
-                await navigate(page,'trends');await page.locator('[data-hrv-edit-action="locate"]').first.wait_for()
-                record(result,'P01-native-STT-and-HRV-source-read')
+                await navigate(page,'trends')
+                # The controls mount before their separate review-model request
+                # finishes. Leaving while that request is busy is intentionally
+                # refused by the application; wait for its actual saved model.
+                await page.wait_for_function("""()=>{const c=document.querySelector('#hrvWindowPanel')?._hrvEditor,s=c?.state();
+                    return s?.model && !s.busy && !s.failed && !c.pending();}""")
+                assert await page.locator('[data-hrv-edit-action="locate"]').first.is_enabled()
+                record(result,'P01-native-STT-and-HRV-source-read',{'saved_HRV_model_ready':True})
                 await report_ready(page);await page.locator('#conclusionEditor').fill(NOTE);await page.locator('#saveReport').click()
                 await page.wait_for_function('()=>!state.reportSaving && !state.reportDirty')
                 await saved_work(page)
@@ -105,6 +115,15 @@ async def verify(args,result):
                 assert rejected.returncode!=0 and (folder/'WORKSPACE.json').read_bytes()==metadata and digest(folder/'data/cardioinsight.db')==database
                 assert before=={p.relative_to(fixture).as_posix():digest(p) for p in fixture.rglob('*') if p.is_file()}
                 record(result,'P01-old-wrapper-refuses-newer-work-without-writing')
+            except Exception:
+                if page and not page.is_closed():
+                    try:
+                        result['failure_state']=await page.evaluate("""()=>{const c=document.querySelector('#hrvWindowPanel')?._hrvEditor,s=c?.state();
+                            return {page:typeof state==='undefined'?null:state.currentPage,hrv_model:!!s?.model,hrv_busy:s?.busy,
+                                hrv_failed:s?.failed,hrv_pending:c?.pendingDetails(),body:document.body.innerText.slice(0,1000)};}""")
+                        await page.screenshot(path=str(args.output.parent/'p01-native-failure.png'))
+                    except Exception as error:result['diagnostic_error']=type(error).__name__
+                raise
             finally:
                 if context:await context.close()
                 await stop(active,home);await browser.close()
