@@ -305,8 +305,10 @@ globalThis.ECGReportWorkspace=(()=>{
       card.tabIndex=0;card.setAttribute('aria-description','右键或 Shift+F10 打开图条操作；也可使用图条操作按钮。');
       const open=event=>{globalThis.ECGReportStripEditor.menu({card,event,isCurrent,actions:[...tools.querySelectorAll('[data-rw-strip-action]')].map(b=>({label:b.textContent,disabled:b.disabled,run:()=>b.click()}))});};
       tools.querySelector('summary').onclick=event=>{event.preventDefault();open(event);};
-      card.oncontextmenu=event=>{if(event.target.closest('input,textarea,select,[contenteditable]'))return;event.preventDefault();open(event);};
-      card.onkeydown=event=>{if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10'){event.preventDefault();open();}if(event.key==='Escape'){tools.open=false;globalThis.ECGReportStripEditor.closeMenu();}};
+      // A selected report strip owns curation actions, even over its waveform.
+      // Capture here before the nested read-only beat/wave surface can take it.
+      card.addEventListener('contextmenu',event=>{if(event.target.closest('input,textarea,select,[contenteditable]'))return;event.preventDefault();event.stopPropagation();open(event);},true);
+      card.addEventListener('keydown',event=>{if(event.target.closest('input,textarea,select,[contenteditable]'))return;if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10'){event.preventDefault();event.stopPropagation();open();}if(event.key==='Escape'){tools.open=false;globalThis.ECGReportStripEditor.closeMenu();}},true);
       card.classList.toggle('rw-print-disabled',row.s.print_enabled===false);
       if(row.s.print_enabled===false)card.querySelector('.rw-print-status').append(' · 已取消打印（选图保留）');
       tools.querySelector('[data-rw-strip-action=print]').textContent=row.s.print_enabled===false?'恢复打印':'取消打印';
