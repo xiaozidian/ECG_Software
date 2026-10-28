@@ -23,7 +23,10 @@ CASE=doctor_source.CASE_ID
 NOTE='P01 mathematical fixture saved-work verification; no patient input.'
 
 async def open_case(page,duration):
-    await worklist_ready(page)
+    try:await worklist_ready(page)
+    except Exception:
+        snapshot=await page.evaluate("()=>({page:typeof state==='undefined'?null:state.currentPage,caseCount:typeof state==='undefined'?null:state.cases?.length,title:document.title,body:document.body.innerText.slice(0,700)})")
+        raise AssertionError('P01 worklist did not become ready: '+json.dumps(snapshot)) from None
     await page.locator('#openFirstCase').click()
     await page.wait_for_function('(arg)=>state.caseId===arg.id && !state.caseLoading && state.caseData?.technical.duration_seconds_raw===arg.duration',arg={'id':CASE,'duration':duration})
     await navigate(page,'edit');await wait_edit(page)
@@ -59,6 +62,7 @@ async def verify(args,result):
                 manager,_=await launch(exe,home,fixture);page=await manager_page(context,manager)
                 async with page.expect_response(lambda r:urlsplit(r.url).path=='/continue'):
                     await page.locator('#continueExperience').click()
+                assert urlsplit(page.url).path!='/continue','P01 manager could not start its workspace'
                 await open_case(page,m['duration_seconds'])
                 record(result,'P01-native-one-case-source-and-private-mode',{'source_kind':m['kind'],'patient_inputs_read':False})
                 await editor_round(page,result)

@@ -137,6 +137,13 @@ def _source_metadata(source=None):
                 wholly_synthetic=value.get('wholly_synthetic',identifier=='M01'))
 
 
+def _source_file_names(source):
+    if _source_metadata(source)['source_id']=='P01':
+        from ecg_core.doctor_source import PATHS
+        return frozenset(PATHS.values())
+    return SOURCE_FILES
+
+
 def validate_source(root=None, *, source=None):
     """Validate only the release's one-case, strictly allowlisted source."""
     identifier=_release_source_id(root)
@@ -739,7 +746,7 @@ def serve_workspace(identifier, token):
         context = _context("workspace", token)
         context["workspace_id"] = identifier
         _install_guards(app, context)
-        immutable = [source / name for name in SOURCE_FILES]
+        immutable = [source / name for name in _source_file_names(source)]
         if getattr(sys, "frozen", False):
             immutable.append(Path(sys.executable))
         from ecg_core.source_identity import read_locked_sources
@@ -838,7 +845,7 @@ details{margin-top:28px}label{display:block}.notice{padding:14px;border-radius:1
 <h1><svg viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#17697b"/>
 <path d="M8 34h12l6-16 9 30 7-19 5 5h9" fill="none" stroke="white" stroke-width="3"
 stroke-linejoin="round"/></svg>医生离线体验</h1>
-<p>一例24小时纯数学合成心电，完整工作站与现有算法报告。无需安装Python，使用本机浏览器。</p>
+<p>{{source_description}}完整工作站与现有算法报告。无需安装Python，使用本机浏览器。</p>
 <p class="notice">仅用于软件功能体验。Windows 10 x64；医院电脑架构及实机兼容性尚未确认。
 算法中的不可用项目保留原标识。</p>
 <form method="post" action="/continue"><input type="hidden" name="_csrf" value="{{csrf}}">
@@ -890,7 +897,11 @@ def manager_app(manager, context):
 
     @app.get("/")
     def landing():
-        return render_template_string(LANDING, csrf=context["token"], items=manager.catalog.items())
+        info=getattr(manager.catalog,'source_info',_source_metadata())
+        description=('一例去标识化真实病例（源日期已平移）。' if info['kind']=='deidentified_patient' else
+                     '一例数学测试来源，用于验证P01格式，未使用患者输入。' if info['source_id']=='P01' else
+                     '一例24小时纯数学合成心电。')
+        return render_template_string(LANDING, csrf=context["token"], items=manager.catalog.items(),source_description=description)
 
     @app.post("/continue")
     def continue_experience():
@@ -1017,12 +1028,13 @@ def _probe_case(state):
         f"http://127.0.0.1:{state['port']}/api/cases",
         headers={"Cookie": "doctor_" + state["token"][:20] + "=" + state["token"]})
     try:
+        manifest=_read_json(selected_source()/'source-manifest.json',required=True)
         with opener.open(req, timeout=30) as response:
             value = json.load(response)
         items = value.get("items", [])
-        if (len(items) != 1 or items[0].get("case_id") != CASE_ID
-                or items[0].get("technical", {}).get("duration_seconds_raw") != 86400):
-            _error("smoke_case_failed", "真实病例接口未返回固定24小时合成体验。")
+        if (len(items) != 1 or items[0].get("case_id") != manifest['case_id']
+                or items[0].get("technical", {}).get("duration_seconds_raw") != manifest['duration_seconds']):
+            _error("smoke_case_failed", "病例接口未返回当前发布包的固定来源。")
     except (OSError, ValueError, urllib.error.URLError) as error:
         if isinstance(error, DoctorEvalError):
             raise

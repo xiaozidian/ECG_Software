@@ -101,3 +101,30 @@ def test_p01_catalog_and_diagnostic_keep_truthful_fixture_provenance(exported,tm
     report=doctor.diagnostic()
     assert report['source_id']=='P01' and report['wholly_synthetic'] is True and report['source_version']==source.VERSION
     assert 'FAKE-' not in json.dumps(report)
+
+
+def test_p01_workspace_serve_locks_its_actual_files_before_ready(exported,tmp_path,monkeypatch):
+    program(tmp_path,monkeypatch)
+    home=tmp_path/'source-work';catalog=doctor.WorkspaceCatalog(home,exported)
+    identifier=catalog.new();served=[]
+    monkeypatch.setattr(doctor,'evaluation_home',lambda:home)
+    monkeypatch.setattr(doctor,'selected_source',lambda:exported)
+    monkeypatch.setattr(doctor,'_environment',lambda folder,source:None)
+    monkeypatch.setattr(doctor,'process_identity',lambda pid:'unit-process-identity')
+    monkeypatch.setattr(doctor,'_serve',lambda app,context,path:served.append(context['workspace_id']))
+    doctor.serve_workspace(identifier,'c'*64)
+    assert served==[identifier]
+    assert doctor._source_file_names(exported)==frozenset(source.PATHS.values())
+
+
+def test_p01_manager_landing_identifies_mathematical_fixture_truthfully(exported,tmp_path,monkeypatch):
+    program(tmp_path,monkeypatch)
+    catalog=doctor.WorkspaceCatalog(tmp_path/'landing-work',exported)
+    monkeypatch.setattr(doctor,'process_identity',lambda pid:'unit-process-identity')
+    context=doctor._context('manager','d'*64);context['port']=9123
+    app=doctor.manager_app(doctor.Manager(catalog),context)
+    client=app.test_client();base='http://127.0.0.1:9123'
+    client.get('/_doctor/open?token='+context['token'],base_url=base)
+    response=client.get('/',base_url=base)
+    assert response.status_code==200 and '数学测试来源' in response.get_data(as_text=True)
+    assert '一例24小时纯数学合成' not in response.get_data(as_text=True)

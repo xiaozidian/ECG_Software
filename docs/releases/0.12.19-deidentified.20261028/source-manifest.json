@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "version": "0.12.19-deidentified.20261028",
-  "release_id": "0.12.19-deidentified.20261028+39b55f8c9dcfb4da",
-  "source_sha256": "39b55f8c9dcfb4dab1774981970bd2cec7bc1c103dc2e094ee079cc1fa240b5b",
+  "release_id": "0.12.19-deidentified.20261028+7d797b82500cf75c",
+  "source_sha256": "7d797b82500cf75cab19fa798a7d29740d49ca4b54492094da9e9f4860164475",
   "production_file_count": 121,
   "files": {
     "CardioInsightDoctorEval.spec": {
@@ -486,8 +486,8 @@
       "sha256": "32a1351df71ab731bc5e06c0e81a13e593fd909faad384a0224ac72216f8a312"
     },
     "win_doctor_eval.py": {
-      "bytes": 56634,
-      "sha256": "b3e8e2fe07385d7c98c85a747e9b0269070e8b9ccca1fbc8105d44e9a99e78aa"
+      "bytes": 57373,
+      "sha256": "755cfef85ebe20851c7a04e6a95521865daf47472d72a57776b6f68e42c4fe6e"
     }
   },
   "upstream_main": "d369032808d3847af6f1dca171a7ac45992c4a5d",
