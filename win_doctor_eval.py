@@ -1,6 +1,6 @@
 """Offline Windows x64 doctor evaluation launcher.
 
-The immutable bundled source is always Sources/M01. Each experience owns a
+The immutable source is synthetic M01 or explicitly deidentified P01. Each owns a
 separate process, port and database; old browser tabs never switch databases.
 Control uses a held file lock, process creation identity and a health token.
 No service installation, process termination, source discovery or upload.
@@ -67,7 +67,7 @@ def evaluation_home():
         return Path(test_root).absolute()
     base = os.environ.get("LOCALAPPDATA")
     return ((Path(base) if base else Path.home() / "AppData" / "Local")
-            / "CardioInsightDoctorEval").absolute()
+            / ("CardioInsightDoctorEvalP01" if _release_source_id()=="P01" else "CardioInsightDoctorEval")).absolute()
 
 
 def _plain(path):
@@ -121,11 +121,35 @@ def _hash_file(path):
     return digest.hexdigest()
 
 
+def _release_source_id(root=None):
+    release=_read_json((Path(root) if root is not None else package_root())/'RELEASE.json')
+    value=release.get('source_id','M01')
+    if value not in {'M01','P01'}:
+        _error('unsupported_source_profile','软件来源类型不受支持，未读取其他数据。')
+    return value
+
+
+def _source_metadata(source=None):
+    value=_read_json(Path(source)/'source-manifest.json') if source is not None else {}
+    identifier=value.get('source_id',_release_source_id())
+    return dict(source_id=identifier,kind=value.get('kind','mathematical_synthetic' if identifier=='M01' else 'deidentified_patient'),
+                source_version=value.get('source_version','M01-24h-v1' if identifier=='M01' else 'P01-deidentified-v1'),
+                wholly_synthetic=value.get('wholly_synthetic',identifier=='M01'))
+
+
 def validate_source(root=None, *, source=None):
-    """Validate only the fixed, allowlisted one-case mathematical source."""
+    """Validate only the release's one-case, strictly allowlisted source."""
+    identifier=_release_source_id(root)
     source = _plain(source if source is not None else
-                    (Path(root) if root is not None else package_root()) / "Sources" / "M01")
+                    (Path(root) if root is not None else package_root()) / "Sources" / identifier)
     manifest = _read_json(source / "source-manifest.json", required=True)
+    if identifier=='P01':
+        try:
+            from ecg_core.doctor_source import validate_source as validate_deidentified
+            validate_deidentified(source,hash_file=_hash_file)
+        except (AssertionError,ValueError,KeyError,TypeError,OSError):
+            _error('invalid_deidentified_source','去标识化来源校验失败，请保留原数据并使用匹配完整包。')
+        return source
     expected = dict(schema_version=1, source_id="M01", case_id=CASE_ID,
                     wholly_synthetic=True, duration_seconds=86400,
                     source_version="M01-24h-v1", sampling_rate_hz=200, sample_count=17280000,
@@ -178,27 +202,30 @@ def selected_source(*, register=False):
     binding_path = home / "source-selection.json"
     binding = _read_json(binding_path)
     explicit = os.environ.get("ECG_DOCTOR_EVAL_SOURCE_ROOT")
+    identifier=_release_source_id()
     if binding:
-        if (binding.get("profile") != PROFILE or binding.get("selected_dataset") != "M01"
+        if (binding.get("profile") != PROFILE or binding.get("selected_dataset") != identifier
                 or not isinstance(binding.get("data_root"), str)):
             _error("invalid_source_selection", "已登记来源记录无效，未连接其他数据。")
         registered = _plain(binding["data_root"])
         if explicit and _plain(explicit) != registered:
-            _error("source_rebinding_denied", "此体验已有固定来源，不会改连另一目录；请继续使用已登记的合成来源。")
+            _error("source_rebinding_denied", "此体验已有固定来源，不会改连另一目录；请继续使用已登记来源。")
         source = validate_source(source=registered)
+        if identifier=='P01' and binding.get('source_manifest_sha256')!=_hash_file(source/'source-manifest.json'):
+            _error('source_release_mismatch','已登记病例来源发生变化，未连接其他数据。')
     else:
         source = validate_source(source=_plain(explicit)) if explicit else validate_source()
     release = _read_json(package_root() / "RELEASE.json")
-    minimum = release.get("minimum_source_version", "M01-24h-v1")
+    minimum = release.get("minimum_source_version", "M01-24h-v1" if identifier=='M01' else 'P01-deidentified-v1')
     expected_hash = release.get("source_manifest_sha256", "")
-    if minimum != "M01-24h-v1":
-        _error("unsupported_source_version", "此软件要求另一版合成来源，请使用匹配的软件与来源包。")
+    if minimum != _source_metadata(source)['source_version']:
+        _error("unsupported_source_version", "此软件要求另一版来源，请使用匹配的软件与来源包。")
     if (expected_hash and (not isinstance(expected_hash, str) or not TOKEN.fullmatch(expected_hash)
                            or _hash_file(source / "source-manifest.json") != expected_hash)):
-        _error("source_release_mismatch", "此软件与已登记合成来源校验不匹配，请使用对应发布包。")
+        _error("source_release_mismatch", "此软件与已登记来源校验不匹配，请使用对应发布包。")
     if register and not binding:
-        _write_json(binding_path, dict(profile=PROFILE, selected_dataset="M01",
-                                       data_root=str(source)))
+        _write_json(binding_path, dict(profile=PROFILE, selected_dataset=identifier,
+                                       data_root=str(source),source_manifest_sha256=_hash_file(source/'source-manifest.json')))
     return source
 
 
@@ -325,6 +352,7 @@ def initialize_workspace_database(path):
 class WorkspaceCatalog:
     def __init__(self, home, source):
         self.home, self.source = _plain(home), _plain(source)
+        self.source_info=_source_metadata(self.source)
         if (self.home == self.source or self.home in self.source.parents
                 or self.source in self.home.parents):
             _error("overlapping_paths", "体验工作目录与内置来源必须独立。")
@@ -353,8 +381,8 @@ class WorkspaceCatalog:
             _error("invalid_workspace", "此体验不在工作区目录中。")
         folder = _plain(self.home / "workspaces" / identifier)
         record = _read_json(folder / "WORKSPACE.json", required=True)
-        expected = dict(profile=PROFILE, workspace_id=identifier, selected_dataset="M01",
-                        source_kind="mathematical_synthetic")
+        expected = dict(profile=PROFILE, workspace_id=identifier, selected_dataset=self.source_info['source_id'],
+                        source_kind=self.source_info['kind'])
         if (any(record.get(k) != v for k, v in expected.items())
                 or record.get("data_root") != str(self.source)
                 or not _plain(folder / "data" / "cardioinsight.db").is_file()):
@@ -369,8 +397,8 @@ class WorkspaceCatalog:
             folder.mkdir(parents=True, exist_ok=False)
             (folder / "data").mkdir()
             initialize_workspace_database(folder / "data" / "cardioinsight.db")
-            record = dict(profile=PROFILE, workspace_id=identifier, selected_dataset="M01",
-                          source_kind="mathematical_synthetic", data_root=str(self.source),
+            record = dict(profile=PROFILE, workspace_id=identifier, selected_dataset=self.source_info['source_id'],
+                          source_kind=self.source_info['kind'], data_root=str(self.source),
                           created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
             record.update(workspace_format=1, application_initialized=False,
                           software_version=_software_version(),
@@ -378,7 +406,7 @@ class WorkspaceCatalog:
                           sqlite_schema=database_schema(folder / "data" / "cardioinsight.db"))
             _write_json(folder / "WORKSPACE.json", record)
             _write_json(folder / "config.json", dict(
-                data_root=str(self.source), selected_dataset="M01",
+                data_root=str(self.source), selected_dataset=self.source_info['source_id'],
                 listen_host="127.0.0.1", allow_phi=False))
             value["workspaces"].append(identifier)
             value["selected_workspace"] = identifier
@@ -767,14 +795,16 @@ def diagnostic(*, source_ok=True, runtime="not_running", root=None):
     release = _read_json((Path(root) if root is not None else package_root()) / "RELEASE.json")
     commit = release.get("source_commit", "")
     manifest_hash = ""
+    information=_source_metadata()
     if source_ok:
         try:
             source = selected_source()
+            information=_source_metadata(source)
             manifest_hash = _hash_file(source / "source-manifest.json")
         except (DoctorEvalError, OSError):
             source_ok = False
     return dict(schema="cardioinsight-doctor-feedback-v1", software_version=APP_VERSION,
-                packaging_version=_packaging_version(), source_version="M01-24h-v1",
+                packaging_version=_packaging_version(), source_version=information['source_version'],
                 source_manifest_sha256=manifest_hash,
                 source_commit=commit if isinstance(commit, str) and re.fullmatch("[0-9a-f]{40}", commit) else "",
                 target="Windows 10 x64", runtime_bits=struct.calcsize("P") * 8,
@@ -782,7 +812,7 @@ def diagnostic(*, source_ok=True, runtime="not_running", root=None):
                 windows10_hospital_validation="not_confirmed",
                 source_validation="passed" if source_ok else "failed",
                 runtime_state=runtime if runtime in {"ready", "not_running", "unhealthy"} else "unhealthy",
-                source_id="M01", wholly_synthetic=True,
+                source_id=information['source_id'], wholly_synthetic=information['wholly_synthetic'],
                 feedback_scope="technical_fields_only")
 
 
@@ -1053,7 +1083,7 @@ def main(argv=None):
     parser.add_argument("--self-check", action="store_true")
     parser.add_argument("--smoke-test", action="store_true")
     parser.add_argument("--saved-work-acknowledged", action="store_true")
-    parser.add_argument("--source-root", default=None, help="首次显式登记经校验的纯合成 Sources/M01；不扫描其他目录")
+    parser.add_argument("--source-root", default=None, help="首次显式登记匹配发布包的M01合成或P01去标识化来源；不扫描其他目录")
     parser.add_argument("--workspace", default="")
     parser.add_argument("--runtime-token", default="")
     args = parser.parse_args(argv)

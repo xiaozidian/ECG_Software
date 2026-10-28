@@ -204,9 +204,16 @@ def package_inventory(package, *, with_source=True):
     package = Path(package)
     files = regular_files(package)
     expected_sources = {"Sources/M01/" + name for name in SOURCE_FILES}
+    release_path=package/'RELEASE.json'
+    source_id=json.loads(release_path.read_text()).get('source_id','M01') if release_path.is_file() else 'M01'
+    if source_id=='P01':
+        from ecg_core.doctor_source import PATHS
+        expected_sources={'Sources/P01/'+name for name in [*PATHS.values(),'source-manifest.json']}
+    elif source_id!='M01':
+        raise PackageError('Unsupported package source profile.')
     actual_sources = {name for name in files if name.startswith("Sources/")}
     if actual_sources != (expected_sources if with_source else set()):
-        raise PackageError("Package source directory is outside the synthetic allowlist.")
+        raise PackageError("Package source directory is outside the "+("synthetic allowlist." if source_id=='M01' else 'deidentified allowlist.'))
     expected_assets = {"_internal/" + name for name in ASSET_FILES}
     actual_assets = {name for name in files if name.startswith(("_internal/static/", "_internal/templates/"))}
     if actual_assets != expected_assets:
@@ -405,7 +412,7 @@ def build(args):
         raise PackageError("Source commit does not match the release checkout.")
     tracked_inputs = ["app.py", "ecg_core", "templates", "static", "win_doctor_eval.py",
                       "CardioInsightDoctorEval.spec", "requirements-doctor-build.txt",
-                      "scripts/windows_doctor_build.py", "scripts/generate_doctor_24h.py",
+                      "scripts/windows_doctor_build.py", "scripts/windows_deidentified_package.py", "scripts/deidentify_patient_source.py", "scripts/generate_doctor_24h.py",
                       "scripts/verify_doctor_24h.py"]
     dirty = subprocess.run(["git", "diff", "--quiet", "HEAD", "--", *tracked_inputs], cwd=root)
     if dirty.returncode != 0:
