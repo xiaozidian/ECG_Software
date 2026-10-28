@@ -124,6 +124,11 @@ body:has(#page-edit.active){overflow-y:auto;overflow-x:hidden}
 #page-edit.workspace-library .edit-wave-focus #editLibraryWaveformCanvas{flex:1;min-height:210px}
 [data-edit-wave-focus],[data-edit-amplitude-fit],[data-overview-amplitude-fit]{font-size:12px;line-height:18px;min-height:26px;border:1px solid #c8d7dc;border-radius:4px;background:#fff;color:#254650;padding:2px 8px}
 
+/* Larger source peaks retain the existing pixels/u; extend only the canvas
+   inside its original slot, keeping time navigation and menus in place. */
+#page-edit .edit-wave-canvas-wrap.edit-amplitude-scroll,
+#page-edit .edit-library-wave-wrap.edit-amplitude-scroll{height:var(--edit-amplitude-viewport-height)!important;min-height:0;flex:0 0 var(--edit-amplitude-viewport-height)!important;overflow-y:auto!important;overscroll-behavior:contain}
+
 [data-overview-amplitude-fit],[data-edit-amplitude-fit]{white-space:nowrap;flex-shrink:0}
 #page-edit .clinical-beat-toolbar .beat-edit-history,#page-review .waveform-foot .beat-edit-history{position:static;flex:0 0 auto;margin-left:auto;background:transparent;border:0;padding:0;font-size:12px;z-index:auto}
 #page-edit .clinical-beat-toolbar{flex-wrap:wrap;height:auto;min-height:32px}

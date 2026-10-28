@@ -1142,7 +1142,7 @@ async function openEditTwelveLead(canvas,record=null,{expectedScope=null,isCurre
   state.editFullscreenReturn={caseId:state.caseId,caseToken:state.caseRequestId,workspaceEpoch:state.workspaceEpoch,scope,mode:state.editMode,canvas,targetSample,targetCode:record?.class_code,beatId:record?.beat_id??(record?.event_id?.startsWith('beat:')?record.event_id.slice(5):record?.id),outsideLinkedCohort,edgeClamped:record&&Math.abs(start-desired)>.0025,windowX:window.scrollX,windowY:window.scrollY,
     bottom:{editStart:state.editStart,editDuration:state.editDuration},linked:globalThis.ECGTemplateLinkedView?.capturePresentation?.(),morph:typeof morphologyWorkbench==='undefined'?null:morphologyWorkbench.captureView(),
     scroll:[root,...root.querySelectorAll('*')].filter(node=>node.scrollTop||node.scrollLeft).map(node=>({node,top:node.scrollTop,left:node.scrollLeft})),
-    amplitudeDomain:state.editWaveform?ECGReviewTools.waveDomain(state.editWaveform,JSON.stringify([state.caseId,state.editWaveform.filter,'edit'])):null,preview:{start:state.start,duration:state.duration,filter:state.filter,gain:state.gain,leads:state.leads.slice()}};
+    amplitudeDomain:state.editWaveform?ECGReviewTools.waveDomain(state.editWaveform,editWaveDomainKey(state.editWaveform)):null,preview:{start:state.start,duration:state.duration,filter:state.filter,gain:state.gain,leads:state.leads.slice()}};
   $("#editWaveTooltip").hidden=true;$("#editLibraryWaveTooltip").hidden=true;closeBeatRelabelMenu();
   state.editRequestId++;state.start=start;state.duration=duration;state.gain=10;state.filter="display";$("#filterSelect").value=state.filter;updateZoomControls();
   const context=state.editFullscreenReturn;goPage("review",{editFullscreenTransition:true});
@@ -2493,19 +2493,27 @@ function renderEditDensity() {
 }
 
 function editWaveGeometry(rectWidth,rectHeight) {return {l:50,r:15,t:27,b:24,w:Math.max(1,rectWidth-65),h:Math.max(1,rectHeight-51)};}
+function editWaveDomainKey(wave) {return JSON.stringify([state.caseId,state.caseRequestId,wave?.filter,wave?.source_digest,wave?.data_version,wave?.analysis_basis,wave?.analysis_revision,'edit']);}
 
 function renderEditWaveform(target="#editWaveformCanvas",metaTarget="#editWaveMeta") {
   const waveform=state.editWaveform;if(!waveform)return;
   const canvas=$(target);if(!canvas)return;
-  const canvasData=canvasContext(canvas,editCanvasHeight(canvas,target.includes("Library")?250:320,170)),{ctx,width,height}=canvasData,g=editWaveGeometry(width,height);
-  const leads=globalThis.ECGChartInspection?.entries(waveform.leads||{})||Object.entries(waveform.leads||{}),leadHeight=g.h/Math.max(1,leads.length);
-  const layouts=leads.map(([,values],j)=>ECGReviewTools.waveRow(values,{top:g.t+j*leadHeight,bottom:g.t+(j+1)*leadHeight,sharedLabelY:4,domain:ECGReviewTools.waveDomain(waveform,JSON.stringify([state.caseId,waveform.filter,'edit']))}));
+  const wrap=canvas.closest('.edit-wave-canvas-wrap,.edit-library-wave-wrap');wrap?.classList.remove('edit-amplitude-scroll');
+  const baseHeight=editCanvasHeight(canvas,target.includes("Library")?250:320,170),viewportHeight=Math.max(baseHeight,wrap?.getBoundingClientRect().height||baseHeight);
+  const leads=globalThis.ECGChartInspection?.entries(waveform.leads||{})||Object.entries(waveform.leads||{}),domainKey=editWaveDomainKey(waveform),domain=ECGReviewTools.waveDomain(waveform,domainKey),gainKey=JSON.stringify([domainKey,domain]);
+  const lock=canvas._editAmplitudeLock,stack=ECGReviewTools.lockedWaveRows(leads.map(([,values])=>values),{top:27,rowHeight:(baseHeight-51)/Math.max(1,leads.length),domain,scale:lock?.key===gainKey?lock.scale:null});
+  canvas._editAmplitudeLock={key:gainKey,scale:stack.scale};
+  const displayHeight=27+stack.rowHeight*Math.max(1,leads.length)+24,canvasData=canvasContext(canvas,displayHeight),{ctx,width,height}=canvasData,g=editWaveGeometry(width,height),layouts=stack.layouts;
+  // Existing workspace CSS fixes the slot height with !important. Keep the
+  // backing store and CSS height equal, and scroll the slot for larger peaks.
+  if(wrap&&displayHeight>baseHeight+.5){wrap.style.setProperty('--edit-amplitude-viewport-height',viewportHeight+'px');wrap.classList.add('edit-amplitude-scroll');canvas.style.setProperty('height',displayHeight+'px','important');canvas.style.flex='0 0 auto';}else canvas.style.flex='';
+  canvas.dataset.amplitudeOverflow=String(stack.expanded);canvas.dataset.amplitudeExpanded=String(displayHeight>baseHeight+.5);
   Object.assign(canvas.dataset,{waveLeads:JSON.stringify(leads.map(([n])=>n)),waveStart:String(waveform.start_s),waveDuration:String(waveform.duration_s),waveWidth:String(g.w),waveScales:JSON.stringify(layouts.map(x=>x.scale)),waveBaselines:JSON.stringify(layouts.map(x=>x.baseline))});
   ctx.clearRect(0,0,width,height);ctx.fillStyle="#fff";ctx.fillRect(0,0,width,height);
   for(let x=g.l,i=0;x<=g.l+g.w;x+=g.w*.2/waveform.duration_s,i++){ctx.strokeStyle=i%5===0?"rgba(214,101,88,.22)":"rgba(214,101,88,.09)";ctx.beginPath();ctx.moveTo(x,g.t);ctx.lineTo(x,g.t+g.h);ctx.stroke();}
   for(let y=g.t;y<=g.t+g.h;y+=10){ctx.strokeStyle=(y-g.t)%50===0?"rgba(214,101,88,.22)":"rgba(214,101,88,.09)";ctx.beginPath();ctx.moveTo(g.l,y);ctx.lineTo(g.l+g.w,y);ctx.stroke();}
   leads.forEach(([lead,values],j)=>{
-    const {baseline,scale}=layouts[j];if(layouts[j].overflow){ctx.fillStyle="#a52727";ctx.fillText(lead+" 幅度超范围，请适应当前幅度",g.l,baseline);return;}ctx.strokeStyle="#d7e1e5";ctx.beginPath();ctx.moveTo(g.l,baseline);ctx.lineTo(g.l+g.w,baseline);ctx.stroke();
+    const {baseline,scale}=layouts[j];ctx.strokeStyle="#d7e1e5";ctx.beginPath();ctx.moveTo(g.l,baseline);ctx.lineTo(g.l+g.w,baseline);ctx.stroke();
     ctx.fillStyle=lead===state.editLead?"#087777":"#405563";ctx.font=`700 12px ${UI_FONT}`;ctx.fillText(lead,14,baseline+3);
     ctx.strokeStyle=lead===state.editLead?"#1d3944":"#526873";ctx.lineWidth=lead===state.editLead?1.15:.95;ctx.beginPath();
     values.forEach((value,i)=>{const x=g.l+i*ECGReviewTools.sampleStride(waveform)/(waveform.sample_rate_hz||200)/waveform.duration_s*g.w,y=baseline-Number(value)*scale;i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.stroke();
@@ -2517,9 +2525,9 @@ function renderEditWaveform(target="#editWaveformCanvas",metaTarget="#editWaveMe
     ECGReviewTools.labelCanvas(ctx,ECGReviewTools.fiducialPosition(beat,waveform,leads[0]?.[1],{left:g.l,width:g.w,...layouts[0]}),code,color,selected);
   }
   ECGReviewTools.canvasTimeAxis(ctx,waveform,{left:g.l,width:g.w,y:height-6,recordStart:state.caseData?.metadata?.start_time});
-  const meta=$(metaTarget);if(meta)meta.textContent=`${leads.length} 导联 · ${waveform.sample_rate_hz} Hz · 锁定幅度 ±${ECGReviewTools.waveDomain(waveform,JSON.stringify([state.caseId,waveform.filter,'edit']))} u · 0.5–40 Hz 显示滤波 · ${ECGReviewTools.recordClock(state.caseData?.metadata?.start_time,waveform.start_s)||'记录时钟未提供'} · ${waveform.duration_s} 秒`;
+  const meta=$(metaTarget);
   const panel=canvas.closest?.('.edit-waveform-panel,.edit-library-wave-panel'),actions=panel?.querySelector('.edit-wave-actions');
-  if(meta){meta.textContent=ECGReviewTools.waveMeta(waveform,state.caseData?.metadata?.start_time,ECGReviewTools.waveDomain(waveform,JSON.stringify([state.caseId,waveform.filter,'edit'])));meta.title=meta.textContent;let fit=panel?.querySelector('[data-edit-amplitude-fit]');if(!fit&&actions){fit=document.createElement('button');fit.type='button';fit.dataset.editAmplitudeFit='';fit.textContent='适应幅度';actions.append(fit);}if(fit){fit.title=meta.title;fit.onclick=()=>{ECGReviewTools.waveDomain(waveform,JSON.stringify([state.caseId,waveform.filter,'edit']),true);renderEditWaveform(target,metaTarget);};}if(layouts.some(x=>x.overflow))meta.textContent+=' · 幅度超范围';}
+  if(meta){meta.textContent=ECGReviewTools.waveMeta(waveform,state.caseData?.metadata?.start_time,domain);if(stack.expanded)meta.textContent+=` · 超出基准幅度，按原增益展开至 ±${Math.ceil(stack.displayDomain)} u；可纵向滚动或点适应幅度`;meta.title=meta.textContent;let fit=panel?.querySelector('[data-edit-amplitude-fit]');if(!fit&&actions){fit=document.createElement('button');fit.type='button';fit.dataset.editAmplitudeFit='';fit.textContent='适应幅度';actions.append(fit);}if(fit){fit.title=meta.title;fit.onclick=()=>{ECGReviewTools.waveDomain(waveform,domainKey,true);renderEditWaveform(target,metaTarget);};}}
   if(actions&&!actions.querySelector('[data-edit-wave-focus]')){const button=document.createElement('button');button.type='button';button.dataset.editWaveFocus='';button.textContent='专注波形';actions.append(button);button.onclick=()=>{const focused=panel.classList.toggle('edit-wave-focus');button.textContent=focused?'退出专注':'专注波形';renderEditWaveform(target,metaTarget);};}
   if(typeof syncRhythmRangeEditor==='function')syncRhythmRangeEditor();
 }

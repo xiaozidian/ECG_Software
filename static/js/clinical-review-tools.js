@@ -42,6 +42,16 @@
     if(!amplitudeLocks.has(key)){let max=1000;for(const values of Object.values(wave.leads||{}))for(const value of values)if(Number.isFinite(Number(value)))max=Math.max(max,Math.abs(Number(value)));amplitudeLocks.set(key,Math.ceil(max*1.25/100)*100);}
     return amplitudeLocks.get(key);
   }
+  // Preserve pixels per source unit when a later window exceeds the initial
+  // display lock. Add vertical space instead of hiding a lead or changing gain.
+  function lockedWaveRows(values,{top=0,rowHeight=64,domain,scale=null,labelY=4}={}){
+    if(!Number.isFinite(domain)||domain<=0)throw Error('显示幅度依据无效');
+    const fixedScale=Number.isFinite(scale)&&scale>0?scale:Math.max(1,rowHeight-12)/(2*domain);
+    const peaks=values.map(items=>{let peak=0;for(const item of items||[]){const value=Number(item);if(Number.isFinite(value))peak=Math.max(peak,Math.abs(value));}return peak;});
+    const peak=Math.max(0,...peaks),height=Math.max(rowHeight,12+2*peak*fixedScale);
+    return {scale:fixedScale,rowHeight:height,expanded:peak>domain,displayDomain:(height-12)/(2*fixedScale),
+      layouts:peaks.map((value,index)=>{const start=top+index*height,bottom=start+height;return {top:start,bottom,labelY,signalTop:start+6,signalBottom:bottom-6,baseline:start+height/2,scale:fixedScale,overflow:value>domain};})};
+  }
   function elapsed(seconds){if(!Number.isFinite(seconds))return '—';const n=Math.round(Math.max(0,seconds)*1000),sec=Math.floor(n/1000);return `D${Math.floor(sec/86400)+1} ${[Math.floor(sec%86400/3600),Math.floor(sec%3600/60),sec%60].map(x=>String(x).padStart(2,'0')).join(':')}.${String(n%1000).padStart(3,'0')}`;}
   function recordClock(start,seconds){
     // Metadata is a recorder wall clock, not the browser's timezone. No guessed epoch.
@@ -85,5 +95,5 @@
     for(let i=0;i<=count;i++){const time=wave.start_s+wave.duration_s*i/count,x=left+width*i/count,label=clockLabel(recordStart,time);ctx.textAlign=i===0?'left':i===count?'right':'center';ctx.fillText(label,x,y);ticks.push({time,label});}ctx.restore();
     if(ctx.canvas.dataset)ctx.canvas.dataset.waveTimeTicks=JSON.stringify(ticks);return ticks;
   }
-  const api={clockLabel,waveMeta,canvasTimeAxis,waveDomain,elapsed,recordClock,windowAt,waveRow,sampleStride,scatterBound,bpm,fiducialPosition,labelCanvas,virtualGrid,markCanvas,markSvg,shouldConfirmNavigation};globalThis.ECGReviewTools=api;if(typeof module!=='undefined')module.exports=api;
+  const api={clockLabel,waveMeta,canvasTimeAxis,waveDomain,lockedWaveRows,elapsed,recordClock,windowAt,waveRow,sampleStride,scatterBound,bpm,fiducialPosition,labelCanvas,virtualGrid,markCanvas,markSvg,shouldConfirmNavigation};globalThis.ECGReviewTools=api;if(typeof module!=='undefined')module.exports=api;
 })();
