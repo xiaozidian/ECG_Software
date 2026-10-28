@@ -4,7 +4,7 @@ import pytest
 
 
 @pytest.mark.parametrize('scenario', [
-    'read-case', 'read-lifecycle', 'read-cancel', 'read-second',
+    'read-basis', 'preview-basis', 'menu-scope', 'read-case', 'read-lifecycle', 'read-cancel', 'read-second',
     'preview-case', 'preview-lifecycle', 'preview-cancel', 'preview-second',
     'put-case', 'put-lifecycle', 'invoke-case', 'invoke-lifecycle',
     'confirm-case', 'confirm-lifecycle', 'confirm-cancel',

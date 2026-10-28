@@ -6,7 +6,7 @@ const overviewWorkbench=(()=>{
   const geometries=new WeakMap(),run=fn=>Promise.resolve().then(fn).catch(handleError),copy=x=>JSON.parse(JSON.stringify(x));
   let coverage=null,coveragePage=0,coverageBusy=false,coverageMessage='',coverageRun=0,coverageFocus=-1,overviewReady=false;
   let episodeFilter='all',episodePage=0,episodeNavigation=0,episodeEditor=null;
-  let linked=null,cancelGesture=()=>false;
+  let linked=null,cancelGesture=()=>false,menuScope=null;
   const episodeDrafts=new Map();
   const request=(path,options)=>api(`/api/cases/${state.caseId}/${path}`,options);
   const button=(label,action,attrs='')=>`<button type="button" data-ov="${action}" ${attrs}>${label}</button>`;
@@ -58,7 +58,7 @@ const overviewWorkbench=(()=>{
     main.querySelector('.ov-trends').after(density);
     density.addEventListener('toggle',()=>requestAnimationFrame(()=>{linked?.draw();draw();}));
     if(globalThis.ECGOverviewLinkedView&&globalThis.ECGLinkedSelection){
-      linked=globalThis.ECGOverviewLinkedView.create({getState:()=>state,api,qs,esc,formatTime:formatElapsed,formatNumber:fmtNumber,getMode:()=>ui.mode,drawChanged:()=>draw(),drawStrip:drawOverviewMini,getMiniHeight:()=>ECGOccurrenceCard.geometry.waveHeight+42,preview:(card,row,c,current)=>ECGReviewCandidates.preview({identity:c,item:row,isCurrent:current}),invalidateLegacy:invalidateScatterStripLoads,onSnapshot:(snapshot,event)=>{if(event.change!=='focus'){ui.range=snapshot.origin==='overview-time-range'&&snapshot.timeBounds?[snapshot.timeBounds.start_s,snapshot.timeBounds.end_s]:null;if(snapshot.origin!=='overview-histogram')ui.bin=null;if(!String(snapshot.origin||'').startsWith('overview-'))ui.polygon=[];}}});
+      linked=globalThis.ECGOverviewLinkedView.create({getState:()=>state,api,qs,esc,formatTime:formatElapsed,formatNumber:fmtNumber,getMode:()=>ui.mode,drawChanged:()=>draw(),drawStrip:drawOverviewMini,getMiniHeight:()=>ECGOccurrenceCard.geometry.waveHeight+42,preview:(card,row,c,current)=>ECGReviewCandidates.preview({identity:c,item:row,isCurrent:current}),openMenu:({card,event,wave,row,identity,isCurrent,sampleScope})=>beatEditor.open(event||{preventDefault(){}},card,{...wave,beats:(wave.beats||[]).some(b=>b.sample_index===row.sample_index)?wave.beats:[row]},'review',!event,{anchorSample:row.sample_index,isCurrent,sampleScope,onPreview:()=>ECGReviewCandidates.preview({identity,item:row,isCurrent})}).catch(handleError),invalidateLegacy:invalidateScatterStripLoads,onSnapshot:(snapshot,event)=>{if(event.change!=='focus'){ui.range=snapshot.origin==='overview-time-range'&&snapshot.timeBounds?[snapshot.timeBounds.start_s,snapshot.timeBounds.end_s]:null;if(snapshot.origin!=='overview-histogram')ui.bin=null;if(!String(snapshot.origin||'').startsWith('overview-'))ui.polygon=[];}}});
       globalThis.ecgOverviewLinked=linked;
       renderScatterSelectionList=()=>linked.renderMini();
       new IntersectionObserver(entries=>{if(entries.some(entry=>entry.isIntersecting))linked.renderMini();}).observe(qs('#scatterSelectionList'));
@@ -245,10 +245,14 @@ const overviewWorkbench=(()=>{
   function timeAt(event,canvas){const g=geometries.get(canvas),r=canvas.getBoundingClientRect();return g?E.clamp(g.start+(event.clientX-r.left-g.l)/g.w*(g.end-g.start),g.start,g.end):state.start}
   function scatterAt(event,canvas){const g=geometries.get(canvas),r=canvas.getBoundingClientRect();return [E.clamp((event.clientX-r.left-g.l)/g.w,0,1)*g.bound,E.clamp(1-(event.clientY-r.top-g.t)/g.h,0,1)*g.bound]}
   function inside(x,y,poly){let hit=false;for(let i=0,j=poly.length-1;i<poly.length;j=i++){const a=poly[i],b=poly[j];if((a[1]>y)!==(b[1]>y)&&x<(b[0]-a[0])*(y-a[1])/(b[1]-a[1])+a[0])hit=!hit}return hit}
-  function closeMenu(){const menu=qs('#ovMenu');try{menu.hidePopover()}catch(_){}menu.hidden=true}
+  function closeMenu(){menuScope=null;const menu=qs('#ovMenu');if(!menu)return;try{menu.hidePopover()}catch(_){}menu.hidden=true}
   function group(title,items){return `<details><summary>${title}</summary>${items}</details>`}
   function showMenu(kind,event,canvasId){
-    if(!ui.rows.length)return;event?.preventDefault?.();const canvas=qs('#'+(canvasId||'ovFullRR')),rect=canvas.getBoundingClientRect(),x=event?.clientX??rect.left+50,y=event?.clientY??rect.top+20;
+    if(!ui.rows.length||!overviewReady||ui.id!==state.caseId||ui.caseToken!==state.caseRequestId)return;event?.preventDefault?.();const canvas=qs('#'+(canvasId||'ovFullRR')),rect=canvas.getBoundingClientRect(),x=event?.clientX??rect.left+50,y=event?.clientY??rect.top+20;
+    menuScope={caseId:state.caseId,caseToken:state.caseRequestId,page:state.currentPage,identity:ui.identity,loadToken:ui.loadToken};
+    // Only the full-record RR surfaces own AF/AFL episode commands.
+    if(kind==='rr'&&!['ovFullRR','ovAFFull'].includes(canvas.id))kind='hr';
+    closeBeatRelabelMenu();globalThis.ecgRhythmRangeEditor?.closeMenu();globalThis.ECGOccurrenceCard?.closeMenu();
     if(kind!=='scatter'&&event?.clientX!==undefined){ui.contextTime=timeAt(event,canvas);if(!ui.range){ui.range=[ui.contextTime,Math.min(duration(),ui.contextTime+state.duration)];draw()}}else ui.contextTime=span()[0];
     if(kind==='rr')ui.episode=ui.rhythm?.document.episodes.find(x=>x.start_s<=ui.contextTime&&x.end_s>ui.contextTime)?.id||null;
     const codes=['N','S','V','X','A','C','P','O','OTHER'],types=action=>codes.map(c=>button(`${c} · ${ECGBeatEngine.types[c].name}`,action+':'+c)).join('');let html='';
@@ -537,6 +541,7 @@ const overviewWorkbench=(()=>{
   }
   async function action(value,element){
     const [key,...tail]=value.split(':'),arg=tail.join(':');if(key.startsWith('menu-')&&key!=='menu-close')return showMenu(key.slice(5),null,element?.dataset.canvas);
+    if(element?.closest?.('#ovMenu')&&key!=='menu-close'&&(!menuScope||menuScope.caseId!==state.caseId||menuScope.caseToken!==state.caseRequestId||menuScope.page!==state.currentPage||menuScope.identity!==ui.identity||menuScope.loadToken!==ui.loadToken)){closeMenu();throw Error('病例或图表依据已变化，请重新打开当前图表菜单');}
     closeMenu();
     if(key==='menu-close')return;
     if(key==='dialog-close'){qs('#ovDialog').close();return}
@@ -704,5 +709,22 @@ const overviewWorkbench=(()=>{
   renderWaveform=()=>{previousWave();waveformOverlay();drawContext()};
   renderAnnotations=items=>{previousAnnotations(items.filter(x=>!x.internal).map(x=>String(x.id).startsWith('af:')?{...x,note:(x.note||'')+'（在房颤分析页编辑）'}:x));qs('#annotationList').querySelectorAll('[data-delete-annotation]').forEach(b=>{if(b.dataset.deleteAnnotation.startsWith('af:'))b.remove()})};
   document.addEventListener('DOMContentLoaded',mount);
-  return {load,draw,waveformBasis,waveformFailed,openReportEpisode,invalidateAfterWrite};
+  async function waveAction(name,{time,bounds,caseId,caseToken}){
+    const current=()=>state.caseId===caseId&&state.caseRequestId===caseToken;
+    if(!current())throw Error('病例已切换，请重新右击当前波形');
+    if(name==='strip'||name==='strip-short')return insertStrip(name==='strip-short','人工图条',bounds);
+    if(['range-anchor','delete-before','delete-after'].includes(name)||name.startsWith('bookmark-')){
+      goPage('review');if(state.currentPage!=='review'||!current())return;
+      await load();if(!current())return;
+      ui.contextTime=time;ui.range=[...bounds];
+      return action(name.startsWith('bookmark-')?'bookmark:'+name.slice(9):name);
+    }
+    if(['measure','divider','parallel'].includes(name)){
+      goPage('review');if(state.currentPage!=='review'||!current())return;
+      await seek(bounds[0],true,time);if(!current())return;
+      ui.ruler=name;ui.rulerPoints=[];renderWaveform();qs('#ovRulerStatus').hidden=false;qs('#ovRulerStatus').innerHTML=`${({measure:'测量尺',divider:'分规尺',parallel:'平行尺'})[name]}：在连续波形点击两个位置。${button('关闭测量','ruler-close')}`;
+      qs('#waveformCard').scrollIntoView({block:'center'});
+    }
+  }
+  return {load,draw,waveformBasis,waveformFailed,openReportEpisode,invalidateAfterWrite,waveAction,closeMenu};
 })();

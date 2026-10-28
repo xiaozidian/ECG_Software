@@ -11,7 +11,8 @@ const beatEditor=(()=>{
     if(data?.case_id===state.caseId&&data.beat_editor_history?.revision===data.analysis_revision)return data.beat_editor_history;
     return historySnapshot?.caseId===state.caseId&&historySnapshot.caseToken===state.caseRequestId?historySnapshot.value:null;
   }
-  function begin(value){context={...value,caseToken:state.caseRequestId};info=null;}
+  const basisKey=()=>JSON.stringify([state.caseData?.clinical_identity||null,state.caseData?.analysis_revision??null]);
+  function begin(value){context={...value,caseToken:state.caseRequestId,basisKey:basisKey()};info=null;}
   function owner(){
     return {context,caseId:context?.caseId,caseToken:state.caseRequestId,token:openToken,
       page:state.currentPage,samples:[...selected],
@@ -23,6 +24,8 @@ const beatEditor=(()=>{
   function currentOwner(value){
     return value.context===context&&value.caseId===state.caseId&&value.caseToken===state.caseRequestId&&
       context?.caseToken===state.caseRequestId&&value.token===openToken&&value.page===state.currentPage&&
+      (!context.isCurrent||context.isCurrent())&&
+      context.basisKey===basisKey()&&
       sameSamples(value.samples,selected)&&
       (value.editSamples===null||(sameSamples(value.editSamples,state.editSelectedSamples)&&value.editFocus===state.editSelectedSample));
   }
@@ -37,11 +40,11 @@ const beatEditor=(()=>{
     });
   }
   async function occurrenceContext(card,event,menu=true,code=null){
-    const value=occurrenceCards.get(card);if(!value||busy||committing)return;
+    const value=occurrenceCards.get(card);if(!value||busy||committing||value.scope.isCurrent?.()===false)return;
     const {item,scope}=value,token=++openToken,rect=card.getBoundingClientRect();
     const targets=item.target_samples||[item.sample_index];
     selected=targets.some(s=>state.editSelectedSamples.has(s))?new Set(state.editSelectedSamples):new Set(targets);
-    begin({caseId:state.caseId,surface:'edit',anchor:{...item,class_code:item.class_code||scope.code},time:item.time_s,x:event?.clientX??rect.left+20,y:event?.clientY??rect.top+20,occurrenceScope:scope,canvas:card});
+    begin({caseId:state.caseId,surface:'edit',anchor:{...item,class_code:item.class_code||scope.code},time:item.time_s,x:event?.clientX??rect.left+20,y:event?.clientY??rect.top+20,occurrenceScope:scope,canvas:card,waveform:card.occurrenceWave,isCurrent:scope.isCurrent,onPreview:()=>openEditTwelveLead(card.querySelector('.occurrence-open')||card,item,{expectedScope:scope.identity,isCurrent:scope.isCurrent})});
     state.editSelectedSamples=new Set(selected);state.editSelectedSample=item.sample_index;
     syncOccurrenceSelection();renderEditScatter();
     const result=await request('');if(token!==openToken||context.caseId!==state.caseId)return;
@@ -59,12 +62,8 @@ const beatEditor=(()=>{
     };
   }
   function miniMenu(card,event){
-    const value=occurrenceCards.get(card);if(!value)return;const {item,scope}=value;
-    ECGOccurrenceCard.menu({card,event,item,isCurrent:scope.isCurrent,
-      onPreview:()=>ECGReviewCandidates.preview({identity:{...scope.identity,case_id:state.caseId},item,isCurrent:scope.isCurrent}),
-      onLeads:leads=>scope.onLeads?.(leads),
-      onCandidate:()=>ECGReviewCandidates.choose({identity:{...scope.identity,case_id:state.caseId},item,population:{origin:'edit-card'},isCurrent:scope.isCurrent}),
-      onPool:()=>ECGReviewCandidates.pool(),onEdit:()=>occurrenceContext(card,event)});
+    event?.preventDefault();event?.stopPropagation();
+    occurrenceContext(card,event).catch(handleError);
   }
   async function request(suffix,method="GET",body,scope=owner()){
     requireOwner(scope);
@@ -78,6 +77,7 @@ const beatEditor=(()=>{
   const mainCodes=["N","S","V","J","G","A","C","F","E","R","W","O","Z","M","H","Y","T","X","OTHER"];
   function renderMenu(){
     const menu=$("#beatRelabelMenu");menu.classList.add("full-beat-menu");
+    menu.dataset.contextKind=context.anchor?'beat':'wave';
     menu.innerHTML='<header><strong>心搏修订</strong><button type="button" data-editor-action="close" aria-label="关闭心搏菜单">×</button></header>'+
       '<p class="editor-context">'+(context?.anchor?formatElapsedPrecise(context.anchor.time_s)+' · '+esc(context.anchor.class_code||context.anchor.label||""):"此位置无心搏标记")+
       ' · 操作：心搏修订 · 范围：'+esc(context.occurrenceScope?'当前筛选记录集合':context.strip?'散点所选图条':'当前波形所选心搏')+' · 已选 <b>'+selected.size+'</b> 搏 · 修订 r'+info.revision+' · 导联 '+esc(info.settings.lead||state.editLead||state.leads?.join('/')||'待核对')+'</p>'+
@@ -92,11 +92,13 @@ const beatEditor=(()=>{
       '<details><summary>修改前一心搏 ‹</summary><div class="editor-types">'+codeButtons(Object.keys(E.types),"previous")+'</div></details>'+
       '<details><summary>修改后一心搏 ›</summary><div class="editor-types">'+codeButtons(Object.keys(E.types),"next")+'</div></details>'+
       button("设为最长 RR 报告图条 <kbd>L</kbd>","longest")+
-      '<div class="editor-selection-tools">'+button("全选当前集合","all")+button("当前页全选 <kbd>K</kbd>","page")+button("反选当前集合","invert")+button("当前页反选 <kbd>I</kbd>","invert-page")+button("清除选择","clear")+'</div>'+
+      '<div class="editor-selection-tools">'+button(context.occurrenceScope||context.sampleScope?"全选当前集合":"全选全记录心搏","all")+button("当前页全选 <kbd>K</kbd>","page")+button(context.occurrenceScope||context.sampleScope?"反选当前集合":"反选全记录心搏","invert")+button("当前页反选 <kbd>I</kbd>","invert-page")+button("清除选择","clear")+'</div>'+
       button("撤销最近修订","undo",info.can_undo?"":"disabled")+button("重做","redo",info.can_redo?"":"disabled")+
-      button("设置选项","settings")+'</div></div><footer>源记录只读 · 修订后重算 · 可撤销<br>房颤 / 房扑为人工逐搏节律标记；P/T 波不计入心搏。</footer>';
+      button("设置选项","settings")+'</div><details data-wave-tools><summary>图条 / 波形操作</summary>'+button(context.previewLabel||(Object.keys(context.waveform?.leads||{}).length>6?(context.onPreview?"放大当前 12 导联":"返回原波形"):"查看 12 导联"),"wave-preview")+button("转到原始诊断波形","wave-locate")+button("插入报告图条…","wave-strip")+button("插入缩略图条…","wave-strip-short")+button("选择起始位置（总览）","wave-range-anchor")+button("删除前面区段的标记…","wave-delete-before")+button("删除后面区段的标记…","wave-delete-after")+button("测量尺（总览）","wave-measure")+button("分规尺（总览）","wave-divider")+button("平行尺（总览）","wave-parallel")+button("设为最快心率图条…","wave-bookmark-fastest")+button("设为最慢心率图条…","wave-bookmark-slowest")+button("设为最快窦性心率图条…","wave-bookmark-fastest_nn")+button("设为最慢窦性心率图条…","wave-bookmark-slowest_nn")+button("跳转到时间…","wave-jump")+(context.onLeadSettings?button("显示导联设置…","wave-leads"):"")+'</details></div><footer>源记录只读 · 修订后重算 · 可撤销<br>'+(context.readOnly?'此处为只读复核图；先转到原始诊断波形再修订。':'房颤 / 房扑为人工逐搏节律标记；P/T 波不计入心搏。')+'</footer>';
     menu.querySelectorAll("[data-editor-code]").forEach(b=>{b.disabled=!selected.size});
     ["delete","restore","longest","move"].forEach(a=>{menu.querySelector('[data-editor-action="'+a+'"]').disabled=!selected.size||(a==="move"&&selected.size!==1)});
+    if(context.readOnly)menu.querySelectorAll('[data-editor-code],.editor-actions button,[data-editor-action=wave-strip],[data-editor-action=wave-strip-short],[data-editor-action^=wave-delete],[data-editor-action^=wave-bookmark]').forEach(b=>{b.disabled=true;b.title='此处为只读复核图；请转到原始诊断波形修订后重新核对';});
+    menu.querySelector('[data-editor-action="wave-preview"]').disabled=!context.onPreview&&!['edit','review','stt'].includes(context.surface);
     menu.hidden=false;positionBeatRelabelMenu(menu,context.x,context.y);
     try{if(!menu.matches(":popover-open"))menu.showPopover()}catch(_){}
   }
@@ -128,14 +130,17 @@ const beatEditor=(()=>{
     if(context.surface==="edit"){state.editSelectedSamples=new Set(selected);state.editSelectedSample=context.anchor?.sample_index??null}
     refreshBeatOverrideViews();
   }
-  async function open(event,canvas,waveform,surface="review",keyboard=false){
+  async function open(event,canvas,waveform,surface="review",keyboard=false,options={}){
     event.preventDefault?.();if(!state.caseId||!waveform||busy||committing)return;
+    if(options.isCurrent?.()===false)return;
+    globalThis.ecgRhythmRangeEditor?.closeMenu?.();globalThis.ECGOccurrenceCard?.closeMenu();
+    try{if(waveform.analysis_basis!==undefined&&state.caseData?.clinical_identity)ECGAnalysisConsistency.assertSame(state.caseData.clinical_identity,waveform);}catch(error){handleError(error);return;}
     const token=++openToken,rect=canvas.getBoundingClientRect(),x=keyboard?rect.left+rect.width/2:event.clientX,y=keyboard?rect.top+40:event.clientY;
-    const anchor=nearestBeatForRelabel(canvas,waveform,x,surface,keyboard?Infinity:44);
-    const g=surface==="review"?{l:0,w:rect.width}:editWaveGeometry(rect.width,rect.height);
-    const time=waveform.start_s+Math.max(0,Math.min(1,(x-rect.left-g.l)/g.w))*waveform.duration_s;
-    const same=context?.caseId===state.caseId&&context.surface===surface;
-    begin({caseId:state.caseId,surface,anchor,time,x,y,canvas,waveform,strip:!!canvas.closest("[data-scatter-sample]")});
+    const anchor=options.anchorSample!==undefined?(waveform.beats||[]).find(b=>b.sample_index===options.anchorSample):nearestBeatForRelabel(canvas,waveform,x,surface,keyboard?Infinity:44);
+    if(options.anchorSample!==undefined&&!anchor){toast('小图未包含其原心搏，不能编辑邻近心搏；请重新读取','error');return;}
+    const g=waveMenuGeometry(canvas,waveform,surface),time=anchor&&(keyboard||options.anchorSample!==undefined)?anchor.time_s:g.start+Math.max(0,Math.min(1,(x-rect.left-g.l)/g.w))*g.duration;
+    const same=context?.caseId===state.caseId&&context.caseToken===state.caseRequestId&&context.canvas===canvas&&context.waveform===waveform;
+    begin({caseId:state.caseId,surface,anchor,time,x,y,canvas,waveform,strip:!!canvas.closest("[data-scatter-sample]"),...options});
     selected=surface==="edit"?new Set(state.editSelectedSamples):same?selected:new Set();
     if(anchor&&!selected.has(anchor.sample_index))selected=new Set([anchor.sample_index]);
     if(!anchor)selected.clear();
@@ -153,7 +158,7 @@ const beatEditor=(()=>{
     };
     if(!dialog.open)dialog.showModal();
   }
-  function contextOK(){if(!context||context.caseId!==state.caseId)throw Error("病例已切换，请重新选择心搏");if(!clinicalWorkflow.writable())throw Error("当前服务为只读")}
+  function contextOK(){if(!context||context.caseId!==state.caseId||context.caseToken!==state.caseRequestId||context.isCurrent?.()===false)throw Error("病例或波形已切换，请重新选择心搏");if(context.readOnly)throw Error('报告图条只读；请先转到原始诊断波形');if(!clinicalWorkflow.writable())throw Error("当前服务为只读")}
   async function afterCommit(value,operation){
     const caseId=context.caseId;
     const bookmark=typeof clinicalUI!=='undefined'?clinicalUI.occurrenceBookmark(context.occurrenceScope?(context.anchor?.start_sample??context.anchor?.sample_index):null):null;
@@ -165,6 +170,9 @@ const beatEditor=(()=>{
     if(state.currentPage==="edit")await loadEdit(bookmark?{...bookmark,caseToken}:null);
     if(!isCurrent())return;
     if(state.currentPage==="review"){clearScatterSelection();await loadScatter()}
+    else if(state.currentPage==='rr')await globalThis.ecgRRBridge?.load();
+    else if(state.currentPage==='trends')await loadTrends();
+    else if(state.currentPage==='stt')await loadStt();
     if(!isCurrent())return;
     await clinicalWorkflow.refresh(caseId);
     if(!isCurrent())return;
@@ -213,6 +221,7 @@ const beatEditor=(()=>{
     selected=new Set(samples);return perform("relabel",{class_code:code},true);
   }
   async function universe(page=false){
+    if(context.sampleScope)return context.sampleScope(page);
     if(context.occurrenceScope)return context.occurrenceScope.samples(page);
     if(page){
       if(context.strip)return [...document.querySelectorAll("[data-scatter-sample]")].filter(el=>{const a=el.getBoundingClientRect(),b=$("#scatterSelectionList").getBoundingClientRect();return a.bottom>b.top&&a.top<b.bottom}).map(el=>Number(el.dataset.scatterSample));
@@ -223,8 +232,10 @@ const beatEditor=(()=>{
     if(context.strip&&state.scatterSelectedSamples.length)return state.scatterSelectedSamples.slice();
     const feed=await request("/beats");let rows=feed.items.concat(feed.markers);
     if(context.surface==="edit"){
-      const group=({"source-N":1,"source-S":2,"source-V":3,"source-X":34})[state.editSelectedClass];
-      if(group)rows=rows.filter(r=>r.group===group);
+      const group=({"source-N":1,"source-S":2,"source-V":3,"source-X":34})[state.editSelectedClass],code=state.editSelectedClass?.startsWith('source-')?state.editSelectedClass.slice(7):null;
+      if(code==='other')rows=rows.filter(r=>!['N','S','V'].includes(r.class_code));
+      else if(code&&E.types[code])rows=rows.filter(r=>r.class_code===code);
+      else if(group)rows=rows.filter(r=>r.group===group);
       else{const template=state.editTemplates.find(r=>"custom-"+r.id===state.editSelectedClass);if(template){const set=new Set(template.sample_indices);rows=rows.filter(r=>set.has(r.sample_index))}}
     }
     return rows.map(r=>r.sample_index);
@@ -293,6 +304,19 @@ const beatEditor=(()=>{
   }
   async function action(name){
     if(name==="close")return close();
+    if(name.startsWith('wave-')){
+      const scope=owner();requireOwner(scope);const target=context;
+      if(name==='wave-leads'){close();return target.onLeadSettings?.();}
+      if(name==='wave-preview'){
+        close();if(target.onPreview)return target.onPreview();
+        if(target.surface==='edit')return openEditTwelveLead(target.canvas);
+        if(target.surface==='stt')return openSttTwelveLead();
+        return toggleWaveformFullscreen();
+      }
+      if(name==='wave-locate'){close();target.canvas?.closest?.('dialog')?.close();return jumpTo(target.anchor?.time_s??target.time);}
+      if(name==='wave-jump')return showDialog('跳转到记录时间','<label>记录开始后的秒数<input name="time" type="number" min="0" max="'+state.caseData.technical.duration_seconds_raw+'" step=".005" required value="'+target.time.toFixed(3)+'"></label>',data=>{dialog.close();target.canvas?.closest?.('dialog')?.close();jumpTo(Number(data.get('time')));},'定位');
+      close();target.canvas?.closest?.('dialog')?.close();return overviewWorkbench.waveAction(name.slice(5),{time:target.time,bounds:target.waveform?[target.waveform.start_s,target.waveform.start_s+target.waveform.duration_s]:[Math.max(0,target.time-2),target.time+2],caseId:scope.caseId,caseToken:scope.caseToken});
+    }
     if(name==="clear"){selected.clear();syncSelection();return renderMenu()}
     if(["all","page","invert","invert-page"].includes(name)){const scope=owner(),universeSamples=await universe(name.includes("page"));requireOwner(scope);if(context.occurrenceScope&&!name.includes("page"))occurrenceUniverseCount=universeSamples.length;selected=new Set(name.startsWith("invert")?universeSamples.filter(s=>!selected.has(s)):universeSamples);syncSelection();return renderMenu()}
     if(name==="insert"||name==="move")return manual(name);
@@ -366,5 +390,14 @@ const beatEditor=(()=>{
     return action(name);
   }
   document.addEventListener("DOMContentLoaded",bind);
-  return {open,quickEdit,invoke,openSettings,refreshHistory,renderOccurrenceToolbar,registerOccurrence,syncOccurrenceSelection,occurrenceMenu:(card)=>occurrenceContext(card,null),invalidate(){openToken++},restore:()=>{if(busy||committing)return;begin({caseId:state.caseId,surface:"edit"});selected=new Set(state.editSelectedSamples);return perform("restore")},selected:sample=>context?.caseId===state.caseId&&context.surface==="review"&&selected.has(sample)};
+  function bindWaveSurface(host,{wave,isCurrent=()=>true,onPreview=null,readOnly=false,anchorSample,sampleScope,previewLabel}={}){
+    if(!host)return;host._beatWaveMenu={wave,isCurrent,onPreview,readOnly,anchorSample,sampleScope,previewLabel};
+    if(!host.hasAttribute('tabindex'))host.setAttribute('tabindex','0');
+    host.setAttribute('aria-description','右键或 Shift+F10 打开心搏与图条操作；双击查看十二导联。');
+    if(host._beatWaveMenuBound)return;host._beatWaveMenuBound=true;
+    const show=event=>{const value=host._beatWaveMenu;if(!value||!value.isCurrent()||!host.isConnected)return;event.preventDefault();event.stopImmediatePropagation();open(event,host,value.wave,state.currentPage,event.type==='keydown',value).catch(handleError);};
+    host.addEventListener('contextmenu',event=>{if(event.target.closest?.('svg,canvas,.occurrence-wave'))show(event);},true);
+    host.addEventListener('keydown',event=>{if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10')show(event);},true);
+  }
+  return {open,bindWaveSurface,quickEdit,invoke,openSettings,refreshHistory,renderOccurrenceToolbar,registerOccurrence,syncOccurrenceSelection,occurrenceMenu:(card)=>occurrenceContext(card,null),invalidate(){openToken++},restore:()=>{if(busy||committing)return;begin({caseId:state.caseId,surface:"edit"});selected=new Set(state.editSelectedSamples);return perform("restore")},selected:sample=>context?.caseId===state.caseId&&context.surface==="review"&&selected.has(sample)};
 })();

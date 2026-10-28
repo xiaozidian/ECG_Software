@@ -303,23 +303,17 @@ function initRhythmRangeEditor() {
     const canvas=$('#'+id);if(!canvas)continue;
     canvas.addEventListener('pointermove',event=>rememberRhythmRangePointer(event,canvas));
     canvas.addEventListener('pointerleave',()=>rhythmRangePointers.delete(canvas));
-    if(id!=='waveformCanvas')canvas.setAttribute('aria-label','三导联连续波形；右键或 Shift+F10 设置房颤片段起点与终点，也可进入心搏编辑；双击或按 F 查看十二导联');
+    if(id!=='waveformCanvas')canvas.setAttribute('aria-label','三导联连续波形；右键或 Shift+F10 打开心搏与图条操作；双击或按 F 查看十二导联');
   }
   syncRhythmRangeEditor();
 }
 
 function openContinuousWaveMenu(event,canvas,waveform,surface='review',keyboard=false) {
   if(!allowRhythmRangeLeave()){event.preventDefault();return;}
-  if(state.waveformExpanded)return openBeatRelabelMenu(event,canvas,waveform,surface,keyboard);
-  event.preventDefault();
-  const controller=globalThis.ecgRhythmRangeEditor;
-  if(!controller){toast('房颤分段编辑尚未加载，请重新载入页面','error');return;}
-  const source=rhythmRangeSurface(canvas),owner=rhythmRangeScope();
-  if(!source||!owner||!globalThis.ECGRhythmRangeEditor.currentSurface(owner,source)){
-    toast('当前连续波形依据尚未核实，请重新读取后设置边界或编辑心搏','error');return;
-  }
-  closeBeatRelabelMenu({keepTarget:true});
-  controller.openContext(event,{canvas,surface:source,keyboard});
+  // Three-lead ECG and its twelve-lead expansion share beat/strip commands.
+  // AF episode editing belongs to the full-record RR plot in the overview.
+  globalThis.ecgRhythmRangeEditor?.closeMenu?.();
+  return openBeatRelabelMenu(event,canvas,waveform,surface,keyboard);
 }
 
 function escapeHtml(value) {
@@ -671,6 +665,8 @@ async function selectCase(caseId, destination = "review") {
   if(state.caseId!==caseId&&globalThis.ECGHRVEditor?.allowLeave()===false)return;
   if(!allowSttCaseSelection(caseId))return;
   if(!clinicalWorkflow.allowLeave())return;
+  closeBeatRelabelMenu();globalThis.ECGOccurrenceCard?.closeMenu();
+  if(typeof overviewWorkbench!=='undefined')overviewWorkbench.closeMenu();
   if(typeof notifyRhythmRangeCaseChange==='function')notifyRhythmRangeCaseChange();
   const sttCaseChanged=state.caseId!==caseId;
   if(sttCaseChanged)globalThis.ecgRRBridge?.dispose();
@@ -895,6 +891,8 @@ function goPage(name, {reuseEditWorkspace=false,editFullscreenTransition=false}=
   }
   if(name==="edit"&&state.currentPage!=="edit")setEditMode(state.editMode||"cluster",false);
   if(state.currentPage!==name){
+    closeBeatRelabelMenu();globalThis.ECGOccurrenceCard?.closeMenu();
+    if(typeof overviewWorkbench!=='undefined')overviewWorkbench.closeMenu();
     if(state.editFullscreenReturn&&!editFullscreenTransition){
       const context=state.editFullscreenReturn;cancelEditTwelveRead(context);state.editFullscreenReturn=null;
       Object.assign(state,context.preview);$("#filterSelect").value=state.filter;updateZoomControls();
@@ -2372,14 +2370,22 @@ function closeBeatRelabelMenu({keepTarget=false}={}) {
   if(typeof beatEditor!=="undefined")beatEditor.invalidate();
   const menu=$("#beatRelabelMenu");if(!menu)return;
   try{if(menu.matches(":popover-open"))menu.hidePopover();}catch(_){/* fallback uses hidden */}
+  const hadTarget=!menu.hidden||Boolean(state.beatRelabelTarget);
   menu.hidden=true;
-  if(!keepTarget){state.beatRelabelTarget=null;refreshBeatOverrideViews();}
+  if(!keepTarget){state.beatRelabelTarget=null;if(hadTarget)refreshBeatOverrideViews();}
+}
+
+function waveMenuGeometry(canvas,waveform,surface) {
+  const rect=canvas.getBoundingClientRect(),svg=canvas.matches?.('svg[data-plot-left]')?canvas:canvas.querySelector?.('svg[data-plot-left]');
+  if(svg){const box=svg.getBoundingClientRect(),scale=box.width/(svg.viewBox?.baseVal?.width||box.width);return {l:box.left-rect.left+Number(svg.dataset.plotLeft)*scale,w:Number(svg.dataset.plotWidth)*scale,start:Number(svg.dataset.displayStart),duration:Number(svg.dataset.displayDuration)};}
+  const g=canvas._ecgWaveGeometry||(surface==='edit'?editWaveGeometry(rect.width,rect.height):{l:0,w:rect.width});
+  return {...g,start:waveform.start_s,duration:waveform.duration_s};
 }
 
 function nearestBeatForRelabel(canvas,waveform,clientX,surface,maxDistance=44) {
   const beats=waveform?.beats||[];if(!beats.length)return null;
-  const rect=canvas.getBoundingClientRect(),geometry=surface==="review"?{l:0,w:rect.width}:editWaveGeometry(rect.width,rect.height),localX=Math.max(geometry.l,Math.min(geometry.l+geometry.w,clientX-rect.left)),fraction=(localX-geometry.l)/Math.max(1,geometry.w),time=waveform.start_s+fraction*waveform.duration_s;
-  const nearest=beats.reduce((best,beat)=>!best||Math.abs(beat.time_s-time)<Math.abs(best.time_s-time)?beat:best,null),beatX=geometry.l+(nearest.time_s-waveform.start_s)/Math.max(.001,waveform.duration_s)*geometry.w;
+  const rect=canvas.getBoundingClientRect(),geometry=waveMenuGeometry(canvas,waveform,surface),localX=Math.max(geometry.l,Math.min(geometry.l+geometry.w,clientX-rect.left)),fraction=(localX-geometry.l)/Math.max(1,geometry.w),time=geometry.start+fraction*geometry.duration;
+  const nearest=beats.reduce((best,beat)=>!best||Math.abs(beat.time_s-time)<Math.abs(best.time_s-time)?beat:best,null),beatX=geometry.l+(nearest.time_s-geometry.start)/Math.max(.001,geometry.duration)*geometry.w;
   return Math.abs(beatX-localX)<=maxDistance?nearest:null;
 }
 
@@ -3062,6 +3068,13 @@ function nudgeSttMarker(marker,direction) {
   renderSttWaveform();
 }
 
+function openSttWaveMenu(event,keyboard=false) {
+  const wave=state.sttWaveform,canvas=$('#sttWaveformCanvas');
+  if(!wave||!sttWaveformIsCurrent())return;
+  const rect=canvas.getBoundingClientRect();canvas._ecgWaveGeometry={l:54,w:Math.max(1,rect.width-72)};
+  return beatEditor.open(event,canvas,wave,'stt',keyboard,{isCurrent:()=>state.currentPage==='stt'&&state.sttWaveform===wave&&sttWaveformIsCurrent(),onPreview:()=>openSttTwelveLead(),onLeadSettings:()=>openSttLeadPicker()});
+}
+
 function bindSttInteraction() {
   const canvas=$("#sttWaveformCanvas"),wrapper=$("#sttWaveCanvasWrap"),tooltip=$("#sttWaveTooltip");let dragging=null,sliderTimer=null;
   // Repaint the source samples when a local slot changes without a window resize.
@@ -3095,7 +3108,7 @@ function bindSttInteraction() {
   });
   const finish=event=>{if(!dragging)return;dragging=null;wrapper.classList.remove("dragging-marker");if(canvas.hasPointerCapture(event.pointerId))canvas.releasePointerCapture(event.pointerId);renderSttWaveform();};
   canvas.addEventListener("pointerup",finish);canvas.addEventListener("pointercancel",finish);canvas.addEventListener("pointerleave",()=>{if(!dragging)hideTooltip();});
-  canvas.addEventListener("contextmenu",event=>{event.preventDefault();hideTooltip();openSttLeadPicker();});
+  canvas.addEventListener("contextmenu",event=>{event.preventDefault();hideTooltip();openSttWaveMenu(event);});
   canvas.addEventListener("dblclick",event=>{event.preventDefault();openSttTwelveLead().catch(handleError);});
   canvas.addEventListener("keydown",event=>{if(event.key.toLowerCase()==="f"){event.preventDefault();event.stopPropagation();openSttTwelveLead().catch(handleError);}else if(event.key==="ArrowLeft"||event.key==="ArrowRight"){event.preventDefault();nudgeSttMarker(event.shiftKey?"iso":"j",event.key==="ArrowLeft"?-1:1);}});
   $("#sttOverviewCanvas").addEventListener("click",event=>{if(!state.caseData)return;const rect=event.currentTarget.getBoundingClientRect(),time=(event.clientX-rect.left)/rect.width*state.caseData.technical.duration_seconds_raw;setSttStart(time-state.sttDuration*.45);});
@@ -3234,7 +3247,7 @@ function bindEvents() {
   $("#reportPageSelect").addEventListener("change",event=>showReportPage(Number(event.target.value)));$("#openReportImage").addEventListener("click",()=>{const url=$("#sourceReportImage").dataset.url;if(url)window.open(url,"_blank","noopener");else toast("请先使用右上角隐私开关显示身份信息","error")});
   $("#refreshAudit")?.addEventListener("click",()=>loadAudit().catch(handleError));
   $("#retrySourceScan")?.addEventListener("click",retryDashboard);
-  document.addEventListener("keydown",event=>{if(event.target.closest?.('[contenteditable="true"],[role="textbox"]'))return;const contextKey=event.key==="ContextMenu"||event.shiftKey&&event.key==="F10";if(contextKey&&document.activeElement===$("#waveformCanvas")){event.preventDefault();openContinuousWaveMenu(event,$("#waveformCanvas"),state.waveform,"review",true);return}if(contextKey&&[$("#editWaveformCanvas"),$("#editLibraryWaveformCanvas")].includes(document.activeElement)){event.preventDefault();openContinuousWaveMenu(event,document.activeElement,state.editWaveform,"edit",true);return}if(contextKey&&document.activeElement===$("#sttWaveformCanvas")){event.preventDefault();openSttLeadPicker();return}if(event.key==="Escape"&&!$("#beatRelabelMenu").hidden){event.preventDefault();closeBeatRelabelMenu();return}if(event.key==="Escape"&&state.waveformExpanded){event.preventDefault();exitWaveformFullscreen().catch(handleError);return}if(["INPUT","TEXTAREA","SELECT"].includes(document.activeElement.tagName)||document.activeElement.closest?.(".scatter-review-card")||$("#leadPickerDialog").open||$("#sttLeadDialog").open||$("#sttGuidanceDialog").open)return;const editKey=event.key.toUpperCase(),noModifier=!event.ctrlKey&&!event.metaKey&&!event.altKey;if(noModifier&&state.currentPage==="edit"){const sourceShortcut={N:"source-N",S:"source-S",V:"source-V",X:"source-X"},numberShortcut={1:"source-N",2:"source-S",3:"source-V",4:"source-X"},switchClass=numberShortcut[event.key]||(!state.editSelectedSamples.size?sourceShortcut[editKey]:null);if(switchClass){event.preventDefault();selectEditClass(switchClass);return}if(EDIT_BEAT_TYPES[editKey]){event.preventDefault();applyEditBeatType(editKey).catch(handleError);return}if(event.key==="Backspace"){event.preventDefault();restoreEditBeatType().catch(handleError);return}if(event.key==="Escape"&&state.editSelectedSamples.size){event.preventDefault();state.editSelectedSamples=new Set();state.editSelectionAnchor=null;renderEditGallery();renderEditWaveform();renderEditLibrary();toast("已清除心搏选择");return}}if(event.key==="ArrowLeft"&&state.currentPage==="review"){event.preventDefault();jumpTo(state.start-state.duration*.65)}if(event.key==="ArrowRight"&&state.currentPage==="review"){event.preventDefault();jumpTo(state.start+state.duration*1.35)}if(noModifier&&state.currentPage==="review"&&(event.key==="+"||event.key==="=")){event.preventDefault();zoomWaveform(true,.5)}if(noModifier&&state.currentPage==="review"&&(event.key==="-"||event.key==="_")){event.preventDefault();zoomWaveform(false,.5)}if(noModifier&&state.currentPage==="review"&&event.key==="0"){event.preventDefault();resetWaveformZoom()}if(noModifier&&state.currentPage==="review"&&event.key.toLowerCase()==="f"){event.preventDefault();if(!event.repeat)toggleWaveformFullscreen()}if(noModifier&&state.currentPage==="stt"&&event.key.toLowerCase()==="f"){event.preventDefault();openSttTwelveLead().catch(handleError)}if(event.key.toLowerCase()==="a"&&state.currentPage==="review")openAnnotation();if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="k"){event.preventDefault();$("#globalSearch").focus()}});
+  document.addEventListener("keydown",event=>{if(event.target.closest?.('[contenteditable="true"],[role="textbox"]'))return;const contextKey=event.key==="ContextMenu"||event.shiftKey&&event.key==="F10";if(contextKey&&document.activeElement===$("#waveformCanvas")){event.preventDefault();openContinuousWaveMenu(event,$("#waveformCanvas"),state.waveform,"review",true);return}if(contextKey&&[$("#editWaveformCanvas"),$("#editLibraryWaveformCanvas")].includes(document.activeElement)){event.preventDefault();openContinuousWaveMenu(event,document.activeElement,state.editWaveform,"edit",true);return}if(contextKey&&document.activeElement===$("#sttWaveformCanvas")){event.preventDefault();openSttWaveMenu(event,true);return}if(event.key==="Escape"&&!$("#beatRelabelMenu").hidden){event.preventDefault();closeBeatRelabelMenu();return}if(event.key==="Escape"&&state.waveformExpanded){event.preventDefault();exitWaveformFullscreen().catch(handleError);return}if(["INPUT","TEXTAREA","SELECT"].includes(document.activeElement.tagName)||document.activeElement.closest?.(".scatter-review-card")||$("#leadPickerDialog").open||$("#sttLeadDialog").open||$("#sttGuidanceDialog").open)return;const editKey=event.key.toUpperCase(),noModifier=!event.ctrlKey&&!event.metaKey&&!event.altKey;if(noModifier&&state.currentPage==="edit"){const sourceShortcut={N:"source-N",S:"source-S",V:"source-V",X:"source-X"},numberShortcut={1:"source-N",2:"source-S",3:"source-V",4:"source-X"},switchClass=numberShortcut[event.key]||(!state.editSelectedSamples.size?sourceShortcut[editKey]:null);if(switchClass){event.preventDefault();selectEditClass(switchClass);return}if(EDIT_BEAT_TYPES[editKey]){event.preventDefault();applyEditBeatType(editKey).catch(handleError);return}if(event.key==="Backspace"){event.preventDefault();restoreEditBeatType().catch(handleError);return}if(event.key==="Escape"&&state.editSelectedSamples.size){event.preventDefault();state.editSelectedSamples=new Set();state.editSelectionAnchor=null;renderEditGallery();renderEditWaveform();renderEditLibrary();toast("已清除心搏选择");return}}if(event.key==="ArrowLeft"&&state.currentPage==="review"){event.preventDefault();jumpTo(state.start-state.duration*.65)}if(event.key==="ArrowRight"&&state.currentPage==="review"){event.preventDefault();jumpTo(state.start+state.duration*1.35)}if(noModifier&&state.currentPage==="review"&&(event.key==="+"||event.key==="=")){event.preventDefault();zoomWaveform(true,.5)}if(noModifier&&state.currentPage==="review"&&(event.key==="-"||event.key==="_")){event.preventDefault();zoomWaveform(false,.5)}if(noModifier&&state.currentPage==="review"&&event.key==="0"){event.preventDefault();resetWaveformZoom()}if(noModifier&&state.currentPage==="review"&&event.key.toLowerCase()==="f"){event.preventDefault();if(!event.repeat)toggleWaveformFullscreen()}if(noModifier&&state.currentPage==="stt"&&event.key.toLowerCase()==="f"){event.preventDefault();openSttTwelveLead().catch(handleError)}if(event.key.toLowerCase()==="a"&&state.currentPage==="review")openAnnotation();if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="k"){event.preventDefault();$("#globalSearch").focus()}});
   bindCanvasInteraction();
   bindSttInteraction();
   bindScatterInteraction();

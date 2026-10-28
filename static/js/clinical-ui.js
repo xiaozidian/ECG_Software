@@ -943,7 +943,7 @@ const clinicalUI=(()=>{
     qs('#v2EventWave').innerHTML=svg(wave,e);qs('#v2Time').value=wave.start_s;
     qs('#v2WaveLabel').textContent=`${e.label} · ${formatElapsed(wave.start_s)}–${formatElapsed(wave.start_s+wave.duration_s)} · ${entry?`${entry.strip.visible_beat_count} 搏 · ${entry.strip.warning||'按入报导联和时长预览'}`:`目标 ${e.beat_count} 搏 · 完整事件概览`}`;
     const contextWave=await mountRange(qs('#v2EventWave'),e,entry,id);
-    const host=qs('#v2EventWave');if(current()){ECGReportWorkspace.mountEventPreview(host,{event:e,loadWave:()=>Promise.resolve(contextWave||wave),renderWave:w=>ECGReportWorkspace.reviewWaveSvg(w,e),isCurrent:current});ECGReportWorkspace.bindWavePreview(host,host._rwOpenPreview,current);}
+    const host=qs('#v2EventWave');if(current()){ECGReportWorkspace.mountEventPreview(host,{event:e,loadWave:()=>Promise.resolve(contextWave||wave),renderWave:w=>ECGReportWorkspace.reviewWaveSvg(w,e),isCurrent:current});ECGReportWorkspace.bindWavePreview(host,host._rwOpenPreview,current);beatEditor.bindWaveSurface(host,{wave:contextWave||wave,isCurrent:current,onPreview:host._rwOpenPreview,readOnly:true});}
     if(current())renderEventNavigation(true);
     }catch(error){
       if(!current())return;
@@ -990,7 +990,7 @@ const clinicalUI=(()=>{
       const surface=host.firstElementChild;
       const paint=()=>{if(!current())return;const count=Object.keys(wave.leads).length,nav=qs('#reportWaveTimeNav'),available=innerHeight-(nav?.getBoundingClientRect().bottom??host.getBoundingClientRect().top)-100,stageHeight=24+count*Math.floor((Math.max(count*56+24,Math.min(count*70+24,available))-24)/count);surface.style.height=(stageHeight+24)+'px';surface.innerHTML=ECGReportWorkspace.reviewWaveSvg(wave,{label:'连续复核'},{...options,width:surface.clientWidth||1000,height:stageHeight+24});};paint();
       if(typeof ResizeObserver!=='undefined'){host._continuousObserver=new ResizeObserver(paint);host._continuousObserver.observe(surface);}
-      ECGReportWorkspace.mountEventPreview(host,{event,loadWave:()=>Promise.resolve(wave),renderWave:w=>ECGReportWorkspace.reviewWaveSvg(w,event,options),isCurrent:current});ECGReportWorkspace.bindWavePreview(host,host._rwOpenPreview,current);
+      ECGReportWorkspace.mountEventPreview(host,{event,loadWave:()=>Promise.resolve(wave),renderWave:w=>ECGReportWorkspace.reviewWaveSvg(w,event,options),isCurrent:current});ECGReportWorkspace.bindWavePreview(host,host._rwOpenPreview,current);beatEditor.bindWaveSurface(host,{wave,isCurrent:current,onPreview:host._rwOpenPreview,readOnly:true});
       const overflow=Boolean(host.querySelector('[data-wave-overflow="true"]'));
       qs('#v2WaveLabel').textContent=overflow?'当前波形超出锁定幅度；请点“适应当前幅度”后复核。':'连续波形只读复核 · 浏览时间不改变候选与入报区间';
       host.dataset.amplitudeOverflow=String(overflow);

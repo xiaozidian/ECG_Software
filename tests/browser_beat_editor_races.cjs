@@ -4,7 +4,7 @@ const gate=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {prom
 const pending=gate(),tick=()=>new Promise(r=>setImmediate(r));
 function node(){return {hidden:true,open:false,innerHTML:'',textContent:'',disabled:false,dataset:{},classList:{add(){}},setAttribute(){},removeAttribute(){},focus(){},matches:()=>false,showPopover(){},getBoundingClientRect:()=>({left:0,top:0,width:500,height:100}),closest:()=>null,querySelector(s){return $(s)},querySelectorAll:()=>[],addEventListener(){},showModal(){this.open=true},close(){this.open=false}}}
 const $=s=>{if(!nodes.has(s))nodes.set(s,node());return nodes.get(s)};
-let dialog,reloads=0,refreshes=0,editBookmark=null;const histories=[node(),node()],historyBar=node();historyBar.setAttribute=(k,v)=>{historyBar[k]=v;};
+let dialog,reloads=0,refreshes=0,editBookmark=null,currentScope=true;const histories=[node(),node()],historyBar=node();historyBar.setAttribute=(k,v)=>{historyBar[k]=v;};
 histories[0].dataset.history='undo';histories[1].dataset.history='redo';
 const state={caseId:'A',caseRequestId:1,currentPage:'edit',editSelectedSamples:new Set([200]),editStart:0,scatterStripCache:new Map()};
 const info={revision:1,settings:{},can_undo:true,can_redo:false};
@@ -30,7 +30,7 @@ vm.runInContext(fs.readFileSync('static/js/beat-editor-ui.js','utf8')+'\nglobalT
 for(const s of ['#waveformCanvas','#editWaveformCanvas','#editLibraryWaveformCanvas'])nodes.set(s,null);
 listeners.DOMContentLoaded();
 const writes=()=>calls.filter(c=>c.method==='PUT');
-function cardForEditable(){const card=node();ctx.editor.registerOccurrence(card,{sample_index:200,time_s:1,class_code:'N'},{code:'N',samples:async()=>[200,400]});return card;}
+function cardForEditable(){const card=node();ctx.editor.registerOccurrence(card,{sample_index:200,time_s:1,class_code:'N'},{code:'N',samples:async()=>[200,400],isCurrent:()=>currentScope});return card;}
 const toolbarSummary={sourceLabel:'N · 全部',totalRecords:3,visibleRecords:3,visibleSampleCount:4,selectedCount:2,lead:'II',revision:1};
 async function run(){
   if(scenario.startsWith('history-')){
@@ -67,10 +67,12 @@ async function run(){
     else assert.equal(writes().length,0,'stale/cancelled confirmation wrote a beat edit');
     return;
   }
-  const card=node();ctx.editor.registerOccurrence(card,{sample_index:200,time_s:1,class_code:'N'},{code:'N',samples:async()=>[200,400]});
+  const card=node();ctx.editor.registerOccurrence(card,{sample_index:200,time_s:1,class_code:'N'},{code:'N',samples:async()=>[200,400],isCurrent:()=>currentScope});
   const operation=()=>stage==='menu'?ctx.editor.occurrenceMenu(card):stage==='undo'?ctx.editor.invoke('undo'):stage==='invoke'?ctx.editor.invoke('relabel',{samples:[200],code:'V'}):ctx.editor.quickEdit('V',[200]);
   const task=operation().then(()=>null,e=>e);
   await tick();
+  if(scenario.endsWith('-basis'))state.caseData={clinical_identity:{analysis_basis:'changed',analysis_revision:2}};
+  if(scenario.endsWith('-scope'))currentScope=false;
   if(scenario.endsWith('-case')){state.caseId='B';state.caseRequestId++;}
   if(scenario.endsWith('-lifecycle'))state.caseRequestId++;
   if(scenario.endsWith('-page'))state.currentPage='report';

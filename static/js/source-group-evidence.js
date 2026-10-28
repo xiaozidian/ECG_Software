@@ -27,6 +27,7 @@ globalThis.ECGSourceGroupEvidence=(()=>{
         if(request!==sequence||!current())return;
         if(wave.stride!==1||wave.filter!=='raw')throw Error('未取得逐采样原始片段，不能作为本区证据');
         waveHost.innerHTML=ECGOccurrenceCard.svg(wave,{sample_index:sample,label:'组合逐搏原始证据'},{width:Math.max(600,waveHost.clientWidth||900),height:(twelve?12:3)*70+(twelve?48:24),columns:1,timeAxis:true,recordStart,domain:ECGReviewTools.waveDomain(wave,JSON.stringify([wave.case_id,wave.data_version,wave.analysis_basis,wave.analysis_revision,item.event_id,item.basis_version,'source-group']))});
+        if(typeof beatEditor!=='undefined')beatEditor.bindWaveSurface(waveHost,{wave,anchorSample:sample,previewLabel:twelve?'返回 3 导联':'查看 12 导联',isCurrent:()=>request===sequence&&current(),onPreview:()=>{if(current()){twelve=!twelve;return read();}}});
         status.textContent=ECGReviewTools.waveMeta(wave,recordStart,ECGReviewTools.waveDomain(wave,JSON.stringify([wave.case_id,wave.data_version,wave.analysis_basis,wave.analysis_revision,item.event_id,item.basis_version,'source-group'])))+` · 第 ${index+1} / ${samples.length} 源搏 · 采样 ${sample} · 记录后 ${(sample/200).toFixed(3)} 秒 · ${wave.duration_s} 秒原始片段 · 步进 1 · 设备单位 u，未校准`;
       }catch(error){
         if(request!==sequence||!current()||error.name==='AbortError')return;

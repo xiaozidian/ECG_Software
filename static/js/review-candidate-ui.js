@@ -11,6 +11,7 @@ const ECGReviewCandidates=globalThis.ECGReviewCandidates=(()=>{
       const wave=await api(`/api/cases/${id}/waveform?${params}`);
       if(!node.isConnected)return;if(id!==state.caseId||token!==state.caseRequestId||!isCurrent())throw Error('病例或小图集合已变化，请关闭后重开');
       node.querySelector('[data-candidate-wave]').innerHTML=ECGReportWorkspace.reviewWaveSvg(wave,{label:'原心搏三导联小图的12导联复核'});
+      beatEditor.bindWaveSurface(node.querySelector('[data-candidate-wave]'),{wave,readOnly:true,previewLabel:'返回原波形',isCurrent:()=>node.isConnected&&id===state.caseId&&token===state.caseRequestId&&isCurrent(),onPreview:()=>node.close()});
     }catch(error){if(node.isConnected)node.querySelector('[data-candidate-status]').textContent=error.message;}
   }
   async function choose({identity,item,population={},isCurrent=()=>true}){

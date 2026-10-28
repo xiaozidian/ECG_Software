@@ -28,12 +28,14 @@ globalThis.ECGReportWorkspace=(()=>{
     host.addEventListener('dblclick',event=>{if(event.button!==0||!event.target.closest?.('svg')||!host.contains(event.target)||!host._rwWaveCurrent())return;event.preventDefault();event.stopPropagation();host._rwWaveOpen?.();},true);
   }
   function bindTwelveWave(host,{wave,readWave,isCurrent=()=>true,recordStart=null,domain=null,event=null}){
-    return mountEventPreview(host,{event,title:'12 导联 · 同一记录时间窗',isCurrent,
+    const open=mountEventPreview(host,{event,title:'12 导联 · 同一记录时间窗',isCurrent,
       loadWave:async()=>{const full=await readWave();if(!isCurrent())throw Error('病例或标注依据已变化，请重新打开波形');
         const names=Object.keys(full.leads||{});if(!['I','II','III','aVR','aVL','aVF','V1','V2','V3','V4','V5','V6'].every(n=>names.includes(n)))throw Error('来源没有提供完整十二导联，未补绘');
         if(Math.abs(full.start_s-wave.start_s)>.005||Math.abs(full.duration_s-wave.duration_s)>.005||full.sample_rate_hz!==wave.sample_rate_hz)throw Error('十二导联时间窗或采样率与原图不一致，未显示');
         globalThis.ECGAnalysisConsistency?.assertSame(wave,full);return full;},
       renderWave:full=>reviewWaveSvg(full,event,{recordStart,domain})});
+    if(typeof beatEditor!=='undefined')beatEditor.bindWaveSurface(host,{wave,isCurrent,onPreview:open,readOnly:typeof state!=='undefined'&&state.currentPage==='report'});
+    return open;
   }
   function capturePosition(root){
     const scroll=[];positionSelectors.forEach(selector=>root.querySelectorAll(selector).forEach((node,index)=>scroll.push({selector,index,top:node.scrollTop,left:node.scrollLeft})));
@@ -75,6 +77,7 @@ globalThis.ECGReportWorkspace=(()=>{
           if(!dialog.open||token!==previewToken)return;
           if(!isCurrent()){target.textContent='当前病例或依据已变化，请关闭后重新选择事件。';return;}
           target.removeAttribute('role');target.innerHTML=waveContext({waveform:wave},renderWave(wave));
+          if(typeof beatEditor!=='undefined')beatEditor.bindWaveSurface(target,{wave,isCurrent:()=>dialog.open&&token===previewToken&&isCurrent(),readOnly:true,previewLabel:'返回原波形',onPreview:()=>dialog.close()});
         }).catch(error=>{
           if(!dialog.open||token!==previewToken)return;
           target.textContent=isCurrent()?'读取失败：'+error.message:'当前病例或依据已变化，请关闭后重新选择事件。';

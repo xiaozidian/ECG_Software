@@ -150,7 +150,7 @@ const clinicalWorkflow = (() => {
     const menu=event=>{
       const card=event.target.closest("[data-scatter-sample]");if(!card)return;
       const strip=state.scatterStripCache.get(Number(card.dataset.scatterSample));if(!strip)return;
-      event.preventDefault();const canvas=$("canvas",card),r=canvas.getBoundingClientRect();
+      const canvas=$("canvas",card);if(!canvas)return;event.preventDefault();const r=canvas.getBoundingClientRect();
       // A strip represents its anchor beat, not an adjacent beat under the cursor.
       openBeatRelabelMenu({clientX:event.clientX||r.left+r.width/2,clientY:event.clientY||r.top+25},canvas,{start_s:strip.time_s-2,duration_s:4,beats:[strip]},"review",true);
     };

@@ -197,6 +197,11 @@
       const sample=Number(card.dataset.scatterSample),row=index?.bySample.get(sample),c={...context},generation=snapshot?.selectionGeneration;
       const current=()=>presented()&&scopeKey(context)===scopeKey(c)&&snapshot.selectionGeneration===generation&&cohort().includes(sample);
       if(!row||!current())return;const population=snapshot.sourcePopulation||{};
+      if(options.openMenu){const wave=cache.get('strip:'+stripViewKey()+':'+sample);if(wave)options.openMenu({card,event,wave,row,identity:c,isCurrent:current,sampleScope:visible=>{
+        if(!current())throw Error('RR 小图集合已变化，请重新打开菜单');
+        if(!visible)return [...cohort()];const viewport=qs('#scatterSelectionList').getBoundingClientRect();
+        return [...qs('#scatterSelectionVirtual').querySelectorAll('[data-scatter-sample]')].filter(node=>{const box=node.getBoundingClientRect();return box.bottom>viewport.top&&box.top<viewport.bottom;}).map(node=>Number(node.dataset.scatterSample));
+      }});return;}
       root.ECGOccurrenceCard.menu({card,event,item:row,isCurrent:current,
         onPreview:()=>options.preview?.(card,row,c,current),
         onLeads:leads=>{miniLeads=[...leads];miniKey='';renderMini();},

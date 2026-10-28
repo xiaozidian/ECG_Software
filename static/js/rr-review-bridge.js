@@ -44,7 +44,12 @@
           const button=document.createElement('button');button.type='button';button.className='button secondary';button.textContent='重读所选波形';button.onclick=()=>workbench?.retrySelection();node.appendChild(button);throw error;
         }finally{if(stillCurrent())node.setAttribute('aria-busy','false');}
       };
-      workbench=ECGRRReview.mount({host,caseId:id,caseToken,basis:identity,api,isCurrent:current,filter:'raw',onSelection:readSelection,onLocate:readSelection});
+      workbench=ECGRRReview.mount({host,caseId:id,caseToken,basis:identity,api,isCurrent:current,filter:'raw',onSelection:readSelection,onLocate:readSelection,
+        bindStrip:(canvas,strip,item,isCurrent,sampleScope)=>{
+          canvas.tabIndex=0;
+          const anchor={...item.right,sample_index:item.end_sample,time_s:item.end_sample/strip.sample_rate_hz,class_code:item.right_type,rr_ms:item.rr_ms};
+          beatEditor.bindWaveSurface(canvas,{wave:{...strip,beats:[anchor]},anchorSample:anchor.sample_index,isCurrent,sampleScope});
+        }});
       const slot=host.querySelector('[data-rr-role="evidence-slot"]');if(!slot)throw Error('RR 原始波形区域未挂载');slot.appendChild(node);
       if(typeof ResizeObserver!=='undefined'){resizeObserver=new ResizeObserver(()=>{if(lastEvidence?.guard())renderEvidence();});resizeObserver.observe(node);}
       await workbench.load();
