@@ -56,7 +56,7 @@
   const keyScope=scope=>JSON.stringify(scope&&[scope.caseId,scope.caseToken,scope.analysis_basis,scope.analysis_revision,scope.beatRevision]);
   const active=()=>state.currentPage==='edit'&&!!C()?.snapshot().scope&&C().snapshot().scope.caseId===state.caseId&&C().snapshot().scope.caseToken===state.caseRequestId;
   const morph=()=>typeof morphologyWorkbench!=='undefined'?morphologyWorkbench.privateSnapshot():null;
-  const viewKey=()=>{const m=morph();return JSON.stringify([state.currentPage,state.editMode,m?.sourceKey,m?.partitionGeneration,m?.viewedScope,m?.leads,state.editLead,C()?.snapshot().scope?.beatRevision]);};
+  const viewKey=()=>{const m=morph();return JSON.stringify([state.currentPage,state.editMode,m?.sourceKey,m?.partitionGeneration,m?.viewedScope,m?.leads,state.editLead,state.editScatterFilterActive,C()?.snapshot().scope?.beatRevision]);};
   const sameRows=()=>rowsKey===keyScope(C()?.snapshot().scope);
   function message(text,error=false){const e=q('#templateLinkedStatus');if(e){e.textContent=text;e.dataset.error=String(error);}}
   function schedule(){if(!frame)frame=requestAnimationFrame(()=>{frame=0;refresh();});}
@@ -107,7 +107,7 @@
     const ctx=canvas.getContext('2d'),dpr=canvas.width/g.rect.width;ctx.save();ctx.setTransform(dpr,0,0,canvas.height/g.rect.height,0,0);
     const x=p=>g.l+(p.x-b.x_min)/(b.x_max-b.x_min)*g.w,y=p=>g.t+g.h-(p.y-b.y_min)/(b.y_max-b.y_min)*g.h;
     ctx.beginPath();ctx.rect(g.l,g.t,g.w,g.h);ctx.clip();
-    for(const point of state.editScatterData.points||[]){if(point.sample_index!==snap.focusSample)continue;ctx.beginPath();ctx.arc(x(point),y(point),5,0,Math.PI*2);ctx.strokeStyle='#d17b17';ctx.lineWidth=1.4;ctx.stroke();}
+    for(const point of state.editScatterData.points||[]){if(point.sample_index!==snap.focusSample||!editScatterPointVisible(point))continue;ctx.beginPath();ctx.arc(x(point),y(point),5,0,Math.PI*2);ctx.strokeStyle='#d17b17';ctx.lineWidth=1.4;ctx.stroke();}
     const path=drag?.canvas===canvas?rrPolygon(drag.points,drag):outline?.generation===snap.selectionGeneration&&outline.scope===keyScope(snap.scope)?outline.polygon:null;
     if(path?.length>1){ctx.beginPath();path.forEach((p,i)=>{const px=x({x:p[0]}),py=y({y:p[1]});i?ctx.lineTo(px,py):ctx.moveTo(px,py);});ctx.closePath();ctx.fillStyle='rgba(8,127,122,.06)';ctx.fill('evenodd');ctx.strokeStyle='#087f7a';ctx.setLineDash([4,3]);ctx.lineWidth=1.25;ctx.stroke();}
     ctx.restore();
@@ -140,8 +140,8 @@
     // Paint from the base each time; repeated focus must not accumulate rings.
     renderEditScatter();renderEditLibraryAnalytics();
     const snap=C().snapshot(),filtered=snap.kind==='samples';
-    for(const button of document.querySelectorAll('[data-lasso-clear]'))button.disabled=!drag&&!selectionPending&&!filtered&&snap.focusSample==null;
-    for(const note of document.querySelectorAll('[data-lasso-status]')){note.textContent=drag?'圈选中 · Esc 取消':selectionPending?'匹配中 · Esc 取消':selectionError?'未应用 · 请重新圈选':filtered?'圈中 '+fmtNumber(snap.samples.length)+' / 匹配 '+fmtNumber(cohort?.samples.length||0):'自由圈选 · 单击定位';note.title=selectionError||'圈中为完整选集；匹配为当前分类、模板及分组内的交集。'+(cohort?describe(cohort):'');}
+    for(const button of document.querySelectorAll('[data-lasso-clear]'))button.disabled=!state.editScatterFilterActive&&!drag&&!selectionPending&&!filtered&&snap.focusSample==null;
+    for(const note of document.querySelectorAll('[data-lasso-status]')){note.textContent=drag?'圈选中 · Esc 取消':selectionPending?'匹配中 · Esc 取消':selectionError?'未应用 · 请重新圈选':filtered?'圈中 '+fmtNumber(snap.samples.length)+' / 匹配 '+fmtNumber(cohort?.samples.length||0):(state.editScatterFilterActive?'当前类别 · ':'全部类别 · ')+'自由圈选 · 单击定位';note.title=selectionError||'圈中为完整选集；匹配为当前分类、模板及分组内的交集。'+(cohort?describe(cohort):'');}
     const button=q('#templateLinkedOpen');if(button){button.disabled=!cohort;button.textContent=cohort?.active?(cohort.focusOnly?'定位搏':'联动匹配')+' '+fmtNumber(cohort.samples.length)+' · 查看':'联动选集 · 尚未选择';button.title=cohort?.active?describe(cohort):'单击定位；圈选筛选完整集合；联动选集不自动加入改型目标';button.setAttribute('aria-label',button.title+'；打开独立所选搏');}
     const clear=q('#templateLinkedClear');if(clear)clear.disabled=C().snapshot().kind==='none'&&C().snapshot().focusSample==null;
     for(const id of ['templateNnScope','templateLibraryNnScope']){const n=q('#'+id);if(n)n.textContent=stats?'所选 N-N '+stats.nn+' · 非 N-N '+stats.nonNN+' · 无效/超界 '+stats.invalid+' · N-N 散点 '+stats.pairs:'全记录 N-N '+fmtNumber(reference.nn)+(C().snapshot().kind==='samples'?' · 当前来源匹配未读取':' · 尚未启用筛选');}
@@ -168,11 +168,12 @@
       const result=await api('/api/cases/'+encodeURIComponent(expected.caseId)+'/scatter-selection',{method:'POST',signal:ticket.signal,body:JSON.stringify({mode:'rr',polygon,analysis_basis:expected.analysis_basis,analysis_revision:expected.analysis_revision,beat_revision:expected.beatRevision})});
       if(!C().isCurrent(ticket,viewKey())||!active())return;assertResponse(expected,result);
       if(result.exact!==true||!Array.isArray(result.sample_indices)||result.total!==result.sample_indices.length)throw Error('圈选未返回完整精确集合');
-      if(selectSamples(result.sample_indices,'template-scatter-lasso',expected))outline={polygon,generation:C().snapshot().selectionGeneration,scope:keyScope(expected)};
+      const visible=editScatterVisibility(),samples=result.sample_indices.filter(sample=>visible(rowMap.get(sample)));
+      if(selectSamples(samples,'template-scatter-lasso',expected))outline={polygon,generation:C().snapshot().selectionGeneration,scope:keyScope(expected)};
     }catch(error){if(error.name!=='AbortError'&&C().isCurrent(ticket,viewKey())){selectionError=error.message;message('圈选未应用：'+error.message,true);}}
     finally{if(selectionPending===ticket){selectionPending=null;schedule();}}
   }
-  function clear(){cancelGesture();selectionPending=null;selectionError=null;outline=null;if(active())C().clear({expectedScope:C().snapshot().scope,origin:'template-clear'});}
+  function clear(){cancelGesture();selectionPending=null;selectionError=null;outline=null;state.editScatterFilterActive=false;if(active())C().clear({expectedScope:C().snapshot().scope,origin:'template-clear'});redrawScatter();schedule();}
   function capturePresentation(){
     const panel=q('#templateLinkedCards');
     return {scope:keyScope(C()?.snapshot().scope),view:viewKey(),pageIndex,open:!!panel?.matches(':popover-open'),scrollTop:panel?.scrollTop||0};
@@ -221,8 +222,8 @@
     canvas.addEventListener('pointerup',event=>{
       if(drag?.canvas!==canvas||event.pointerId!==drag.id)return;const job=drag;if(!gestureCurrent(job)){cancelGesture();return;}appendGesture(event,job);cancelGesture();
       if(job.extent>=6){const polygon=job.overflow?null:lassoPolygon(job.points);if(polygon)selectPolygon(rrPolygon(polygon,job),job.expected);else{selectionError='路径过短或过于复杂，原选集已保留';message(selectionError,true);schedule();}return;}
-      const g=job.g,b=job.bounds,snap=C().snapshot(),members=snap.kind==='samples'?new Set(snap.samples):null;let nearest=null,distance=8;
-      for(const point of state.editScatterData?.points||[]){if(members&&!members.has(point.sample_index))continue;const x=g.rect.left+g.l+(point.x-b.x_min)/(b.x_max-b.x_min)*g.w,y=g.rect.top+g.t+g.h-(point.y-b.y_min)/(b.y_max-b.y_min)*g.h,d=Math.hypot(x-event.clientX,y-event.clientY);if(d<distance||d===distance&&(!nearest||point.sample_index<nearest.sample_index)){distance=d;nearest=point;}}
+      const g=job.g,b=job.bounds,snap=C().snapshot(),visible=editScatterVisibility(),members=snap.kind==='samples'?new Set(snap.samples):null;let nearest=null,distance=8;
+      for(const point of state.editScatterData?.points||[]){if(!visible(point)||members&&!members.has(point.sample_index))continue;const x=g.rect.left+g.l+(point.x-b.x_min)/(b.x_max-b.x_min)*g.w,y=g.rect.top+g.t+g.h-(point.y-b.y_min)/(b.y_max-b.y_min)*g.h,d=Math.hypot(x-event.clientX,y-event.clientY);if(d<distance||d===distance&&(!nearest||point.sample_index<nearest.sample_index)){distance=d;nearest=point;}}
       if(nearest)focusSample(nearest.sample_index,job.expected);schedule();
     },true);
     for(const name of ['pointercancel','lostpointercapture'])canvas.addEventListener(name,event=>{if(drag?.id===event.pointerId){cancelGesture();schedule();}});

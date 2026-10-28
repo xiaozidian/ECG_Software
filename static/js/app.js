@@ -145,6 +145,7 @@ const state = {
   editMorphTraceGeometry: [],
   editMorphDraft: null,
   editSelectedClass: "source-N",
+  editScatterFilterActive: false,
   editSelectedSample: null,
   editSelection: null,
   editEditingTemplateId: null,
@@ -724,6 +725,7 @@ async function selectCase(caseId, destination = "review") {
   state.editMorphTraceGeometry = [];
   state.editMorphDraft = null;
   state.editSelectedClass = "source-N";
+  state.editScatterFilterActive = false;
   state.editSelectedSample = null;
   state.editSelection = null;
   state.editEditingTemplateId = null;
@@ -1769,7 +1771,7 @@ function sttWaveformIsCurrent() {
 function updateSttSaveState() {
   const button=$('#sttReviewForm button[type="submit"]');if(!button)return;
   const busy=Boolean(state.sttSaving);
-  button.disabled=busy||Boolean(state.demoReadonly)||!sttWaveformIsCurrent();
+  button.disabled=busy||!clinicalWorkflow.writable()||!sttWaveformIsCurrent();
   button.textContent=busy?'正在保存…':'保存为人工复核标注';
   button.setAttribute?.('aria-busy',String(busy));if(button.dataset)button.dataset.sttSaveState=busy?'saving':'idle';
 }
@@ -2011,7 +2013,7 @@ async function loadStt() {
   ECGReportConsistency.receive(state,caseData.report_workflow);clinicalWorkflow.receive(caseData.review_workflow);
   const submit=$('#sttReviewForm button[type="submit"]');
   const usable=sttWaveformIsCurrent();
-  if(submit)submit.disabled=Boolean(state.demoReadonly)||Boolean(state.sttSaving)||!usable;analysisReadStatus('#sttAnalysisStatus','');
+  if(submit)submit.disabled=!clinicalWorkflow.writable()||Boolean(state.sttSaving)||!usable;analysisReadStatus('#sttAnalysisStatus','');
   const wrapper=$('#sttWaveCanvasWrap');if(wrapper){if(wrapper.dataset)wrapper.dataset.sttWaveState='ready';wrapper.setAttribute?.('aria-busy','false');}
   $("#sttTimeSlider").max=Math.max(0,Math.floor(total-state.sttDuration));$("#sttTimeSlider").value=Math.round(state.sttStart);
   if(!reused){renderSttCapability();renderSttTrendRows();}else updateSttTrendWindow();
@@ -2248,8 +2250,16 @@ function setEditMode(mode, rerender=true) {
 
 function editSourceMatches(point,descriptor) {
   const code=point.class_code||editSourceCode(point);
-  return descriptor.code==='other'?!['N','S','V'].includes(code):descriptor.explicitCode?code===descriptor.code:point.group===descriptor.group;
+  return descriptor.code==='other'?!['N','S','V'].includes(code):descriptor.explicitCode||point.class_code?code===descriptor.code:point.group===descriptor.group;
 }
+
+// The same gate owns painting, pointer hits and exact (unsampled) lasso results.
+function editScatterVisibility() {
+  if(!state.editScatterFilterActive)return ()=>true;
+  const descriptor=editDescriptor(),members=new Set(descriptor.sample_indices||[]);
+  return descriptor.type==='source'?point=>editSourceMatches(point,descriptor):point=>members.has(point.sample_index);
+}
+function editScatterPointVisible(point) { return editScatterVisibility()(point); }
 
 function editDescriptor() {
   const code=state.editSelectedClass?.startsWith('source-')?state.editSelectedClass.slice(7):null;
@@ -2331,13 +2341,14 @@ function renderEditOverview() {
 function drawTemplateScatterPoints(ctx,data,descriptor,m,plotW,plotH) {
   const bounds=data.bounds,custom=new Set(descriptor.sample_indices||[]),snap=globalThis.ECGLinkedSelection?.snapshot();
   const filtered=snap?.scope?.caseId===state.caseId&&snap.scope.caseToken===state.caseRequestId&&snap.kind==='samples';
-  const context=globalThis.ECGTemplateLinkedView?.context(),samples=context?.snap.selectionGeneration===snap?.selectionGeneration?context.samples:snap?.samples||[],members=new Set(filtered?samples:[]);
+  const context=globalThis.ECGTemplateLinkedView?.context(),samples=context&&context.snap?.selectionGeneration===snap?.selectionGeneration?context.samples:snap?.samples||[],members=new Set(filtered?samples:[]);
   ctx.save();ctx.beginPath();ctx.rect(m.l,m.t,plotW,plotH);ctx.clip();
   for(const point of data.points||[]){
     const x=m.l+(point.x-bounds.x_min)/Math.max(1,bounds.x_max-bounds.x_min)*plotW,y=m.t+plotH-(point.y-bounds.y_min)/Math.max(1,bounds.y_max-bounds.y_min)*plotH;
     const inSource=descriptor.type==='source'?editSourceMatches(point,descriptor):custom.has(point.sample_index),selected=filtered&&inSource&&members.has(point.sample_index);
-    const style=globalThis.ECGTemplateLinkedMath?.scatterStyle(data.points.length,inSource,selected,filtered)||{radius:inSource?1.35:.85,alpha:inSource?.65:.18};
-    ctx.globalAlpha=style.alpha;ctx.fillStyle=inSource?descriptor.color:'#71828c';ctx.beginPath();ctx.arc(x,y,style.radius,0,Math.PI*2);ctx.fill();
+    if(state.editScatterFilterActive&&!inSource)continue;
+    const style=globalThis.ECGTemplateLinkedMath?.scatterStyle(data.points.length,state.editScatterFilterActive?inSource:true,selected,filtered)||{radius:1.35,alpha:filtered?(selected?.9:.14):.65};
+    ctx.globalAlpha=style.alpha;ctx.fillStyle=state.editScatterFilterActive?descriptor.color:editBeatType(point.class_code||editSourceCode(point)).color;ctx.beginPath();ctx.arc(x,y,style.radius,0,Math.PI*2);ctx.fill();
   }
   ctx.restore();
 }
@@ -2605,7 +2616,7 @@ async function loadEdit(occurrenceBookmark=null) {
 
 function setEditStart(value) {if(!state.caseData)return;state.editStart=Math.max(0,Math.min(Number(value)||0,editMaxStart()));renderEditOverview();loadEditWaveform().catch(handleError);}
 
-function selectEditClass(key) {if(key===state.editSelectedClass)return;state.editSelectedClass=key;state.editSelectedSample=null;state.editSelectedSamples=new Set();state.editSelectionAnchor=null;state.editSelection=null;state.editSelectionStrips=[];state.editMorphDraft=null;closeEditClassPopover();renderEditClasses();renderEditScatter();loadEditTemplateStrips().catch(handleError);}
+function selectEditClass(key) {if(key===state.editSelectedClass&&state.editScatterFilterActive)return;state.editScatterFilterActive=true;state.editSelectedClass=key;state.editSelectedSample=null;state.editSelectedSamples=new Set();state.editSelectionAnchor=null;state.editSelection=null;state.editSelectionStrips=[];state.editMorphDraft=null;closeEditClassPopover();renderEditClasses();renderEditScatter();loadEditTemplateStrips().catch(handleError);}
 
 function closeEditClassPopover() {const popover=$("#editClassPopover");if(!popover)return;try{if(popover.matches(":popover-open"))popover.hidePopover();}catch(_){/* fallback */}popover.hidden=true;state.editEditingTemplateId=null;}
 

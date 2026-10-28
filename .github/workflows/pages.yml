@@ -24,10 +24,22 @@ jobs:
           python-version: "3.12"
       - name: Install static builder dependency
         run: python -m pip install "Jinja2>=3.1,<4"
-      - name: Verify frozen evaluation source
-        run: python scripts/verify_public_release.py
-      - name: Build browser-only mathematical demo
-        run: python scripts/build_static_demo.py
+      - name: Build and verify common source identity
+        run: |
+          python scripts/shared_source.py build --output build/shared-source.zip
+          python scripts/shared_source.py check build/shared-source.zip --target .
+      - name: Build mathematical demo from the same package
+        run: python scripts/build_static_demo.py --shared-bundle build/shared-source.zip
+      - name: Record capability and source identity
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path('build/pages/mathematical-source-manifest.json').read_text())
+          assert m['common_ui_bytes_modified'] is False
+          assert m['python_core_executed_in_browser'] is False
+          print(json.dumps({k:m[k] for k in ['core_version','ui_version','source_fingerprint','capabilities']},sort_keys=True))
+          PY
       - name: Check demo JavaScript
         run: |
           python - <<'PY'
@@ -36,6 +48,13 @@ jobs:
           for asset in sorted(Path('build/pages/static/js').glob('*.js')):
               subprocess.run(['node', '--check', str(asset)], check=True)
           PY
+      - name: Preserve common package for native release workflows
+        uses: actions/upload-artifact@v4
+        with:
+          name: ecg-shared-source-${{ github.sha }}
+          path: build/shared-source.zip
+          if-no-files-found: error
+          retention-days: 30
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:

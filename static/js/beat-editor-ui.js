@@ -90,13 +90,12 @@ const beatEditor=(()=>{
   function renderMenu(){
     const menu=$("#beatRelabelMenu");menu.classList.add("full-beat-menu");
     menu.dataset.contextKind=context.anchor?'beat':'wave';
-    menu.innerHTML='<header><strong>心搏修订</strong><button type="button" data-editor-action="close" aria-label="关闭心搏菜单">×</button></header>'+
+    const primaryCodes=['N','S','V','J','G','P','B','A','C','F','E','R','W','O','Z','M','H','Y','T','X','OTHER'];
+    const primary=primaryCodes.map(code=>code==='P'?'<details><summary><kbd>P</kbd> 起搏</summary><div class="editor-types">'+codeButtons(['P','PA','PV','PD','PF'])+'</div></details>':code==='B'?'<details><summary><kbd>B</kbd> 束支传导阻滞</summary><div class="editor-types">'+codeButtons(['B','BL','BR'])+'</div></details>':codeButtons([code])).join('');
+    menu.innerHTML='<header><strong>'+(context.readOnly?'波形只读复核':context.anchor?'心搏修订':'波形操作')+'</strong><button type="button" data-editor-action="close" aria-label="关闭心搏菜单">×</button></header>'+
       '<p class="editor-context">'+(context?.anchor?formatElapsedPrecise(context.anchor.time_s)+' · '+esc(context.anchor.class_code||context.anchor.label||""):"此位置无心搏标记")+
       ' · 操作：心搏修订 · 范围：'+esc(context.occurrenceScope?'当前筛选记录集合':context.strip?'散点所选图条':'当前波形所选心搏')+' · 已选 <b>'+selected.size+'</b> 搏 · 修订 r'+info.revision+' · 导联 '+esc(info.settings.lead||state.editLead||state.leads?.join('/')||'待核对')+'</p>'+
-      '<div class="editor-menu-scroll"><div class="editor-types">'+codeButtons(["N","S","V","X"])+'</div>'+
-      '<details><summary>更多心搏 / 节律 / 波形标记</summary><div class="editor-types">'+codeButtons(mainCodes.filter(x=>!["N","S","V","X"].includes(x)))+'</div></details>'+
-      '<details><summary>起搏 P</summary><div class="editor-types">'+codeButtons(["P","PA","PV","PD","PF"])+'</div></details>'+
-      '<details><summary>束支传导阻滞 B</summary><div class="editor-types">'+codeButtons(["B","BL","BR"])+'</div></details>'+
+      '<div class="editor-menu-scroll">'+(context.anchor&&!context.readOnly?'':'<details data-beat-tools><summary>心搏操作'+(context.readOnly?'（只读）':'（先选择心搏）')+'</summary>')+'<div class="editor-types editor-primary">'+primary+'</div>'+
       '<div class="editor-actions">'+button("删除标记 <kbd>D</kbd>","delete")+button("恢复源类型 / 位置","restore")+
       button("手动批量添加 QRS","insert")+button("手动调整 QRS 位置","move")+
       '<details><summary>自动向前 / 向后插入候选</summary><p>参考导联 '+esc(info.settings.lead)+' · 搜索 '+info.settings.search_seconds+' 秒 · 只预览，不直接写入</p>'+
@@ -106,7 +105,7 @@ const beatEditor=(()=>{
       button("设为最长 RR 报告图条 <kbd>L</kbd>","longest")+
       '<div class="editor-selection-tools">'+button(context.occurrenceScope||context.sampleScope?"全选当前集合":"全选全记录心搏","all")+button("当前页全选 <kbd>K</kbd>","page")+button(context.occurrenceScope||context.sampleScope?"反选当前集合":"反选全记录心搏","invert")+button("当前页反选 <kbd>I</kbd>","invert-page")+button("清除选择","clear")+'</div>'+
       button("撤销最近修订","undo",info.can_undo?"":"disabled")+button("重做","redo",info.can_redo?"":"disabled")+
-      button("设置选项","settings")+'</div><details data-wave-tools><summary>图条 / 波形操作</summary>'+button(context.previewLabel||(Object.keys(context.waveform?.leads||{}).length>6?(context.onPreview?"放大当前 12 导联":"返回原波形"):"查看 12 导联"),"wave-preview")+button("转到原始诊断波形","wave-locate")+button("插入报告图条…","wave-strip")+button("插入缩略图条…","wave-strip-short")+button("选择起始位置（总览）","wave-range-anchor")+button("删除前面区段的标记…","wave-delete-before")+button("删除后面区段的标记…","wave-delete-after")+button("测量尺（总览）","wave-measure")+button("分规尺（总览）","wave-divider")+button("平行尺（总览）","wave-parallel")+button("设为最快心率图条…","wave-bookmark-fastest")+button("设为最慢心率图条…","wave-bookmark-slowest")+button("设为最快窦性心率图条…","wave-bookmark-fastest_nn")+button("设为最慢窦性心率图条…","wave-bookmark-slowest_nn")+button("跳转到时间…","wave-jump")+(context.onLeadSettings?button("显示导联设置…","wave-leads"):"")+'</details></div><footer>源记录只读 · 修订后重算 · 可撤销<br>'+(context.readOnly?'此处为只读复核图；先转到原始诊断波形再修订。':'房颤 / 房扑为人工逐搏节律标记；P/T 波不计入心搏。')+'</footer>';
+      button("设置选项","settings")+'</div>'+(context.anchor&&!context.readOnly?'':'</details>')+'<details data-wave-tools'+(context.anchor&&!context.readOnly?'':' open')+'><summary>图条 / 波形操作</summary>'+button(context.previewLabel||(Object.keys(context.waveform?.leads||{}).length>6?(context.onPreview?"放大当前 12 导联":"返回原波形"):"查看 12 导联"),"wave-preview")+button("转到原始诊断波形","wave-locate")+button("插入报告图条…","wave-strip")+button("插入缩略图条…","wave-strip-short")+button("选择起始位置（总览）","wave-range-anchor")+button("删除前面区段的标记…","wave-delete-before")+button("删除后面区段的标记…","wave-delete-after")+button("测量尺（总览）","wave-measure")+button("分规尺（总览）","wave-divider")+button("平行尺（总览）","wave-parallel")+button("设为最快心率图条…","wave-bookmark-fastest")+button("设为最慢心率图条…","wave-bookmark-slowest")+button("设为最快窦性心率图条…","wave-bookmark-fastest_nn")+button("设为最慢窦性心率图条…","wave-bookmark-slowest_nn")+button("跳转到时间…","wave-jump")+(context.onLeadSettings?button("显示导联设置…","wave-leads"):"")+'</details></div><footer>源记录只读 · 修订后重算 · 可撤销<br>'+(context.readOnly?'此处为只读复核图；先转到原始诊断波形再修订。':'房颤 / 房扑为人工逐搏节律标记；P/T 波不计入心搏。')+'</footer>';
     menu.querySelectorAll("[data-editor-code]").forEach(b=>{b.disabled=!selected.size});
     ["delete","restore","longest","move"].forEach(a=>{menu.querySelector('[data-editor-action="'+a+'"]').disabled=!selected.size||(a==="move"&&selected.size!==1)});
     if(context.readOnly)menu.querySelectorAll('[data-editor-code],.editor-actions button,[data-editor-action=wave-strip],[data-editor-action=wave-strip-short],[data-editor-action^=wave-delete],[data-editor-action^=wave-bookmark]').forEach(b=>{b.disabled=true;b.title='此处为只读复核图；请转到原始诊断波形修订后重新核对';});
@@ -148,16 +147,20 @@ const beatEditor=(()=>{
     globalThis.ecgRhythmRangeEditor?.closeMenu?.();globalThis.ECGOccurrenceCard?.closeMenu();
     try{if(waveform.analysis_basis!==undefined&&state.caseData?.clinical_identity)ECGAnalysisConsistency.assertSame(state.caseData.clinical_identity,waveform);}catch(error){handleError(error);return;}
     const token=++openToken,rect=canvas.getBoundingClientRect(),x=keyboard?rect.left+rect.width/2:event.clientX,y=keyboard?rect.top+40:event.clientY;
-    const anchor=options.anchorSample!==undefined?(waveform.beats||[]).find(b=>b.sample_index===options.anchorSample):nearestBeatForRelabel(canvas,waveform,x,surface,keyboard?Infinity:44);
+    const marker=event.target?.closest?.('[data-fiducial-sample]'),marked=marker&&canvas.contains(marker)?Number(marker.dataset.fiducialSample):undefined;
+    const annotation=keyboard||!Number.isFinite(event.clientY)||event.clientY-rect.top<=24||marked!==undefined;
+    const pointerWaveOnly=!annotation&&options.anchorSample===undefined;
+    const exact=options.anchorSample??marked;
+    const anchor=exact!==undefined?(waveform.beats||[]).find(b=>b.sample_index===exact):annotation?nearestBeatForRelabel(canvas,waveform,x,surface,keyboard?Infinity:12):null;
     if(options.anchorSample!==undefined&&!anchor){toast('小图未包含其原心搏，不能编辑邻近心搏；请重新读取','error');return;}
     const g=waveMenuGeometry(canvas,waveform,surface),time=anchor&&(keyboard||options.anchorSample!==undefined)?anchor.time_s:g.start+Math.max(0,Math.min(1,(x-rect.left-g.l)/g.w))*g.duration;
     const same=context?.caseId===state.caseId&&context.caseToken===state.caseRequestId&&context.canvas===canvas&&context.waveform===waveform;
-    begin({caseId:state.caseId,surface,anchor,time,x,y,canvas,waveform,strip:!!canvas.closest("[data-scatter-sample]"),...options});
+    begin({caseId:state.caseId,surface,anchor,time,x,y,canvas,waveform,pointerWaveOnly,strip:!!canvas.closest("[data-scatter-sample]"),...options});
     selected=surface==="edit"?new Set(state.editSelectedSamples):same?selected:new Set();
     if(anchor&&!selected.has(anchor.sample_index))selected=new Set([anchor.sample_index]);
     if(!anchor)selected.clear();
     state.beatRelabelTarget=anchor?{...anchor,caseId:state.caseId,surface}:null;
-    syncSelection();
+    if(!pointerWaveOnly)syncSelection();
     try{const result=(context.readOnly&&readOnlySnapshot(waveform))||await request("");if(token!==openToken||context.caseId!==state.caseId)return;info=result;context.revision=result.revision;renderMenu();$("#beatRelabelMenu [data-editor-code]:not(:disabled)")?.focus({preventScroll:true})}catch(error){handleError(error)}
   }
   function close(){openToken++;closeBeatRelabelMenu()}
@@ -353,7 +356,7 @@ const beatEditor=(()=>{
         if(!event.ctrlKey&&!event.metaKey&&!event.altKey&&({D:"delete",K:"page",I:"invert-page",L:"longest"})[event.key.toUpperCase()]){event.preventDefault();event.stopImmediatePropagation();action(({D:"delete",K:"page",I:"invert-page",L:"longest"})[event.key.toUpperCase()]).catch(handleError);return}
         if((event.ctrlKey||event.metaKey)&&["a","i"].includes(event.key.toLowerCase())){event.preventDefault();event.stopImmediatePropagation();action(event.key.toLowerCase()==="a"?"all":"invert").catch(handleError);return}
         if(!event.ctrlKey&&!event.metaKey&&!event.altKey&&E.types[event.key.toUpperCase()]){
-          event.preventDefault();event.stopImmediatePropagation();perform("relabel",{class_code:event.key.toUpperCase()}).catch(handleError);return;
+          event.preventDefault();event.stopImmediatePropagation();if(context.pointerWaveOnly&&!context.readOnly){toast('请右击 R 标注或原心搏小图后改型','warning');return;}perform("relabel",{class_code:event.key.toUpperCase()}).catch(handleError);return;
         }
         if(["ArrowDown","ArrowUp","Home","End"].includes(event.key)){event.preventDefault();event.stopImmediatePropagation();const buttons=[...menu.querySelectorAll("button:not(:disabled),summary")].filter(el=>el.getClientRects().length),i=buttons.indexOf(document.activeElement);buttons[event.key==="Home"?0:event.key==="End"?buttons.length-1:(i+(event.key==="ArrowDown"?1:-1)+buttons.length)%buttons.length]?.focus();return}
       }

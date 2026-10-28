@@ -14,7 +14,7 @@ const clinicalWorkflow = (() => {
   // Event review is part of the report workspace, not a separate sidebar stage.
   const navigationSteps = CASE_WORKFLOW_STEPS.filter(step=>step.page!=="events");
   let data = null, request = 0, context = null, dialogContext = null, eventOffset = 0;
-  const writable = () => !state.demoReadonly || Boolean(window.__CARDIOINSIGHT_UPLOADED_CASE__);
+  const writable = () => !state.demoReadonly || Boolean(window.__CARDIOINSIGHT_UPLOADED_CASE__ || window.__CARDIOINSIGHT_MATHEMATICAL_CASE__?.integrity?.mathematical_fixture);
   const pending = () => CASE_WORKFLOW_STEPS.filter(step => ["edit","stt"].includes(step.page) && data?.steps?.[step.page]?.status !== "done");
   const receive = value => {data=value||null;render();};
   async function refresh(caseId=state.caseId) {

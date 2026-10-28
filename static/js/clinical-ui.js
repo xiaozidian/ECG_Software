@@ -98,7 +98,7 @@ const clinicalUI=(()=>{
     if(restoreFocus&&code)qs(`[data-occ-type="${code}"]`)?.focus();
   }
   function chooseFilter(code,mode='all',templateId='all'){
-    closeTypeMenu();state.editSelectedSamples=new Set();state.editSelectedSample=null;state.editSelectionAnchor=null;state.editSelection=null;state.editSelectionStrips=[];state.editMorphDraft=null;globalThis.ECGLinkedSelection?.clear({origin:'category-filter'});
+    closeTypeMenu();state.editScatterFilterActive=true;state.editSelectedSamples=new Set();state.editSelectedSample=null;state.editSelectionAnchor=null;state.editSelection=null;state.editSelectionStrips=[];state.editMorphDraft=null;globalThis.ECGLinkedSelection?.clear({origin:'category-filter'});
     type=code;editMode=mode;template=String(templateId);state.editSelectedClass=template==='all'?'source-'+code:'custom-'+template;
     renderEditClasses();renderEditScatter();run(loadOccurrences);
     requestAnimationFrame(()=>qs(`[data-occ-type="${['N','S','V'].includes(code)?code:'other'}"]`)?.focus());
@@ -129,10 +129,10 @@ const clinicalUI=(()=>{
     const choices=[['other',{name:'全部其他心搏'}],...Object.entries(ECGBeatEngine.types||{})];
     host.innerHTML=`<div class="occurrence-template-tools"><label>搜索模板<input id="occSearch" type="search" placeholder="模板名称，如 S1"></label><label>形态模板<select id="occTemplate"></select></label></div><div class="occurrence-current-filter"><span>当前筛选</span><strong>${esc(typeNames[type]||ECGBeatEngine.types[type]?.name||type)} · ${esc(modeLabel())}</strong></div><div class="edit-type-dock" role="group" aria-label="左下角心搏类型与事件模式">${['N','S','V','other'].map(k=>`<button type="button" id="editType${k}" data-occ-type="${k}" aria-haspopup="menu" aria-expanded="false" aria-controls="editTypeMenu" aria-label="${k==='other'?'其他类型':k+' '+typeNames[k]+'类型'}" aria-pressed="${template==='all'&&(k===type||(k==='other'&&!['N','S','V'].includes(type)))}"><strong>${k==='other'?'其他':k}</strong><span>${typeNames[k]||'类型'}</span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button>`).join('')}</div><div hidden><select id="occType" aria-label="心搏类型">${choices.map(([k,t])=>`<option value="${k}" ${type===k?'selected':''}>${k} ${esc(t.name)}</option>`).join('')}</select><select id="occMode" aria-label="事件模式">${modeChoices(type).map(([k,v])=>`<option value="${k}" ${editMode===k?'selected':''}>${esc(v)}</option>`).join('')}</select></div>`;
     updateTemplates();
-    host.querySelectorAll('[data-occ-type]').forEach(button=>{button.title='筛选类别与事件模式，不修改心搏分类';button.setAttribute('aria-label','筛选 '+(button.dataset.occType==='other'?'其他心搏':button.dataset.occType+' '+typeNames[button.dataset.occType]));button.onclick=()=>{const code=button.dataset.occType,selected=['N','S','V'].includes(type)?type:'other';if(code!==selected){chooseFilter(code);return;}openTypeMenu(button);};});
+    host.querySelectorAll('[data-occ-type]').forEach(button=>{button.title='筛选类别与事件模式，不修改心搏分类';button.setAttribute('aria-label','筛选 '+(button.dataset.occType==='other'?'其他心搏':button.dataset.occType+' '+typeNames[button.dataset.occType]));button.onclick=()=>{const code=button.dataset.occType,selected=['N','S','V'].includes(type)?type:'other';if(code!==selected||!state.editScatterFilterActive){chooseFilter(code);return;}openTypeMenu(button);};});
     qs('#occType').onchange=e=>chooseFilter(e.target.value);
     qs('#occMode').onchange=e=>chooseFilter(type,e.target.value);
-    qs('#occTemplate').onchange=e=>{state.editSelectedSamples=new Set();state.editSelectedSample=null;template=e.target.value;state.editSelectedClass=template==='all'?'source-'+type:'custom-'+template;renderEditClasses();renderEditScatter();run(loadOccurrences)};
+    qs('#occTemplate').onchange=e=>{state.editScatterFilterActive=true;state.editSelectedSamples=new Set();state.editSelectedSample=null;template=e.target.value;state.editSelectedClass=template==='all'?'source-'+type:'custom-'+template;renderEditClasses();renderEditScatter();run(loadOccurrences)};
     qs('#occSearch').oninput=updateTemplates;
   }
   function updateTemplates(){
@@ -988,7 +988,7 @@ const clinicalUI=(()=>{
       const event=active,options={domain:reportWaveView.domain,recordStart:reportWaveView.clock,inset:0};
       host._continuousObserver?.disconnect();host.innerHTML='<div class="rw-continuous-wave"></div>';host.classList.add('report-continuous-readonly');
       const surface=host.firstElementChild;
-      const paint=()=>{if(!current())return;const count=Object.keys(wave.leads).length,nav=qs('#reportWaveTimeNav'),available=innerHeight-(nav?.getBoundingClientRect().bottom??host.getBoundingClientRect().top)-100,stageHeight=24+count*Math.floor((Math.max(count*56+24,Math.min(count*70+24,available))-24)/count);surface.style.height=(stageHeight+24)+'px';surface.innerHTML=ECGReportWorkspace.reviewWaveSvg(wave,{label:'连续复核'},{...options,width:surface.clientWidth||1000,height:stageHeight+24});};paint();
+      const paint=()=>{if(!current())return;const count=Object.keys(wave.leads).length,stageHeight=count*64+48;surface.style.height=stageHeight+'px';surface.innerHTML=ECGReportWorkspace.reviewWaveSvg(wave,{label:'连续复核'},{...options,width:surface.clientWidth||1000,height:stageHeight+24});};paint();
       if(typeof ResizeObserver!=='undefined'){host._continuousObserver=new ResizeObserver(paint);host._continuousObserver.observe(surface);}
       ECGReportWorkspace.mountEventPreview(host,{event,loadWave:()=>Promise.resolve(wave),renderWave:w=>ECGReportWorkspace.reviewWaveSvg(w,event,options),isCurrent:current});ECGReportWorkspace.bindWavePreview(host,host._rwOpenPreview,current);beatEditor.bindWaveSurface(host,{wave,isCurrent:current,onPreview:host._rwOpenPreview,readOnly:true});
       const overflow=Boolean(host.querySelector('[data-wave-overflow="true"]'));

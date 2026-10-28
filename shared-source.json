@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "core_contract": "ecg-core-1",
+  "native_adapter_modules": ["config.py", "storage.py", "source_identity.py", "workspace_backup.py", "doctor_source.py"],
+  "ui_globs": ["static/js/*.js", "static/css/*.css", "static/*.svg", "templates/*.html", "static/terminology/builtin-draft-v1.json"],
+  "build_files": ["shared-source.json", "scripts/shared_source.py", "scripts/build_static_demo.py", "scripts/build_math_payload.py", "scripts/generate_synthetic_demo.py", "demo/static/js/demo-api.js", "demo/static/js/demo-review-api.js", "demo/static/js/stt-range-math.js", "platforms/windows-doctor/base-3ee41f44.json"],
+  "adapters": {
+    "local": ["app.py", "ecg_core/config.py", "ecg_core/storage.py", "ecg_core/source_identity.py", "ecg_core/workspace_backup.py", "requirements.txt"],
+    "windows-doctor": ["app.py", "win_doctor_eval.py", "CardioInsightDoctorEval.spec", "ecg_core/config.py", "ecg_core/storage.py", "ecg_core/source_identity.py", "ecg_core/workspace_backup.py", "ecg_core/doctor_source.py", "requirements.txt", "requirements-doctor-build.txt", "scripts/windows_doctor_build.py"]
+  },
+  "capabilities": {
+    "local": {"python_core": true, "clinical_data": "local-only"},
+    "windows-doctor": {"python_core": true, "clinical_data": "local-only"},
+    "pages": {"python_core": false, "clinical_data": false, "mode": "mathematical-demo"}
+  }
+}

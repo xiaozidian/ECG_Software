@@ -94,10 +94,68 @@ def build(output: Path) -> Path:
     return output
 
 
+def build_shared(output: Path, bundle: Path) -> Path:
+    """Use one verified package; common JS/CSS bytes are never rewritten."""
+    if __package__:
+        from .shared_source import read_bundle, source_bytes
+    else:
+        from shared_source import read_bundle, source_bytes
+    source, payload = read_bundle(bundle)
+    # A recipe from a different checkout may not reinterpret this package.
+    for name in ('scripts/build_static_demo.py', 'scripts/build_math_payload.py', 'scripts/generate_synthetic_demo.py'):
+        if source_bytes(PROJECT_ROOT, name) != payload[name]:
+            raise ValueError('Build recipe differs from shared package: ' + name)
+    output = output.resolve()
+    if output.exists():
+        raise ValueError('Output must be new; preserve existing generated artifacts.')
+    output.mkdir(parents=True)
+    copied = []
+    for name, row in source['files'].items():
+        if row['component'] != 'ui' or not name.startswith('static/'):
+            continue
+        target = output / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(payload[name])
+        copied.append({'path': name, 'production_sha256': row['sha256'], 'output_sha256': sha(payload[name]), 'copy_changed': False})
+    for name in ('demo-api.js', 'demo-review-api.js', 'stt-range-math.js'):
+        (output / 'static/js' / name).write_bytes(payload['demo/static/js/' + name])
+    identity = {key: source[key] for key in ('schema', 'core_contract', 'core_version', 'ui_version', 'source_fingerprint', 'source_revision')}
+    identity['capabilities'] = source['capabilities']['pages']
+    (output / 'static/js/shared-source-version.js').write_text('window.__CARDIOINSIGHT_SOURCE_VERSION__ = ' + json.dumps(identity, sort_keys=True) + ';\n', encoding='utf-8')
+    release_id = source['core_version'] + '.' + source['ui_version']
+    mathematical = generate(output / ASSET, release_id)
+    env = Environment(autoescape=select_autoescape(['html']), undefined=StrictUndefined)
+    env.globals['url_for'] = lambda endpoint, filename: 'static/' + filename
+    template = env.from_string(payload['templates/index.html'].decode('utf-8'))
+    html = template.render(app_name='CardioInsight 数学交互演示', app_version=release_id,
+                           app_version_short=source['ui_version'] + ' 数学Demo', demo_readonly=True, allow_phi=False)
+    anchor = '<script src="static/js/app.js"></script>'
+    if html.count(anchor) != 1:
+        raise ValueError('Demo adapter injection point changed')
+    adapters = [ASSET + '/case-data.js', 'static/js/shared-source-version.js',
+                'static/js/stt-range-math.js', 'static/js/demo-review-api.js', 'static/js/demo-api.js']
+    html = html.replace(anchor, '\n'.join('<script src="' + name + '"></script>' for name in adapters) + '\n' + anchor)
+    html = html.replace('<body>', '<body><aside role="note" id="mathematicalDemoBoundary" style="position:fixed;bottom:0;left:0;right:0;z-index:10000;pointer-events:none;background:#fff4d5;color:#3e2f10;padding:5px 12px;text-align:center">同源界面 · 纯数学输入 · Python完整算法/真实病例仅在本机运行 · 不构成临床结论</aside>')
+    def asset_version(match):
+        attribute, relative = match.groups()
+        return f'{attribute}="{relative}?v={sha((output / relative).read_bytes())[:12]}"'
+    html = re.sub(r'(src|href)="(static/(?:js|css)/[^"]+)"', asset_version, html)
+    (output / 'index.html').write_text(html, encoding='utf-8', newline='\n')
+    (output / '.nojekyll').write_text('', encoding='utf-8')
+    receipt = {**identity, 'shared_bundle_sha256': sha(bundle.read_bytes()), 'software_assets': copied,
+               'mathematical_source': mathematical, 'legacy_demo_inputs_read': False,
+               'python_core_executed_in_browser': False, 'common_ui_bytes_modified': False,
+               'scope': 'Shared source identity does not imply equal platform capabilities or clinical validation.'}
+    (output / 'mathematical-source-manifest.json').write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    return output
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, default=DEFAULT_OUTPUT)
-    print(build(parser.parse_args().output))
+    parser.add_argument('--shared-bundle', type=Path, help='Build byte-identical common UI from a versioned source bundle')
+    args = parser.parse_args()
+    print(build_shared(args.output, args.shared_bundle) if args.shared_bundle else build(args.output))
 
 if __name__ == '__main__':
     main()

@@ -699,4 +699,10 @@
 .rw-event-preview-dialog [data-wave-metadata]{font-size:11px;line-height:16px;margin:2px 0}
 .rw-event-preview-dialog .rw-wave-canvas{height:auto;min-height:100%}
 .rw-event-preview-dialog .rw-wave-canvas>.rw-twelve-wave{height:auto;min-height:0;max-height:none}
+
+/* Changing channels adds rows. It never changes a report card's plot width. */
+#reportV2 .rw-main:has(.rw-overview) .rw-selected-strips{grid-template-columns:minmax(0,1fr)}
+#reportV2 .rw-strip .rw-wave-canvas:has(>[data-fixed-row-height]){min-width:0}
+.rw-mini-wave:has(>[data-fixed-row-height]){box-sizing:content-box;align-items:flex-start}
+.rw-mini-wave>[data-fixed-row-height]{flex:none}
 .source-group-evidence [data-sg-wave]>svg{display:block;width:100%;height:auto}
