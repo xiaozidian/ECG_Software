@@ -1212,10 +1212,14 @@ const clinicalUI=(()=>{
   async function editReportStrip(i,isCurrent=()=>true){
     const original=selected()[i],e=original&&selectedLookup.get(original.event_id),id=state.caseId,caseToken=state.caseRequestId;
     if(!original||!e||e.basis_version!==original.basis_version)throw Error('图条依据已失效，请重新选择');
-    const current=()=>isCurrent()&&id===state.caseId&&caseToken===state.caseRequestId&&selected().includes(original)&&clinicalWorkflow.writable();
+    // An automatic save may replace equal selection objects. Match the actual
+    // editable fields and source basis, while rejecting real concurrent edits.
+    const signature=s=>JSON.stringify({event_id:s.event_id,basis_version:s.basis_version,caption:s.caption||e.label,...ECGReportEngine.settings(s),...ECGReportStripEditor.curation(s)}),originalSignature=signature(original);
+    const liveIndex=()=>{const matches=selected().map((s,index)=>signature(s)===originalSignature?index:-1).filter(index=>index>=0);return matches.length===1?matches[0]:-1;};
+    const current=()=>isCurrent()&&id===state.caseId&&caseToken===state.caseRequestId&&!state.reportStale&&liveIndex()>=0&&clinicalWorkflow.writable();
     await ECGReportStripEditor.open({selection:original,event:e,metadata:state.caseData.metadata,total:state.caseData.technical.duration_seconds_raw,isCurrent:current,
       loadWave:async(event,settings)=>{const entry=await reportStrip(event,settings,id,true);if(!current())throw Error('病例或报告已变化');return {...entry,waveform:await reportReviewWave(entry,id)};},
-      onApply:async(next,{setDefaults})=>{if(!current())throw Error('报告已变化，本条未应用');const index=selected().indexOf(original);state.reportComposition.selected_events[index]=next;if(setDefaults)state.reportComposition.strip_defaults={leads:[...next.leads],duration_s:next.duration_s};dirty();await renderReportBody();}
+      onApply:async(next,{setDefaults})=>{if(!current())throw Error('报告已变化，本条未应用');const index=liveIndex();state.reportComposition.selected_events[index]=next;if(setDefaults)state.reportComposition.strip_defaults={leads:[...next.leads],duration_s:next.duration_s};dirty();await renderReportBody();}
     });
   }
   async function editNarrativeTemplates(isCurrent=()=>true){
