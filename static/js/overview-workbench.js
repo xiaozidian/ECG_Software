@@ -31,7 +31,9 @@ const overviewWorkbench=(()=>{
     page.classList.add('overview-workbench');
     const tools=document.createElement('div');tools.className='ov-commandbar';tools.innerHTML=`<div><strong>全程总览</strong><output id="ovStatus" aria-live="polite">正在读取逐搏数据</output></div><div>${button('房颤 / 房扑分析','af-open','class="button secondary"')}${button('全记录留图','full-retain')}${button('RR 候选池','rr-pool')}${button('跳转时间','jump')}${button('清除选区','clear-range')}<output id="ovRange"></output></div>`;grid.before(tools);
     const settings=document.createElement('details');settings.className='ov-settings';settings.innerHTML='<summary>病例信息 / 波形设置</summary><div></div>';settings.lastElementChild.append(qs('#caseHero'),page.querySelector('.review-toolbar'));tools.firstElementChild.append(settings);
-    const histogram=document.createElement('section');histogram.className='ov-histogram';histogram.innerHTML=`<header><div role="group" aria-label="直方图类型">${button('全程 RR 直方图','hist-rr','aria-pressed="true"')}${button('全程 R/R 直方图','hist-ratio','aria-pressed="false"')}</div><label><input id="ovLog" type="checkbox">优化显示（对数）模式</label><output id="ovHistInfo">横轴 RR（ms）· 纵轴心搏数</output></header><canvas id="ovHistogram" height="104" tabindex="0" aria-label="全程 RR 直方图，点击柱形筛选心搏；左右键切换柱形"></canvas>`;grid.before(histogram);
+    const histogram=document.createElement('section');histogram.className='ov-histogram';histogram.innerHTML=`<header><div role="group" aria-label="直方图类型">${button('全程 RR 直方图','hist-rr','aria-pressed="true"')}${button('全程 R/R 直方图','hist-ratio','aria-pressed="false"')}</div><label><input id="ovLog" type="checkbox">优化显示（对数）模式</label><div class="ov-hist-review" role="group" aria-label="非空RR档位复核">${button('最长RR档','hist-longest','disabled')}${button('下一较短档','hist-shorter','disabled')}<select id="ovHistBins" aria-label="非空RR档位，由长到短" disabled></select><span title="空心尖标提示不足6像素的非空柱；实心柱高仍按真实数量绘制">△ 少量数据</span></div><output id="ovHistInfo">横轴 RR（ms）· 纵轴心搏数</output></header><canvas id="ovHistogram" height="104" tabindex="0" aria-label="全程 RR 直方图，仅非空档可选；左右键跳过空档，End选择最长RR档"></canvas>`;grid.before(histogram);
+    qs('#ovHistBins').onchange=event=>{if(event.target.value!=='')selectHistogramBin(Number(event.target.value));};
+    qs('#ovHistogram').addEventListener('pointermove',event=>{const canvas=event.currentTarget,g=geometries.get(canvas),rect=canvas.getBoundingClientRect(),x=event.clientX-rect.left,y=event.clientY-rect.top,index=g&&ui.hist?Math.floor((x-g.l)/g.w*ui.hist.bins.length):-1,bin=ui.hist?.bins[index],inside=g&&x>=g.l&&x<g.l+g.w&&y>=g.t&&y<=g.t+g.h,available=inside&&bin?.count>0&&bin.samples.length>0;canvas.style.cursor=available?'pointer':'default';canvas.title=available?histogramBinLabel(index):'此处没有可选数据；保持当前选区';});
     const trends=document.createElement('div');trends.className='ov-trends';trends.innerHTML=lane('ovFullHR','全程心率趋势图','hr')+lane('ovHourHR','小时心率趋势图','hr',true)+lane('ovFullRR','全程 RR 散点图','rr')+lane('ovHourRR','小时 RR 散点图','rr',true);
     const main=grid.querySelector('.analysis-main');main.prepend(trends);main.querySelector('.trend-strip-card').classList.add('ov-legacy-trend');
     const stats=document.createElement('section');stats.className='ov-statistics';stats.innerHTML='<h2>结论统计 · 全程参考</h2><dl id="ovStatistics"></dl><details><summary>查看统计口径与限制</summary><p>全程诊断统计保留原口径，不随浏览选集改变。源报告单独保留；当前统计与报告按同一修订重算。长 RR 为候选，不等同确诊停搏。</p><p id="ovStatisticsMethod"></p></details>';grid.querySelector('.scatter-review-card').after(stats);
@@ -176,16 +178,32 @@ const overviewWorkbench=(()=>{
     ctx.restore();
   }
   function selectHistogramBin(index){
-    ui.bin=E.clamp(index,0,ui.hist.bins.length-1);
-    const bin=ui.hist.bins[ui.bin];
+    if(!ui.hist?.bins?.length||!Number.isFinite(index))return false;
+    index=E.clamp(Math.trunc(index),0,ui.hist.bins.length-1);
+    const bin=ui.hist.bins[index];
+    if(!bin||bin.count<=0||!bin.samples.length)return false;
+    ui.bin=index;
     selectSamples(bin.samples,{origin:'overview-histogram',sourcePopulation:{view:'overview',kind:ui.ratio?'rr-ratio-bin':'rr-bin',bin:ui.bin,start:bin.start,end:ui.bin===ui.hist.bins.length-1?null:bin.end,fullCount:bin.count}});
     drawHistogram();
+    return true;
+  }
+  function histogramNonempty(){return ui.hist?.bins.map((b,i)=>b.count>0&&b.samples.length?i:-1).filter(i=>i>=0)||[];}
+  function navigateHistogram(direction){const bins=histogramNonempty();if(!bins.length)return false;const next=ui.bin===null?(direction<0?bins.at(-1):bins[0]):direction<0?[...bins].reverse().find(i=>i<ui.bin):bins.find(i=>i>ui.bin);return next===undefined?false:selectHistogramBin(next);}
+  function histogramBinLabel(index){const b=ui.hist.bins[index];return (index===ui.hist.bins.length-1?'≥'+b.start:b.start+'–'+b.end)+(ui.ratio?'%':' ms')+' · '+fmtNumber(b.count)+' 搏';}
+  function syncHistogramReview(){
+    const picker=qs('#ovHistBins');if(!picker)return;const bins=histogramNonempty(),position=bins.indexOf(ui.bin);
+    if(picker._histogram!==ui.hist){picker.innerHTML='<option value="" disabled>'+ (ui.ratio?'R/R由大至小':'RR由长到短')+'</option>'+[...bins].reverse().map(i=>`<option value="${i}">${histogramBinLabel(i)}</option>`).join('');picker._histogram=ui.hist;}
+    picker.disabled=!bins.length;picker.value=position<0?'':String(ui.bin);
+    const longest=qs('[data-ov="hist-longest"]'),shorter=qs('[data-ov="hist-shorter"]');if(longest){longest.disabled=!bins.length;longest.textContent=ui.ratio?'最大R/R档':'最长RR档';}if(shorter)shorter.disabled=!bins.length||position===0;
   }
   function drawHistogram(){
+    syncHistogramReview();
     const canvas=qs('#ovHistogram');if(!canvas.getClientRects().length||!ui.hist)return;const g=prepare(canvas,76),{ctx,l,w,h,t,height}=g,bins=ui.hist.bins,max=Math.max(1,...bins.map(x=>x.count)),scale=v=>ui.log?Math.log10(v+1)/Math.log10(max+1):v/max;
     ctx.fillStyle='#526773';ctx.textAlign='right';for(const f of [0,.5,1]){const value=ui.log?Math.round((max+1)**f-1):Math.round(max*f),y=t+h*(1-f);ctx.fillText(fmtNumber(value),l-5,y+3);ctx.strokeStyle='#e2eaed';ctx.beginPath();ctx.moveTo(l,y);ctx.lineTo(l+w,y);ctx.stroke()}ctx.textAlign='left';
     const selected=linked?.active()&&linked.snapshot().kind==='samples'?linked.index().selectedHistogram(linked.snapshot(),ui.ratio):null;
     const bar=w/bins.length;bins.forEach((b,i)=>{ctx.fillStyle=selected?'#b8d8db':ui.bin===i?'#d39235':'#4ba6ad';ctx.fillRect(l+i*bar,t+h-h*scale(b.count),Math.max(.8,bar-1),h*scale(b.count));if(selected){ctx.fillStyle='#d08a2e';ctx.fillRect(l+i*bar,t+h-h*scale(selected.bins[i].count),Math.max(.8,bar-1),h*scale(selected.bins[i].count));}});
+    const rare=[];bins.forEach((b,i)=>{if(b.count<=0||!b.samples.length)return;const x=l+(i+.5)*bar;if(h*scale(b.count)<6){rare.push(i);ctx.strokeStyle=ui.bin===i?'#ac6410':'#087f83';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(x-2.5,t+h-1);ctx.lineTo(x,t+h-7);ctx.lineTo(x+2.5,t+h-1);ctx.closePath();ctx.stroke();}if(ui.bin===i){ctx.strokeStyle='#ac6410';ctx.lineWidth=1.5;ctx.strokeRect(l+i*bar,t,Math.max(.8,bar-1),h);}});
+    canvas.dataset.nonemptyBins=JSON.stringify(histogramNonempty());canvas.dataset.rareBins=JSON.stringify(rare);
     const ticks=w<420?2:6;for(let i=0;i<=ticks;i++){ctx.textAlign=i===ticks?'right':i===0?'left':'center';ctx.fillStyle='#526773';ctx.fillText((i===ticks?bins.at(-1).start+'+':Math.round(ui.hist.max*i/ticks))+(ui.ratio?'%':' ms'),l+w*i/ticks,height-3)}ctx.textAlign='left';
     geometries.set(canvas,{...g,kind:'hist'});qs('#ovHistInfo').textContent=(ui.bin===null?`横轴 ${ui.ratio?'相邻 RR 比值（%）':'RR（ms）'} · 纵轴心搏数${ui.log?'，log10(n+1)':''}`:`${ui.bin===bins.length-1?'≥'+bins[ui.bin].start:bins[ui.bin].start+'–'+bins[ui.bin].end}${ui.ratio?'%':' ms'} · ${fmtNumber(bins[ui.bin].count)} 搏`)+(selected?` · 橙色：已选有效 ${fmtNumber(selected.bins.reduce((n,b)=>n+b.count,0))} 搏`:'');
     canvas.dataset.linkedCount=String(selected?selected.bins.reduce((n,b)=>n+b.count,0):0);
@@ -551,6 +569,8 @@ const overviewWorkbench=(()=>{
     if(key==='clear-range'){cancelGesture();ui.range=null;ui.rangeAnchor=null;ui.bin=null;ui.polygon=[];linked?.clear();draw();return}
     if(key==='linked-reload'){await linked?.refresh(true);return;}
     if(key==='hist-rr'||key==='hist-ratio'){cancelGesture();ui.ratio=key==='hist-ratio';ui.bin=null;ui.hist=E.histogram(ui.rows,ui.ratio);qs('[data-ov="hist-rr"]').setAttribute('aria-pressed',String(!ui.ratio));qs('[data-ov="hist-ratio"]').setAttribute('aria-pressed',String(ui.ratio));drawHistogram();return}
+    if(key==='hist-longest'){const last=histogramNonempty().at(-1);if(last!==undefined)selectHistogramBin(last);return}
+    if(key==='hist-shorter'){navigateHistogram(-1);return}
     if(key==='af-open'||key==='af-close'){afMode(key==='af-open');return}
     if(key==='af-prev'||key==='af-next'){seek(ui.hour+(key==='af-next'?3600:-3600));return}
     if(key==='af-add'||key==='af-all')return episodeForm(arg||'AF',key==='af-all');
@@ -663,7 +683,7 @@ const overviewWorkbench=(()=>{
       if(!dragCurrent(job))return;
       if(g.kind==='density'){const current=linked?.gatePoint(event,canvas);if(dist>=4&&current)run(()=>linked.gate(canvas,job.densityPoint,current));return;}
       if(job.button===2){if(dist>=4){linked?.timeInterval(...span());seek(span()[0],true);}showMenu('rr',event,canvas.id);return;}
-      if(g.kind==='hist'){selectHistogramBin(Math.floor((point.x-g.l)/g.w*ui.hist.bins.length));return}
+      if(g.kind==='hist'){if(point.x>=g.l&&point.x<g.l+g.w&&point.y>=g.t&&point.y<=g.t+g.h)selectHistogramBin(Math.floor((point.x-g.l)/g.w*ui.hist.bins.length));return}
       if(g.kind==='scatter'){
         if(dist<4||ui.selectionMode==='point'){const [x,y]=scatterAt(event,canvas),distance=r=>Math.hypot((r.x-x)/g.bound*g.w,(r.y-y)/g.bound*g.h),nearest=g.points.filter(r=>r.x<=g.bound&&r.y<=g.bound).reduce((a,b)=>!a||distance(b)<distance(a)?b:a,null);ui.polygon=[];if(nearest&&distance(nearest)<=14){selectSamples([nearest.sample_index],{origin:'overview-point',focusSample:nearest.sample_index});seek(nearest.time_s)}}
         else selectSamples(g.points.filter(r=>inside(r.x,r.y,ui.polygon)).map(r=>r.sample_index),{origin:'overview-box'});return;
@@ -684,7 +704,8 @@ const overviewWorkbench=(()=>{
       const canvas=own(event.target);if(!canvas)return;
       if(event.shiftKey&&event.key==='F10'){const g=geometries.get(canvas);if(['rr','hr','scatter'].includes(g?.kind)){showMenu(g.kind,null,canvas.id);event.preventDefault();event.stopImmediatePropagation()}return}
       if(event.key==='Escape'){if(cancelGesture()){event.preventDefault();event.stopImmediatePropagation();return;}ui.range=null;ui.polygon=[];ui.densityBox=null;ui.bin=null;linked?.clear('overview-escape');draw();event.preventDefault();event.stopImmediatePropagation();return}
-      if(['ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();event.stopImmediatePropagation();const direction=event.key==='ArrowLeft'?-1:1;if(canvas.id==='ovHistogram'){selectHistogramBin((ui.bin??0)+direction)}else seek(state.start+direction*(event.shiftKey?60:state.duration))}
+      if(canvas.id==='ovHistogram'&&['Home','End'].includes(event.key)){event.preventDefault();event.stopImmediatePropagation();const bins=histogramNonempty(),index=event.key==='End'?bins.at(-1):bins[0];if(index!==undefined)selectHistogramBin(index);return}
+      if(['ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();event.stopImmediatePropagation();const direction=event.key==='ArrowLeft'?-1:1;if(canvas.id==='ovHistogram'){navigateHistogram(direction)}else seek(state.start+direction*(event.shiftKey?60:state.duration))}
     },true);
     window.addEventListener('afterprint',()=>document.body.classList.remove('ov-print-strip'));
     new ResizeObserver(()=>requestAnimationFrame(()=>{draw();linked?.draw();linked?.refresh();linked?.renderMini();run(navigatorWave)})).observe(qs('#page-review'));

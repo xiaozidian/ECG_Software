@@ -11,6 +11,8 @@
 .ov-histogram{background:#fff;border:1px solid var(--ov-line);border-radius:8px;overflow:hidden;margin-bottom:8px}
 .ov-histogram>header{padding:7px 10px;flex-wrap:wrap;font-size:11px;border-bottom:1px solid var(--ov-line)}
 .ov-histogram>header>div{display:flex;gap:4px}.ov-histogram label{display:flex;align-items:center;gap:6px;color:var(--ov-ink)}.ov-histogram input{accent-color:var(--ov-accent)}.ov-histogram output{margin-left:auto;color:var(--ov-muted);font-variant-numeric:tabular-nums}
+.ov-hist-review{align-items:center;flex-wrap:nowrap;gap:4px;min-width:0}.ov-hist-review button,.ov-hist-review select{font-size:11px;min-height:22px;padding:1px 5px;white-space:nowrap}.ov-hist-review select{max-width:180px;min-width:125px;border:1px solid #bacfd4;border-radius:4px;background:white;color:#24434c}.ov-hist-review>span{font-size:10px;white-space:nowrap;color:#087f83}
+@media(max-width:1300px){.ov-hist-review>span{display:none}.ov-hist-review select{max-width:135px}.ov-histogram output{font-size:10px}}
 #page-review.overview-workbench .analysis-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(360px,31%);gap:10px;align-items:start;overflow:visible;height:auto;min-height:0}
 #page-review.overview-workbench .analysis-main,#page-review.overview-workbench .review-rail{display:flex;flex-direction:column;gap:8px;min-width:0;width:auto;max-width:none;overflow:visible;height:auto}
 .ov-trends{display:grid;gap:6px;min-width:0}.ov-lane{min-width:0;background:#fff;border:1px solid var(--ov-line);border-radius:5px;overflow:hidden}

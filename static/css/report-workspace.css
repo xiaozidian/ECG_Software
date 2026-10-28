@@ -705,4 +705,33 @@
 #reportV2 .rw-strip .rw-wave-canvas:has(>[data-fixed-row-height]){min-width:0}
 .rw-mini-wave:has(>[data-fixed-row-height]){box-sizing:content-box;align-items:flex-start}
 .rw-mini-wave>[data-fixed-row-height]{flex:none}
+
+/* Composition cards are equal thumbnail frames. Diagnostic expansion retains
+   its full-width single-column source geometry. SVG previews letterbox. */
+#reportV2 .rw-main:has(.rw-overview) .rw-selected-strips{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;gap:8px;padding:6px}
+#reportV2 .rw-main:has(.rw-overview) .rw-selected-strips>.rw-strip{grid-column:auto;height:286px;min-height:286px;box-sizing:border-box;display:flex;flex-direction:column;padding:6px;overflow:hidden}
+#reportV2 .rw-selected-strips>.rw-strip>header{min-height:22px;max-height:26px;flex:0 0 auto}
+#reportV2 .rw-selected-strips>.rw-strip>header>strong{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#reportV2 .rw-selected-strips>.rw-strip>.rw-print-status{margin:2px 0;line-height:16px;min-height:16px}
+#reportV2 .rw-mini-wave{box-sizing:border-box;height:144px!important;min-height:144px!important;flex:0 0 144px;align-items:center;justify-content:center}
+#reportV2 .rw-mini-wave svg{width:100%;height:100%;flex:0 1 auto}
+#reportV2 .rw-mini-range{height:29px;overflow:hidden;font-size:10px!important;line-height:14px!important;margin:2px 0}
+#reportV2 .rw-mini-scale{display:block;font-size:10px;line-height:15px;color:#526773;flex:0 0 15px}
+#reportV2 .rw-selected-strips>.rw-strip:has(.rw-strip-body:not([hidden])){grid-column:1/-1;height:auto;min-height:286px;overflow:visible}
+@media(max-width:700px){#reportV2 .rw-main:has(.rw-overview) .rw-selected-strips{grid-template-columns:minmax(0,1fr)}}
+#page-report #saveReport,#page-report #v2Complete{display:none!important}
+@media(min-width:1100px){
+ #page-report .report-page-heading{min-height:30px;margin-bottom:2px;padding-block:0}
+ #page-report .report-page-heading h1{font-size:17px;margin:0}
+ #page-report #reportV2Nav{padding-block:2px;gap:2px}
+ #page-report #reportV2Notice{margin-block:2px;font-size:11px;line-height:15px}
+ #reportV2Content.report-candidate-workspace .v2-category-bar{padding:2px 6px;gap:5px;min-height:28px}
+ #reportV2Content.report-candidate-workspace .v2-event-detail{padding:3px;gap:2px}
+ #reportV2Content.report-candidate-workspace .v2-event-list>.v2-candidate-distributions{margin:0;padding:3px;max-height:none;flex:none}
+ #reportV2Content.report-candidate-workspace .v2-event-list>.v2-event-navigation{padding:3px;font-size:10px;flex:none}
+ #reportV2Content.report-candidate-workspace .report-range-editor>header{font-size:10px;line-height:14px;padding:0;margin:0}
+ #reportV2Content.report-candidate-workspace .range-actions{margin:1px 0;gap:4px}
+ #reportV2Content.report-candidate-workspace .report-wave-time-nav output{font-size:11px;line-height:14px}
+ #reportV2Content.report-candidate-workspace .rw-main-time-axis{font-size:10px;line-height:13px}
+}
 .source-group-evidence [data-sg-wave]>svg{display:block;width:100%;height:auto}

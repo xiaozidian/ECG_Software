@@ -22,7 +22,7 @@
     card.dataset.current=String(samples.includes(state.editSelectedSample));
     if(button){button.setAttribute('aria-pressed',partial?'mixed':String(all));if(samples.includes(state.editSelectedSample))button.setAttribute('aria-current','true');else button.removeAttribute('aria-current');}
   }
-  function svg(wave,item={}, {width=240,height=geometry.waveHeight,inset=24,timeAxis=false,annotations='shared',centerSample=null,columns=1,domain=null,recordStart=null,rowHeight=null}={}){
+  function svg(wave,item={}, {width=240,height=geometry.waveHeight,inset=24,timeAxis=false,annotations='shared',centerSample=null,columns=1,domain=null,recordStart=null,rowHeight=null,pixelGain=null}={}){
     width=Math.max(1,Number(width)||240);height=Math.max(1,Number(height)||geometry.waveHeight);
     const order=['I','II','III','aVR','aVL','aVF','V1','V2','V3','V4','V5','V6'];
     const names=[...order.filter(name=>Object.hasOwn(wave.leads||{},name)),...Object.keys(wave.leads||{}).filter(name=>!order.includes(name))];
@@ -46,7 +46,9 @@
     for(let y=0;y<=plotHeight;y+=10)output+=`<path d="M${left} ${y}H${left+plotWidth}" stroke="#f0d8d5" stroke-width=".5" vector-effect="non-scaling-stroke"/>`;
     if(anchor>=left&&anchor<=left+plotWidth)output+=`<line class="occurrence-anchor" x1="${anchor}" x2="${anchor}" y1="0" y2="${plotHeight}" stroke="#d18427" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
     entries.forEach(([name,values],j)=>{
-      const shape=tools.waveRow(values,{top:annotationHeight+j*row,bottom:annotationHeight+(j+1)*row,annotated:annotations!=='none'&&j===0,sharedLabelY:sharedLane?3:null,domain}),{baseline,scale}=shape;
+      const shape=tools.waveRow(values,{top:annotationHeight+j*row,bottom:annotationHeight+(j+1)*row,annotated:annotations!=='none'&&j===0,sharedLabelY:sharedLane?3:null,domain});
+      if(Number.isFinite(pixelGain)&&pixelGain>0){shape.scale=pixelGain;shape.overflow=values.some(value=>{const y=shape.baseline-Number(value)*pixelGain;return y<shape.signalTop-1e-6||y>shape.signalBottom+1e-6;});}
+      const {baseline,scale}=shape;
       const points=values.map((value,i)=>`${(left+(wave.start_s-displayStart+i*stride/fs)/duration*plotWidth).toFixed(3)},${(baseline-value*scale).toFixed(3)}`).join(' ');
       output+=`<g data-wave-lead="${escape(name)}" data-wave-scale="${scale}" data-wave-baseline="${baseline}" data-wave-overflow="${Boolean(shape.overflow)}" data-signal-top="${shape.signalTop}" data-signal-bottom="${shape.signalBottom}"><polyline opacity="${shape.overflow?0:1}" data-lead="${escape(name)}" fill="none" stroke="#172126" stroke-width="1.15" vector-effect="non-scaling-stroke" points="${points}"/><text class="ecg-lead-name" x="2" y="${annotationHeight+j*row+13}" font-size="11" fill="#36454d">${escape(name)}</text>`;
       if(shape.overflow)output+=`<text x="${left+24}" y="${baseline}" font-size="12" fill="#a52727">幅度超范围，请适应当前幅度后复核</text>`;

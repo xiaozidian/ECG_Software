@@ -374,8 +374,6 @@ def validate_report(index,composition,review,approving=False):
         if 'range_start_s' in spec: resolve_strip(index,e,spec)
         selected.append({**e,'caption':entry.get('caption') or e['label'], **spec, **strip_curation(entry)})
     if approving:
-        counts=query_index(index,{'fast_slow_mode':composition.get('fast_slow_mode','rr')})['category_counts']
-        missing=[label for key,label in CATEGORIES if counts[key] and composition.get('category_reviews',{}).get(key)!=index['basis_versions'][key]]
-        if missing:raise ValueError('请完成报告分类筛选：'+'、'.join(missing))
+        # Report reviewers decide inclusion directly; visiting every category is not an approval gate.
         if any(b.get('needs_review') for b in composition.get('diagnosis_blocks',[])):raise ValueError('请核对保留的人工诊断文字')
     return selected

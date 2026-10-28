@@ -498,7 +498,7 @@
             <div id="reportPreviewBody" class="report-preview-body" aria-live="polite"><div class="report-loading-state"><span></span><strong>正在组织报告内容</strong><small>读取趋势、事件图条与复核统计…</small></div></div>
             <footer class="report-preview-footer"><span id="reportNavigatorLabel">第 1 / 1 页</span><span>所见即当前编排预览 · 未提供的数据不会生成结果</span></footer>
           </article>
-          <article class="card report-conclusion-dock"><div class="report-panel-heading"><div><strong>报告结论</strong><small>{% if demo_readonly %}在线 Demo 可预览编排，结论保持只读{% else %}编辑后需重新保存并审核{% endif %}</small></div><span class="autosave-state" id="reportSaveState">尚未修改</span></div><textarea id="conclusionEditor" rows="5" maxlength="12000" placeholder="输入医生复核结论…"{% if demo_readonly %} readonly{% endif %}></textarea><footer><span>{% if demo_readonly %}演示编排只保存在当前浏览器{% else %}变更写入本地草稿与审计日志{% endif %}</span><span id="conclusionCount">0 / 12000</span></footer></article>
+          <article class="card report-conclusion-dock"><div class="report-panel-heading"><div><strong>报告结论</strong><small>{% if demo_readonly %}在线 Demo 可预览编排，结论保持只读{% else %}编辑后自动保存；审核由医生完成{% endif %}</small></div><span class="autosave-state" id="reportSaveState">尚未修改</span></div><textarea id="conclusionEditor" rows="5" maxlength="12000" placeholder="输入医生复核结论…"{% if demo_readonly %} readonly{% endif %}></textarea><footer><span>{% if demo_readonly %}演示编排只保存在当前浏览器{% else %}变更写入本地草稿与审计日志{% endif %}</span><span id="conclusionCount">0 / 12000</span></footer></article>
         </section>
 
         <aside class="report-summary-rail">

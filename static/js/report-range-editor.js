@@ -22,13 +22,14 @@
   if(draft&&draft.basis===options.basis&&draft.baseline===baseline){a=draft.a;b=draft.b;}
   function remember(){if(!key||!current())return;const changed=Math.abs(a-entry.strip.start_s)>.001||Math.abs(b-entry.strip.end_s)>.001;if(changed)drafts.set(key,{...options,baseline,a,b,applied:{a:entry.strip.start_s,b:entry.strip.end_s,inReport:entry.inReport}});else drafts.delete(key);notify();}
   const columns=1; // Full-width shared clock; never split twelve leads.
-  function plot(w=1000,h=300){return ECGOccurrenceCard.svg(wave,entry,{width:w,height:h,rowHeight:64,timeAxis:true,inset:0,columns,domain:options.domain,recordStart:options.recordStart});}
+  const count=Object.keys(wave.leads||{}).length,compact=options.compactRows&&count>6&&Number.isFinite(options.domain)&&options.domain>0,pixelGain=compact?52/(2*options.domain):null,rowHeight=compact?ECGReviewTools.lockedWaveRows(Object.values(wave.leads),{rowHeight:32,domain:options.domain,scale:pixelGain}).rowHeight:64;
+  function plot(w=1000,h=300){return ECGOccurrenceCard.svg(wave,entry,{width:w,height:h,rowHeight,pixelGain,timeAxis:true,inset:0,columns,domain:options.domain,recordStart:options.recordStart});}
   host.className='report-range-editor';host.innerHTML=`<header><strong>人工入报区间</strong><span>拖动波形框选，或拖动橘色边界；应用后才写入报告</span></header><div class="report-range-stage">${plot()}<div class="report-range-selection" aria-hidden="true"></div><button type="button" class="report-range-handle" data-range-drag="start" aria-label="主波形入报起点，左右方向键微调"></button><button type="button" class="report-range-handle" data-range-drag="end" aria-label="主波形入报终点，左右方向键微调"></button></div><output aria-live="polite"></output><div class="range-actions"><button type="button" data-range-apply>应用区间${entry.inReport?'':'并加入报告'}</button><button type="button" data-range-cancel disabled>取消区间修改</button><button type="button" data-range-reset>恢复自动区间</button></div><details class="range-precision"><summary>精确起止</summary><div class="range-fields"><label>起点（秒）<input type="number" data-bound="start" step="0.005" min="0"></label><label>终点（秒）<input type="number" data-bound="end" step="0.005" min="0"></label></div></details><p class="range-error" role="status"></p>`;
-  host.style.setProperty('--range-wave-height',((globalThis.ECGChartInspection?.names(wave.leads)||Object.keys(wave.leads)).length*64+48)+'px');
+  host.style.setProperty('--range-wave-height',(count*rowHeight+48)+'px');
   const stage=host.querySelector('.report-range-stage');if(host.dataset)host.dataset.waveColumns=String(columns);if(columns===2){for(const node of [...stage.querySelectorAll('.report-range-selection,[data-range-drag]')]){node.dataset.rangeColumn='0';const clone=node.cloneNode(true);clone.dataset.rangeColumn='1';stage.append(clone);}}let plotSize='';
   function resizePlot(){if(!current())return;
     const container=host.closest('#v2EventWave'),count=Object.keys(wave.leads||{}).length;
-    host.style.setProperty('--range-wave-height',(count*64+48)+'px');
+    host.style.setProperty('--range-wave-height',(count*rowHeight+48)+'px');
     const rect=stage.getBoundingClientRect();if(rect.width<=0||rect.height<=0)return;const size=rect.width+'|'+rect.height;if(size===plotSize)return;plotSize=size;stage.querySelector('svg').outerHTML=plot(rect.width,rect.height);if(host._rangeReady)render();}
   // Resize only the retained source plot; drafts, handles and input focus stay alive.
   host._rangePlotObserver?.disconnect();

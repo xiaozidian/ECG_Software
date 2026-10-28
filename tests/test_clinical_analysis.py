@@ -46,7 +46,9 @@ def test_report_example_statistics_and_selection_are_independent():
     comp['selected_events']=[]
     assert validate_report(index,comp,REVIEW,True)==[]
     comp['category_reviews']={}
-    with pytest.raises(ValueError,match='分类筛选'):validate_report(index,comp,REVIEW,True)
+    assert validate_report(index,comp,REVIEW,True)==[]
+    comp['selected_events']=[{'event_id':e['event_id'],'basis_version':e['basis_version']} for e in picks]
+    assert len(validate_report(index,comp,REVIEW,True))==3
 
 
 def test_annotation_basis_is_scoped_and_stale_selection_rejected():
@@ -58,6 +60,19 @@ def test_annotation_basis_is_scoped_and_stale_selection_rejected():
     assert original['basis_versions']['ST']!=changed['basis_versions']['ST']
     comp={'selected_events':[{'event_id':'missing','basis_version':'old'}],'category_reviews':changed['basis_versions']}
     with pytest.raises(ValueError,match='失效'):validate_report(changed,comp,REVIEW,True)
+
+
+def test_browser_report_validation_has_no_category_visit_gate():
+    payload={'feed':vars(feed('NSSNN')), 'review':REVIEW}
+    program="""
+const assert=require('node:assert/strict'),a=require('./static/js/clinical-analysis.js');
+const x=JSON.parse(require('fs').readFileSync(0,'utf8')),index=a.buildIndex(x.feed,[],[],x.review);
+const e=index.events.find(e=>e.category==='S'),comp={selected_events:[{event_id:e.event_id,basis_version:e.basis_version}],category_reviews:{}};
+assert.equal(a.validateReport(index,comp,x.review,true).length,1);
+assert.throws(()=>a.validateReport(index,{...comp,selected_events:[{event_id:'missing',basis_version:'old'}]},x.review,true),/失效/);
+assert.throws(()=>a.validateReport(index,{...comp,diagnosis_blocks:[{needs_review:true}]},x.review,true),/人工诊断文字/);
+"""
+    subprocess.run(['node','-e',program],input=json.dumps(payload).encode(),cwd=Path(__file__).parents[1],check=True,timeout=15)
 
 
 def test_hrv_boundaries_gaps_and_windows():

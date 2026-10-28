@@ -343,10 +343,11 @@ async function api(path, options = {}) {
   const method=(options.method||'GET').toUpperCase();
   const isWrite=!['GET','HEAD'].includes(method)&&path!=='/api/privacy/view'&&!(/\/(open|event-waveforms|waveform-strips|waveform-density|scatter-selection|advanced-analysis|rr-review\/locate|hrv-review\/preview|hrv-review\/cancel)(\?|$)/.test(path));
   const evidencePick=/\/evidence-candidates(?:\?|$)/.test(path);
-  if(isWrite){state.editReadCache=null;if(!evidencePick)globalThis.ecgChartInspection?.invalidate();reads?.clear();}
+  const reportOnly=/\/report(?:\?|$)/.test(path);
+  if(isWrite){if(!reportOnly)state.editReadCache=null;if(!evidencePick&&!reportOnly)globalThis.ecgChartInspection?.invalidate();reads?.clear();}
   const scope=JSON.stringify([requestCase,state.caseRequestId,state.currentPage]);
   const payload=method==='GET'&&reads?await reads.read(scope,path,readRequest,readLane,options.signal):await readRequest(options.signal);
-  if(isWrite){if(!evidencePick)globalThis.ecgChartInspection?.invalidate();reads?.clear();if(!evidencePick&&typeof overviewWorkbench!=='undefined')overviewWorkbench.invalidateAfterWrite(requestCase,requestCaseToken);}
+  if(isWrite){if(!evidencePick&&!reportOnly)globalThis.ecgChartInspection?.invalidate();reads?.clear();if(!evidencePick&&!reportOnly&&typeof overviewWorkbench!=='undefined')overviewWorkbench.invalidateAfterWrite(requestCase,requestCaseToken);}
   if(requestCase===state.caseId&&/^(PUT|PATCH|DELETE|POST)$/.test(options.method||"")&&/\/(beat-overrides|beat-templates|annotations|patient)(\/|$)/.test(path)){
     state.reportComposer=null;
     await clinicalWorkflow.refresh(requestCase).catch(()=>{clinicalWorkflow.receive(null);toast("修改已保存，但复核状态读取失败，请刷新后继续审核","error",6000);});
@@ -665,6 +666,7 @@ async function selectCase(caseId, destination = "review") {
   if(typeof allowRhythmRangeLeave==='function'&&!allowRhythmRangeLeave())return;
   if(state.caseId!==caseId&&globalThis.ECGHRVEditor?.allowLeave()===false)return;
   if(!allowSttCaseSelection(caseId))return;
+  if((state.reportDirty||state.reportSaving)&&typeof clinicalUI!=='undefined'){try{await clinicalUI.flushReportAutosave();}catch(error){handleError(error);return;}}
   if(!clinicalWorkflow.allowLeave())return;
   closeBeatRelabelMenu();globalThis.ECGOccurrenceCard?.closeMenu();
   if(typeof overviewWorkbench!=='undefined')overviewWorkbench.closeMenu();

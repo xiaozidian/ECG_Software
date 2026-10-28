@@ -158,7 +158,7 @@
     for(const entry of composition.selected_events||[]){if('range_start_s' in entry||'range_end_s' in entry){const event=index.events.find(e=>e.event_id===entry.event_id);if(event&&event.basis_version===entry.basis_version)ECGReportEngine.resolve(index,event,entry)}}
     const lookup=new Map(index.events.map(e=>[e.event_id,e])),selected=[];
     for(const entry of composition.selected_events||[]){const e=lookup.get(entry.event_id);if(entry.event_id.startsWith('other:X:')||(e?.category==='other'&&e.subtype==='X')){if(approving)throw Error('伪差仅用于质控，请移除历史伪差图条后再审核');continue}if(!e||e.basis_version!==entry.basis_version){if(approving)throw Error('已选图条因诊断修订失效，请重新筛选');continue}if(approving&&e.category==='AF'&&e.rhythm_status!=='confirmed')throw Error('所选房颤／房扑片段尚未确认；请在房颤／房扑页完成片段诊断确认，或从报告中移除该图条。');if(approving&&e.diagnosis_status!=='confirmed')throw Error('请先完成编辑／ST-T诊断确认');selected.push({...e,caption:entry.caption||e.label,...(globalThis.ECGReportEngine?ECGReportEngine.settings(entry):{})})}
-    if(approving){const counts=queryIndex(index,{fast_slow_mode:composition.fast_slow_mode||'rr'}).category_counts,missing=categories.filter(([k])=>counts[k]&&composition.category_reviews?.[k]!==index.basis_versions[k]);if(missing.length)throw Error('请完成报告分类筛选：'+missing.map(x=>x[1]).join('、'));if((composition.diagnosis_blocks||[]).some(b=>b.needs_review))throw Error('请核对保留的人工诊断文字')}
+    if(approving&&(composition.diagnosis_blocks||[]).some(b=>b.needs_review))throw Error('请核对保留的人工诊断文字');
     return selected;
   }
   const api={categories,patterns,buildIndex,queryIndex,hrvWindows,validateReport,fingerprint};globalThis.ECGClinicalAnalysis=api;if(typeof module!=='undefined')module.exports=api;
