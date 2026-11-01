@@ -278,7 +278,7 @@
     finally{activeEdited=previous;}
   }
   function demoReviewChanged(action){
-    workflow();saved.reviews[caseId].revision++;
+    workflow();if(action!=='report_evidence.confirmed')saved.reviews[caseId].revision++;
     const value=saved.reports[caseId];if(value){value.status='draft';value.reviewed_by='';value.version++;value.updated_at=now();}
     saved.audit.unshift({created_at:now(),actor:'browser-demo-user',case_id:caseId,action,detail:'纯数学浏览器复核声明；无患者或临床金标准'});saved.audit=saved.audit.slice(0,300);
   }

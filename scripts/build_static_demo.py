@@ -15,7 +15,7 @@ else:
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUTPUT = PROJECT_ROOT / 'build/pages'
-MANIFEST = PROJECT_ROOT / 'docs/releases/0.12.20-rr-report.20261101/source-manifest.json'
+MANIFEST = PROJECT_ROOT / 'docs/releases/0.12.21-rr-report.20261102/source-manifest.json'
 ASSET = 'static/demo-data/mathematical-4314'
 NAMESPACE = 'cardioinsight-public-math-4314-v2'
 sha = lambda b: hashlib.sha256(b).hexdigest()

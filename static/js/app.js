@@ -345,10 +345,13 @@ async function api(path, options = {}) {
   const reportOnly=/\/report(?:\?|$)/.test(path);
   // Saving report curation does not change clinical waveforms. Keep visible
   // reads alive across autosave; report receivers already reject older versions.
-  if(isWrite&&!reportOnly){state.editReadCache=null;if(!evidencePick)globalThis.ecgChartInspection?.invalidate();reads?.clear();}
+  if(isWrite&&!reportOnly&&!evidencePick){state.editReadCache=null;globalThis.ecgChartInspection?.invalidate();reads?.clear();}
   const scope=JSON.stringify([requestCase,state.caseRequestId,state.currentPage]);
-  const payload=method==='GET'&&reads?await reads.read(scope,path,readRequest,readLane,options.signal):await readRequest(options.signal);
-  if(isWrite&&!reportOnly){if(!evidencePick)globalThis.ecgChartInspection?.invalidate();reads?.clear();if(!evidencePick&&typeof overviewWorkbench!=='undefined')overviewWorkbench.invalidateAfterWrite(requestCase,requestCaseToken);}
+  const reportMetadata=/\/(?:report|report-events|report-rr-evidence|evidence-candidates)(?:\?|$)/.test(path);
+  const readKey=reportMetadata?path+'|report-evidence:'+String(state.reportEvidenceEpoch||0):path;
+  const payload=method==='GET'&&reads?await reads.read(scope,readKey,readRequest,readLane,options.signal):await readRequest(options.signal);
+  if(isWrite&&!reportOnly&&!evidencePick){globalThis.ecgChartInspection?.invalidate();reads?.clear();if(typeof overviewWorkbench!=='undefined')overviewWorkbench.invalidateAfterWrite(requestCase,requestCaseToken);}
+  if(isWrite&&evidencePick&&requestCase===state.caseId&&requestCaseToken===state.caseRequestId)state.reportEvidenceEpoch=(state.reportEvidenceEpoch||0)+1;
   if(requestCase===state.caseId&&/^(PUT|PATCH|DELETE|POST)$/.test(options.method||"")&&/\/(beat-overrides|beat-templates|annotations|patient)(\/|$)/.test(path)){
     state.reportComposer=null;
     await clinicalWorkflow.refresh(requestCase).catch(()=>{clinicalWorkflow.receive(null);toast("修改已保存，但复核状态读取失败，请刷新后继续审核","error",6000);});

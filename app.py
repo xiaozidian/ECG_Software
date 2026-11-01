@@ -345,10 +345,16 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         linked_read_identity(case, identity)
         return result
 
+    def clinical_index_key(case, identity):
+        # Report acknowledgements refresh event metadata without changing the
+        # signal-analysis identity or cancelling unrelated waveform reads.
+        return (case['case_id'], identity['analysis_basis'], identity['analysis_revision'],
+                canonical(storage.list_candidates(case['case_id'])),
+                evidence_digest(storage.list_report_evidence(case['case_id'])))
+
     def clinical_projection(case, project):
         identity = linked_read_identity(case)
-        key = (case['case_id'], identity['analysis_basis'], identity['analysis_revision'],
-               canonical(storage.list_candidates(case['case_id'])))
+        key = clinical_index_key(case, identity)
         def checked():
             index = clinical_index(case)
             linked_read_identity(case, identity)
@@ -787,7 +793,7 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         identity = linked_read_identity(case, {key: request.args[key] for key in
             ('analysis_basis', 'analysis_revision') if key in request.args})
         basis = {key: identity[key] for key in ('analysis_basis', 'analysis_revision')}
-        key = (case_id, basis['analysis_basis'], basis['analysis_revision'], canonical(storage.list_candidates(case_id)))
+        key = clinical_index_key(case, basis)
         def build_checked():
             index = clinical_index(case)
             clinical_read_basis(case, basis)
@@ -796,7 +802,7 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         # editing paths still compute independently; their results cannot poison
         # a cached index. Each returned projection is detached from cache storage.
         result = read_evidence(case, ('clinical-query', occurrences,
-            tuple(sorted(request.args.items())), key[-1]),
+            tuple(sorted(request.args.items())), key[-2:]),
             lambda: clinical_query_cache.project(key, build_checked,
                 lambda index: query_index(index, request.args, occurrences)))
         linked_read_identity(case, identity)
@@ -862,7 +868,7 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
                 expected[name] = int(value)
         identity = linked_read_identity(case, expected)
         basis = {key: identity[key] for key in ('analysis_basis', 'analysis_revision')}
-        key = (case_id, basis['analysis_basis'], basis['analysis_revision'], canonical(storage.list_candidates(case_id)))
+        key = clinical_index_key(case, basis)
 
         def build_checked():
             index = clinical_index(case)

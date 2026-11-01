@@ -155,7 +155,7 @@ def test_statistical_bins_and_web_parity_are_exact_and_configurable():
     assert query_index(index,{'category':'pause','pause_band':'b2'})['total']==2
 
 
-def test_candidate_writes_clear_report_reads_without_invalidating_reviewed_waveform():
+def test_candidate_writes_keep_live_reads_without_invalidating_reviewed_waveform():
     import subprocess
     script=r"""
 const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
@@ -164,6 +164,6 @@ const state={caseId:'math',caseRequestId:3,currentPage:'review',workspaceEpoch:'
 const context=vm.createContext({state,ECGReadRequests:{clear(){cleared++;}},ecgChartInspection:{invalidate(){inspections++;}},overviewWorkbench:{invalidateAfterWrite(){invalidated++;}},fetch:async()=>({ok:true,headers:{get:()=> 'application/json'},json:async()=>({ok:true})})});
 const source=fs.readFileSync('static/js/app.js','utf8');
 vm.runInContext(source.slice(source.indexOf('async function api('),source.indexOf('\nfunction toast(')),context);
-(async()=>{await context.api('/api/cases/math/evidence-candidates',{method:'POST',body:'{}'});await context.api('/api/cases/math/evidence-candidates',{method:'PATCH',body:'{}'});assert.equal(invalidated,0);assert.equal(inspections,0);assert.equal(cleared,4);await context.api('/api/cases/math/beat-editor',{method:'PUT',body:'{}'});assert.equal(invalidated,1);assert.equal(inspections,2);console.log('exact reviewed wave survives evidence-only writes');})().catch(e=>{console.error(e);process.exitCode=1});
+(async()=>{await context.api('/api/cases/math/evidence-candidates',{method:'POST',body:'{}'});await context.api('/api/cases/math/evidence-candidates',{method:'PATCH',body:'{}'});assert.equal(invalidated,0);assert.equal(inspections,0);assert.equal(cleared,0);await context.api('/api/cases/math/beat-editor',{method:'PUT',body:'{}'});assert.equal(invalidated,1);assert.equal(inspections,2);console.log('exact reviewed wave survives evidence-only writes');})().catch(e=>{console.error(e);process.exitCode=1});
 """
     subprocess.run(['node','-e',script],check=True,timeout=10)
