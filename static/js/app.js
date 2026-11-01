@@ -351,7 +351,7 @@ async function api(path, options = {}) {
   const readKey=reportMetadata?path+'|report-evidence:'+String(state.reportEvidenceEpoch||0):path;
   const payload=method==='GET'&&reads?await reads.read(scope,readKey,readRequest,readLane,options.signal):await readRequest(options.signal);
   if(isWrite&&!reportOnly&&!evidencePick){globalThis.ecgChartInspection?.invalidate();reads?.clear();if(typeof overviewWorkbench!=='undefined')overviewWorkbench.invalidateAfterWrite(requestCase,requestCaseToken);}
-  if(isWrite&&evidencePick&&requestCase===state.caseId&&requestCaseToken===state.caseRequestId)state.reportEvidenceEpoch=(state.reportEvidenceEpoch||0)+1;
+  if(isWrite&&(evidencePick||reportOnly)&&requestCase===state.caseId&&requestCaseToken===state.caseRequestId)state.reportEvidenceEpoch=(state.reportEvidenceEpoch||0)+1;
   if(requestCase===state.caseId&&/^(PUT|PATCH|DELETE|POST)$/.test(options.method||"")&&/\/(beat-overrides|beat-templates|annotations|patient)(\/|$)/.test(path)){
     state.reportComposer=null;
     await clinicalWorkflow.refresh(requestCase).catch(()=>{clinicalWorkflow.receive(null);toast("修改已保存，但复核状态读取失败，请刷新后继续审核","error",6000);});

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "version": "0.12.19-deidentified.20261028",
   "release_id": "0.12.21-rr-report.20261102",
-  "source_sha256": "f11334ce631054fa1ba9fd963173722c03e352b8a5772745c87a7bb9ca136dc6",
+  "source_sha256": "3e4c036b0ba90ccfa915aa9d1ae6294f467a9419eda8d03a89e5bdc6c59a8df6",
   "production_file_count": 124,
   "files": {
     "CardioInsightDoctorEval.spec": {
@@ -310,8 +310,8 @@
       "sha256": "fb20b4aa33e0cd2cc5fae8bf8a2a7968b22f8506cdc012ae507c465ea59da3ee"
     },
     "static/js/app.js": {
-      "bytes": 287679,
-      "sha256": "bd625bf35fbe23e0005e6edbbf098682a54c273ab2a76c6847366917da955990"
+      "bytes": 287693,
+      "sha256": "ea1aa7fe4421c3a54921c24c990f269c84a3e75ca153b353e3f985ce3630c6f2"
     },
     "static/js/beat-editor-ui.js": {
       "bytes": 46326,
@@ -334,8 +334,8 @@
       "sha256": "a6388fe03f33d7e58efdbf0a962794231b1d291d14940b6aedc91305edcd4330"
     },
     "static/js/clinical-ui.js": {
-      "bytes": 198974,
-      "sha256": "b9c612eee8986f97b55c08bc8696217ab5d33b155d038eafb3b49d95554c2855"
+      "bytes": 198933,
+      "sha256": "0f3f6274b4c0ae6200c10380058ee1d2bd061dfc732cf8dfdaca14cd04cafb77"
     },
     "static/js/clinical-workflow.js": {
       "bytes": 14966,
