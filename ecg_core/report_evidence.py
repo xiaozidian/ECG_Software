@@ -50,8 +50,7 @@ def evidence_descriptor(index, event, identity, pairs=None):
     raise ValueError('此事件沿用原有诊断确认流程，无需新增 RR 核对')
 
 
-def attach_reviews(index, identity, records):
-    pairs = None
+def attach_reviews(index, identity, records, *, pairs=None):
     by_key = {r['evidence_key']: r for r in records}
     for event in index['events']:
         if event.get('category') not in ('pause', 'rr_candidate') and not event.get('evidence_only'):
@@ -95,6 +94,10 @@ def longest_event(index, identity, records):
     if not pairs:
         return None
     a, b = max(pairs, key=lambda pair: (pair[1]['rr_ms'], -pair[1]['sample_index']))
+    # Descriptor and confirmation metadata use the same validated adjacency.
+    # Avoid repeating the full-record quality pass for this single result.
+    by_terminal = {terminal['sample_index']: (previous, terminal)
+                   for previous, terminal in pairs}
     context = dict(rr_start_sample=a['sample_index'], rr_end_sample=b['sample_index'],
                    rr_start_id=a['id'], rr_end_id=b['id'], rr_ms=b['rr_ms'],
                    start_s=a['sample_index']/200, end_s=b['sample_index']/200)
@@ -104,8 +107,8 @@ def longest_event(index, identity, records):
         end_s=b['sample_index']/200, rr_ms=b['rr_ms'], hr=b.get('hr'), target_samples=[b['sample_index']],
         beat_count=1, templates=[], evidence_only=True, diagnosis_status='pending',
         candidate_context=context, candidate_scope=identity)
-    event['basis_version'] = 'report-rr-v1:'+digest(evidence_descriptor(index, event, identity))
-    attach_reviews({**index, 'events': [event]}, identity, records)
+    event['basis_version'] = 'report-rr-v1:'+digest(evidence_descriptor(index, event, identity, by_terminal))
+    attach_reviews({**index, 'events': [event]}, identity, records, pairs=by_terminal)
     return event
 
 

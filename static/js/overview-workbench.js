@@ -102,6 +102,14 @@ const overviewWorkbench=(()=>{
     invalidateEvidence('正在读取逐搏数据；旧覆盖结果已清除。');qs('#ovStatus').textContent='正在核对逐搏、片段与波形依据…';
     try{const [data,rhythm]=await ECGAnalysisConsistency.read(api,id,['overview','rhythm-review'].map(kind=>basis=>api(ECGAnalysisConsistency.url(id,kind,{},basis))));if(token!==ui.loadToken||id!==state.caseId||caseToken!==state.caseRequestId)return;
       if(data.revision!==rhythm.beat_revision)throw Error('逐搏与节律版本不一致，请重新载入后复核');
+      let caseCurrent=false;try{ECGAnalysisConsistency.assertSame(data,state.caseData);caseCurrent=true;}catch(_){}
+      if(!caseCurrent){
+        // ST annotations and workflow confirmation can advance review identity
+        // without reloading the case header. Pair it with the new overview so a
+        // current mini/continuous wave can still open its guarded beat menu.
+        const current=()=>token===ui.loadToken&&id===state.caseId&&caseToken===state.caseRequestId;
+        if(!await clinicalUI.refreshCurrentCaseEvidence(id,caseToken,current,data)||!current())return;
+      }
       if(ui.id!==id){rememberEpisodeForm();episodeFilter='all';episodePage=0;episodeEditor=null;ui.range=null;ui.episode=null;ui.bin=null;ui.densityKey=null;ui.rulerPoints=[];ui.mode=state.scatterMode;ui.bound=null;qs('#ovScatterRange').value='auto';ui.rangeBounds=null}
       ui.id=id;ui.caseToken=caseToken;ui.identity=ECGAnalysisConsistency.identity(data);ui.revision=data.revision;ui.rows=E.decode(data);ui.rhythm=rhythm;ui.estimated=data.estimated_beats;ui.settings=data.settings;ui.hist=E.histogram(ui.rows,ui.ratio);ui.hour=hour();
       ui.statistics=E.stats(ui.rows,ui.settings?.pause||2.5,data.duration_s);
@@ -657,6 +665,16 @@ const overviewWorkbench=(()=>{
     }
     if(key==='bookmark-jump'){seek(Number(arg));return}
   }
+  function gestureDistance(job){
+    const {g,point,last,points}=job;
+    // A closed lasso finishes near its starting point. Its travelled shape,
+    // rather than only the final displacement, distinguishes it from a click.
+    if(g.kind==='scatter'&&job.selectionMode==='lasso'){
+      return points.reduce((distance,[x,y])=>Math.max(distance,Math.hypot(
+        (x-points[0][0])/g.bound*g.w,(y-points[0][1])/g.bound*g.h)),0);
+    }
+    return Math.hypot(last.x-point.x,last.y-point.y);
+  }
   function bind(){
     qs('#ovEpisodeFilter').onchange=event=>run(()=>action('episode-filter:'+event.target.value));
     window.addEventListener('beforeunload',event=>{rememberEpisodeForm();if(episodeDrafts.size){event.preventDefault();event.returnValue='';}});
@@ -693,7 +711,7 @@ const overviewWorkbench=(()=>{
       if(g.kind!=='hist'){const time=timeAt(event,canvas);ui.range=[Math.min(drag.time,time),Math.max(drag.time,time)];draw()}
     },true);
     document.addEventListener('pointerup',event=>{
-      if(!drag||event.pointerId!==drag.pointerId)return;const job=drag;drag=null;syncScatterTools();event.preventDefault();event.stopImmediatePropagation();const {canvas,g,point,last}=job,dist=Math.hypot(last.x-point.x,last.y-point.y);
+      if(!drag||event.pointerId!==drag.pointerId)return;const job=drag;drag=null;syncScatterTools();event.preventDefault();event.stopImmediatePropagation();const {canvas,g,point,last}=job,dist=gestureDistance(job);
       if(canvas.hasPointerCapture(job.pointerId))canvas.releasePointerCapture(job.pointerId);
       if(!dragCurrent(job))return;
       if(g.kind==='density'){const current=linked?.gatePoint(event,canvas);if(dist>=4&&current)run(()=>linked.gate(canvas,job.densityPoint,current));return;}

@@ -1,6 +1,7 @@
 """End-to-end report approval with synthetic signals and scoped physician evidence."""
 from copy import deepcopy
 from hashlib import sha256
+from pathlib import Path
 import subprocess
 
 import pytest
@@ -8,6 +9,12 @@ import pytest
 from ecg_core.ebi import HEADER_SIZE, RECORD
 from ecg_core.workspace_backup import _check_database
 from test_analysis_provenance import synthetic_case, synthetic_app
+
+
+def test_numeric_longest_controller_ignores_other_printed_range():
+    root=Path(__file__).resolve().parents[1]
+    subprocess.run(['node',str(root/'tests/browser_report_longest_independent.cjs')],
+                   cwd=root,check=True,timeout=30)
 
 
 def ok(response):
@@ -159,6 +166,56 @@ def test_longest_can_be_reviewed_without_creating_candidate_or_printing(syntheti
     assert ok(client.get(base+'/evidence-candidates'))['items']==[]
     current=ok(client.get(base+'/report-rr-evidence'))['event']
     assert current['evidence_review']['status']=='confirmed'
+
+
+def test_longest_read_shares_current_index_and_rejects_scope_after_edit(synthetic_app,synthetic_case,monkeypatch):
+    import app as server
+    _,cid,_=synthetic_case;client=synthetic_app.test_client();base=f'/api/cases/{cid}'
+    build=server.build_index;calls=[]
+    def counted(*args,**kwargs):
+        calls.append(1)
+        return build(*args,**kwargs)
+    monkeypatch.setattr(server,'build_index',counted)
+    listing=ok(client.get(base+'/report-events'))
+    first=ok(client.get(base+'/report-rr-evidence'))
+    assert ok(client.get(base+'/report-rr-evidence'))==first
+    assert len(calls)==1
+    old={key:listing[key] for key in ('analysis_basis','analysis_revision')}
+    ok(client.put(base+'/beat-editor',json={'operation':'relabel','selection':{'samples':[2000]},
+        'class_code':'V','revision':0,'confirmed':True}))
+    assert client.get(base+'/report-rr-evidence',query_string=old).status_code==409
+    current=ok(client.get(base+'/report-rr-evidence'))
+    assert current['beat_revision']!=first['beat_revision']
+    assert current['event']['basis_version']!=first['event']['basis_version']
+    assert current['event']['rr_ms']==first['event']['rr_ms']
+    assert len(calls)==2
+
+
+def test_evidence_preview_and_confirm_reuse_index_but_always_read_signal(synthetic_app,synthetic_case,monkeypatch):
+    import app as server
+    _,cid,_=synthetic_case;client=synthetic_app.test_client();base=f'/api/cases/{cid}'
+    build=server.build_index;reader=server.read_event_waveform;builds=[];reads=[]
+    def counted_build(*args,**kwargs):
+        builds.append(1)
+        return build(*args,**kwargs)
+    def counted_wave(*args,**kwargs):
+        reads.append(1)
+        return reader(*args,**kwargs)
+    monkeypatch.setattr(server,'build_index',counted_build)
+    monkeypatch.setattr(server,'read_event_waveform',counted_wave)
+    event,entry=pick(client,base);ok(save(client,base,[entry]))
+    prior_builds=len(builds);prior_reads=len(reads)
+    value,body=preview(client,base,event,entry)
+    first_reads=len(reads)
+    assert first_reads>prior_reads
+    again,_=preview(client,base,event,entry)
+    second_reads=len(reads)
+    assert value==again and len(builds)==prior_builds and second_reads>first_reads
+    ok(client.post(base+'/report-evidence/confirm',json=body))
+    assert len(builds)==prior_builds and len(reads)>second_reads
+    fresh=ok(client.get(base+'/report-events',query_string={'ids':event['event_id']}))['items'][0]
+    assert fresh['evidence_review']['status']=='confirmed'
+    assert len(builds)==prior_builds+1
 
 
 def test_shorter_pick_cannot_be_confirmed_or_approved_as_longest(synthetic_app,synthetic_case):
