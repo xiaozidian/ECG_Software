@@ -21,6 +21,7 @@
   "tests/test_report_navigation.py",
   "tests/test_report_local_update.py",
   "tests/test_occurrence_scope.py",
+  "tests/test_read_request_signals.py",
   "tests/test_rr_review.py",
   "tests/test_hrv_review.py",
   "tests/test_source_integrity.py",

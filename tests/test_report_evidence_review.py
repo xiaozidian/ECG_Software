@@ -68,6 +68,9 @@ def test_confirmed_manual_evidence_can_be_approved_and_exported(synthetic_app,sy
     assert value['strip']['leads']==['II','V1','V5']
     confirmation=ok(client.post(base+'/report-evidence/confirm',json=body))
     assert confirmation['beat_revision']==before['beat_revision']
+    assert confirmation['analysis_revision']==before['analysis_revision']
+    assert confirmation['report']['version'] > draft['version']
+    assert scope(client,base)==before
     assert all(confirmation['review']['steps'][k]['status']=='done' for k in ('edit','stt'))
     assert confirmation['report']['conclusion']==draft['conclusion']
     assert confirmation['report']['composition']==draft['composition']

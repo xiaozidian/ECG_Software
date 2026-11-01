@@ -58,7 +58,11 @@ class ReviewWorkflowMixin:
         else:
             return
         value = self._review(db, case_id)
-        value["revision"] += 1
+        # A report acknowledgement changes neither the analysed signal nor the
+        # clinical review basis. Its own report version below guards concurrency.
+        # Advancing the analysis revision here invalidates unrelated live reads.
+        if action != "report_evidence.confirmed":
+            value["revision"] += 1
         for step in affected:
             if step in value["steps"]:
                 value["steps"][step]["status"] = "stale"

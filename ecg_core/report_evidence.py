@@ -161,7 +161,7 @@ class ReportEvidenceMixin:
                     ON CONFLICT(case_id,evidence_key) DO UPDATE SET presentations=excluded.presentations,
                     status=excluded.status,actor=excluded.actor,updated_at=excluded.updated_at''',
                     (case_id, key, canonical(descriptor), canonical(proofs), 'confirmed', actor, stamp()))
-                # Check source and concurrent revisions before our own revision advances.
+                # Check source and report revisions before committing this acknowledgement.
                 guard(db)
                 self._audit(db, actor, 'report_evidence.confirmed', case_id, key+':'+proof_key)
             return next(r for r in self.list_report_evidence(case_id, db) if r['evidence_key']==key)

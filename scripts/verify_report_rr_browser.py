@@ -1,5 +1,18 @@
 """Real frozen-backend RR selection/approval checks on the disposable M01 workspace."""
 
+async def prepare_report_steps(page):
+    # Establish the ordinary edit/ST preconditions before opening the case, so
+    # a test-only API shortcut cannot leave an already mounted editor obsolete.
+    await page.evaluate("""async () => {
+        const b='/api/cases/9900000000000001';
+        for(const step of ['edit','stt']) {
+            const r=await api(b+'/review-workflow');
+            if(r.steps?.[step]?.status!=='done')
+                await api(b+'/review-workflow',{method:'PUT',body:JSON.stringify({step,revision:r.revision,confirmed:true,note:'M01 mathematical RR engineering acceptance precondition'})});
+        }
+    }""")
+
+
 async def verify_report_rr(page, screenshots):
     checks = []
     ready = "() => state.currentPage==='report' && !state.reportEvidenceLoading && !state.reportViewLoading && !state.reportEvidenceError"
@@ -8,7 +21,8 @@ async def verify_report_rr(page, screenshots):
         const b='/api/cases/'+state.caseId, original=await api(b+'/report');
         for(const step of ['edit','stt']) {
             const r=await api(b+'/review-workflow');
-            await api(b+'/review-workflow',{method:'PUT',body:JSON.stringify({step,revision:r.revision,confirmed:true,note:'M01 mathematical RR engineering acceptance'})});
+            if(r.steps?.[step]?.status!=='done')
+                await api(b+'/review-workflow',{method:'PUT',body:JSON.stringify({step,revision:r.revision,confirmed:true,note:'M01 mathematical RR engineering acceptance'})});
         }
         const ledger=await api(b+'/evidence-candidates'), longest=await api(b+'/report-rr-evidence'), e=longest.event;
         await ECGReviewCandidates.choose({identity:ledger,item:{sample_index:e.sample_index,rr_ms:e.rr_ms,class_code:e.evidence_ref.terminal.class_code}});
@@ -45,6 +59,7 @@ async def verify_report_rr(page, screenshots):
     checks.append('unreviewed-printed-evidence-blocks-final-approval')
     await page.locator('#reportV2Nav [data-category="strips"]').click()
     await page.wait_for_function(ready)
+    identity = await page.evaluate('async () => {const x=await api("/api/cases/"+state.caseId+"/evidence-candidates");return {analysis_basis:x.analysis_basis,analysis_revision:x.analysis_revision,beat_revision:x.beat_revision};}')
     await page.locator('.rw-strip [data-review-evidence]').click()
     await page.locator('#reportEvidenceDialog [data-evidence-confirm]:enabled').wait_for()
     for count in (1, 3, 12):
@@ -58,6 +73,8 @@ async def verify_report_rr(page, screenshots):
     await page.locator('#reportEvidenceDialog').wait_for(state='detached')
     await page.wait_for_function(ready)
     await page.wait_for_function('() => state.reportEvidencePending?.length===0')
+    assert await page.evaluate('async () => {const x=await api("/api/cases/"+state.caseId+"/evidence-candidates");return {analysis_basis:x.analysis_basis,analysis_revision:x.analysis_revision,beat_revision:x.beat_revision};}') == identity
+    checks.append('report-acknowledgement-keeps-live-analysis-version')
     await page.locator('#reportV2Nav [data-category="final"]').click()
     await page.wait_for_function(ready)
     await page.wait_for_function(saved)
@@ -81,4 +98,10 @@ async def verify_report_rr(page, screenshots):
         await clinicalWorkflow.refresh();await clinicalUI.refreshReport();
     }""", original)
     await page.wait_for_function(ready)
+    await page.locator('.nav-item[data-page="review"]').click()
+    await page.wait_for_function("() => state.currentPage==='review' && state.waveform?.leads && state.waveformOwner && document.querySelector('#waveformCanvas').dataset.waveTimeTicks")
+    assert await page.evaluate('async () => {const x=await api("/api/cases/"+state.caseId+"/evidence-candidates");return {analysis_basis:x.analysis_basis,analysis_revision:x.analysis_revision,beat_revision:x.beat_revision};}') == identity
+    await page.locator('.nav-item[data-page="report"]').click()
+    await page.wait_for_function(ready)
+    checks.append('return-to-overview-after-report-review-keeps-readable-waveform')
     return {'checks':checks,'input':'mathematical M01 only','actual_frozen_backend':True,'pdf_operations':0}

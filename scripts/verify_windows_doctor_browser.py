@@ -939,6 +939,9 @@ async def verify(args, receipt):
                             await page.locator("#continueExperience").click()
                         require((await entry_request.value).status == 303, "Native manager form could not enter the doctor workspace")
                         await worklist_ready(page)
+                        if iteration == 0:
+                            from verify_report_rr_browser import prepare_report_steps
+                            await prepare_report_steps(page)
                         catalog = json.loads((home / "catalog.json").read_text(encoding="utf-8"))
                         workspace_id = catalog["selected_workspace"]
                         workspace_state = await live_state(home, workspace_id, active_exe)
