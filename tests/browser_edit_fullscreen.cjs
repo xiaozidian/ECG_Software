@@ -12,6 +12,7 @@ async function verify(){
   const ctx=vm.createContext({ECGReviewTools:require('../static/js/clinical-review-tools.js'),state,$:get,window:{scrollX:0,scrollY:96,scrollTo:(...xy)=>scrolls.push(xy)},document:{body:{classList:{remove(){}}}},requestAnimationFrame:fn=>frames.push(fn),
     goPage(name,options){pages.push({name,options});state.currentPage=name},enterWaveformFullscreen:async()=>{state.waveformExpanded=true},loadWaveform:async()=>reads++,handleError(){},closeBeatRelabelMenu(){},updateWaveformModeUI(){},updateZoomControls(){},setEditMode:mode=>state.editMode=mode,
     renderEditOverview(){},renderEditScatter(){},renderEditGallery(){},renderEditWaveform(){},renderEditDensity(){},renderEditLibrary(){}});
+  vm.runInContext(app.match(/^function editWaveDomainKey[^\n]+/m)[0],ctx);
   vm.runInContext(section(app,'function editTwelveScope()', 'async function loadWaveform()')+section(app,'function finishWaveformFullscreenExit()', 'async function enterWaveformFullscreen()'),ctx);
   await ctx.openEditTwelveLead(canvas);
   assert.equal(state.currentPage,'review');assert.equal(state.start,120);assert.equal(state.duration,10);assert.equal(state.filter,'display');assert.equal(pages[0].options.editFullscreenTransition,true);

@@ -67,6 +67,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
     }
   };
   const context = vm.createContext({
+    innerHeight: 900,
     state, CustomEvent: class { constructor(type) { this.type = type; } },
     document: {
       dispatchEvent() {}, createElement: () => host(),
