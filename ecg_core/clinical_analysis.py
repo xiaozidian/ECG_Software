@@ -16,6 +16,7 @@ CATEGORIES = [('fastest','最快心率'),('slowest','最慢心率'),('S','房早
 PATTERNS = [('all','全部'),('single','单发'),('couplet','成对'),('triplet','连续三发'),('run','连续多发'),('tachycardia','心动过速'),('bigeminy','二联律'),('nnp','三联律（NNP）'),('npp','三联律（NPP）'),('quadrigeminy','四联律')]
 EXTREME_CANDIDATE_LIMIT = 200
 PERIODIC_VERSION = 'periodic-v2'
+DATA_VERSION_SUFFIX = '-rr-quality-v3-'+PERIODIC_VERSION+'-af-end-v1-status-v2-no-artifact-v1'
 
 
 def repeating_spans(codes, cycle):
@@ -170,7 +171,7 @@ def build_index(feed, templates=(), annotations=(), review=None):
             item['range_statistics'] = copy.deepcopy(d['range_statistics'])
             item['end_s'] = (end + 1) / 200  # New range statistics use [start, end+1).
     events.sort(key=lambda x:(x['start_sample'],x['event_id']))
-    return dict(quality_control=dict(artifact_count=sum(r['class_code']=='X' for r in rows+markers),artifact_samples=[r['sample_index'] for r in rows+markers if r['class_code']=='X'],role='quality_control_only'),events=events,rows=rows+markers,templates=list(templates),basis_versions=basis,data_version=bv+'-'+av+'-rr-quality-v3-'+PERIODIC_VERSION+'-af-end-v1-status-v2-no-artifact-v1',beat_version=bv,duration_s=feed.duration)
+    return dict(quality_control=dict(artifact_count=sum(r['class_code']=='X' for r in rows+markers),artifact_samples=[r['sample_index'] for r in rows+markers if r['class_code']=='X'],role='quality_control_only'),events=events,rows=rows+markers,templates=list(templates),basis_versions=basis,data_version=bv+'-'+av+DATA_VERSION_SUFFIX,beat_version=bv,duration_s=feed.duration)
 
 def event_time_bins(index, items, params, time_of=None):
     """Clock-aligned half-open buckets; histogram precedes the time filter."""
@@ -356,26 +357,35 @@ def normalize_selection(raw):
 
 def validate_report(index,composition,review,approving=False):
     from .report_curation import strip_curation
+    from .report_evidence import evidence_confirmed, assert_caption, used_in_output
     lookup={e['event_id']:e for e in index['events']};selected=[]
-    for entry in composition.get('selected_events',[]):
+    for number, entry in enumerate(composition.get('selected_events',[]), 1):
         e=lookup.get(entry['event_id'])
+        used=used_in_output(composition, entry, e)
         if entry['event_id'].startswith('other:X:') or (e and e.get('category')=='other' and e.get('subtype')=='X'):
-            if approving:raise ValueError('伪差仅用于质控，请移除历史伪差图条后再审核')
+            if approving and used:raise ValueError('伪差仅用于质控，请移除历史伪差图条后再审核')
             continue
         if e is None or e['basis_version']!=entry['basis_version']:
-            if approving:raise ValueError('已选图条因诊断修订失效，请重新筛选')
+            if approving and used:raise ValueError(f'第 {number} 条图条依据已变化（失效），请重新核对或移出本次报告')
             continue
         # RR/NN is an output filter, not a destructive change to curated picks.
         # All retained picks still undergo the normal staleness/review checks.
-        if approving and e['category']=='AF' and e.get('rhythm_status')!='confirmed':
+        if approving and used and e['category']=='AF' and e.get('rhythm_status')!='confirmed':
             raise ValueError('所选房颤／房扑片段尚未确认；请在房颤／房扑页完成片段诊断确认，或从报告中移除该图条。')
-        if approving and e['diagnosis_status']!='confirmed':raise ValueError('请先完成编辑／ST-T诊断确认')
+        if approving and used:
+            if e.get('evidence_only'):
+                if not evidence_confirmed(index,e,entry):
+                    raise ValueError(f'第 {number} 条人工图条待核对，请在报告中“确认本条”或移出本次报告')
+            elif e['diagnosis_status']!='confirmed':raise ValueError('请先完成编辑／ST-T诊断确认')
+            assert_caption(index,e,entry)
         spec=strip_settings(entry)
-        if 'range_start_s' in spec: resolve_strip(index,e,spec)
+        if 'range_start_s' in spec:
+            try:resolve_strip(index,e,spec)
+            except ValueError:
+                if used:raise
+                continue
         selected.append({**e,'caption':entry.get('caption') or e['label'], **spec, **strip_curation(entry)})
     if approving:
-        counts=query_index(index,{'fast_slow_mode':composition.get('fast_slow_mode','rr')})['category_counts']
-        missing=[label for key,label in CATEGORIES if counts[key] and composition.get('category_reviews',{}).get(key)!=index['basis_versions'][key]]
-        if missing:raise ValueError('请完成报告分类筛选：'+'、'.join(missing))
+        # Report reviewers decide inclusion directly; visiting every category is not an approval gate.
         if any(b.get('needs_review') for b in composition.get('diagnosis_blocks',[])):raise ValueError('请核对保留的人工诊断文字')
     return selected

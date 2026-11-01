@@ -12,7 +12,7 @@ def test_p01_template_retains_exact_binary_and_excludes_source(tmp_path):
     for relative in ASSET_FILES:
         p=root/'_internal'/relative;p.parent.mkdir(parents=True,exist_ok=True);p.write_text('generated-test-asset')
     (root/'RELEASE.json').write_text(json.dumps({'source_id':'M01','source_version':'M01-24h-v1',
-        'minimum_source_version':'M01-24h-v1','packaging_version':'1.0.4','source_commit':'a'*40,
+        'minimum_source_version':'M01-24h-v1','packaging_version':'1.0.5','source_commit':'a'*40,
         'production_source_identity':{'release_id':'test-only'},'source_manifest_sha256':'b'*64,
         'wholly_synthetic':True,'patient_inputs_read':False,'duration_seconds':86400,'raw_waveform_bytes':276480000}))
     create_content_manifest(root,with_source=False)

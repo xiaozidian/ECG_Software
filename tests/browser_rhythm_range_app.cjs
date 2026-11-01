@@ -30,7 +30,7 @@ function fixture(){
     leads:{II:[0,1],V1:[0,1],V5:[0,1]}});
   state.waveform=wave();state.waveformOwner=context.captureRhythmWaveOwner(state.waveform,owner());
   state.editWaveform=wave();state.editWaveformOwner=context.captureRhythmWaveOwner(state.editWaveform,owner());
-  context.ecgRhythmRangeEditor={isSaving:()=>false,snapshot:()=>({draft:null}),sync:()=>{},openContext:(...args)=>menus.push(args)};
+  context.ecgRhythmRangeEditor={isSaving:()=>false,snapshot:()=>({draft:null}),sync:()=>{},closeMenu(){},openContext:(...args)=>menus.push(args)};
   return {context,state,notes,menus,old,loads,callbacks,elements,owner,wave};
 }
 (async()=>{
@@ -67,13 +67,13 @@ function fixture(){
   {
     const f=fixture(),canvas=f.elements.get('#waveformCanvas'),event={type:'contextmenu',clientX:700,clientY:260,preventDefault(){}};
     f.context.openContinuousWaveMenu(event,canvas,f.state.waveform,'review');
-    assert.equal(f.menus.length,1);assert.equal(f.old.length,0);count++;
+    assert.equal(f.menus.length,0);assert.equal(f.old.length,1);count++;
     f.state.waveformOwner.caseToken=6;f.context.openContinuousWaveMenu(event,canvas,f.state.waveform,'review');
-    assert.equal(f.menus.length,1);assert.equal(f.old.length,0);assert.match(f.notes.at(-1)[0],/尚未核实/);count++;
+    assert.equal(f.menus.length,0);assert.equal(f.old.length,2);count++;
     f.state.waveformExpanded=true;f.context.openContinuousWaveMenu(event,canvas,f.state.waveform,'review');
-    assert.equal(f.old.length,1);count++;
+    assert.equal(f.old.length,3);count++;
     f.context.ecgRhythmRangeEditor.isSaving=()=>true;
-    f.context.openContinuousWaveMenu(event,canvas,f.state.waveform,'review');assert.equal(f.old.length,1);count++;
+    f.context.openContinuousWaveMenu(event,canvas,f.state.waveform,'review');assert.equal(f.old.length,3);count++;
   }
   {
     const f=fixture(),canvas=f.elements.get('#waveformCanvas');

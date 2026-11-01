@@ -4,7 +4,7 @@ const gate=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {prom
 const pending=gate(),tick=()=>new Promise(r=>setImmediate(r));
 function node(){return {hidden:true,open:false,innerHTML:'',textContent:'',disabled:false,dataset:{},classList:{add(){}},setAttribute(){},removeAttribute(){},focus(){},matches:()=>false,showPopover(){},getBoundingClientRect:()=>({left:0,top:0,width:500,height:100}),closest:()=>null,querySelector(s){return $(s)},querySelectorAll:()=>[],addEventListener(){},showModal(){this.open=true},close(){this.open=false}}}
 const $=s=>{if(!nodes.has(s))nodes.set(s,node());return nodes.get(s)};
-let dialog,reloads=0,refreshes=0,editBookmark=null;const histories=[node(),node()],historyBar=node();historyBar.setAttribute=(k,v)=>{historyBar[k]=v;};
+let dialog,reloads=0,refreshes=0,editBookmark=null,currentScope=true;const histories=[node(),node()],historyBar=node();historyBar.setAttribute=(k,v)=>{historyBar[k]=v;};
 histories[0].dataset.history='undo';histories[1].dataset.history='redo';
 const state={caseId:'A',caseRequestId:1,currentPage:'edit',editSelectedSamples:new Set([200]),editStart:0,scatterStripCache:new Map()};
 const info={revision:1,settings:{},can_undo:true,can_redo:false};
@@ -18,7 +18,7 @@ const api=async(url,opts={})=>{
   if(url.endsWith('/beats'))return {items:[{sample_index:200,time_s:1,class_code:'N'}],markers:[]};
   return method==='POST'?preview:{...info};
 };
-const ctx=vm.createContext({state,$,api,escapeHtml:String,ECGBeatEngine:require('../static/js/beat-engine.js'),
+const ctx=vm.createContext({state,$,api,escapeHtml:String,ECGAnalysisConsistency:require('../static/js/analysis-consistency.js'),waveMenuGeometry:(canvas,wave)=>({l:0,w:500,start:wave.start_s,duration:wave.duration_s}),nearestBeatForRelabel:(canvas,wave)=>wave.beats[0],ECGBeatEngine:require('../static/js/beat-engine.js'),
   document:{createElement(){dialog=node();return dialog},body:{appendChild(){}},querySelectorAll:s=>s==='[data-history]'?histories:s==='.beat-edit-history'?[historyBar]:[],addEventListener:(name,fn)=>listeners[name]=fn,activeElement:{tagName:'BODY'}},
   clinicalWorkflow:{writable:()=>true,refresh:async()=>refreshes++},handleError:e=>errors.push(e.message),formatElapsedPrecise:String,
   clinicalUI:{occurrenceBookmark:()=>({id:'A',caseToken:1,sample:20000})},
@@ -30,9 +30,20 @@ vm.runInContext(fs.readFileSync('static/js/beat-editor-ui.js','utf8')+'\nglobalT
 for(const s of ['#waveformCanvas','#editWaveformCanvas','#editLibraryWaveformCanvas'])nodes.set(s,null);
 listeners.DOMContentLoaded();
 const writes=()=>calls.filter(c=>c.method==='PUT');
-function cardForEditable(){const card=node();ctx.editor.registerOccurrence(card,{sample_index:200,time_s:1,class_code:'N'},{code:'N',samples:async()=>[200,400]});return card;}
+function cardForEditable(){const card=node();ctx.editor.registerOccurrence(card,{sample_index:200,time_s:1,class_code:'N'},{code:'N',samples:async()=>[200,400],isCurrent:()=>currentScope});return card;}
 const toolbarSummary={sourceLabel:'N · 全部',totalRecords:3,visibleRecords:3,visibleSampleCount:4,selectedCount:2,lead:'II',revision:1};
 async function run(){
+  if(scenario.startsWith('readonly-')){
+    state.currentPage='report';state.caseData={case_id:'A',analysis_revision:1,clinical_identity:{analysis_basis:'math',analysis_revision:9},beat_editor_history:{revision:1},beat_editor_settings:{lead:'II',search_seconds:20}};
+    const wave={analysis_basis:'math',analysis_revision:9,start_s:0,duration_s:7,sample_rate_hz:200,leads:{II:[0,1,0]},beats:[{sample_index:200,time_s:1,class_code:'N'}]};
+    if(scenario==='readonly-stale-basis')wave.analysis_basis='changed';
+    if(scenario==='readonly-other-case')wave.case_id='B';
+    if(scenario==='readonly-missing-snapshot')delete state.caseData.beat_editor_history;
+    await ctx.editor.open({preventDefault(){},clientX:250,clientY:40},node(),wave,'report',false,{readOnly:true});
+    if(['readonly-stale-basis','readonly-other-case'].includes(scenario)){assert.equal(calls.length,0);assert.equal($('#beatRelabelMenu').hidden,true);assert(errors.length);return;}
+    assert.equal($('#beatRelabelMenu').hidden,false);assert.equal(calls.length,scenario==='readonly-missing-snapshot'?1:0);
+    const beforeCalls=calls.length;listeners.keydown({key:'V',target:{closest:()=>null},preventDefault(){},stopImmediatePropagation(){}});await tick();assert.equal(calls.length,beforeCalls);assert.equal(writes().length,0);assert(errors.some(x=>x.includes('只读')));return;
+  }
   if(scenario.startsWith('history-')){
     assert(histories.every(b=>b.disabled),'no current history must disable both buttons');
     state.caseData={case_id:'A',analysis_revision:3,beat_editor_history:{revision:3,can_undo:true,can_redo:false}};ctx.editor.refreshHistory();assert.equal(histories[0].disabled,false);assert.equal(histories[1].disabled,true);assert.equal(calls.length,0,'rendering history must not request or calculate evidence');
@@ -67,10 +78,12 @@ async function run(){
     else assert.equal(writes().length,0,'stale/cancelled confirmation wrote a beat edit');
     return;
   }
-  const card=node();ctx.editor.registerOccurrence(card,{sample_index:200,time_s:1,class_code:'N'},{code:'N',samples:async()=>[200,400]});
+  const card=node();ctx.editor.registerOccurrence(card,{sample_index:200,time_s:1,class_code:'N'},{code:'N',samples:async()=>[200,400],isCurrent:()=>currentScope});
   const operation=()=>stage==='menu'?ctx.editor.occurrenceMenu(card):stage==='undo'?ctx.editor.invoke('undo'):stage==='invoke'?ctx.editor.invoke('relabel',{samples:[200],code:'V'}):ctx.editor.quickEdit('V',[200]);
   const task=operation().then(()=>null,e=>e);
   await tick();
+  if(scenario.endsWith('-basis'))state.caseData={clinical_identity:{analysis_basis:'changed',analysis_revision:2}};
+  if(scenario.endsWith('-scope'))currentScope=false;
   if(scenario.endsWith('-case')){state.caseId='B';state.caseRequestId++;}
   if(scenario.endsWith('-lifecycle'))state.caseRequestId++;
   if(scenario.endsWith('-page'))state.currentPage='report';

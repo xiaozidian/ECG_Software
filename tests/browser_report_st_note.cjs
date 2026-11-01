@@ -6,7 +6,7 @@ const {chromium}=require(process.env.ECG_PLAYWRIGHT_CORE || process.env.PLAYWRIG
 const root=path.resolve(__dirname,'..'),read=p=>fs.readFileSync(path.join(root,p),'utf8');
 const ui=read('static/js/clinical-ui.js'),workflow=read('static/js/clinical-workflow.js');
 function region(source,a,b){const i=source.indexOf(a),j=source.indexOf(b,i);assert(i>=0&&j>i,'Missing shipped source '+a);return source.slice(i,j);}
-const methods=region(ui,'  function mountSavedSTNote(','  async function detailWindow(')+region(ui,'  async function mountRange(','  function renderRangeDraftNotice(');
+const methods=region(ui,'  function mountSavedSTNote(','  function hourlyMatrix(')+region(ui,'  async function mountRange(','  function renderRangeDraftNotice(');
 const dirty=region(ui,'  function dirty(){','  function svg('),preflight=region(workflow,'  function renderPreflight()','  function decision(');
 const assets=['static/js/clinical-ui.js','static/js/clinical-workflow.js','static/js/report-workspace.js','static/js/report-range-editor.js','static/js/analysis-consistency.js','static/js/report-consistency.js','static/js/chart-inspection.js','static/css/report-workspace.css','static/css/clinical-review-tools.css'];
 const out=path.resolve(process.env.ECG_REPORT_ST_NOTE_EVIDENCE||'/tmp/ecg-report-st-note-'+new Date().toISOString().replace(/[:.]/g,'-'));
@@ -28,6 +28,8 @@ ${preflight}
 const clinicalWorkflow={writable,renderPreflight};${dirty}
 const inputEditors=new WeakSet(),bindInput=editor=>{if(inputEditors.has(editor))return;inputEditors.add(editor);editor.addEventListener('input',event=>{if(event.bubbles)inputs++;dirty();});};qs('#conclusionEditor').value=original;bindInput(qs('#conclusionEditor'));
 ECGChartInspection.bindSelection(qs('#v2EventWave'),()=>selectionToggles++);
+function queueReportAutosave(){}
+const beatEditor={bindWaveSurface(){}};
 const svg=w=>ECGReportWorkspace.reviewWaveSvg(w),returnedRhythmSettings=()=>null,returnedRhythmSelection=()=>false;
 function raw(start,duration,leads){return {...basis,start_s:start,duration_s:duration,sample_rate_hz:200,stride:10,beats:[],leads:Object.fromEntries(leads.split(',').map((name,j)=>[name,Array.from({length:100},(_,i)=>Math.sin(i*.1+j))]))};}
 const entry=()=>({...basis,waveform:raw(10,7,'II,V1,V5'),strip:{start_s:10,end_s:17,duration_s:7,actual_duration_s:7,visible_beat_count:7,leads:['II','V1','V5']}});

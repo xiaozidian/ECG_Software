@@ -6,6 +6,7 @@ import json
 import math
 from .report_layout import valid_rr_pairs, strip_settings, resolve_strip
 from .review_workflow import ReportConflict
+from .review_workflow import stamp
 
 
 def canonical(value):
@@ -135,6 +136,44 @@ class EvidenceCandidateMixin:
                 id INTEGER PRIMARY KEY AUTOINCREMENT, case_id TEXT NOT NULL, kind TEXT NOT NULL,
                 candidate_key TEXT NOT NULL, scope TEXT NOT NULL, payload TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'active', UNIQUE(case_id,candidate_key))''')
+            # Repair only selections whose candidate was explicitly withdrawn.
+            # Other stale evidence stays visible for physician reconciliation.
+            cases=[r[0] for r in db.execute("SELECT DISTINCT case_id FROM evidence_candidates WHERE status='withdrawn'")]
+            for case_id in cases:
+                self._remove_withdrawn_report_picks(db,case_id,'migration')
+
+    def _remove_withdrawn_report_picks(self, db, case_id, actor, expected_version=None, require_version=False):
+        row=db.execute('SELECT * FROM report_drafts WHERE case_id=?',(case_id,)).fetchone()
+        if not row:return []
+        candidates=self.list_candidates(case_id,db)
+        withdrawn={f'local-pick:{c["id"]}':c for c in candidates if c['status']=='withdrawn'}
+        composition=json.loads(row['composition'] or '{}')
+        selected=composition.get('selected_events',[])
+        removed=[e['event_id'] for e in selected if e['event_id'] in withdrawn]
+        if not removed:return []
+        if require_version and (type(expected_version) is not int or expected_version!=row['version']):
+            raise ReportConflict('报告已变化，候选未撤销；请刷新后重试，原选图仍保留')
+        composition['selected_events']=[e for e in selected if e['event_id'] not in withdrawn]
+        remaining={e['event_id'] for e in composition['selected_events']}
+        kinds={withdrawn[key]['kind'] for key in removed}
+        blocks=[]
+        for block in composition.get('diagnosis_blocks',[]):
+            kind='rr' if block.get('key')=='rr_candidate:manual_rr' else 'strip' if block.get('key')=='other:manual_strip' else None
+            if kind not in kinds:blocks.append(block);continue
+            if block.get('manual'):
+                blocks.append({**block,'needs_review':True,'acknowledged':False})
+            elif any(c['kind']==kind and f'local-pick:{c["id"]}' in remaining for c in candidates):
+                blocks.append(block)
+        composition['diagnosis_blocks']=blocks
+        for key in ('rr_candidate','other'):
+            composition.get('category_reviews',{}).pop(key,None)
+        from .analysis_provenance import digest
+        provenance=json.loads(row['analysis_provenance'] or '{}')
+        if provenance:provenance['composition_sha256']=digest(composition)
+        db.execute("UPDATE report_drafts SET composition=?,analysis_provenance=?,status='draft',reviewed_by='',version=version+1,updated_at=? WHERE case_id=?",
+            (json.dumps(composition,ensure_ascii=False),json.dumps(provenance,ensure_ascii=False),stamp(),case_id))
+        self._audit(db,actor,'evidence_candidate.unselect_report',case_id,canonical(removed))
+        return removed
 
     def list_candidates(self, case_id, db=None):
         if db is None:
@@ -160,7 +199,7 @@ class EvidenceCandidateMixin:
             guard(db)
             return result
 
-    def set_candidate_status(self, case_id, identifier, status, actor, guard):
+    def set_candidate_status(self, case_id, identifier, status, actor, guard, expected_report_version=None):
         if type(identifier) is not int or status not in ('active','withdrawn'): raise ValueError('候选操作无效')
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE'); guard(db)
@@ -169,5 +208,7 @@ class EvidenceCandidateMixin:
             if row['status']!=status:
                 db.execute('UPDATE evidence_candidates SET status=? WHERE id=?',(status,identifier))
                 self._audit(db,actor,'evidence_candidate.'+status,case_id,str(identifier))
+            if status=='withdrawn':
+                self._remove_withdrawn_report_picks(db,case_id,actor,expected_report_version,True)
             guard(db)
             return next(r for r in self.list_candidates(case_id,db) if r['id']==identifier)

@@ -148,7 +148,26 @@
         const selected=typeof options.onSelection==='function'?selectedIndex===index:locatedIndex===index;
         return `<tr data-rr-row-index="${index}" tabindex="${selected?'0':'-1'}" aria-selected="${selected?'true':'false'}" class="${selected?'rrv-selected-row':''}"><td><strong>${count(response.offset+index+1)}</strong><small>${time(item.time_s)}</small></td><td><span class="rrv-pair${known===false?' rrv-unknown':''}">${esc(item.left_type)} → ${esc(item.right_type)}</span><small title="${esc(provenanceKeys)}">${esc(provenance)}</small><small>样本 ${esc(item.start_sample??'未知')} → ${esc(item.end_sample??'未知')}</small></td><td>${metric(item.rr_ms)}${item.rr_ms===null&&finite(item.computed_rr_ms)?`<small>采样间距 ${metric(item.computed_rr_ms)} ms</small>`:''}${finite(item.stored_rr_ms)&&item.stored_rr_ms!==item.rr_ms?`<small>输入间期 ${metric(item.stored_rr_ms)}</small>`:''}</td><td>${metric(item.ratio_pct,2)}</td><td>${metric(item.hr_bpm,2)}</td><td><span class="rrv-quality ${valid===true?'rrv-valid':'rrv-invalid'}">${valid===true?'可计算 RR':valid===false?'不可计算 RR':'计算未知'}</span>${valid===false?`<small title="${esc(qualityCode)}">${esc(reasonLabel(qualityCode))}</small>`:''}<small title="${esc(nnCode)}">${esc(nnText)}</small></td><td>${item.target===null?`<button type="button" disabled>目标不可用</button><small title="${esc(qualityCode)}">${esc(reasonLabel(qualityCode))}</small>`:`<button type="button" data-rr-action="locate" data-rr-index="${index}" aria-label="精确定位第 ${response.offset+index+1} 个间期终搏，样本 ${item.end_sample}">定位终搏</button>`}</td></tr>${showStrips&&item.target!==null?`<tr class="rrv-strip-row"><td colspan="7"><div class="rrv-strip-label">II / V1 / V5 · 终搏 R 对齐 · 设备单位未校准</div>${stripItems.has(item.end_sample)?`<canvas data-rr-strip="${item.end_sample}" aria-label="间期终搏样本 ${item.end_sample} 的三导联波形"></canvas>`:`<div class="rrv-strip-placeholder">${esc(stripsPhase==='error'?stripError||'片段读取失败':stripsPhase==='ready'?'片段缺失':'正在读取当前页真实片段…')}</div>`}</td></tr>`:''}`;
       }).join('')}</tbody></table></div>`;
-      if(showStrips)for(const canvas of node.querySelectorAll('canvas[data-rr-strip]'))drawStrip(canvas,stripItems.get(Number(canvas.dataset.rrStrip)));
+      if(showStrips)for(const canvas of node.querySelectorAll('canvas[data-rr-strip]')){
+        const sample=Number(canvas.dataset.rrStrip),strip=stripItems.get(sample),item=response.items.find(r=>r.end_sample===sample);drawStrip(canvas,strip);
+        if(strip&&item&&options.bindStrip){
+          const run=generation,scopeCurrent=()=>current()&&run===generation&&showStrips&&canvas.isConnected;
+          options.bindStrip(canvas,strip,item,scopeCurrent,async visible=>{
+            if(!scopeCurrent())throw Error('间期筛选已变化，请重新右击');
+            if(visible)return response.items.filter(r=>r.target!==null).map(r=>r.end_sample);
+            const own={...query},indexKey=response.index_key,total=response.total,samples=[];
+            for(let offset=0;offset<total;offset+=200){
+              if(!scopeCurrent())throw Error('间期筛选已变化，已停止全选');
+              const page={...own,offset,limit:200},params=new URLSearchParams({...identity,case_id:context.caseId});
+              for(const [k,v]of Object.entries(page))if(v!==null)params.set(k,String(v));
+              const result=await options.api('/api/cases/'+encodeURIComponent(context.caseId)+'/rr-review?'+params);
+              validateResponse(result,context,page);if(!scopeCurrent()||result.index_key!==indexKey||result.total!==total)throw Error('间期依据已变化，未应用全选');
+              samples.push(...result.items.filter(r=>r.target!==null).map(r=>r.end_sample));
+            }
+            return [...new Set(samples)];
+          });
+        }
+      }
     }
     function renderSelection(){
       const node=qs('selected');if(!node)return;
@@ -213,6 +232,7 @@
       const rect=canvas.getBoundingClientRect?.()||{width:600,height:108},width=Math.max(260,rect.width||600),height=108,dpr=Math.min(root.devicePixelRatio||1,2);
       canvas.width=Math.round(width*dpr);canvas.height=Math.round(height*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);ctx.fillStyle='#071b22';ctx.fillRect(0,0,width,height);
       const leads=['II','V1','V5'],x0=34,w=width-42;
+      canvas._ecgWaveGeometry={l:x0,w};
       const amplitudes=leads.flatMap(lead=>(strip.leads?.[lead]||[]).filter(finite));const limit=Math.max(1,...amplitudes.map(Math.abs));
       ctx.strokeStyle='#26434b';ctx.lineWidth=.5;for(let x=x0;x<width;x+=w/20){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,height);ctx.stroke();}
       leads.forEach((lead,index)=>{const values=strip.leads?.[lead]||[],y=index*36+18;ctx.fillStyle='#b9d6d7';ctx.font='10px sans-serif';ctx.fillText(lead,7,y+3);ctx.strokeStyle='#72d6c3';ctx.lineWidth=1;ctx.beginPath();values.forEach((value,i)=>{if(!finite(value))return;const x=x0+(i*(strip.stride||1)/strip.sample_rate_hz)/strip.duration_s*w,py=y-value/limit*14;if(i===0)ctx.moveTo(x,py);else ctx.lineTo(x,py);});ctx.stroke();});

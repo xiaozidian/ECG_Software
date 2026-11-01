@@ -28,6 +28,5 @@ const ECGFullRecordRetain=(()=>{
     node.querySelector('[data-full-locate]').onclick=()=>{if(!overview||busy)return;const n=Number(input.value);if(!Number.isFinite(n)||n<0||n>overview.total_duration_s){status.textContent='定位中心超出全记录范围。';return;}center=n;draw();detail();};
     try{overview=await api(`/api/cases/${id}/waveform-overview?bins=1000`);if(!current()||!node.isConnected)return;identity=ECGReviewCandidates.scope(overview);node.querySelector('[data-full-method]').textContent=overview.method+' 采样率/通道为导入格式假设，设备校准未核验。';input.max=overview.total_duration_s;draw();await detail();}catch(error){if(node.isConnected)status.textContent=error.message;}
   }
-  if(typeof document!=='undefined')document.addEventListener('DOMContentLoaded',()=>{const exportButton=document.querySelector('#downloadReport');if(!exportButton)return;const b=document.createElement('button');b.type='button';b.className='button secondary';b.textContent='全记录留图';b.onclick=()=>open().catch(handleError);exportButton.before(b);const pool=document.createElement('button');pool.type='button';pool.className='button secondary';pool.textContent='RR 候选池';pool.onclick=()=>ECGReviewCandidates.pool().catch(handleError);b.before(pool);});
   const result={open,windowAt};if(typeof module!=='undefined')module.exports=result;return result;
 })();

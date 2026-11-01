@@ -42,6 +42,37 @@
     if(!amplitudeLocks.has(key)){let max=1000;for(const values of Object.values(wave.leads||{}))for(const value of values)if(Number.isFinite(Number(value)))max=Math.max(max,Math.abs(Number(value)));amplitudeLocks.set(key,Math.ceil(max*1.25/100)*100);}
     return amplitudeLocks.get(key);
   }
+  // Report viewing fits the actual window, using one gain for every lead.
+  // Constant offsets position traces vertically; source samples stay intact.
+  // There is no assumed voltage floor or gain learned from a different event.
+  function reportAmplitude(wave,preferred=['II','V1','V5']){
+    const offsets={},peaks={};
+    for(const [name,values] of Object.entries(wave.leads||{})){
+      const finite=Array.from(values,Number).filter(Number.isFinite).sort((a,b)=>a-b),n=finite.length;
+      const center=n?(finite[(n-1)>>1]+finite[n>>1])/2:0;
+      offsets[name]=center;peaks[name]=n?Math.max(Math.abs(finite[0]-center),Math.abs(finite[n-1]-center)):0;
+    }
+    const names=Object.keys(offsets),reference=preferred.filter(n=>Object.hasOwn(offsets,n));
+    if(!reference.length)reference.push(...names.slice(0,3));
+    const peak=Math.max(0,...reference.map(n=>peaks[n]))||Math.max(0,...Object.values(peaks));
+    return {domain:peak>0?peak*1.12:1,offsets,reference};
+  }
+  function reportWaveGeometry(wave,profile,rowHeight=120,pixelGain=null){
+    const scale=Number.isFinite(pixelGain)&&pixelGain>0?pixelGain:(rowHeight-12)/(2*profile.domain);
+    let peak=0;
+    for(const [name,values] of Object.entries(wave.leads||{}))for(const item of values){const v=Number(item);if(Number.isFinite(v))peak=Math.max(peak,Math.abs(v-(profile.offsets[name]||0)));}
+    return {pixelGain:scale,rowHeight:Math.max(rowHeight,Math.ceil(12+2*peak*scale))};
+  }
+  // Preserve pixels per source unit when a later window exceeds the initial
+  // display lock. Add vertical space instead of hiding a lead or changing gain.
+  function lockedWaveRows(values,{top=0,rowHeight=64,domain,scale=null,labelY=4}={}){
+    if(!Number.isFinite(domain)||domain<=0)throw Error('显示幅度依据无效');
+    const fixedScale=Number.isFinite(scale)&&scale>0?scale:Math.max(1,rowHeight-12)/(2*domain);
+    const peaks=values.map(items=>{let peak=0;for(const item of items||[]){const value=Number(item);if(Number.isFinite(value))peak=Math.max(peak,Math.abs(value));}return peak;});
+    const peak=Math.max(0,...peaks),height=Math.max(rowHeight,12+2*peak*fixedScale);
+    return {scale:fixedScale,rowHeight:height,expanded:peak>domain,displayDomain:(height-12)/(2*fixedScale),
+      layouts:peaks.map((value,index)=>{const start=top+index*height,bottom=start+height;return {top:start,bottom,labelY,signalTop:start+6,signalBottom:bottom-6,baseline:start+height/2,scale:fixedScale,overflow:value>domain};})};
+  }
   function elapsed(seconds){if(!Number.isFinite(seconds))return '—';const n=Math.round(Math.max(0,seconds)*1000),sec=Math.floor(n/1000);return `D${Math.floor(sec/86400)+1} ${[Math.floor(sec%86400/3600),Math.floor(sec%3600/60),sec%60].map(x=>String(x).padStart(2,'0')).join(':')}.${String(n%1000).padStart(3,'0')}`;}
   function recordClock(start,seconds){
     // Metadata is a recorder wall clock, not the browser's timezone. No guessed epoch.
@@ -76,14 +107,14 @@
     return Math.max(2000,Math.ceil(max*1.02/500)*500);
   }
   function clockLabel(recordStart,seconds){return recordClock(recordStart,seconds)?.slice(11,23)||elapsed(seconds);}
-  function waveMeta(wave,recordStart=null,domain=null){
+  function waveMeta(wave,recordStart=null,domain=null,displayGain=null){
     const start=recordClock(recordStart,wave.start_s),end=recordClock(recordStart,wave.start_s+wave.duration_s);
-    return `${start||elapsed(wave.start_s)} — ${end||elapsed(wave.start_s+wave.duration_s)} · ${Number(wave.duration_s).toFixed(3)} 秒 · ${wave.sample_rate_hz||200} Hz · 步进 ${sampleStride(wave)} · ${wave.filter==='raw'?'原始波形':wave.filter==='display'?'0.5–40 Hz 显示滤波':wave.filter||'来源滤波未提供'} · ${domain?'锁定幅度 ±'+domain+' u':'自适应设备幅度'} · 电压未校准；屏幕时间轴，纸速未标定${start?'':' · 记录时钟未提供'}`;
+    return `${start||elapsed(wave.start_s)} — ${end||elapsed(wave.start_s+wave.duration_s)} · ${Number(wave.duration_s).toFixed(3)} 秒 · ${wave.sample_rate_hz||200} Hz · 步进 ${sampleStride(wave)} · ${wave.filter==='raw'?'原始波形':wave.filter==='display'?'0.5–40 Hz 显示滤波':wave.filter||'来源滤波未提供'} · ${Number.isFinite(displayGain)&&displayGain>0?'本窗共同增益 '+Number(displayGain.toPrecision(4))+' px/u · 基线居中':domain?'锁定幅度 ±'+domain+' u':'自适应设备幅度'} · 电压未校准；屏幕时间轴，纸速未标定${start?'':' · 记录时钟未提供'}`;
   }
   function canvasTimeAxis(ctx,wave,{left=0,width=ctx.canvas.clientWidth,y,recordStart=null}={}){
     const count=Math.max(1,Math.min(5,Math.floor(width/150))),ticks=[];ctx.save();ctx.font='12px sans-serif';ctx.fillStyle='#405563';
     for(let i=0;i<=count;i++){const time=wave.start_s+wave.duration_s*i/count,x=left+width*i/count,label=clockLabel(recordStart,time);ctx.textAlign=i===0?'left':i===count?'right':'center';ctx.fillText(label,x,y);ticks.push({time,label});}ctx.restore();
     if(ctx.canvas.dataset)ctx.canvas.dataset.waveTimeTicks=JSON.stringify(ticks);return ticks;
   }
-  const api={clockLabel,waveMeta,canvasTimeAxis,waveDomain,elapsed,recordClock,windowAt,waveRow,sampleStride,scatterBound,bpm,fiducialPosition,labelCanvas,virtualGrid,markCanvas,markSvg,shouldConfirmNavigation};globalThis.ECGReviewTools=api;if(typeof module!=='undefined')module.exports=api;
+  const api={clockLabel,waveMeta,canvasTimeAxis,waveDomain,reportAmplitude,reportWaveGeometry,lockedWaveRows,elapsed,recordClock,windowAt,waveRow,sampleStride,scatterBound,bpm,fiducialPosition,labelCanvas,virtualGrid,markCanvas,markSvg,shouldConfirmNavigation};globalThis.ECGReviewTools=api;if(typeof module!=='undefined')module.exports=api;
 })();

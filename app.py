@@ -56,9 +56,12 @@ from ecg_core.stt import build_stt_review
 from ecg_core.waveform import read_event_waveform, ALL_LEADS, read_waveform, read_waveform_strips, read_waveform_overview
 from ecg_core.overview import RhythmReviewStore, initial_episodes, density
 from ecg_core.review_candidates import prepare_candidate, augment_index, rr_distribution, canonical
+from ecg_core.report_evidence import (attach_reviews, longest_event, evidence_descriptor,
+    presentation as evidence_presentation, digest as evidence_digest, check_read_wave,
+    assert_caption as assert_evidence_caption, used_in_output)
 
 ACTOR = "演示分析医生"
-READONLY_POST_ENDPOINTS = frozenset({"case_open", "scatter_selection_endpoint", "waveform_strips_endpoint", "event_waveforms", "waveform_density", "advanced_analysis_endpoint", "rr_locate_endpoint", "stt_range_endpoint"})
+READONLY_POST_ENDPOINTS = frozenset({"case_open", "scatter_selection_endpoint", "waveform_strips_endpoint", "event_waveforms", "waveform_density", "advanced_analysis_endpoint", "rr_locate_endpoint", "stt_range_endpoint", "report_evidence_preview"})
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -706,7 +709,9 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
             t["sample_indices"]=[by_id[k]["sample_index"] for k in refs.get(t["id"],[f"s:{s}" for s in t["sample_indices"]]) if k in by_id]
         index=build_index(feed,templates,storage.list_annotations(case["case_id"]),storage.get_review(case["case_id"]))
         index['start_time']=case['metadata'].get('start_iso') or case['metadata'].get('start_time')
-        return augment_index(index, storage.list_candidates(case['case_id']), linked_read_identity(case))
+        identity=linked_read_identity(case)
+        index=augment_index(index, storage.list_candidates(case['case_id']), identity)
+        return attach_reviews(index, identity, storage.list_report_evidence(case['case_id']))
 
     def candidate_guard(case, identity):
         def guard(db):
@@ -725,20 +730,84 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
             identity=linked_read_identity(case, request.args)
             items=storage.list_candidates(case_id)
             linked_read_identity(case,identity)
-            return jsonify(items=items, **identity)
+            return jsonify(items=items, report_version=storage.get_report(case_id,'')['version'], **identity)
         body=_json_object()
         if any(k not in body for k in ('case_id','analysis_basis','analysis_revision','beat_revision')):
             raise ValueError('保存候选须提供完整病例、记录和逐搏依据')
         identity=linked_read_identity(case,body)
         guard=candidate_guard(case,identity)
         if request.method=='PATCH':
-            item=storage.set_candidate_status(case_id,body.get('id'),body.get('status'),ACTOR,guard)
+            item=storage.set_candidate_status(case_id,body.get('id'),body.get('status'),ACTOR,guard,body.get('expected_report_version'))
         else:
-            index=clinical_index(case)
+            # Picking evidence needs the exact original adjacency and strip
+            # geometry, not a full template/diagnosis/report index rebuild.
+            feed=edited_feed(case)
+            index={'rows':feed.beats+feed.markers,'duration_s':feed.duration}
             checked=prepare_candidate(index,identity,body)
             linked_read_identity(case,identity)
             item=storage.save_candidate(case_id,checked,ACTOR,guard)
-        return jsonify(item=item, **identity)
+        return jsonify(item=item, report=storage.get_report(case_id,case['conclusion']),
+                       review=storage.get_review(case_id), **identity)
+
+    @app.get('/api/cases/<case_id>/report-rr-evidence')
+    def report_rr_evidence(case_id):
+        case=case_or_404(case_id)
+        identity=linked_read_identity(case, request.args)
+        event=longest_event(clinical_index(case), identity, storage.list_report_evidence(case_id))
+        linked_read_identity(case, identity)
+        return jsonify(event=event, **identity)
+
+    def read_report_evidence(case, body):
+        if any(k not in body for k in ('case_id','analysis_basis','analysis_revision','beat_revision')):
+            raise ValueError('核对图条须提供完整病例、记录和逐搏依据')
+        identity=linked_read_identity(case, body)
+        index=clinical_index(case)
+        if body.get('target')=='longest':
+            event=longest_event(index, identity, storage.list_report_evidence(case['case_id']))
+        else:
+            event=next((e for e in index['events'] if e['event_id']==body.get('event_id')), None)
+        if event is None or (body.get('basis_version') and body['basis_version']!=event['basis_version']):
+            raise ReportConflict('图条依据已变化，请重新核对或移出本次报告')
+        descriptor=evidence_descriptor(index, event, identity)
+        entry=body.get('entry', {})
+        if not isinstance(entry,dict):raise ValueError('图条核对设置无效')
+        settings=event.get('retained_settings',{}) if not entry else entry
+        entry={**settings, 'caption':entry.get('caption') or event['label'], 'notes':entry.get('notes','')}
+        if any(not isinstance(entry[k],str) or len(entry[k])>limit for k,limit in (('caption',500),('notes',2000))):
+            raise ValueError('图注或注释无效')
+        proof=evidence_presentation(index,event,entry)
+        wave=prepare_strip(index,event,entry,
+            lambda a,b,leads,points:read_event_waveform(case['paths']['data'],a,b,leads,points))
+        check_read_wave(wave)
+        linked_read_identity(case,identity)
+        return identity,index,event,entry,descriptor,proof,wave
+
+    @app.post('/api/cases/<case_id>/report-evidence/preview')
+    def report_evidence_preview(case_id):
+        case=case_or_404(case_id)
+        identity,index,event,entry,descriptor,proof,wave=read_report_evidence(case,_json_object())
+        return jsonify(**wave,event=event,entry=entry,evidence_key=evidence_digest(descriptor),
+            presentation_key=evidence_digest(proof),report_version=storage.get_report(case_id,'')['version'],**identity)
+
+    @app.post('/api/cases/<case_id>/report-evidence/confirm')
+    def report_evidence_confirm(case_id):
+        case=case_or_404(case_id);body=_json_object()
+        if body.get('confirmed') is not True:raise ValueError('请明确确认当前图条证据')
+        identity,index,event,entry,descriptor,proof,wave=read_report_evidence(case,body)
+        if body.get('evidence_key')!=evidence_digest(descriptor) or body.get('presentation_key')!=evidence_digest(proof):
+            raise ReportConflict('图条与刚才读取的波形不一致，请重新打开后核对')
+        assert_evidence_caption(index,event,entry)
+        version=body.get('report_version')
+        if type(version) is not int:raise ValueError('缺少核对时的报告版本')
+        original_guard=candidate_guard(case,identity)
+        def guard(db):
+            original_guard(db)
+            row=db.execute('SELECT version FROM report_drafts WHERE case_id=?',(case_id,)).fetchone()
+            if (row['version'] if row else 1)!=version:
+                raise ReportConflict('报告已变化，请重新打开当前图条后核对')
+        item=storage.confirm_report_evidence(case_id,descriptor,proof,ACTOR,guard)
+        return jsonify(item=item,report=storage.get_report(case_id,case['conclusion']),
+                       review=storage.get_review(case_id),**linked_read_identity(case))
 
     @app.get('/api/cases/<case_id>/rr-distribution')
     def rr_distribution_endpoint(case_id):
@@ -909,7 +978,7 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         return clinical_response(case, lambda: hrv_windows(edited_feed(case),case["metadata"].get("start_iso") or case["metadata"].get("start_time"),request.args.get("window",0)))
 
     def review_data_version(case, feed):
-        from ecg_core.clinical_analysis import fingerprint, encode, PERIODIC_VERSION
+        from ecg_core.clinical_analysis import fingerprint, encode, DATA_VERSION_SUFFIX
         opts = feed.document['settings']
         rows = feed.beats + feed.markers
         bv = fingerprint('|'.join(f"{r['id']}:{r['sample_index']}:{r['class_code']}" for r in rows)
@@ -917,7 +986,7 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         findings = [a for a in storage.list_annotations(case['case_id'])
                     if a.get('details', {}).get('kind') in ('ST', 'AT', 'VT', 'AF', 'AFL', 'STRIP')]
         av = fingerprint(encode([[a['id'], a['sample_index'], a.get('details')] for a in findings]))
-        return bv + '-' + av + '-rr-quality-v3-' + PERIODIC_VERSION + '-af-end-v1-status-v2'
+        return bv + '-' + av + DATA_VERSION_SUFFIX
 
     def review_scope(case, expected=None, db=None):
         """Bind new work to original contents and both edited/review revisions."""
@@ -1805,8 +1874,10 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         report["edited_analysis"] = True
         report["analysis_revision"] = edit_snapshot["revision"]
         index=clinical_index(case)
-        resolved=validate_report(index,report['composition'],report['review_snapshot'])
-        if len(resolved)!=len(report['composition'].get('selected_events',[])):
+        resolved=validate_report(index,report['composition'],report['review_snapshot'],report['status']=='reviewed')
+        used_entries=[s for s in report['composition'].get('selected_events',[]) if used_in_output(report['composition'],s,next((e for e in index['events'] if e['event_id']==s['event_id']),None))]
+        resolved=[e for e in resolved if used_in_output(report['composition'],e,e)]
+        if len(resolved)!=len(used_entries):
             raise ValueError('已选图条失效，请重新筛选后导出')
         report['selected_waveforms']=[prepare_strip(index, e, e, lambda a,b,leads,points: read_event_waveform(case['paths']['data'],a,b,leads,points)) for e in resolved]
         report['paper_statistics']=report_statistics(index,case['metadata'].get('start_iso') or case['metadata'].get('start_time'),edited_feed(case).document['settings'],report['composition'].get('pause_edges_ms'))

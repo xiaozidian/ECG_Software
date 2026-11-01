@@ -93,9 +93,8 @@ async def verify_latest_ui(page, screenshots):
         await page.locator('[data-rw-close]').click()
         return shape
 
-    await navigate(page,'rr');await page.locator('.rrv-wave-stage svg').wait_for()
-    await page.locator('.rrv-wave-stage svg').dblclick();await modal()
-    checks.append('RR-selected-wave-double-click-vertical-twelve')
+    assert await page.locator('[data-page="rr"], #page-rr').count()==0
+    checks.append('RR-evidence-reviewed-in-report-without-independent-page')
     await navigate(page,'trends')
     await page.locator('[data-hrv-edit-action="locate"]').first.click()
     await page.locator('[data-hrv-wave-detail] svg').wait_for()
@@ -104,11 +103,12 @@ async def verify_latest_ui(page, screenshots):
     checks.append('HRV-overview-and-detail-double-click-vertical-twelve')
 
     await navigate(page,'report')
+    await page.locator('#v2EventWave [data-display-leads="12"]').click()
     await page.locator('#v2EventWave [data-wave-lead="V6"]').wait_for()
     geometries=[]
     for viewport in [{'width':1440,'height':1000},{'width':1280,'height':800}]:
         await page.set_viewport_size(viewport);await two_frames(page)
-        shape=await page.locator('#v2EventWave svg').evaluate("""s=>({columns:s.dataset.columns,
+        shape=await page.locator('#v2EventWave .report-range-stage > svg').evaluate("""s=>({columns:s.dataset.columns,
             leads:[...s.querySelectorAll('[data-wave-lead]')].map(x=>x.dataset.waveLead),
             baselines:[...s.querySelectorAll('[data-wave-baseline]')].map(x=>Number(x.dataset.waveBaseline)),
             width:s.getBoundingClientRect().width,plot:Number(s.dataset.plotWidth),
@@ -118,7 +118,7 @@ async def verify_latest_ui(page, screenshots):
         assert all(b-a>=45 for a,b in zip(shape['baselines'],shape['baselines'][1:]))
         geometries.append({'viewport':viewport,**shape})
     checks.append('report-vertical-full-width-twelve-on-large-and-compact-screens')
-    await page.locator('#v2EventWave svg').dblclick(position={'x':150,'y':60});await modal()
+    await page.locator('#v2EventWave .report-range-stage > svg').dblclick(position={'x':150,'y':60});await modal()
     checks.append('report-category-wave-double-click-vertical-twelve')
     await page.locator('.v2-event-list [data-include]').first.check()
     await page.locator('#reportV2Nav [data-category="final"]').click()

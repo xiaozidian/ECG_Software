@@ -7,9 +7,10 @@
   const canApprove=(state,conclusion,ready,writable)=>Boolean(writable&&ready&&state.report&&
     !state.reportDirty&&!state.reportStale&&!state.reportSaving&&!state.reportEvidenceLoading&&!state.reportEvidenceError&&
     !state.reportViewLoading&&!state.reportViewError&&!(globalThis.ECGReportRange?.pending?.()||[]).length&&
-    !(state.reportCategoryPending||[]).length&&
     !(state.reportComposition?.diagnosis_blocks||[]).some(block=>block.needs_review)&&String(conclusion??'').trim());
   function receive(state,remote){
+    // An older in-flight GET must not roll back a completed automatic save.
+    if(state.report&&Number.isInteger(remote?.version)&&Number.isInteger(state.report.version)&&remote.version<state.report.version)return false;
     if((state.reportDirty||state.reportSaving)&&state.report&&!sameBase(state.report,remote)){
       state.reportStale=true;return false;
     }

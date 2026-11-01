@@ -165,7 +165,7 @@
         if(extended.length)await checkExtendedScope();
         if(!presented()||stripViewKey()!==viewBase||!central().isCurrent(ticket,viewKey))return;
         await Promise.all([
-          (async()=>{if(!ordinary.length)return;const result=await api('/api/cases/'+encodeURIComponent(c.caseId)+'/waveform-strips',{method:'POST',signal:ticket.signal,body:JSON.stringify({sample_indices:ordinary,pre_s:2,post_s:2,leads:miniLeads,max_points:800,filter:filterMode,analysis_basis:c.analysis_basis,analysis_revision:c.analysis_revision,revision:c.beatRevision})});assertIdentity(result,c);if(!sameSamples(result.items?.map(r=>r.sample_index),ordinary))throw Error('小波形返回的心搏集合不一致');result.items.forEach(item=>items.set(item.sample_index,item));})(),
+          (async()=>{if(!ordinary.length)return;const result=await api('/api/cases/'+encodeURIComponent(c.caseId)+'/waveform-strips',{method:'POST',signal:ticket.signal,body:JSON.stringify({sample_indices:ordinary,pre_s:2,post_s:2,leads:miniLeads,max_points:800,filter:filterMode,analysis_basis:c.analysis_basis,analysis_revision:c.analysis_revision,revision:c.beatRevision})});assertIdentity(result,c);if(!sameSamples(result.items?.map(r=>r.sample_index),ordinary))throw Error('小波形返回的心搏集合不一致');result.items.forEach(item=>items.set(item.sample_index,{...item,analysis_basis:result.analysis_basis,analysis_revision:result.analysis_revision,beat_revision:result.beat_revision}));})(),
           ...Array.from({length:Math.min(4,extended.length)},async()=>{while(next<extended.length){if(!presented()||stripViewKey()!==viewBase||!central().isCurrent(ticket,viewKey))return;const sample=extended[next++],range=ranges.get(sample),params=new URLSearchParams({start:range.start,duration:range.duration,leads:miniLeads.join(','),max_points:12000,filter:filterMode,analysis_basis:c.analysis_basis,analysis_revision:c.analysis_revision});const wave=await api('/api/cases/'+encodeURIComponent(c.caseId)+'/waveform?'+params,{signal:ticket.signal});if(wave.analysis_basis!==c.analysis_basis||wave.analysis_revision!==c.analysis_revision)throw Error('小波形的记录或复核依据已变化，未显示');const present=new Set((wave.beats||[]).map(row=>row.sample_index));if(!present.has(range.previous_sample)||!present.has(sample))throw Error('RR小图未取得原相邻心搏的两个计时点，请重新读取；未显示不完整RR');items.set(sample,{...wave,sample_index:sample});}})
         ]);
         if(extended.length)await checkExtendedScope();
@@ -197,6 +197,11 @@
       const sample=Number(card.dataset.scatterSample),row=index?.bySample.get(sample),c={...context},generation=snapshot?.selectionGeneration;
       const current=()=>presented()&&scopeKey(context)===scopeKey(c)&&snapshot.selectionGeneration===generation&&cohort().includes(sample);
       if(!row||!current())return;const population=snapshot.sourcePopulation||{};
+      if(options.openMenu){const wave=cache.get('strip:'+stripViewKey()+':'+sample);if(wave)options.openMenu({card,event,wave,row,identity:c,isCurrent:current,sampleScope:visible=>{
+        if(!current())throw Error('RR 小图集合已变化，请重新打开菜单');
+        if(!visible)return [...cohort()];const viewport=qs('#scatterSelectionList').getBoundingClientRect();
+        return [...qs('#scatterSelectionVirtual').querySelectorAll('[data-scatter-sample]')].filter(node=>{const box=node.getBoundingClientRect();return box.bottom>viewport.top&&box.top<viewport.bottom;}).map(node=>Number(node.dataset.scatterSample));
+      }});return;}
       root.ECGOccurrenceCard.menu({card,event,item:row,isCurrent:current,
         onPreview:()=>options.preview?.(card,row,c,current),
         onLeads:leads=>{miniLeads=[...leads];miniKey='';renderMini();},

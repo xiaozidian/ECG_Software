@@ -975,6 +975,9 @@ async def verify(args, receipt):
                             from verify_windows_latest_ui import verify_latest_ui
                             latest_ui = await verify_latest_ui(page, screenshots)
                             record(receipt, "latest-workstation-ui-and-report-curation", latest_ui)
+                            from verify_report_rr_browser import verify_report_rr
+                            rr_review = await verify_report_rr(page, screenshots)
+                            record(receipt, "rr-candidate-selection-and-final-approval", rr_review)
                             await fault_checks(page, receipt, selector, sample)
                             annotation_id = await save_math_work(page, receipt)
                             receipt.setdefault("not_run", []).append({"name":"PDF opening/export/download", "reason":"Explicit request for this packaging task", "status":"not_run"})

@@ -51,7 +51,7 @@ async function stripCache(){
   const setup=source.slice(source.indexOf('  const reportWaveCache='),source.indexOf('  let reportCase='));
   const reader=source.slice(source.indexOf('  async function reportStrip('),source.indexOf('  async function selectedReportWaves('));
   let release,reads=0;const params=[];
-  const ctx=vm.createContext({ECGWaveformLoader:require('../static/js/waveform-loader.js'),ECGReportEngine:{settings:x=>x},state:{caseId:'A'},setTimeout,
+  const ctx=vm.createContext({ECGWaveformLoader:require('../static/js/waveform-loader.js'),ECGReportEngine:{settings:x=>x},ECGReportStripEditor:{curation:()=>({})},state:{caseId:'A'},setTimeout,
     endpoint:async(kind,p)=>{params.push(p);reads++;if(reads===1)return new Promise(r=>release=r);return {sequence:reads};}});
   vm.runInContext(setup+reader,ctx);
   const event={event_id:'unchanged',basis_version:'beats-unchanged',label:'candidate'},spec={leads:['II'],duration_s:7};
@@ -67,7 +67,7 @@ async function stripCache(){
 }
 async function remove(){
   const picks=[{event_id:'removed'}];let shell=0,body=0;
-  const ctx=vm.createContext({state:{reportComposition:{selected_events:picks}},selected:()=>picks,selectedLookup:new Map(),syncText(){},dirty(){},renderReportShell(){shell++},renderReportBody(){body++},run:fn=>fn()});
+  const ctx=vm.createContext({state:{reportComposition:{selected_events:picks}},copy:x=>JSON.parse(JSON.stringify(x)),selected:()=>picks,selectedLookup:new Map(),syncText(){},dirty(){},renderReportShell(){shell++},renderReportBody(){body++},run:fn=>fn()});
   vm.runInContext(source.slice(source.indexOf('  function removeReportSelection('),source.indexOf('  function enableReportDraftSelections(')),ctx);
   ctx.removeReportSelection(0);assert.equal(picks.length,0);assert.equal(shell,1);assert.equal(body,1);
 }

@@ -12,11 +12,14 @@ globalThis.ECGReportWorkspace=(()=>{
   function reviewWaveSvg(wave,event=null,options={}){
     const card=globalThis.ECGOccurrenceCard||(typeof require==='function'?require('./occurrence-card.js'):null);
     const count=Object.keys(wave.leads||{}).length,preview=typeof document!=='undefined'?document.querySelector('.rw-event-preview-dialog[open] [data-rw-preview-wave]'):null;
-    const available=Number(options.height)||(preview?preview.clientHeight-38:count*70+48),height=Math.max(count*56+(count>6?24:0)+24,available);
+    const profile=options.displayProfile||(Number.isFinite(options.domain)&&options.domain>0?null:ECGReviewTools.reportAmplitude(wave));
+    const compact=!profile&&options.compactRows&&count>6&&Number.isFinite(options.domain)&&options.domain>0;
+    let pixelGain=compact?20/(2*options.domain):null,rowHeight=compact?ECGReviewTools.lockedWaveRows(Object.values(wave.leads),{rowHeight:32,domain:options.domain,scale:pixelGain}).rowHeight:64;
+    if(profile){const fit=ECGReviewTools.reportWaveGeometry(wave,profile,options.rowHeight||(count>3?64:120),options.pixelGain);pixelGain=fit.pixelGain;rowHeight=fit.rowHeight;}
+    const height=Number.isFinite(options.fitHeight)?Math.max(84,options.fitHeight):count*rowHeight+(profile?60:48);
     const recordStart=options.recordStart??(typeof state!=='undefined'?state.caseData?.metadata?.start_time:null);
-    // One full-width clock for every lead. Short viewports scroll the rows;
-    // they never halve the time axis or squeeze the channels to fit a page.
-    return card.svg(wave,event||{}, {...options,width:options.width||preview?.clientWidth||1000,height,recordStart,inset:options.inset??24,timeAxis:true,columns:1}).replace('<svg ',`<svg class="rw-twelve-wave" style="height:${height}px" data-review-lead-count="${count}" `);
+    // Report frames can fit all rows; standalone expansion retains its native height.
+    return card.svg(wave,event||{}, {...options,displayProfile:profile,width:options.width||preview?.clientWidth||1000,height,rowHeight,pixelGain,recordStart,inset:options.inset??24,timeAxis:true,columns:1}).replace('<svg ',`<svg class="rw-twelve-wave" style="height:${height}px" data-review-lead-count="${count}" `);
   }
   // Pointer enlargement belongs only to the visible SVG. Table inclusion stays immediate.
   function bindWavePreview(host,open,isCurrent=()=>true){
@@ -24,16 +27,18 @@ globalThis.ECGReportWorkspace=(()=>{
     if(!host.hasAttribute('tabindex'))host.setAttribute('tabindex','0');
     host.setAttribute('aria-description','波形只读复核；双击具体波形或 Shift+Enter 查看本图条。左侧列表单击或勾选入报。');
     if(host._rwWaveBound)return;host._rwWaveBound=true;
-    host.addEventListener('click',event=>{if(event.target.closest?.('svg')&&host.contains(event.target)){event.stopPropagation();if(host._rwWaveCurrent())host.focus({preventScroll:true});}},true);
-    host.addEventListener('dblclick',event=>{if(event.button!==0||!event.target.closest?.('svg')||!host.contains(event.target)||!host._rwWaveCurrent())return;event.preventDefault();event.stopPropagation();host._rwWaveOpen?.();},true);
+    host.addEventListener('click',event=>{if(event.target.closest?.('.rw-candidate-context'))return;if(event.target.closest?.('svg')&&host.contains(event.target)){event.stopPropagation();if(host._rwWaveCurrent())host.focus({preventScroll:true});}},true);
+    host.addEventListener('dblclick',event=>{if(event.target.closest?.('.rw-candidate-context')||event.button!==0||!event.target.closest?.('svg')||!host.contains(event.target)||!host._rwWaveCurrent())return;event.preventDefault();event.stopPropagation();host._rwWaveOpen?.();},true);
   }
-  function bindTwelveWave(host,{wave,readWave,isCurrent=()=>true,recordStart=null,domain=null,event=null}){
-    return mountEventPreview(host,{event,title:'12 导联 · 同一记录时间窗',isCurrent,
+  function bindTwelveWave(host,{wave,readWave,isCurrent=()=>true,recordStart=null,domain=null,displayProfile=null,event=null}){
+    const open=mountEventPreview(host,{event,title:'12 导联 · 同一记录时间窗',isCurrent,
       loadWave:async()=>{const full=await readWave();if(!isCurrent())throw Error('病例或标注依据已变化，请重新打开波形');
         const names=Object.keys(full.leads||{});if(!['I','II','III','aVR','aVL','aVF','V1','V2','V3','V4','V5','V6'].every(n=>names.includes(n)))throw Error('来源没有提供完整十二导联，未补绘');
         if(Math.abs(full.start_s-wave.start_s)>.005||Math.abs(full.duration_s-wave.duration_s)>.005||full.sample_rate_hz!==wave.sample_rate_hz)throw Error('十二导联时间窗或采样率与原图不一致，未显示');
         globalThis.ECGAnalysisConsistency?.assertSame(wave,full);return full;},
-      renderWave:full=>reviewWaveSvg(full,event,{recordStart,domain})});
+      renderWave:full=>reviewWaveSvg(full,event,{recordStart,domain,displayProfile})});
+    if(typeof beatEditor!=='undefined')beatEditor.bindWaveSurface(host,{wave,isCurrent,onPreview:open,readOnly:typeof state!=='undefined'&&state.currentPage==='report'});
+    return open;
   }
   function capturePosition(root){
     const scroll=[];positionSelectors.forEach(selector=>root.querySelectorAll(selector).forEach((node,index)=>scroll.push({selector,index,top:node.scrollTop,left:node.scrollLeft})));
@@ -75,6 +80,7 @@ globalThis.ECGReportWorkspace=(()=>{
           if(!dialog.open||token!==previewToken)return;
           if(!isCurrent()){target.textContent='当前病例或依据已变化，请关闭后重新选择事件。';return;}
           target.removeAttribute('role');target.innerHTML=waveContext({waveform:wave},renderWave(wave));
+          if(typeof beatEditor!=='undefined')beatEditor.bindWaveSurface(target,{wave,isCurrent:()=>dialog.open&&token===previewToken&&isCurrent(),readOnly:true,previewLabel:'返回原波形',onPreview:()=>dialog.close()});
         }).catch(error=>{
           if(!dialog.open||token!==previewToken)return;
           target.textContent=isCurrent()?'读取失败：'+error.message:'当前病例或依据已变化，请关闭后重新选择事件。';
@@ -105,14 +111,16 @@ globalThis.ECGReportWorkspace=(()=>{
     if(!insertion||editor.value!==insertion.after||editor.readOnly||editor.disabled)return false;
     editor.value=insertion.before;editor.setSelectionRange(insertion.start,insertion.end);editor.dispatchEvent(new Event('input',{bubbles:true}));editor.focus({preventScroll:true});return true;
   }
-  const reviewLabels={all:'全部状态',stale:'依据失效',pending:'待完成诊断确认',confirmed:'事件已确认'};
+  const reviewLabels={all:'全部状态',stale:'依据失效',pending:'待核对',confirmed:'已核对'};
   function stripReviewState(selection,event){
     if(!event||event.event_id!==selection.event_id||!selection.basis_version||event.basis_version!==selection.basis_version)return 'stale';
+    if(event.evidence_only)return globalThis.ECGReportEvidenceUI?.confirmed(selection,event)?'confirmed':'pending';
     return event.diagnosis_status==='confirmed'&&(event.category!=='AF'||event.rhythm_status==='confirmed')?'confirmed':'pending';
   }
   function reviewExplanation(status,event){
     if(status==='stale')return '须重新核对，不能导出';
     if(status==='confirmed')return '不代表报告已审核';
+    if(event?.evidence_only)return '请核对原始波形、RR 测量和图注，并在报告中确认本条';
     if(event?.category==='AF')return event.rhythm_status==='confirmed'?'片段已确认，编辑环节仍待确认；报告未审核':'节律片段仍待复核，不能视为确诊';
     return `${event?.category==='ST'?'ST-T':'编辑'}环节仍待确认，入草稿不代表确诊`;
   }
@@ -127,8 +135,8 @@ globalThis.ECGReportWorkspace=(()=>{
   function waveContext(entry,waveSvg=''){
     const wave=entry.waveform,spec=entry.strip||{},duration=Number(wave.duration_s),count=spec.visible_beat_count??wave.beats?.length??0;
     const reviewNote=(globalThis.ECGReportEngine||(typeof require==='function'?require('./report-engine.js'):null))?.reviewNote(entry)||'';
-    const ticks=Array.from({length:8},(_,i)=>i*duration/7),recordStart=typeof state!=='undefined'?state.caseData?.metadata?.start_time:null,tools=globalThis.ECGReviewTools,domain=/data-amplitude-domain="([0-9.]+)"/.exec(waveSvg)?.[1];
-    return `${reviewNote?`<p class="rw-wave-context" data-rhythm-review-note><strong>${esc(reviewNote)}</strong></p>`:''}<p class="rw-wave-context" data-wave-metadata>${esc(tools.waveMeta(wave,recordStart,domain))} · ${count} 搏${spec.warning?' · '+esc(spec.warning):''}</p><div class="rw-wave-scroll" tabindex="0" role="region" aria-label="单列连续波形；短窗口可上下滚动"><div class="rw-wave-canvas">${waveSvg}</div></div>`;
+    const ticks=Array.from({length:8},(_,i)=>i*duration/7),recordStart=typeof state!=='undefined'?state.caseData?.metadata?.start_time:null,tools=globalThis.ECGReviewTools||(typeof require==='function'?require('./clinical-review-tools.js'):null),domain=/data-amplitude-domain="([0-9.]+)"/.exec(waveSvg)?.[1],gain=Number(/data-display-gain="([^"]+)"/.exec(waveSvg)?.[1]);
+    return `${reviewNote?`<p class="rw-wave-context" data-rhythm-review-note><strong>${esc(reviewNote)}</strong></p>`:''}<p class="rw-wave-context" data-wave-metadata>${esc(tools.waveMeta(wave,recordStart,domain,gain))} · ${count} 搏${spec.warning?' · '+esc(spec.warning):''}</p><div class="rw-wave-scroll" tabindex="0" role="region" aria-label="单列连续波形；短窗口可上下滚动"><div class="rw-wave-canvas">${waveSvg}</div></div>`;
   }
   function bars(title,rows,selected,attribute){
     const max=Math.max(1,...rows.map(x=>x.count));
@@ -165,11 +173,11 @@ globalThis.ECGReportWorkspace=(()=>{
     return '<details class="rw-strip-tools" data-rw-tools="'+i+'"><summary>图条操作</summary><div class="rw-strip-options" aria-label="本条图条操作">'+
       [['three','3L · II / V1 / V5'],['all','12L'],['one','1L · II'],['preview','查看图条'],['edit','编辑图条'],['rename','重命名'],['print','取消 / 恢复打印'],['remove','删除图条（可撤销）']].map(([key,label])=>'<button type="button" data-rw-strip-action="'+key+'" data-rw-strip="'+i+'"'+(stale&&key!=='remove'?' disabled':'')+'>'+label+'</button>').join('')+'</div></details>';
   }
-  function compose(host,{id,composition,selected,lookup,sections,onPages,onMode,onPreview,onStripLeads,onStripEdit,onStripPrint,onStripRemove,onSort,onTemplates,loadTrend,renderWave,loadWave,renderAdvanced,terms=[],overview=null,isCurrent=()=>true,termContext=null,onUsages=null,showTerminology=false,showAdvanced=false,recordStart=null}){
+  function compose(host,{id,composition,selected,lookup,sections,onPages,onMode,onPreview,onStripLeads,onStripEdit,onStripPrint,onStripRemove,onStripReference,onReviewEvidence,onReviewLongest,loadLongestRR,onSort,onTemplates,loadTrend,renderWave,loadWave,renderAdvanced,terms=[],overview=null,isCurrent=()=>true,termContext=null,onUsages=null,showTerminology=false,showAdvanced=false,recordStart=null,inspection=false}){
     releaseTerminology(host);
     // Hiding the assistant does not discard versioned text already saved in a report.
     host._rwTerminologyUsages=composition.terminology_usages??null;
-    view.miniObserver?.disconnect();
+    view.miniObserver?.disconnect();view.miniResizeObserver?.disconnect();view.inspectionObserver?.disconnect();
     if(caseId===id&&host.querySelector('.rw-workspace')){
       view.position=capturePosition(host);
       host.querySelectorAll('[data-rw-page-group]').forEach(n=>view.pageOpen.set(n.dataset.rwPageGroup,n.open));
@@ -196,34 +204,39 @@ globalThis.ECGReportWorkspace=(()=>{
         <header class="rw-heading"><div><h2>报告编排</h2><p><span data-rw-visible-count>${visible.length}</span> 条图条 · <span data-rw-page-count>${composition.included_pages.length}</span> 类报告页</p></div><div class="rw-sort-controls" aria-label="全部已选图条排序"><span>全部图条排序</span><button type="button" data-rw-sort="type">按类型</button><button type="button" data-rw-sort="time">按时间</button><button type="button" data-paper-preview>预览 A4</button></div></header>
         <div class="rw-columns">
           <section class="rw-evidence" aria-label="已入报证据"><header class="rw-evidence-heading"><h3>入报图条</h3><span>共 ${selected.length} 条</span></header>
-            <div class="rw-selected-strips">${visible.map(({s,i,e,status})=>`<article class="rw-strip" data-rw-key="${esc(s.event_id)}"><header><strong>${i+1}. ${esc(s.caption||e?.label||'已失效图条')}</strong><span>${e?formatElapsed(e.time_s):'需重新选择'}</span>${stripActions(i,status)}</header><div class="rw-mini-wave" data-rw-mini="${i}" aria-label="图条 ${i+1} 的已选导联">${status==='stale'?'依据已失效，须重新核对':'可见时读取本条真实波形…'}</div><small class="rw-mini-range" data-rw-mini-range="${i}">本条显示与入报 ${esc((s.leads||composition.strip_defaults?.leads||['II','V1','V5']).join(' / '))}</small><div class="rw-strip-actions"><button type="button" data-rw-toggle="${i}" aria-expanded="${view.expanded.has(s.event_id)}" aria-controls="rwStripBody${i}">${view.expanded.has(s.event_id)?'折叠波形':'展开波形'}</button><button type="button" data-back-event="${i}">回看事件</button></div><div id="rwStripBody${i}" class="rw-strip-body" ${view.expanded.has(s.event_id)?'':'hidden'}><div data-rw-wave="${i}">${e?'读取波形…':'依据已变化，请移除后重新选择'}</div><label>图注<input data-caption="${i}" maxlength="500" value="${esc(s.caption)}"></label></div></article>`).join('')||'<div class="rw-empty"><strong>尚无入报图条</strong><p>在事件选图中核对波形，再加入报告草稿。</p><button type="button" data-category="fastest">前往事件选图</button></div>'}</div>
+            <div class="rw-selected-strips">${visible.map(({s,i,e,status})=>`<article class="rw-strip" data-rw-key="${esc(s.event_id)}"><header><strong>${i+1}. ${esc(s.caption||e?.label||'已失效图条')}</strong><span>${e?formatElapsed(e.time_s):'需重新选择'}</span>${stripActions(i,status)}</header><div class="rw-mini-wave" data-rw-mini="${i}" aria-label="图条 ${i+1} 的已选导联">${status==='stale'?'依据已失效，须重新核对':'可见时读取本条真实波形…'}</div><small class="rw-mini-range" data-rw-mini-range="${i}">本条显示与入报 ${esc((s.leads||composition.strip_defaults?.leads||['II','V1','V5']).join(' / '))}</small><small class="rw-mini-scale" data-rw-mini-scale="${i}">缩略预览 · 双击查看完整导联</small><div class="rw-strip-actions"><button type="button" data-rw-toggle="${i}" aria-expanded="${view.expanded.has(s.event_id)}" aria-controls="rwStripBody${i}">${view.expanded.has(s.event_id)?'折叠波形':'展开波形'}</button><button type="button" data-back-event="${i}">回看事件</button></div><div id="rwStripBody${i}" class="rw-strip-body" ${!inspection&&view.expanded.has(s.event_id)?'':'hidden'}><div data-rw-wave="${i}">${e?'读取波形…':'依据已变化，请移除后重新选择'}</div><label>图注<input data-caption="${i}" maxlength="500" value="${esc(s.caption)}"></label></div></article>`).join('')||'<div class="rw-empty"><strong>尚无入报图条</strong><p>在事件选图中核对波形，再加入报告草稿。</p><button type="button" data-category="fastest">前往事件选图</button></div>'}</div>
           </section>
           <section id="rwConclusionSlot" class="rw-conclusion-pane" aria-label="报告结论编辑"></section>
         </div>
       </div>
     </div>`;
-    if(overview){const panel=document.createElement('aside');panel.className='rw-overview';panel.setAttribute('aria-label','全记录统计总览');panel.innerHTML=`<h3>全记录统计总览</h3><p>当前依据 r${esc(overview.revision??'—')} · 已确认结果</p><table><thead><tr><th>分类</th><th>次数</th><th>搏数</th></tr></thead><tbody>${overview.categories.map(row=>`<tr><th>${esc(row.label)}</th><td>${esc(row.events??'—')}</td><td>${esc(row.beats??'—')}</td></tr>`).join('')}</tbody></table><p>统计独立于选图。未确认候选不计作确诊。</p><section><h4>源报告独立对照</h4><dl><div><dt>有效心搏</dt><dd>${esc(overview.source.total_beats??'—')}</dd></div><div><dt>平均心率</dt><dd>${ECGReviewTools.bpm(overview.source.avg_hr)} bpm</dd></div><div><dt>SDNN</dt><dd>${esc(overview.source.sdnn_ms??'—')} ms</dd></div></dl><p>保留源报告摘要；不改写为当前修订统计或诊断。</p></section>`;host.querySelector('.rw-main').append(panel);}
+    if(overview&&!inspection){const panel=document.createElement('aside');panel.className='rw-overview';panel.setAttribute('aria-label','全记录统计总览');panel.innerHTML=`<h3>全记录统计总览</h3><p>当前依据 r${esc(overview.revision??'—')} · 已确认结果</p><table><thead><tr><th>分类</th><th>次数</th><th>搏数</th></tr></thead><tbody>${overview.categories.map(row=>`<tr><th>${esc(row.label)}</th><td>${esc(row.events??'—')}</td><td>${esc(row.beats??'—')}</td></tr>`).join('')}</tbody></table><p>统计独立于选图。未确认候选不计作确诊。</p><section><h4>源报告独立对照</h4><dl><div><dt>有效心搏</dt><dd>${esc(overview.source.total_beats??'—')}</dd></div><div><dt>平均心率</dt><dd>${ECGReviewTools.bpm(overview.source.avg_hr)} bpm</dd></div><div><dt>SDNN</dt><dd>${esc(overview.source.sdnn_ms??'—')} ms</dd></div></dl><p>保留源报告摘要；不改写为当前修订统计或诊断。</p></section>`;host.querySelector('.rw-main').append(panel);}
+    host.querySelector('.rw-workspace').classList.add('rw-hospital-report');
+    if(inspection){host.querySelector('.rw-workspace').classList.add('rw-inspection-layout');const panel=document.createElement('aside');panel.className='rw-strip-inspection';panel.setAttribute('aria-label','当前图条放大复核');panel.innerHTML='<header><strong data-inspection-title>当前图条</strong><div aria-label="放大图查看导联"><button type="button" data-inspection-leads="1" aria-pressed="false">1L</button><button type="button" data-inspection-leads="3" aria-pressed="true">3L</button><button type="button" data-inspection-leads="12" aria-pressed="false">12L</button></div></header><div id="rwInspectionWave" class="rw-inspection-wave" tabindex="0">选择左侧图条查看波形</div>';host.querySelector('.rw-columns').append(panel);}
     host.querySelector('.rw-rail fieldset').insertAdjacentHTML('beforeend','<p class="rw-hint">仅影响本次输出，保留所有选图、图注和区间。</p>');
     host.querySelector('.rw-evidence-heading').append(host.querySelector('.rw-sort-controls'));
     host.querySelector('.rw-evidence-heading').insertAdjacentHTML('afterend',`<section class="rw-review-queue" aria-label="入报图条复核状态"><nav aria-label="按复核状态筛选">${Object.entries(reviewLabels).map(([key,label])=>`<button type="button" data-review-filter="${key}" aria-pressed="${reviewFilter===key}">${label} <b>${counts[key]}</b></button>`).join('')}</nav><p role="status">${esc(filter==='all'?'全部类型':groups.get(filter).name)} · ${reviewLabels[reviewFilter]} · 显示 ${visible.length} / ${selected.length} 条</p>${filter!=='all'||reviewFilter!=='all'?'<button type="button" data-clear-strip-filters>显示全部已选图条</button>':''}</section>`);
     if(!visible.length&&selected.length)host.querySelector('.rw-selected-strips').innerHTML='<p class="empty-state">当前组合没有匹配图条；其他已选图条仍保留。可切换状态或显示全部已选图条。</p>';
     if(composition.paper?.voltage_estimate)host.querySelector('.rw-heading').insertAdjacentHTML('afterend',`<p class="rw-hint">导出图条使用独立保存的${esc(ECGVoltage.note(composition.paper.voltage_estimate))}网页预览仍为自适应幅度；请在“导联 / 区间”调整导出增益，并用 A4 预览核对。</p>`);
+    const safelyPrint=(i,e)=>selected[i].print_enabled!==false&&printEligible(e,composition.fast_slow_mode);
     visible.forEach(({i,e,status})=>{
-      const node=host.querySelector(`[data-rw-wave="${i}"]`),included=printEligible(e,composition.fast_slow_mode),back=host.querySelector(`[data-back-event="${i}"]`);
+      const node=host.querySelector(`[data-rw-wave="${i}"]`),included=composition.included_pages.includes('event_strips')&&safelyPrint(i,e),back=host.querySelector(`[data-back-event="${i}"]`);
       node.closest('.rw-strip').querySelector('header').insertAdjacentHTML('afterend',`<p class="rw-print-status" data-review-status="${status}" title="${esc(reviewExplanation(status,e))}">${reviewLabels[status]}${status==='stale'?' · 须重新核对，不能导出':''}${included?'':' · 本次不输出，选图仍保留'}</p>`);
       back.disabled=status==='stale';back.title=status==='stale'?'旧依据无法回看；有对应节律片段时请使用复核片段入口，否则重新筛选':'回看此图条对应的事件';
     });
+    visible.forEach(({i,e,status,s})=>{if(globalThis.ECGReportEvidenceUI?.eligible(e)){const actions=host.querySelector(`[data-back-event="${i}"]`).parentElement;const b=document.createElement('button');b.type='button';b.dataset.reviewEvidence=String(i);b.textContent=status==='confirmed'?'查看核对记录':'核对本条';b.disabled=status==='stale';b.onclick=()=>onReviewEvidence?.(i);actions.append(b);if(e.evidence_only){const label=document.createElement('label');label.className='rw-evidence-reference';const input=document.createElement('input');input.type='checkbox';input.checked=s.referenced_in_report===true;input.dataset.evidenceReference=String(i);input.onchange=()=>onStripReference?.(i,input.checked);label.append(input,'用于正文依据');actions.append(label);}}});
+    const rrButton=document.createElement('button');rrButton.type='button';rrButton.dataset.reviewLongest='';rrButton.textContent='核对最长 RR 数值';rrButton.onclick=()=>onReviewLongest?.();host.querySelector('.rw-sort-controls').append(rrButton);if(loadLongestRR)Promise.resolve().then(loadLongestRR).then(data=>{if(!rrButton.isConnected||!isCurrent())return;const e=data.event;if(e)rrButton.textContent=`最长 RR ${e.rr_ms} ms · ${e.evidence_review?.status==='confirmed'?'已核对':'查看波形 / 核对'}`;else{rrButton.textContent='无可计算的 RR';rrButton.disabled=true;}}).catch(error=>{if(rrButton.isConnected){rrButton.textContent='最长 RR 读取失败 · 重试';rrButton.title=error.message;rrButton.onclick=()=>redraw('[data-review-longest]');}});
     visible.forEach(({i,e})=>{if(e?.category==='AF'&&e.rhythm_episode_id)host.querySelector(`[data-back-event="${i}"]`).insertAdjacentHTML('afterend',`<button type="button" data-review-rhythm="${i}">保存草稿并复核片段</button>`);});
     if(showAdvanced&&renderAdvanced){const panel=document.createElement('div');panel.className='rw-research';host.querySelector('.rw-workspace').append(panel);renderAdvanced(panel);}
     function redraw(selector){
-      compose(host,{id,composition,selected,lookup,sections,onPages,onMode,onPreview,onStripLeads,onStripEdit,onStripPrint,onStripRemove,onSort,onTemplates,loadTrend,renderWave,loadWave,renderAdvanced,terms,overview,isCurrent,termContext,onUsages,showTerminology,showAdvanced});
+      compose(host,{id,composition,selected,lookup,sections,onPages,onMode,onPreview,onStripLeads,onStripEdit,onStripPrint,onStripRemove,onStripReference,onReviewEvidence,onReviewLongest,loadLongestRR,onSort,onTemplates,loadTrend,renderWave,loadWave,renderAdvanced,terms,overview,isCurrent,termContext,onUsages,showTerminology,showAdvanced,inspection});
       host.querySelector(selector)?.focus({preventScroll:true});
     }
     host.querySelectorAll('[data-strip-filter]').forEach(b=>b.onclick=()=>{filter=b.dataset.stripFilter;redraw('[data-strip-filter][aria-pressed="true"]')});
     host.querySelectorAll('[data-review-filter]').forEach(b=>b.onclick=()=>{reviewFilter=b.dataset.reviewFilter;redraw('[data-review-filter][aria-pressed="true"]')});
     host.querySelector('[data-clear-strip-filters]')?.addEventListener('click',()=>{filter='all';reviewFilter='all';view.timeRange=null;redraw('[data-review-filter="all"]')});
     if(loadTrend){
-      const timeline=document.createElement('details');timeline.className='rw-curation-timeline';timeline.open=Boolean(view.timelineOpen||view.timeRange);timeline.ontoggle=()=>{view.timelineOpen=timeline.open;};timeline.setAttribute('aria-label','已选图条时间分布与全程心率');timeline.innerHTML='<summary>已选图条时间分布 · 展开筛选</summary><p>正在读取全程时间轴…</p>';host.querySelector('.rw-selected-strips').before(timeline);
+      const timeline=document.createElement('details');timeline.className='rw-curation-timeline';timeline.open=view.timelineOpen??true;timeline.ontoggle=()=>{view.timelineOpen=timeline.open;};timeline.setAttribute('aria-label','已选图条时间分布与全程心率');timeline.innerHTML='<summary>已选图条时间分布与全程心率</summary><p>正在读取全程时间轴…</p>';host.querySelector('.rw-columns').before(timeline);
       Promise.resolve().then(loadTrend).then(data=>{
         if(!timeline.isConnected||!isCurrent())return;
         const total=data.duration_s;if(!Number.isFinite(total)||total<=0)throw Error('记录时长无效');
@@ -231,9 +244,9 @@ globalThis.ECGReportWorkspace=(()=>{
         selected.forEach(s=>{const e=lookup.get(s.event_id);if(e&&e.time_s>=0&&e.time_s<total)bins[Math.min(23,Math.floor(e.time_s/total*24))].count++;});const max=Math.max(1,...bins.map(b=>b.count));
         const rows=ECGOverviewEngine.decode(data),valid=rows.filter(ECGOverviewEngine.valid),maxHR=valid.reduce((m,r)=>Math.max(m,Math.ceil(r.hr/50)*50),100);
         const buckets=Array.from({length:800},()=>null);valid.forEach(r=>{if(r.time_s<0||r.time_s>=total)return;const i=Math.min(799,Math.floor(r.time_s/total*800)),b=buckets[i]||(buckets[i]={lo:r.hr,hi:r.hr});b.lo=Math.min(b.lo,r.hr);b.hi=Math.max(b.hi,r.hr);});
-        const x=t=>44+t/total*940,y=hr=>68-hr/maxHR*56;
-        timeline.innerHTML=`<header><strong>已选图条时间分布</strong><span>${view.timeRange?esc(formatElapsed(view.timeRange[0]))+'–'+esc(formatElapsed(view.timeRange[1])):'全记录'} · 仅筛选显示，保留所有入报选择</span><button type="button" data-curation-clear ${view.timeRange?'':'disabled'}>全程</button></header><div class="rw-curation-bins">${bins.map((b,i)=>`<button type="button" data-curation-timebin="${i}" aria-pressed="${view.timeRange?.[0]===b.start}" aria-label="${esc(formatElapsed(b.start))} 至 ${esc(formatElapsed(b.end))}，已选 ${b.count} 条" ${b.count?'':'disabled'}><span>${b.count||''}</span><i style="height:${Math.max(1,b.count/max*28)}px"></i></button>`).join('')}</div><svg viewBox="0 0 1000 90" role="img" aria-label="全记录有效 RR 导出的心率，纵轴 bpm；每列保留该时段最小最大值，空白表示无有效间期"><rect x="44" y="10" width="940" height="58" fill="#fff"/>${[0,maxHR/2,maxHR].map(hr=>`<path d="M44 ${y(hr)}H984" stroke="#d8e1e6"/><text x="39" y="${y(hr)+3}" text-anchor="end" font-size="10">${Math.round(hr)}</text>`).join('')}${buckets.map((b,i)=>b?`<path d="M${44+(i+.5)/800*940} ${y(b.lo)}V${y(b.hi)+.5}" stroke="#245f7d" stroke-width="1.1"/>`:'').join('')}${selected.map(s=>lookup.get(s.event_id)).filter(Boolean).map(e=>`<path d="M${x(e.time_s)} 8v5" stroke="#af5d17"/>`).join('')}${Array.from({length:5},(_,i)=>`<text x="${44+i*940/4}" y="84" font-size="10" text-anchor="${i===0?'start':i===4?'end':'middle'}">${esc(formatElapsed(total*i/4))}</text>`).join('')}<text x="5" y="9" font-size="9">bpm</text></svg>`;
-        const summary=document.createElement('summary');summary.textContent='已选图条时间分布 · 展开筛选';timeline.prepend(summary);
+        const x=t=>44+t/total*940,y=hr=>40-hr/maxHR*30;
+        timeline.innerHTML=`<header><strong>已选图条时间分布</strong><span>${view.timeRange?esc(formatElapsed(view.timeRange[0]))+'–'+esc(formatElapsed(view.timeRange[1])):'全记录'} · 仅筛选显示，保留所有入报选择</span><button type="button" data-curation-clear ${view.timeRange?'':'disabled'}>全程</button></header><div class="rw-curation-bins">${bins.map((b,i)=>`<button type="button" data-curation-timebin="${i}" aria-pressed="${view.timeRange?.[0]===b.start}" aria-label="${esc(formatElapsed(b.start))} 至 ${esc(formatElapsed(b.end))}，已选 ${b.count} 条" ${b.count?'':'disabled'}><span>${b.count||''}</span><i style="height:${Math.max(1,b.count/max*8)}px"></i></button>`).join('')}</div><svg viewBox="0 0 1000 56" preserveAspectRatio="none" role="img" aria-label="全记录有效 RR 导出的心率，纵轴 bpm；每列保留该时段最小最大值，空白表示无有效间期"><rect x="44" y="10" width="940" height="30" fill="#fff"/>${[0,maxHR/2,maxHR].map(hr=>`<path d="M44 ${y(hr)}H984" stroke="#d8e1e6"/><text x="39" y="${y(hr)+3}" text-anchor="end" font-size="10">${Math.round(hr)}</text>`).join('')}${buckets.map((b,i)=>b?`<path d="M${44+(i+.5)/800*940} ${y(b.lo)}V${y(b.hi)+.5}" stroke="#245f7d" stroke-width="1.1"/>`:'').join('')}${selected.map(s=>lookup.get(s.event_id)).filter(Boolean).map(e=>`<path d="M${x(e.time_s)} 8v5" stroke="#af5d17"/>`).join('')}${Array.from({length:5},(_,i)=>`<text x="${44+i*940/4}" y="54" font-size="10" text-anchor="${i===0?'start':i===4?'end':'middle'}">${esc(formatElapsed(total*i/4))}</text>`).join('')}<text x="5" y="54" font-size="9">bpm</text></svg>`;
+        const summary=document.createElement('summary');summary.textContent='已选图条时间分布与全程心率';timeline.prepend(summary);
         timeline.querySelector('[data-curation-clear]').onclick=()=>{view.timeRange=null;redraw('[data-review-filter="all"]');};timeline.querySelectorAll('[data-curation-timebin]').forEach(b=>b.onclick=()=>{const bin=bins[Number(b.dataset.curationTimebin)];view.timeRange=[bin.start,bin.end];redraw('[data-review-filter][aria-pressed="true"]');});
       }).catch(error=>{if(timeline.isConnected&&isCurrent()){
         const summary=document.createElement('summary');summary.textContent='时间轴读取失败 · 展开详情';
@@ -273,10 +286,63 @@ globalThis.ECGReportWorkspace=(()=>{
     }
     const rowWaves=new Map();
     function readRow(row){if(!rowWaves.has(row.s.event_id))rowWaves.set(row.s.event_id,Promise.resolve().then(()=>{if(!isCurrent())throw Error('报告视图已变化');return loadWave(row.e,row.s);}).catch(error=>{rowWaves.delete(row.s.event_id);throw error;}));return rowWaves.get(row.s.event_id);}
+    let inspectionToken=0,inspectionRow=visible.find(r=>r.s.event_id===view.active)||visible[0];
+    async function inspectStrip(row){
+      if(!inspection||!row||row.status==='stale')return;
+      const target=host.querySelector('#rwInspectionWave'),token=++inspectionToken;inspectionRow=row;view.active=row.s.event_id;target.textContent='正在读取本条波形…';
+      host.querySelectorAll('.rw-strip').forEach(card=>card.dataset.current=String(card.dataset.rwKey===view.active));
+      try{
+        const entry=await readRow(row);if(!target.isConnected||!isCurrent()||token!==inspectionToken)return;
+        const mode=view.inspectionEvent===row.s.event_id?view.inspectionLeads:null;
+        const names=mode===12?Object.keys(entry.waveform.leads):mode===3?['II','V1','V5']:mode===1?['II']:entry.strip.leads;
+        const wave=globalThis.ECGReportStripEditor.project(entry,names).waveform,displayProfile=ECGReviewTools.reportAmplitude(entry.waveform);
+        host.querySelector('[data-inspection-title]').textContent=row.s.caption||row.e.label;
+        target.innerHTML=waveContext(entry);
+        // Measure again after the gain metadata wraps, keeping all rows inside the frame.
+        for(let pass=0;pass<2;pass++){
+          const canvas=target.querySelector('.rw-wave-canvas');
+          target.innerHTML=waveContext(entry,reviewWaveSvg(wave,row.e,{width:canvas.clientWidth||600,fitHeight:canvas.clientHeight||300,recordStart,displayProfile}));
+        }
+        target.querySelector('.rw-wave-scroll').setAttribute('aria-label','当前图条全部导联波形');
+        host.querySelectorAll('[data-inspection-leads]').forEach(b=>b.setAttribute('aria-pressed',String(Number(b.dataset.inspectionLeads)===names.length)));
+        target.dataset.loaded='ready';target.dataset.leadCount=String(names.length);
+      }
+      catch(error){if(target.isConnected&&token===inspectionToken){target.textContent='本条读取失败：'+error.message;const retry=document.createElement('button');retry.type='button';retry.textContent='重试本条';retry.onclick=()=>inspectStrip(row);target.append(retry);}}
+    }
+    if(inspection){host.querySelectorAll('[data-inspection-leads]').forEach(b=>b.onclick=()=>{view.inspectionEvent=inspectionRow?.s.event_id;view.inspectionLeads=Number(b.dataset.inspectionLeads);inspectStrip(inspectionRow);});inspectStrip(inspectionRow);if(typeof ResizeObserver!=='undefined'){let width=0,height=0;view.inspectionObserver=new ResizeObserver(([entry])=>{const next=entry.contentRect;if(Math.abs(width-next.width)<1&&Math.abs(height-next.height)<1)return;width=next.width;height=next.height;if(host.querySelector('#rwInspectionWave')?.dataset.loaded==='ready')inspectStrip(inspectionRow);});view.inspectionObserver.observe(host.querySelector('.rw-strip-inspection'));}}
+    function updateMiniSize(node){node._rwRenderMini?.();}
+    if(typeof ResizeObserver!=='undefined')view.miniResizeObserver=new ResizeObserver(entries=>entries.forEach(({target})=>updateMiniSize(target)));
     function loadMini(row){
-      const {s,i,status}=row,node=host.querySelector(`[data-rw-mini="${i}"]`);if(!node||node.dataset.loaded||status==='stale'||!isCurrent())return;
+      const {s,i,status}=row,node=host.querySelector(`[data-rw-mini="${i}"]`);
+      if(!node||node.dataset.loaded||status==='stale'||!isCurrent())return;
       node.dataset.loaded='loading';node.textContent='正在读取本条真实波形…';
-      return readRow(row).then(entry=>{if(!node.isConnected||caseId!==id||!isCurrent())return;const projected=globalThis.ECGReportStripEditor.project(entry),domain=ECGReviewTools.waveDomain(entry.waveform,JSON.stringify([id,row.e.event_id,row.e.basis_version,'selected-strip'])),card=globalThis.ECGOccurrenceCard||(typeof require==='function'?require('./occurrence-card.js'):null),many=projected.strip.leads.length>6;node.closest('.rw-strip').classList.toggle('rw-many-leads',many);const height=Math.max(100,projected.strip.leads.length*(many?56:44)+24);node.style.height=height+'px';node.style.minHeight=height+'px';node.innerHTML=card.svg(projected.waveform,row.e,{width:Math.max(240,node.clientWidth||600),height,timeAxis:true,columns:1,recordStart,domain});node.dataset.loaded='ready';host.querySelector(`[data-rw-mini-range="${i}"]`).textContent=`${preciseTime(entry.waveform.start_s)} — ${preciseTime(entry.waveform.start_s+entry.waveform.duration_s)} · ${entry.strip.visible_beat_count} 搏 · 本条显示与入报 ${entry.strip.leads.join(' / ')} · 设备单位 u，未校准`;const open=mountEventPreview(node,{event:row.e,title:'12 导联 · 本条入报时间窗',loadingLabel:'正在读取十二导联…',loadWave:()=>Promise.resolve(entry.waveform),renderWave:wave=>reviewWaveSvg(wave,row.e,{recordStart,domain}),isCurrent:()=>node.isConnected&&caseId===id&&isCurrent()});bindWavePreview(node,open,()=>node.isConnected&&caseId===id&&isCurrent());}).catch(error=>{if(!node.isConnected||caseId!==id||!isCurrent())return;delete node.dataset.loaded;node.textContent='图条读取失败：'+error.message;const retry=document.createElement('button');retry.type='button';retry.textContent='重试本条波形';retry.onclick=()=>loadMini(row);node.append(retry);});
+      return readRow(row).then(entry=>{
+        if(!node.isConnected||caseId!==id||!isCurrent())return;
+        const previewLeads=entry.strip.leads,projected=globalThis.ECGReportStripEditor.project(entry),displayProfile=ECGReviewTools.reportAmplitude(entry.waveform);
+        const card=globalThis.ECGOccurrenceCard||(typeof require==='function'?require('./occurrence-card.js'):null);
+        node.dataset.previewLeads=String(previewLeads.length);
+        node.closest('.rw-strip').classList.toggle('rw-many-leads',projected.strip.leads.length>6);
+        node._rwRenderMini=()=>{
+          if(!node.isConnected||caseId!==id||!isCurrent())return;
+          const style=getComputedStyle(node);
+          const width=Math.max(1,node.clientWidth-(parseFloat(style.paddingLeft)||0)-(parseFloat(style.paddingRight)||0)),height=node.clientHeight||190;
+          if(Math.abs(Number(node.dataset.nativeWidth)-width)<.01&&Number(node.dataset.nativeHeight)===height)return;
+          node.dataset.nativeWidth=String(width);node.dataset.nativeHeight=String(height);node.dataset.thumbnailScale='1';
+          node.innerHTML=card.svg(projected.waveform,row.e,{width,height,timeAxis:true,annotations:'none',columns:1,recordStart,displayProfile,reportPreview:true});
+          const label=node.closest('.rw-strip')?.querySelector('[data-rw-mini-scale]');
+          if(label){const gain=Number(node.querySelector('svg').dataset.displayGain);label.textContent=`${previewLeads.length>3?previewLeads.length+' 导联 · 同图完整显示':'预览 '+previewLeads.join(' / ')} · ${Number(gain.toPrecision(3))} px/u`;label.title='所有导联按图框高度分配行距，使用共同增益；双击放大。右侧查看按钮不修改打印设置。电压未校准。';}
+        };
+        updateMiniSize(node);view.miniResizeObserver?.observe(node);node.dataset.loaded='ready';
+        host.querySelector(`[data-rw-mini-range="${i}"]`).textContent=`${preciseTime(entry.waveform.start_s)} — ${preciseTime(entry.waveform.start_s+entry.waveform.duration_s)} · ${entry.strip.visible_beat_count} 搏 · 本条显示与入报 ${entry.strip.leads.join(' / ')} · 设备单位 u，未校准`;
+        const open=mountEventPreview(node,{event:row.e,title:'12 导联 · 本条入报时间窗',loadingLabel:'正在读取十二导联…',loadWave:()=>Promise.resolve(entry.waveform),renderWave:wave=>reviewWaveSvg(wave,row.e,{recordStart,displayProfile}),isCurrent:()=>node.isConnected&&caseId===id&&isCurrent()});
+        bindWavePreview(node,open,()=>node.isConnected&&caseId===id&&isCurrent());
+        if(inspection){node.addEventListener('click',()=>inspectStrip(row),true);node.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();inspectStrip(row);}});}
+        if(typeof beatEditor!=='undefined')beatEditor.bindWaveSurface(node,{wave:projected.waveform,onPreview:open,readOnly:true,isCurrent:()=>node.isConnected&&caseId===id&&isCurrent()});
+      }).catch(error=>{
+        if(!node.isConnected||caseId!==id||!isCurrent())return;
+        delete node.dataset.loaded;node.textContent='图条读取失败：'+error.message;
+        const retry=document.createElement('button');retry.type='button';retry.textContent='重试本条波形';retry.onclick=()=>loadMini(row);node.append(retry);
+      });
     }
     if(typeof IntersectionObserver!=='undefined'){view.miniObserver=new IntersectionObserver(entries=>entries.forEach(entry=>{if(entry.isIntersecting){const row=visible.find(r=>String(r.i)===entry.target.dataset.rwMini);if(row)loadMini(row);}}),{root:host.querySelector('.rw-selected-strips'),rootMargin:'0px'});host.querySelectorAll('[data-rw-mini]').forEach(node=>view.miniObserver.observe(node));}else visible.forEach(loadMini);
     function loadRow(row){
@@ -285,7 +351,7 @@ globalThis.ECGReportWorkspace=(()=>{
       if(status==='stale'){node.dataset.loaded='stale';node.textContent=e?.category==='AF'&&e.rhythm_episode_id?'图条依据已失效。请保存草稿并复核片段，返回后核对并替换原图条；导联和图注保留。':'原事件已不存在或依据已失效。请重新筛选事件；移除前可保留人工图注。';return;}
       if(view.waveHeights.has(s.event_id))node.style.minHeight=view.waveHeights.get(s.event_id)+'px';
       node.dataset.loaded='loading';node.textContent='读取波形…';
-      return readRow(row).then(entry=>{if(node.isConnected&&caseId===id&&isCurrent()){const projected=globalThis.ECGReportStripEditor.project(entry),domain=ECGReviewTools.waveDomain(entry.waveform,JSON.stringify([id,e.event_id,e.basis_version,'selected-strip']));node.innerHTML=waveContext(entry,reviewWaveSvg(projected.waveform,e,{recordStart,domain,width:node.clientWidth||1000}));bindTwelveWave(node,{wave:projected.waveform,readWave:()=>Promise.resolve(entry.waveform),recordStart,domain,isCurrent:()=>node.isConnected&&caseId===id&&isCurrent(),event:e});node.dataset.loaded='ready';node.style.minHeight='';}}).catch(error=>{
+      return readRow(row).then(entry=>{if(node.isConnected&&caseId===id&&isCurrent()){const projected=globalThis.ECGReportStripEditor.project(entry),displayProfile=ECGReviewTools.reportAmplitude(entry.waveform);node.innerHTML=waveContext(entry,reviewWaveSvg(projected.waveform,e,{recordStart,displayProfile,width:node.clientWidth||1000}));bindTwelveWave(node,{wave:projected.waveform,readWave:()=>Promise.resolve(entry.waveform),recordStart,displayProfile,isCurrent:()=>node.isConnected&&caseId===id&&isCurrent(),event:e});node.dataset.loaded='ready';node.style.minHeight='';}}).catch(error=>{
         if(!node.isConnected||caseId!==id||!isCurrent())return;delete node.dataset.loaded;node.style.minHeight='';node.textContent='读取失败：'+error.message;
         const retry=document.createElement('button');retry.type='button';retry.textContent='重试图条波形';retry.onclick=()=>loadRow(row);node.append(retry);
       });
@@ -295,15 +361,17 @@ globalThis.ECGReportWorkspace=(()=>{
       if(open){view.expanded.add(s.event_id);view.active=s.event_id;loadRow(row);}else view.expanded.delete(s.event_id);
       button.setAttribute('aria-expanded',String(open));button.textContent=open?'折叠波形':'展开波形';
     }
-    visible.forEach(row=>{host.querySelector(`[data-rw-toggle="${row.i}"]`).onclick=()=>expand(row,!view.expanded.has(row.s.event_id));if(view.expanded.has(row.s.event_id))loadRow(row);});
+    visible.forEach(row=>{const button=host.querySelector(`[data-rw-toggle="${row.i}"]`);button.onclick=()=>inspection?inspectStrip(row):expand(row,!view.expanded.has(row.s.event_id));if(inspection){button.textContent='查看波形';button.removeAttribute('aria-expanded');button.setAttribute('aria-controls','rwInspectionWave');}else if(view.expanded.has(row.s.event_id))loadRow(row);});
       host.querySelectorAll('[data-rw-sort]').forEach(button=>button.onclick=()=>{if(isCurrent())onSort?.(button.dataset.rwSort);});
     visible.forEach(row=>{
       const card=host.querySelector('[data-rw-key="'+CSS.escape(row.s.event_id)+'"]'),tools=card.querySelector('[data-rw-tools]');
       card.tabIndex=0;card.setAttribute('aria-description','右键或 Shift+F10 打开图条操作；也可使用图条操作按钮。');
       const open=event=>{globalThis.ECGReportStripEditor.menu({card,event,isCurrent,actions:[...tools.querySelectorAll('[data-rw-strip-action]')].map(b=>({label:b.textContent,disabled:b.disabled,run:()=>b.click()}))});};
       tools.querySelector('summary').onclick=event=>{event.preventDefault();open(event);};
-      card.oncontextmenu=event=>{if(event.target.closest('input,textarea,select,[contenteditable]'))return;event.preventDefault();open(event);};
-      card.onkeydown=event=>{if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10'){event.preventDefault();open();}if(event.key==='Escape'){tools.open=false;globalThis.ECGReportStripEditor.closeMenu();}};
+      // A selected report strip owns curation actions, even over its waveform.
+      // Capture here before the nested read-only beat/wave surface can take it.
+      card.addEventListener('contextmenu',event=>{if(event.target.closest('input,textarea,select,[contenteditable]'))return;event.preventDefault();event.stopPropagation();open(event);},true);
+      card.addEventListener('keydown',event=>{if(event.target.closest('input,textarea,select,[contenteditable]'))return;if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10'){event.preventDefault();event.stopPropagation();open();}if(event.key==='Escape'){tools.open=false;globalThis.ECGReportStripEditor.closeMenu();}},true);
       card.classList.toggle('rw-print-disabled',row.s.print_enabled===false);
       if(row.s.print_enabled===false)card.querySelector('.rw-print-status').append(' · 已取消打印（选图保留）');
       tools.querySelector('[data-rw-strip-action=print]').textContent=row.s.print_enabled===false?'恢复打印':'取消打印';
@@ -317,6 +385,7 @@ globalThis.ECGReportWorkspace=(()=>{
           const mini=card.querySelector('[data-rw-mini]');
           try{if(!mini._rwOpenPreview)await loadMini(row);if(isCurrent())mini._rwOpenPreview?.();}catch(error){handleError(error);}return;
         }
+        view.active=row.s.event_id;view.inspectionEvent=null;view.inspectionLeads=null;
         onStripLeads?.(row.i,action==='one'?['II']:action==='three'?['II','V1','V5']:[...ECGReportEngine.leads]);
       });
     });
@@ -370,5 +439,5 @@ globalThis.ECGReportWorkspace=(()=>{
     const output=host.querySelector('.rw-output-options');output.ontoggle=()=>{view.outputOpen=output.open;};
     restorePosition(view.position,host);
   }
-  return {preciseTime,sortSelections,distributions,compose,withRateMode,printEligible,waveContext,stripReviewState,reviewQueue,reviewExplanation,mountEventPreview,capturePosition,restorePosition,pageGroups,insertSelectedText,undoInsertedText,reviewWaveSvg,bindWavePreview,bindTwelveWave,releaseTerminology,getTerminologyUsages};
+  return {preciseTime,sortSelections,distributions,compose,withRateMode,printEligible,waveContext,stripReviewState,reviewQueue,reviewExplanation,mountEventPreview,capturePosition,restorePosition,pageGroups,insertSelectedText,undoInsertedText,reviewWaveSvg,bindWavePreview,bindTwelveWave,releaseTerminology,getTerminologyUsages,setReviewFilter(value){filter='all';reviewFilter=value;view.timeRange=null;}};
 })();

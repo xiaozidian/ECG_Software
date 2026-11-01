@@ -64,7 +64,6 @@
       <div class="nav-section-label" aria-hidden="true">病例流程</div>
       <button class="nav-item workflow-nav-item" data-page="review" data-workflow-nav="review" title="核对原始波形与散点"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 13h4l2-5 3.2 10 2.3-7 1.8 2H21"/></svg><em>总览</em></button>
       <button class="nav-item workflow-nav-item" data-page="edit" data-workflow-nav="edit" title="复核聚类并编辑心搏模板"><svg aria-hidden="true" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><path d="m14 19 5-5 2 2-5 5h-2Z"/></svg><em>模板编辑</em></button>
-      <button class="nav-item" data-page="rr" title="原始相邻心搏的 RR 分类与精确定位"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 19V5M4 19h16M7 17v-4M11 17V8M15 17V6M19 17v-5"/></svg><em>RR 分类</em></button>
       <button class="nav-item workflow-nav-item" data-page="trends" data-workflow-nav="trends" title="核对趋势、RR 与 HRV"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 19V5M4 19h16M7 15l3-4 3 2 5-6"/></svg><em>趋势 HRV</em></button>
       <button class="nav-item workflow-nav-item" data-page="stt" data-workflow-nav="stt" title="查看 ST‑T 自动筛查并由医生复核"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 14h4l2-5 3 9 2-6h7M5 5h6M8 5v3M15 5h6M18 5v3"/></svg><em>ST‑T</em></button>
       <button class="nav-item workflow-nav-item" data-page="events" data-workflow-nav="events" title="复核候选事件"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m12 4 8 8-8 8-8-8Z"/><circle cx="12" cy="12" r="1.5"/></svg><em>事件候选</em></button>
@@ -365,12 +364,6 @@
       </div>
     </section>
 
-    <section class="page" id="page-rr">
-      <div class="page-heading compact"><div><h1>RR 分类复核</h1><p>原始相邻心搏 · 筛选保留间期来源 · N 标签不自动代表已核实 NN</p></div></div>
-      <div id="rrReviewWorkbench"></div>
-      <article id="rrLocatedEvidence" class="rrv-waveform-evidence" aria-live="polite"><p role="status">选择间期查看原始连续波形。</p></article>
-    </section>
-
     <section class="page" id="page-trends">
       <div class="page-heading compact"><div><p class="eyebrow">全天统计</p><h1>趋势、RR 与 HRV</h1><p id="trendCaseLabel">请选择病例</p></div><span class="status-pill warning">研究算法 · 待复核</span></div>
       <div id="trendsAnalysisStatus" role="status" hidden></div>
@@ -498,7 +491,7 @@
             <div id="reportPreviewBody" class="report-preview-body" aria-live="polite"><div class="report-loading-state"><span></span><strong>正在组织报告内容</strong><small>读取趋势、事件图条与复核统计…</small></div></div>
             <footer class="report-preview-footer"><span id="reportNavigatorLabel">第 1 / 1 页</span><span>所见即当前编排预览 · 未提供的数据不会生成结果</span></footer>
           </article>
-          <article class="card report-conclusion-dock"><div class="report-panel-heading"><div><strong>报告结论</strong><small>{% if demo_readonly %}在线 Demo 可预览编排，结论保持只读{% else %}编辑后需重新保存并审核{% endif %}</small></div><span class="autosave-state" id="reportSaveState">尚未修改</span></div><textarea id="conclusionEditor" rows="5" maxlength="12000" placeholder="输入医生复核结论…"{% if demo_readonly %} readonly{% endif %}></textarea><footer><span>{% if demo_readonly %}演示编排只保存在当前浏览器{% else %}变更写入本地草稿与审计日志{% endif %}</span><span id="conclusionCount">0 / 12000</span></footer></article>
+          <article class="card report-conclusion-dock"><div class="report-panel-heading"><div><strong>报告结论</strong><small>{% if demo_readonly %}在线 Demo 可预览编排，结论保持只读{% else %}编辑后自动保存；审核由医生完成{% endif %}</small></div><span class="autosave-state" id="reportSaveState">尚未修改</span></div><textarea id="conclusionEditor" rows="5" maxlength="12000" placeholder="输入医生复核结论…"{% if demo_readonly %} readonly{% endif %}></textarea><footer><span>{% if demo_readonly %}演示编排只保存在当前浏览器{% else %}变更写入本地草稿与审计日志{% endif %}</span><span id="conclusionCount">0 / 12000</span></footer></article>
         </section>
 
         <aside class="report-summary-rail">
@@ -608,6 +601,7 @@
   <script src="{{ url_for('static', filename='js/source-group-evidence.js') }}"></script>
   <script src="{{ url_for('static', filename='js/clinical-ui.js') }}"></script>
   <script src="{{ url_for('static', filename='js/report-workspace.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/report-evidence-ui.js') }}"></script>
   <script src="{{ url_for('static', filename='js/report-strip-editor.js') }}"></script>
   <script src="{{ url_for('static', filename='js/report-narrative-templates.js') }}"></script>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/report-curation.css') }}">
@@ -624,9 +618,6 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/desktop-workspace.css') }}">
   <script src="{{ url_for('static', filename='js/desktop-workspace.js') }}"></script>
   <script src="{{ url_for('static', filename='js/template-linked-view.js') }}"></script>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/rr-review-workbench.css') }}">
-  <script src="{{ url_for('static', filename='js/rr-review-workbench.js') }}"></script>
-  <script src="{{ url_for('static', filename='js/rr-review-bridge.js') }}"></script>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/hrv-review-editor.css') }}">
   <script src="{{ url_for('static', filename='js/hrv-review-editor.js') }}"></script>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/terminology-tree.css') }}">

@@ -97,7 +97,7 @@ async def verify(args,result):
                 binding=(home/'source-selection.json').read_bytes()
                 await context.close();context=None;await stop(exe,home)
                 newer=work/'upgrade-fixture';shutil.copytree(program,newer)
-                release=json.loads((newer/'RELEASE.json').read_text());release.update(packaging_version='1.0.5',release_version='1.0.5',verification_fixture_only=True)
+                release=json.loads((newer/'RELEASE.json').read_text());release.update(packaging_version='1.0.6',release_version='1.0.6',verification_fixture_only=True)
                 (newer/'RELEASE.json').write_text(json.dumps(release));create_content_manifest(newer,with_source=False)
                 active=newer/'CardioInsightDoctorEval.exe'
                 manager,_=await launch(active,home)
@@ -105,7 +105,7 @@ async def verify(args,result):
                 page=await resume(context,manager,workspace)
                 await open_case(page,m['duration_seconds']);await saved_work(page)
                 updated=json.loads((folder/'WORKSPACE.json').read_text());upgrade=updated['last_upgrade']
-                assert upgrade['from_packaging_version']=='1.0.4' and upgrade['to_packaging_version']=='1.0.5' and upgrade['snapshot_integrity']=='ok'
+                assert upgrade['from_packaging_version']=='1.0.5' and upgrade['to_packaging_version']=='1.0.6' and upgrade['snapshot_integrity']=='ok'
                 assert digest(folder/'upgrade-snapshots'/upgrade['snapshot'])==upgrade['snapshot_sha256']
                 assert (home/'source-selection.json').read_bytes()==binding
                 record(result,'P01-same-core-version-upgrade-retains-work-source-and-backup')

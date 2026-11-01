@@ -23,6 +23,8 @@ import tempfile
 import zipfile
 
 ASSET_FILES = (
+    'shared-source-build.json',
+    'static/js/report-evidence-ui.js',
     'static/css/advanced-analysis.css',
     'static/css/app.css',
     'static/css/beat-editor.css',
@@ -215,7 +217,8 @@ def package_inventory(package, *, with_source=True):
     if actual_sources != (expected_sources if with_source else set()):
         raise PackageError("Package source directory is outside the "+("synthetic allowlist." if source_id=='M01' else 'deidentified allowlist.'))
     expected_assets = {"_internal/" + name for name in ASSET_FILES}
-    actual_assets = {name for name in files if name.startswith(("_internal/static/", "_internal/templates/"))}
+    actual_assets = {name for name in files if name.startswith(("_internal/static/", "_internal/templates/"))
+                     or name == "_internal/shared-source-build.json"}
     if actual_assets != expected_assets:
         raise PackageError("Bundled application assets differ from the explicit software allowlist.")
     for name, path in files.items():

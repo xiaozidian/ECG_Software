@@ -14,7 +14,7 @@ const clinicalWorkflow = (() => {
   // Event review is part of the report workspace, not a separate sidebar stage.
   const navigationSteps = CASE_WORKFLOW_STEPS.filter(step=>step.page!=="events");
   let data = null, request = 0, context = null, dialogContext = null, eventOffset = 0;
-  const writable = () => !state.demoReadonly || Boolean(window.__CARDIOINSIGHT_UPLOADED_CASE__);
+  const writable = () => !state.demoReadonly || Boolean(window.__CARDIOINSIGHT_UPLOADED_CASE__ || window.__CARDIOINSIGHT_MATHEMATICAL_CASE__?.integrity?.mathematical_fixture);
   const pending = () => CASE_WORKFLOW_STEPS.filter(step => ["edit","stt"].includes(step.page) && data?.steps?.[step.page]?.status !== "done");
   const receive = value => {data=value||null;render();};
   async function refresh(caseId=state.caseId) {
@@ -95,8 +95,8 @@ const clinicalWorkflow = (() => {
     // preflight DOM exists, including the transition from saved to dirty.
     const approve=$("#approveReport");
     if(approve){
-      approve.disabled=!ECGReportConsistency.canApprove(state,$("#conclusionEditor")?.value,pending().length===0,writable());
-      approve.title=!writable()?"当前版本只读":state.reportSaving?"正在保存当前报告，请等待":!state.report?"请先载入当前报告":state.reportStale?"报告依据或版本已变化，请先核对最新版本":evidenceNotice||(pending().length?"请先完成模板编辑与 ST‑T 复核":state.reportDirty?"请先保存草稿":!String($("#conclusionEditor")?.value||'').trim()?"请填写复核结论并保存草稿":"审核当前已保存版本");
+      approve.disabled=Boolean(state.reportEvidencePending?.length)||!ECGReportConsistency.canApprove(state,$("#conclusionEditor")?.value,pending().length===0,writable());
+      approve.title=!writable()?"当前版本只读":state.reportSaving?"正在保存当前报告，请等待":!state.report?"请先载入当前报告":state.reportStale?"报告依据或版本已变化，请先核对最新版本":(state.reportEvidencePending?.length?`${state.reportEvidencePending.length} 条报告证据待核对，请在入报图条中处理`:evidenceNotice)||(pending().length?"请先完成模板编辑与 ST‑T 复核":state.reportDirty?"请先保存草稿":!String($("#conclusionEditor")?.value||'').trim()?"请填写复核结论并保存草稿":"审核当前已保存版本");
     }
     const stats=$("#reportProvenance");
     if(stats)stats.dataset.overrideCount=String(state.editBeatOverrides.size);
@@ -150,7 +150,7 @@ const clinicalWorkflow = (() => {
     const menu=event=>{
       const card=event.target.closest("[data-scatter-sample]");if(!card)return;
       const strip=state.scatterStripCache.get(Number(card.dataset.scatterSample));if(!strip)return;
-      event.preventDefault();const canvas=$("canvas",card),r=canvas.getBoundingClientRect();
+      const canvas=$("canvas",card);if(!canvas)return;event.preventDefault();const r=canvas.getBoundingClientRect();
       // A strip represents its anchor beat, not an adjacent beat under the cursor.
       openBeatRelabelMenu({clientX:event.clientX||r.left+r.width/2,clientY:event.clientY||r.top+25},canvas,{start_s:strip.time_s-2,duration_s:4,beats:[strip]},"review",true);
     };

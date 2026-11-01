@@ -157,22 +157,39 @@ def report_statistics(index, start_time, settings, pause_edges_ms=None):
     rr_rows = valid_rr_rows(index['rows'], index['duration_s'])
     rate_rows = [r for r in rr_rows if consistent_rate(r)]
     episodes = rhythm_episodes(index['events'])
+    def time_window(items, time_of):
+        times = [time_of(item) for item in items]
+        ordered = (all(math.isfinite(t) for t in times)
+                   and all(a <= b for a, b in zip(times, times[1:])))
+        def select(lo, hi):
+            if ordered:
+                return items[bisect_left(times, lo):bisect_left(times, hi)]
+            # Preserve source order, ties and the scalar predicate for malformed
+            # input; indexing must never repair or sort the clinical population.
+            return [item for item, t in zip(items, times) if lo <= t < hi]
+        return select
+    beats_in = time_window(rows, lambda r: r['sample_index'] / 200)
+    rates_in = time_window(rate_rows, lambda r: r['sample_index'] / 200)
+    intervals_in = time_window(rr_rows, lambda r: r['sample_index'] / 200)
+    events_in = time_window(index['events'], lambda e: e['time_s'])
+    noise_in = time_window([r for r in index['rows'] if r['class_code'] == 'X'],
+                           lambda r: r['sample_index'] / 200)
     try:
         clock = datetime.fromisoformat(str(start_time).replace("Z", "+00:00"))
     except (ValueError, TypeError):
         clock = None
     def aggregate(lo, hi):
-        beats = [r for r in rows if lo <= r["sample_index"] / 200 < hi]
-        rates = [r for r in rate_rows if lo <= r['sample_index']/200 < hi]
-        intervals = [r for r in rr_rows if lo <= r['sample_index']/200 < hi]
-        events = [e for e in index["events"] if lo <= e["time_s"] < hi]
+        beats = beats_in(lo, hi)
+        rates = rates_in(lo, hi)
+        intervals = intervals_in(lo, hi)
+        events = events_in(lo, hi)
         slow = min(rates, key=lambda r: r["hr"]) if rates else None
         fast = max(rates, key=lambda r: r["hr"]) if rates else None
         longest = max(intervals, key=lambda r: r["rr_ms"]) if intervals else None
         rhythm = rhythm_summary(episodes, index['duration_s'], lo, hi)
         def point(r):
             return {"hr": r['hr'] if consistent_rate(r) else None, "time_s": r["sample_index"] / 200, "rr_ms": r["rr_ms"]} if r else None
-        result = {"total": len(beats), "noise": sum(lo <= r["sample_index"] / 200 < hi and r["class_code"] == "X" for r in index["rows"]),
+        result = {"total": len(beats), "noise": len(noise_in(lo, hi)),
                   "rr_interval_count": len(intervals), "rate_interval_count": len(rates),
                   "min_hr": slow["hr"] if slow else None, "max_hr": fast["hr"] if fast else None,
                   "avg_hr": round(60000 / (sum(r["rr_ms"] for r in rates) / len(rates)), 2) if rates else None,

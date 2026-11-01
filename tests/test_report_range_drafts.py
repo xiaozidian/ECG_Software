@@ -8,3 +8,7 @@ def test_temporary_range_lifecycle_and_report_entry_guards():
 
 def test_temporary_ranges_during_async_output_and_reload():
     subprocess.run(['node', 'tests/browser_range_output_races.cjs'], check=True, timeout=20)
+
+
+def test_reset_remount_rejects_old_callbacks_and_duplicate_listeners():
+    subprocess.run(['node', 'tests/browser_range_remount.cjs'], check=True, timeout=20)

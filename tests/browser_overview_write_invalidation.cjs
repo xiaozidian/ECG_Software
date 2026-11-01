@@ -1,7 +1,7 @@
 'use strict';
 // Production functions and controlled asynchronous responses; no browser or case storage.
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
-const C=require('../static/js/analysis-consistency.js'),E=require('../static/js/overview-engine.js');
+const C=require('../static/js/analysis-consistency.js'),E=require('../static/js/overview-engine.js'),R=require('../static/js/clinical-review-tools.js');
 const app=fs.readFileSync('static/js/app.js','utf8'),overview=fs.readFileSync('static/js/overview-workbench.js','utf8');
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 const gate=()=>{let resolve;const promise=new Promise(done=>resolve=done);return {promise,resolve};};
@@ -12,7 +12,7 @@ function fixture(){
  const basis=id=>({analysis_basis:'math:'+id,analysis_revision:revisions.get(id)});
  const response=(payload,status=200)=>({ok:status<400,status,headers:{get:()=> 'application/json'},json:async()=>payload});
  const ctx={state,ui:{id:null,loadToken:0,rows:[]},overviewReady:false,episodeEditor:null,episodeNavigation:0,episodeFilter:'all',episodePage:0,coverage:null,coverageMessage:'',episodeDrafts:new Map(),renders:0,
-  ECGAnalysisConsistency:C,E,URLSearchParams,qs,$:qs,esc:String,fmtNumber:String,formatElapsed:String,
+  ECGAnalysisConsistency:C,ECGReviewTools:R,E,URLSearchParams,qs,$:qs,esc:String,fmtNumber:String,formatElapsed:String,
   button:(text,action)=>`<button data-ov="${action}">${text}</button>`,
   geometries:new WeakMap(),document:{querySelectorAll:()=>[qs('canvas')]},
   resetCoverage(message){ctx.coverage=null;ctx.coverageMessage=message;},renderCoverage(){},renderEpisodes(){ctx.renders++;},draw(){},hour:()=>0,
@@ -27,7 +27,7 @@ function fixture(){
    if(method!=='GET'){
     if(writeGate)await writeGate.promise;
     if(failWrite)return response({error:'write-failed'},400);
-    revisions.set(id,revisions.get(id)+1);return response({id:'template-1',case_id:id},201);
+    if(kind!=='report')revisions.set(id,revisions.get(id)+1);return response({id:'template-1',case_id:id},201);
    }
    const identity=basis(id),expected=url.searchParams.get('analysis_revision');
    if(expected!==null&&expected!==String(identity.analysis_revision))return response({error:'strict-stale-basis'},409);
@@ -72,6 +72,12 @@ const checks={
   assert.equal(f.ctx.waveformBasis(),identity);assert.equal(f.ctx.ui.loadToken,token);assert.equal(f.ctx.ui.rows,rows);assert.equal(f.revisions.get('A'),0);
   const count=f.calls.length;await f.ctx.load(false);assert.equal(f.calls.length,count,'ordinary reads must preserve the valid same-case cache fast path');
  },
+ 'report-only':async()=>{
+  const f=fixture();await f.ctx.load(true);const identity=f.ctx.waveformBasis(),token=f.ctx.ui.loadToken,rows=f.ctx.ui.rows,cache={caseId:'A'};f.state.editReadCache=cache;
+  for(const suffix of ['', '?analysis=edited'])await f.ctx.api('/api/cases/A/report'+suffix,{method:'PUT',body:'{}'});
+  assert.equal(f.revisions.get('A'),0);assert.equal(f.ctx.waveformBasis(),identity);assert.equal(f.ctx.ui.loadToken,token);assert.equal(f.ctx.ui.rows,rows);assert.equal(f.state.editReadCache,cache);
+  const count=f.calls.length;await f.ctx.load(false);assert.equal(f.calls.length,count,'saving report composition must preserve the valid clinical read cache');
+ },
  'late-other-case':()=>lateWrite(false),
  'late-same-case-reopen':()=>lateWrite(true),
  'late-success':async()=>{
@@ -96,7 +102,7 @@ const checks={
   assert.equal(draft.values.note,values.note);assert.equal(draft.basis,basis);assert.equal(draft.original,original);assert.equal(f.ctx.episodeEditor,null);assert.equal(f.ctx.ui.rows.length,0);assert.equal(f.ctx.ui.identity,null);
  },
  'write-kinds':async()=>{
-  for(const [method,path,body] of [['POST','/api/cases/A/beat-templates','{}'],['PATCH','/api/beat-templates/42','{}'],['PUT','/api/cases/A/beat-overrides','{}'],['POST','/api/cases/A/annotations','{}'],['PATCH','/api/cases/A/patient','{}'],['PUT','/api/cases/A/rhythm-review','{}'],['PUT','/api/cases/A/beat-editor','{"operation":"settings"}'],['PUT','/api/cases/A/review-workflow','{}'],['PUT','/api/cases/A/report','{}']]){
+  for(const [method,path,body] of [['POST','/api/cases/A/beat-templates','{}'],['PATCH','/api/beat-templates/42','{}'],['PUT','/api/cases/A/beat-overrides','{}'],['POST','/api/cases/A/annotations','{}'],['PATCH','/api/cases/A/patient','{}'],['PUT','/api/cases/A/rhythm-review','{}'],['PUT','/api/cases/A/beat-editor','{"operation":"settings"}'],['PUT','/api/cases/A/review-workflow','{}']]){
    const f=fixture();await f.ctx.load(true);await f.ctx.api(path,{method,body});assert.equal(f.ctx.waveformBasis(),null,method+' '+path+' must retire the old overview basis');assert.equal(f.ctx.overviewReady,false);
   }
  }

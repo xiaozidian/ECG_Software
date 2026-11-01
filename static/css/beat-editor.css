@@ -1,5 +1,5 @@
 /* Compact clinical commands: never resize the waveform canvas. */
-#beatRelabelMenu.full-beat-menu{width:370px;max-width:calc(100vw - 24px);max-height:calc(100dvh - 90px);padding:0;border:1px solid #b8cbd1;border-radius:7px;box-shadow:0 8px 30px #102b3830;overflow:hidden;color:#243d49;background:#fff;font:13px/1.45 system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+#beatRelabelMenu.full-beat-menu{width:270px;max-width:calc(100vw - 24px);max-height:calc(100dvh - 90px);padding:0;border:1px solid #b8cbd1;border-radius:7px;box-shadow:0 8px 30px #102b3830;overflow:hidden;color:#243d49;background:#fff;font:13px/1.45 system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
 .full-beat-menu header,.beat-editor-dialog header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #dae5e9}
 .full-beat-menu header button,.beat-editor-dialog header button{border:0;background:transparent;font-size:22px;cursor:pointer}
 .full-beat-menu .editor-context{margin:0;padding:8px 14px;background:#edf6f6;font-size:12px}
@@ -50,3 +50,10 @@
   .beat-editor-dialog footer button{font-size:16px}
   .editor-error{padding-inline:12px;overflow-wrap:anywhere;font-size:16px}
 }
+
+/* Hospital reference uses one vertical list; keep primary classes visible. */
+.full-beat-menu .editor-primary{display:block}
+.full-beat-menu .editor-primary>button{min-height:24px;padding:3px 8px;font-size:13px}
+.full-beat-menu .editor-primary>details>summary{min-height:24px;padding:3px 8px;font-size:13px;font-weight:400}
+.full-beat-menu .editor-primary>details{border:0}
+.full-beat-menu .editor-primary .editor-types{grid-template-columns:1fr}
