@@ -280,7 +280,6 @@ async function rhythmRangeSaved({scope:owner,reconciled}) {
     if(typeof overviewWorkbench==='undefined')await loadScatter();
   }else if(state.currentPage==='edit')await loadEdit();
   else if(state.currentPage==='trends')await loadTrends();
-  else if(state.currentPage==='rr')await globalThis.ecgRRBridge?.load();
   else if(state.currentPage==='stt')await loadStt();
   else if(state.currentPage==='events')await loadEvents();
   else if(state.currentPage==='report')await loadReport();
@@ -341,13 +340,15 @@ async function api(path, options = {}) {
   };
   const reads=globalThis.ECGReadRequests;
   const method=(options.method||'GET').toUpperCase();
-  const isWrite=!['GET','HEAD'].includes(method)&&path!=='/api/privacy/view'&&!(/\/(open|event-waveforms|waveform-strips|waveform-density|scatter-selection|advanced-analysis|rr-review\/locate|hrv-review\/preview|hrv-review\/cancel)(\?|$)/.test(path));
-  const evidencePick=/\/evidence-candidates(?:\?|$)/.test(path);
+  const isWrite=!['GET','HEAD'].includes(method)&&path!=='/api/privacy/view'&&!(/\/(open|event-waveforms|waveform-strips|waveform-density|scatter-selection|advanced-analysis|rr-review\/locate|report-evidence\/preview|hrv-review\/preview|hrv-review\/cancel)(\?|$)/.test(path));
+  const evidencePick=/\/(?:evidence-candidates|report-evidence\/confirm)(?:\?|$)/.test(path);
   const reportOnly=/\/report(?:\?|$)/.test(path);
-  if(isWrite){if(!reportOnly)state.editReadCache=null;if(!evidencePick&&!reportOnly)globalThis.ecgChartInspection?.invalidate();reads?.clear();}
+  // Saving report curation does not change clinical waveforms. Keep visible
+  // reads alive across autosave; report receivers already reject older versions.
+  if(isWrite&&!reportOnly){state.editReadCache=null;if(!evidencePick)globalThis.ecgChartInspection?.invalidate();reads?.clear();}
   const scope=JSON.stringify([requestCase,state.caseRequestId,state.currentPage]);
   const payload=method==='GET'&&reads?await reads.read(scope,path,readRequest,readLane,options.signal):await readRequest(options.signal);
-  if(isWrite){if(!evidencePick&&!reportOnly)globalThis.ecgChartInspection?.invalidate();reads?.clear();if(!evidencePick&&!reportOnly&&typeof overviewWorkbench!=='undefined')overviewWorkbench.invalidateAfterWrite(requestCase,requestCaseToken);}
+  if(isWrite&&!reportOnly){if(!evidencePick)globalThis.ecgChartInspection?.invalidate();reads?.clear();if(!evidencePick&&typeof overviewWorkbench!=='undefined')overviewWorkbench.invalidateAfterWrite(requestCase,requestCaseToken);}
   if(requestCase===state.caseId&&/^(PUT|PATCH|DELETE|POST)$/.test(options.method||"")&&/\/(beat-overrides|beat-templates|annotations|patient)(\/|$)/.test(path)){
     state.reportComposer=null;
     await clinicalWorkflow.refresh(requestCase).catch(()=>{clinicalWorkflow.receive(null);toast("修改已保存，但复核状态读取失败，请刷新后继续审核","error",6000);});
@@ -672,7 +673,6 @@ async function selectCase(caseId, destination = "review") {
   if(typeof overviewWorkbench!=='undefined')overviewWorkbench.closeMenu();
   if(typeof notifyRhythmRangeCaseChange==='function')notifyRhythmRangeCaseChange();
   const sttCaseChanged=state.caseId!==caseId;
-  if(sttCaseChanged)globalThis.ecgRRBridge?.dispose();
   if(typeof clinicalUI!=='undefined')clinicalUI.cancelReportExport();
   if(state.editFullscreenReturn){cancelEditTwelveRead(state.editFullscreenReturn);state.editFullscreenReturn=null;finishWaveformFullscreenExit();requestWaveformNativeExit($("#waveformCard")).catch(handleError);}
   globalThis.ecgChartInspection?.invalidate();
@@ -888,7 +888,7 @@ function goPage(name, {reuseEditWorkspace=false,editFullscreenTransition=false}=
   if(['review','edit'].includes(state.currentPage)&&!['review','edit'].includes(name)&&globalThis.ecgRhythmRangeEditor?.snapshot().draft)
     toast('房颤分段草稿已保留，尚未保存；返回连续波形可继续核对。','info',5000);
   if (state.demoReadonly && ["audit", "settings"].includes(name)) name = "dashboard";
-  const needsCase = ["edit", "review", "trends", "stt", "events", "report", "rr"].includes(name);
+  const needsCase = ["edit", "review", "trends", "stt", "events", "report"].includes(name);
   if (needsCase && !state.caseId) {
     toast("请先从工作列表选择病例", "error");
     name = "dashboard";
@@ -908,7 +908,6 @@ function goPage(name, {reuseEditWorkspace=false,editFullscreenTransition=false}=
     state.sttRequestId++;state.sttAbort?.abort();state.sttAbort=null;state.sttWaveformSelection=null;
     globalThis.ecgSttReviewLayout?.clear("已离开 ST‑T 复核，请重新读取当前窗口。","empty");
   }
-  if(state.currentPage==='rr'&&name!=='rr')globalThis.ecgRRBridge?.dispose();
   state.currentPage = name;
   state.sttRangeBridge?.sync();
   markWorkflowVisited(name);
@@ -921,7 +920,6 @@ function goPage(name, {reuseEditWorkspace=false,editFullscreenTransition=false}=
   if (name === "patients" && state.dashboardStatus !== "ready") loadDashboard().catch(handleError);
   if (name === "review"&&!editFullscreenTransition) {loadWaveform().catch(handleError);loadScatter().catch(handleError);}
   if (name === "trends") loadTrends().catch(handleError);
-  if (name === "rr") globalThis.ecgRRBridge?.load().catch(handleError);
   if (name === "stt") loadStt().catch(handleError);
   if (name === "edit" && !reuseEditWorkspace) loadEdit().catch(handleError);
   if (name === "events") loadEvents().catch(handleError);
@@ -1196,9 +1194,6 @@ async function loadWaveform() {
   $("#cursorTimeLabel").textContent = `${formatElapsed(state.start)}–${formatElapsed(state.start + data.duration_s)}`;
   const visibleLeads = (globalThis.ECGChartInspection?.names(data.leads)||Object.keys(data.leads));
   $("#waveMeta").textContent = `${visibleLeads.length} 导联 · ${data.sample_rate_hz} Hz（导入格式） · ${data.unit_label||'设备单位'} · ${data.filter} · ${ECGReviewTools.recordClock(state.caseData?.metadata?.start_time,data.start_s)||'记录时钟未提供'} — ${ECGReviewTools.recordClock(state.caseData?.metadata?.start_time,data.start_s+data.duration_s)||formatElapsed(data.start_s+data.duration_s)} · ${data.duration_s} 秒`;
-  const visibleMeta=$("#waveMeta"),startClock=ECGReviewTools.recordClock(state.caseData?.metadata?.start_time,data.start_s),endClock=ECGReviewTools.recordClock(state.caseData?.metadata?.start_time,data.start_s+data.duration_s);visibleMeta.textContent=ECGReviewTools.waveMeta(data,state.caseData?.metadata?.start_time,(state.editFullscreenReturn?.amplitudeDomain||state.sttFullscreenReturn?.amplitudeDomain||ECGReviewTools.waveDomain(data,JSON.stringify([state.caseId,data.filter,'overview'])))*10/(state.gain||10));visibleMeta.title=visibleMeta.textContent;
-  if(editOwner?.targetSample!==undefined){const fraction=(editOwner.targetSample/data.sample_rate_hz-data.start_s)/data.duration_s;$("#waveMeta").textContent+=` · 定位 ${formatElapsedPrecise(editOwner.targetSample/data.sample_rate_hz)}${Math.abs(fraction-.5)<.001?' · 心搏居中':editOwner.edgeClamped?' · 靠近记录边界，按真实范围显示':''}`;}
-  if(editOwner?.outsideLinkedCohort)$("#waveMeta").textContent+=' · 定位搏不在当前联动选集内';
   $("#calibrationNote").textContent = ECGVoltage.snapshot()?ECGVoltage.note(ECGVoltage.snapshot()):(data.calibration_note || '设备单位，电压未校准。');
   $("#calibrationNote").title = data.signal_profile?.basis || '采样率与通道映射尚未经设备资料核验';
   renderWaveform();
@@ -1244,14 +1239,24 @@ function renderWaveform() {
     : document.querySelector('#page-review.overview-workbench')
       ? innerWidth>=1100&&!document.querySelector('#page-review.ov-af-mode')?Math.max(195,scroller.clientHeight):Math.max(innerHeight <= 780 && innerWidth <= 1500 ? 195 : 264, leadNames.length * (innerHeight <= 780 && innerWidth <= 1500 ? 65 : 88))
       : Math.max(360, leadNames.length * 138);
-  const {ctx, width, height: h} = canvasContext(canvas, height);
+  const axisHeight=24,annotationHeight=24;
+  const domainKey=JSON.stringify([state.caseId,state.caseRequestId,state.waveform.filter,state.waveform.source_digest,state.waveform.data_version,state.waveform.analysis_basis,state.waveform.analysis_revision,'overview']);
+  const domain=(state.editFullscreenReturn?.amplitudeDomain||state.sttFullscreenReturn?.amplitudeDomain||ECGReviewTools.waveDomain(state.waveform,domainKey))*10/(state.gain||10);
+  const gainKey=JSON.stringify([domainKey,domain]),lock=canvas._overviewAmplitudeLock;
+  const stack=ECGReviewTools.lockedWaveRows(leadNames.map(name=>state.waveform.leads[name]),{top:annotationHeight,rowHeight:(height-axisHeight-annotationHeight)/leadNames.length,domain,scale:lock?.key===gainKey?lock.scale:null,labelY:3});
+  canvas._overviewAmplitudeLock={key:gainKey,scale:stack.scale};
+  const displayHeight=annotationHeight+stack.rowHeight*leadNames.length+axisHeight;
+  const {ctx, width, height: h} = canvasContext(canvas, displayHeight);
+  // Keep CSS and backing-store coordinates equal; larger source peaks add
+  // scrollable rows, never disappear or silently change the display gain.
+  canvas.style.setProperty('height',displayHeight+'px','important');
+  Object.assign(canvas.dataset,{amplitudeOverflow:String(stack.expanded),amplitudeExpanded:String(displayHeight>height+.5),waveDomain:String(domain),waveRowHeight:String(stack.rowHeight)});
   ctx.fillStyle = "#fffefd";
   ctx.fillRect(0, 0, width, h);
-  const axisHeight=24,annotationHeight=leadNames.length>6?24:0;
-  const leadHeight = (h-axisHeight-annotationHeight) / leadNames.length;
+  const leadHeight = stack.rowHeight;
   const duration = state.waveform.duration_s;
   const smallX = width * 0.04 / duration;
-  const smallY = Math.max(7, leadHeight / 10);
+  const smallY = Math.max(7, stack.scale * 200);
   ctx.lineWidth = 1;
   for (let x = 0, i = 0; x <= width; x += smallX, i++) {
     if (smallX < 3 && i % 5) continue;
@@ -1262,12 +1267,10 @@ function renderWaveform() {
     ctx.strokeStyle = i % 5 === 0 ? "rgba(232,130,116,.34)" : "rgba(244,181,170,.24)";
     ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
   }
-  const preferredScale = (leadHeight * 0.31 / 1000) * (state.gain / 10);
-  const layouts=leadNames.map((name,j)=>ECGReviewTools.waveRow(state.waveform.leads[name],{top:annotationHeight+j*leadHeight,bottom:annotationHeight+(j+1)*leadHeight,floor:1000,preferredScale,annotated:j===0,sharedLabelY:leadNames.length>6?3:null,domain:(state.editFullscreenReturn?.amplitudeDomain||state.sttFullscreenReturn?.amplitudeDomain||ECGReviewTools.waveDomain(state.waveform,JSON.stringify([state.caseId,state.waveform.filter,'overview'])))*10/(state.gain||10)}));
+  const layouts=stack.layouts;
   Object.assign(canvas.dataset,{waveLeads:JSON.stringify(leadNames),waveStart:String(state.waveform.start_s),waveDuration:String(duration),waveWidth:String(width),waveScales:JSON.stringify(layouts.map(x=>x.scale)),waveBaselines:JSON.stringify(layouts.map(x=>x.baseline))});
   const displayRate = state.waveform.display_sample_rate_hz;
   leadNames.forEach((name, leadIndex) => {
-    if(layouts[leadIndex].overflow){ctx.fillStyle="#a52727";ctx.fillText(name+" 幅度超范围，请适应当前幅度",24,layouts[leadIndex].baseline);return;}
     const values = state.waveform.leads[name];
     const shape=layouts[leadIndex],baseline=shape.baseline,amplitudeScale=shape.scale;
     ctx.fillStyle = "#075f70"; ctx.font = `700 12px ${UI_FONT}`; ctx.fillText(name, 8, annotationHeight+leadHeight * leadIndex + 18);
@@ -1312,7 +1315,15 @@ function renderWaveform() {
   });
   ECGReviewTools.canvasTimeAxis(ctx,state.waveform,{width,y:h-6,recordStart:state.caseData?.metadata?.start_time});
   canvas.dataset.displayRate = displayRate;
-  const meta=$("#waveMeta");if(meta?.parentElement){let fit=meta.parentElement.querySelector('[data-overview-amplitude-fit]');if(!fit){fit=document.createElement('button');fit.type='button';fit.dataset.overviewAmplitudeFit='';fit.textContent='适应幅度';meta.parentElement.append(fit);}fit.onclick=()=>{const domain=ECGReviewTools.waveDomain(state.waveform,JSON.stringify([state.caseId,state.waveform.filter,'overview']),true);if(state.editFullscreenReturn)state.editFullscreenReturn.amplitudeDomain=domain;if(state.sttFullscreenReturn)state.sttFullscreenReturn.amplitudeDomain=domain;state.gain=10;renderWaveform();};}
+  const meta=$("#waveMeta");if(meta?.parentElement){
+    meta.textContent=ECGReviewTools.waveMeta(state.waveform,state.caseData?.metadata?.start_time,domain);
+    if(stack.expanded)meta.textContent+=` · 按原增益展开至 ±${Math.ceil(stack.displayDomain)} u；可纵向滚动或点适应幅度`;
+    if(editOwner?.targetSample!==undefined){const fraction=(editOwner.targetSample/state.waveform.sample_rate_hz-state.waveform.start_s)/duration;meta.textContent+=` · 定位 ${formatElapsedPrecise(editOwner.targetSample/state.waveform.sample_rate_hz)}${Math.abs(fraction-.5)<.001?' · 心搏居中':editOwner.edgeClamped?' · 靠近记录边界，按真实范围显示':''}`;}
+    if(editOwner?.outsideLinkedCohort)meta.textContent+=' · 定位搏不在当前联动选集内';
+    meta.title=meta.textContent;
+    let fit=meta.parentElement.querySelector('[data-overview-amplitude-fit]');if(!fit){fit=document.createElement('button');fit.type='button';fit.dataset.overviewAmplitudeFit='';fit.textContent='适应幅度';meta.parentElement.append(fit);}
+    fit.onclick=()=>{const nextDomain=ECGReviewTools.waveDomain(state.waveform,domainKey,true);if(state.editFullscreenReturn)state.editFullscreenReturn.amplitudeDomain=nextDomain;if(state.sttFullscreenReturn)state.sttFullscreenReturn.amplitudeDomain=nextDomain;canvas._overviewAmplitudeLock=null;state.gain=10;renderWaveform();};
+  }
   if(typeof syncRhythmRangeEditor==='function')syncRhythmRangeEditor();
 }
 
@@ -3050,7 +3061,8 @@ function bindCanvasInteraction() {
     const fraction=rect.width?localX/rect.width:0;
     const time=state.waveform.start_s+fraction*state.waveform.duration_s;
     const leadNames=(globalThis.ECGChartInspection?.names(state.waveform.leads)||Object.keys(state.waveform.leads));
-    const leadIndex=Math.min(leadNames.length-1,Math.max(0,Math.floor(localY/(rect.height/leadNames.length))));
+    const signalY=localY/rect.height*parseFloat(canvas.style.height),rowHeight=Number(canvas.dataset.waveRowHeight);
+    const leadIndex=Math.min(leadNames.length-1,Math.max(0,Math.floor((signalY-24)/rowHeight)));
     const lead=leadNames[leadIndex]||"—";
     const values=state.waveform.leads[lead]||[];
     const valueIndex=Math.min(values.length-1,Math.max(0,Math.round(fraction*state.waveform.duration_s*(state.waveform.sample_rate_hz||200)/ECGReviewTools.sampleStride(state.waveform))));

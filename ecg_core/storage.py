@@ -6,6 +6,7 @@ import sqlite3
 from .review_workflow import ReportConflict
 from .clinical_analysis import normalize_selection
 from .review_candidates import EvidenceCandidateMixin
+from .report_evidence import ReportEvidenceMixin
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -144,13 +145,14 @@ def utc_now() -> str:
 from .review_workflow import ReviewWorkflowMixin
 
 
-class Storage(ReviewWorkflowMixin, EvidenceCandidateMixin):
+class Storage(ReviewWorkflowMixin, EvidenceCandidateMixin, ReportEvidenceMixin):
     def __init__(self, path: Path):
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
         self.initialize_review()
         self.initialize_candidates()
+        self.initialize_report_evidence()
         with self.connect() as db:
             if "details" not in {r[1] for r in db.execute("PRAGMA table_info(annotations)")}:
                 db.execute("ALTER TABLE annotations ADD COLUMN details TEXT NOT NULL DEFAULT '{}'")

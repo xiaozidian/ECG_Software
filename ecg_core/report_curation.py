@@ -4,6 +4,10 @@ from .report_layout import LEADS
 
 def strip_curation(raw):
     result = {}
+    if 'referenced_in_report' in raw:
+        if type(raw['referenced_in_report']) is not bool:
+            raise ValueError('正文证据引用须为布尔值')
+        result['referenced_in_report'] = raw['referenced_in_report']
     if 'print_enabled' in raw:
         if type(raw['print_enabled']) is not bool:
             raise ValueError('图条打印状态必须为布尔值')

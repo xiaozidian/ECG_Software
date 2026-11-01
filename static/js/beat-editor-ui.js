@@ -102,7 +102,7 @@ const beatEditor=(()=>{
       button("向前搜索","detect-before")+button("向后搜索","detect-after")+'</details>'+
       '<details><summary>修改前一心搏 ‹</summary><div class="editor-types">'+codeButtons(Object.keys(E.types),"previous")+'</div></details>'+
       '<details><summary>修改后一心搏 ›</summary><div class="editor-types">'+codeButtons(Object.keys(E.types),"next")+'</div></details>'+
-      button("设为最长 RR 报告图条 <kbd>L</kbd>","longest")+
+      button("加入最长 RR 间期候选 <kbd>L</kbd>","longest")+
       '<div class="editor-selection-tools">'+button(context.occurrenceScope||context.sampleScope?"全选当前集合":"全选全记录心搏","all")+button("当前页全选 <kbd>K</kbd>","page")+button(context.occurrenceScope||context.sampleScope?"反选当前集合":"反选全记录心搏","invert")+button("当前页反选 <kbd>I</kbd>","invert-page")+button("清除选择","clear")+'</div>'+
       button("撤销最近修订","undo",info.can_undo?"":"disabled")+button("重做","redo",info.can_redo?"":"disabled")+
       button("设置选项","settings")+'</div>'+(context.anchor&&!context.readOnly?'':'</details>')+'<details data-wave-tools'+(context.anchor&&!context.readOnly?'':' open')+'><summary>图条 / 波形操作</summary>'+button(context.previewLabel||(Object.keys(context.waveform?.leads||{}).length>6?(context.onPreview?"放大当前 12 导联":"返回原波形"):"查看 12 导联"),"wave-preview")+button("转到原始诊断波形","wave-locate")+button("插入报告图条…","wave-strip")+button("插入缩略图条…","wave-strip-short")+button("选择起始位置（总览）","wave-range-anchor")+button("删除前面区段的标记…","wave-delete-before")+button("删除后面区段的标记…","wave-delete-after")+button("测量尺（总览）","wave-measure")+button("分规尺（总览）","wave-divider")+button("平行尺（总览）","wave-parallel")+button("设为最快心率图条…","wave-bookmark-fastest")+button("设为最慢心率图条…","wave-bookmark-slowest")+button("设为最快窦性心率图条…","wave-bookmark-fastest_nn")+button("设为最慢窦性心率图条…","wave-bookmark-slowest_nn")+button("跳转到时间…","wave-jump")+(context.onLeadSettings?button("显示导联设置…","wave-leads"):"")+'</details></div><footer>源记录只读 · 修订后重算 · 可撤销<br>'+(context.readOnly?'此处为只读复核图；先转到原始诊断波形再修订。':'房颤 / 房扑为人工逐搏节律标记；P/T 波不计入心搏。')+'</footer>';
@@ -185,7 +185,7 @@ const beatEditor=(()=>{
     if(state.currentPage==="edit")await loadEdit(bookmark?{...bookmark,caseToken}:null);
     if(!isCurrent())return;
     if(state.currentPage==="review"){clearScatterSelection();await loadScatter()}
-    else if(state.currentPage==='rr')await globalThis.ecgRRBridge?.load();
+    else if(state.currentPage==='report')await clinicalUI.refreshReport();
     else if(state.currentPage==='trends')await loadTrends();
     else if(state.currentPage==='stt')await loadStt();
     if(!isCurrent())return;
@@ -319,6 +319,13 @@ const beatEditor=(()=>{
   }
   async function action(name){
     if(name==="close")return close();
+    if(name==='longest'){
+      contextOK();if(selected.size!==1||!context.anchor||!selected.has(context.anchor.sample_index))throw Error('请选择一个有前 RR 的原心搏');
+      close();const scope=owner(),item={...context.anchor};
+      const identity=await api(`/api/cases/${scope.caseId}/evidence-candidates`);requireOwner(scope);
+      ECGAnalysisConsistency.assertSame(context.waveform||state.caseData.clinical_identity,identity);
+      return ECGReviewCandidates.choose({identity,item,population:{origin:context.surface==='review'?'overview-card':'edit-card'},isCurrent:()=>currentOwner(scope)});
+    }
     if(name.startsWith('wave-')){
       const scope=owner();requireOwner(scope);const target=context;
       if(name==='wave-leads'){close();return target.onLeadSettings?.();}

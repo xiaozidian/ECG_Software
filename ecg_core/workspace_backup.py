@@ -36,6 +36,7 @@ CORE = {
     'case_review': 'case_id revision steps events',
 }
 OPTIONAL = {
+    'report_evidence_reviews': 'case_id evidence_key descriptor presentations status actor updated_at',
     'evidence_candidates': 'id case_id kind candidate_key scope payload status',
     'beat_edit_documents': 'case_id revision document undo redo',
     'beat_edit_template_refs': 'template_id case_id beat_ids',
@@ -48,6 +49,7 @@ OPTIONAL = {
     'terminology_catalogs': 'namespace version sha256 payload created_at',
 }
 JSON_FIELDS = {
+    'report_evidence_reviews': {'descriptor':dict,'presentations':list},
     'evidence_candidates': {'scope':dict,'payload':dict},
     'annotations': {'details': dict},
     'report_drafts': {'composition': dict, 'analysis_provenance': dict},

@@ -95,8 +95,8 @@ const clinicalWorkflow = (() => {
     // preflight DOM exists, including the transition from saved to dirty.
     const approve=$("#approveReport");
     if(approve){
-      approve.disabled=!ECGReportConsistency.canApprove(state,$("#conclusionEditor")?.value,pending().length===0,writable());
-      approve.title=!writable()?"当前版本只读":state.reportSaving?"正在保存当前报告，请等待":!state.report?"请先载入当前报告":state.reportStale?"报告依据或版本已变化，请先核对最新版本":evidenceNotice||(pending().length?"请先完成模板编辑与 ST‑T 复核":state.reportDirty?"请先保存草稿":!String($("#conclusionEditor")?.value||'').trim()?"请填写复核结论并保存草稿":"审核当前已保存版本");
+      approve.disabled=Boolean(state.reportEvidencePending?.length)||!ECGReportConsistency.canApprove(state,$("#conclusionEditor")?.value,pending().length===0,writable());
+      approve.title=!writable()?"当前版本只读":state.reportSaving?"正在保存当前报告，请等待":!state.report?"请先载入当前报告":state.reportStale?"报告依据或版本已变化，请先核对最新版本":(state.reportEvidencePending?.length?`${state.reportEvidencePending.length} 条报告证据待核对，请在入报图条中处理`:evidenceNotice)||(pending().length?"请先完成模板编辑与 ST‑T 复核":state.reportDirty?"请先保存草稿":!String($("#conclusionEditor")?.value||'').trim()?"请填写复核结论并保存草稿":"审核当前已保存版本");
     }
     const stats=$("#reportProvenance");
     if(stats)stats.dataset.overrideCount=String(state.editBeatOverrides.size);

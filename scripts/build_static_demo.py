@@ -15,7 +15,7 @@ else:
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUTPUT = PROJECT_ROOT / 'build/pages'
-MANIFEST = PROJECT_ROOT / 'docs/releases/0.12.14-lasso.20261015/source-manifest.json'
+MANIFEST = PROJECT_ROOT / 'docs/releases/0.12.20-rr-report.20261101/source-manifest.json'
 ASSET = 'static/demo-data/mathematical-4314'
 NAMESPACE = 'cardioinsight-public-math-4314-v2'
 sha = lambda b: hashlib.sha256(b).hexdigest()
@@ -41,14 +41,17 @@ def build(output: Path) -> Path:
                 transformations.append('isolated browser storage namespace')
             text = namespaced
             if relative == 'static/js/clinical-workflow.js':
-                old = 'Boolean(window.__CARDIOINSIGHT_UPLOADED_CASE__)'
+                old = 'window.__CARDIOINSIGHT_UPLOADED_CASE__ || '
                 assert text.count(old) == 1
-                text = text.replace(old, 'Boolean(window.__CARDIOINSIGHT_MATHEMATICAL_CASE__?.integrity?.mathematical_fixture)')
+                text = text.replace(old, '')
                 transformations.append('browser-only mathematical write capability')
             if relative == 'static/js/app.js':
                 for old, new in [('button.disabled=busy||Boolean(state.demoReadonly)||!sttWaveformIsCurrent()', 'button.disabled=busy||!clinicalWorkflow.writable()||!sttWaveformIsCurrent()'), ('submit.disabled=Boolean(state.demoReadonly)||Boolean(state.sttSaving)||!usable', 'submit.disabled=!clinicalWorkflow.writable()||Boolean(state.sttSaving)||!usable')]:
-                    assert text.count(old) == 1
-                    text = text.replace(old, new)
+                    if old in text:
+                        assert text.count(old) == 1
+                        text = text.replace(old, new)
+                    else:
+                        assert text.count(new) == 1
                 transformations.append('ST browser-only save capability; native and print rules retained')
             data = text.encode()
         target = output / relative
