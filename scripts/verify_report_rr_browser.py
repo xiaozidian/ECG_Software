@@ -46,6 +46,7 @@ async def verify_report_rr(page, screenshots):
     await page.locator('#reportV2Nav [data-category="strips"]').click()
     await page.wait_for_function(ready)
     await page.locator('.rw-strip [data-review-evidence]').click()
+    await page.locator('#reportEvidenceDialog [data-evidence-confirm]:enabled').wait_for()
     for count in (1, 3, 12):
         await page.locator(f'#reportEvidenceDialog [data-evidence-leads="{count}"]').click()
         await page.wait_for_function("n => document.querySelector('#reportEvidenceDialog [data-evidence-wave]')?.dataset.leadCount===String(n) && !document.querySelector('#reportEvidenceDialog [data-evidence-confirm]').disabled", arg=count)
