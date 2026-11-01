@@ -7,7 +7,8 @@ from test_analysis_provenance import synthetic_case, synthetic_app
 
 @pytest.mark.parametrize('scenario', ['success', 'mixed', 'beat-mismatch', 'final-change', 'retry',
     'late-success', 'late-error', 'wave-refresh', 'wave-mismatch', 'late-wave-failure',
-    'same-case-reload', 'save-success', 'save-refresh-error', 'save-reload-error', 'save-not-ready'])
+    'same-case-reload', 'save-success', 'save-refresh-error', 'save-reload-error', 'save-not-ready',
+    'case-refresh','case-refresh-late'])
 def test_browser_overview_identity(scenario):
     subprocess.run(['node', 'tests/browser_overview_identity.cjs', scenario], check=True, timeout=20)
 

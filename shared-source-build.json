@@ -16,7 +16,7 @@
   },
   "clinical_acceptance": false,
   "core_contract": "ecg-core-1",
-  "core_version": "core-dc5224286e0cc9a6",
+  "core_version": "core-1af70ab967579068",
   "files": {
     "demo/static/js/demo-api.js": {
       "bytes": 70844,
@@ -109,9 +109,9 @@
       "sha256": "4ea19df99d2986cd2d35dc3df307066844b793a43c080fbf13e809fcc2aa6ca6"
     },
     "ecg_core/report_evidence.py": {
-      "bytes": 9188,
+      "bytes": 9488,
       "component": "core",
-      "sha256": "807565d87aac150ac05db3123109d0de88583de2be97601f585972aea87b9ff1"
+      "sha256": "20bff8029c04bfebe81e12899b310caf3e9e319dc12fdaff6d3c072125bda8f4"
     },
     "ecg_core/report_layout.py": {
       "bytes": 12673,
@@ -199,9 +199,9 @@
       "sha256": "10fd59c6744673f69ac6a1eca1c5468115700714733ce6c26a3b3c5ef3c2dac7"
     },
     "scripts/build_static_demo.py": {
-      "bytes": 11690,
+      "bytes": 11692,
       "component": "build",
-      "sha256": "aaa63cdffc2feb3a0b64b16ae8c8cfe61a3140afcea90fcb0dd4a0cd19114422"
+      "sha256": "b239e1882f7117f30456a060e622451efd0788bbb151645c61394102ec4d3220"
     },
     "scripts/generate_synthetic_demo.py": {
       "bytes": 16740,
@@ -259,9 +259,9 @@
       "sha256": "6b09a6e8aa929584b650c8059ad339be819bd5b463ef72f11d5a562cc5ab0155"
     },
     "static/css/desktop-workspace.css": {
-      "bytes": 51650,
+      "bytes": 52137,
       "component": "ui",
-      "sha256": "b74d20a108351080c1240aa75bb3afebd0b062d7d2b456d2a688530917597e1f"
+      "sha256": "796df940f814fda1bb49557030b305ecd45f7fc35e34fbc40711374e2ca11292"
     },
     "static/css/hrv-review-editor.css": {
       "bytes": 4119,
@@ -399,9 +399,9 @@
       "sha256": "a6388fe03f33d7e58efdbf0a962794231b1d291d14940b6aedc91305edcd4330"
     },
     "static/js/clinical-ui.js": {
-      "bytes": 198933,
+      "bytes": 199120,
       "component": "ui",
-      "sha256": "0f3f6274b4c0ae6200c10380058ee1d2bd061dfc732cf8dfdaca14cd04cafb77"
+      "sha256": "56c5bf33bc79970d0b55f07bae09b671d112bef849668904d3028d952dd5a178"
     },
     "static/js/clinical-workflow.js": {
       "bytes": 14966,
@@ -469,9 +469,9 @@
       "sha256": "7026c9b3e01ed16b02f35f1b11939156ede296c06fdd9ff3ceae2de334d164b6"
     },
     "static/js/overview-workbench.js": {
-      "bytes": 108769,
+      "bytes": 109832,
       "component": "ui",
-      "sha256": "0c094b11900310f771521629c97cd4d0119f8ef7244e075b7a106b7a40286673"
+      "sha256": "68760c76fb6391b6e82392e873f1106dedd05c205b2403942e10a66c5625127c"
     },
     "static/js/read-requests.js": {
       "bytes": 2715,
@@ -605,7 +605,7 @@
     }
   },
   "schema": 1,
-  "source_fingerprint": "7d191720c4a49dffe0ec23a484d23a62a5720f9d9d8f99cf0033ad9ab269f534",
+  "source_fingerprint": "97bfde258aebd8919be077b4ae9b50d8fac33a0d61db648fd81bf2f5eabef2a9",
   "source_revision": null,
-  "ui_version": "ui-5ff19f529edb6006"
+  "ui_version": "ui-ae045626ab5efca2"
 }

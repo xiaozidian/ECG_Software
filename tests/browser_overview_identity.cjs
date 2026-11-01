@@ -1,6 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const C=require('../static/js/analysis-consistency.js'),E=require('../static/js/overview-engine.js');
+const T=require('../static/js/clinical-review-tools.js');
 const source=fs.readFileSync('static/js/overview-workbench.js','utf8'),app=fs.readFileSync('static/js/app.js','utf8');
 const which=process.argv[2],basis={analysis_basis:'synthetic',analysis_revision:4};
 const rows=Array.from({length:80},(_,i)=>[200*(i+1),1000,'N']);
@@ -8,18 +9,23 @@ const beat={...basis,revision:2,duration_s:90,columns:['sample_index','rr_ms','c
 const rhythm={...basis,revision:1,beat_revision:2,document:{episodes:[],bookmarks:{}}};
 const wave={...basis,start_s:0,duration_s:10,sample_rate_hz:200,leads:{II:[0]},filter:'raw'};
 const nodes=new Map(),qs=key=>{if(!nodes.has(key))nodes.set(key,{innerHTML:'old',textContent:'old',getContext:()=>({clearRect(){clears++}})});return nodes.get(key)};
-let calls=[],renders=0,clears=0,preserved=0,fail=false,anchorReads=0,toasts=[],writes=0,release;
+let calls=[],renders=0,clears=0,preserved=0,fail=false,anchorReads=0,toasts=[],writes=0,release,caseRefreshes=0;
 const pending=new Promise(r=>release=r);
-const state={caseId:'c',caseRequestId:1,currentPage:'review',start:0,duration:10,filter:'raw',waveformRequestId:0,waveform:{...wave},caseData:{}};
+const state={caseId:'c',caseRequestId:1,currentPage:'review',start:0,duration:10,filter:'raw',waveformRequestId:0,waveform:{...wave},caseData:{clinical_identity:{...basis}}};
 const ctx={state,ui:{id:'c',revision:2,caseToken:1,identity:basis,loadToken:1,rows:[{}],rhythm},overviewReady:true,
   coverage:{old:true},coverageMessage:'',episodeEditor:{old:true},episodeNavigation:0,episodeFilter:'all',episodePage:0,
-  ECGAnalysisConsistency:C,E,URLSearchParams,qs,$:qs,esc:String,fmtNumber:String,formatElapsed:String,
+  ECGAnalysisConsistency:C,ECGReviewTools:T,E,URLSearchParams,qs,$:qs,esc:String,fmtNumber:String,formatElapsed:String,
   button:(label,action)=>`<button data-ov="${action}">${label}</button>`,
   rememberEpisodeForm(){preserved++},geometries:new WeakMap(),document:{querySelectorAll:()=>[qs('canvas')]},
   resetCoverage(message){ctx.coverage=null;ctx.coverageMessage=message;},renderCoverage(){},renderEpisodes(){renders++},draw(){},hour:()=>0,
   updateZoomControls(){},renderWaveform(){},renderVisibleEvents(){},renderAnnotations(){},renderOverview(){},syncHourScatter(){},
   waveformRequestLeads:()=>['II'],ECGVoltage:{snapshot:()=>null},
-  clinicalUI:{hasRhythmReturn:()=>false},
+  clinicalUI:{hasRhythmReturn:()=>false,refreshCurrentCaseEvidence:async(id,token,current,anchor)=>{
+    caseRefreshes++;assert.equal(id,'c');assert.equal(token,1);C.assertSame(basis,anchor);
+    if(which==='case-refresh-late')await pending;
+    if(!current())return false;
+    state.caseData={clinical_identity:{...basis},case_id:'c'};return true;
+  }},
   api:async raw=>{
     const u=new URL(raw,'http://test'),kind=u.pathname.split('/').at(-1);calls.push({kind,query:Object.fromEntries(u.searchParams)});
     if(kind==='analysis-basis'){anchorReads++;return which==='final-change'&&anchorReads===2?{...basis,analysis_revision:5}:basis;}
@@ -56,10 +62,11 @@ const tick=()=>new Promise(r=>setImmediate(r));
     await assert.rejects(ctx.loadWaveform(),/变化/);assert.equal(state.waveform,null);assert.equal(ctx.overviewReady,false);assert.equal(ctx.coverage,null);assert.match(qs('#ovStatus').innerHTML,/重试载入/);return;
   }
   if(which==='wave-refresh')state.waveform={...wave,analysis_revision:3};
+  if(which.startsWith('case-refresh'))state.caseData.clinical_identity.analysis_revision=3;
   if(which==='retry')fail=true;
   const job=ctx.load(true);job.catch(()=>{});await tick();
   assert(preserved>0&&clears>0);assert.equal(ctx.coverage,null);
-  if(which.startsWith('late-')){
+  if(which.startsWith('late-')||which==='case-refresh-late'){
     state.caseRequestId++;ctx.overviewReady=true;qs('#ovStatus').innerHTML='new case';ctx.ui.rows=['new'];release();
     if(which==='late-error')await assert.rejects(job,/offline/);else await job;
     assert.equal(qs('#ovStatus').innerHTML,'new case');assert.deepEqual(ctx.ui.rows,['new']);return;
@@ -72,4 +79,6 @@ const tick=()=>new Promise(r=>setImmediate(r));
   assert.equal(ctx.overviewReady,true);assert.equal(renders,1);assert.equal(ctx.ui.rows.length,80);assert.equal(ctx.ui.identity.analysis_revision,4);
   assert.equal(calls.filter(x=>x.kind==='waveform').length,which==='wave-refresh'?1:0);
   assert.equal(state.waveform.analysis_revision,4);
+  assert.equal(state.caseData.clinical_identity.analysis_revision,4);
+  assert.equal(caseRefreshes,which==='case-refresh'?1:0);
 })().catch(e=>{console.error(e);process.exitCode=1});

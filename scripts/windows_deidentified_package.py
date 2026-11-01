@@ -4,6 +4,7 @@ from hashlib import sha256
 import argparse
 import json
 import os
+import re
 import shutil
 import sys
 import zipfile
@@ -57,11 +58,17 @@ def archive(package,output,name):
     (output/(name+'.sha256')).write_text(checksum+'  '+name+'\n')
     return {'archive':name,'bytes':path.stat().st_size,'sha256':checksum}
 
+def packaging_version(release):
+    version=release.get('packaging_version','')
+    assert isinstance(version,str) and re.fullmatch(r'\d+\.\d+\.\d+',version),'Invalid packaging version'
+    return version
+
 def template(software,output):
     package=unpack(software,output/'template')
     verify_content_manifest(package)
     release=json.loads((package/'RELEASE.json').read_text())
-    assert release['source_id']=='M01' and release['packaging_version']=='1.0.5'
+    assert release['source_id']=='M01'
+    version=packaging_version(release)
     original_exe=digest(package/'CardioInsightDoctorEval.exe')
     for key in ['source_manifest_sha256','wholly_synthetic','patient_inputs_read','duration_seconds','raw_waveform_bytes']:
         release.pop(key,None)
@@ -70,10 +77,11 @@ def template(software,output):
                    supported_source_profile=source.PROFILE)
     (package/'RELEASE.json').write_text(json.dumps(release,ensure_ascii=False,indent=2)+'\n')
     (package/'使用说明.txt').write_text(README,encoding='utf-8-sig')
-    (package/'版本说明.txt').write_text('1.0.5：RR候选与入报分离，取消同步移除，报告内核对原始证据，保存提速。\n',encoding='utf-8-sig')
+    notes=release.get('release_notes') or 'RR候选与入报分离，取消同步移除，在报告内核对原始证据。'
+    (package/'版本说明.txt').write_text(f'{version}：{notes}\n',encoding='utf-8-sig')
     create_content_manifest(package,with_source=False);verify_content_manifest(package)
     assert digest(package/'CardioInsightDoctorEval.exe')==original_exe
-    result=archive(package,output,f'{PACKAGE_NAME}-1.0.5-P01-software.zip')
+    result=archive(package,output,f'{PACKAGE_NAME}-{version}-P01-software.zip')
     result.update(status='passed',source_commit=release['source_commit'],production_source_identity=release['production_source_identity'],
                   exe_sha256=original_exe,patient_data_in_artifact=False,source_profile='P01',
                   note='Software only. Actual patient assembly must remain on the local host.')
@@ -87,7 +95,8 @@ def assemble(software,patient_source,output):
     package=unpack(software,output/'package')
     verify_content_manifest(package)
     release=json.loads((package/'RELEASE.json').read_text())
-    assert release['source_id']=='P01' and release['packaging_version']=='1.0.5'
+    assert release['source_id']=='P01'
+    version=packaging_version(release)
     original_exe=digest(package/'CardioInsightDoctorEval.exe')
     shutil.copytree(patient_source,package/'Sources/P01')
     assert source.validate_source(package/'Sources/P01')==manifest
@@ -99,7 +108,7 @@ def assemble(software,patient_source,output):
     (package/'RELEASE.json').write_text(json.dumps(release,ensure_ascii=False,indent=2)+'\n')
     create_content_manifest(package);verify_content_manifest(package)
     assert digest(package/'CardioInsightDoctorEval.exe')==original_exe
-    result=archive(package,output,f'{PACKAGE_NAME}-1.0.5-P01-full.zip')
+    result=archive(package,output,f'{PACKAGE_NAME}-{version}-P01-full.zip')
     result.update(status='passed',source_commit=release['source_commit'],core_version=release['software_version'],
                   source_kind=manifest['kind'],source_id='P01',source_manifest_sha256=release['source_manifest_sha256'],
                   original_ci_exe_unchanged=True,exe_sha256=original_exe,source_data_assembled_only_locally=True,

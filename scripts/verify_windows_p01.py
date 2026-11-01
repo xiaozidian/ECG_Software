@@ -48,6 +48,9 @@ async def verify(args,result):
         m=doctor_source.validate_source(fixture);assert m['kind']=='mathematical_deidentified_fixture' and m['patient_inputs_read'] is False
         before={p.relative_to(fixture).as_posix():digest(p) for p in fixture.rglob('*') if p.is_file()}
         program=unpack(args.software_archive,work/'original-program');verify_content_manifest(program)
+        original_version=json.loads((program/'RELEASE.json').read_text())['packaging_version']
+        major,minor,patch=map(int,original_version.split('.'))
+        upgrade_version=f'{major}.{minor}.{patch+1}'
         exe=program/'CardioInsightDoctorEval.exe';active=exe;home=work/'doctor-home';context=None;page=None
         async with async_playwright() as p:
             browser=await p.chromium.launch(channel='msedge',headless=True)
@@ -97,7 +100,7 @@ async def verify(args,result):
                 binding=(home/'source-selection.json').read_bytes()
                 await context.close();context=None;await stop(exe,home)
                 newer=work/'upgrade-fixture';shutil.copytree(program,newer)
-                release=json.loads((newer/'RELEASE.json').read_text());release.update(packaging_version='1.0.6',release_version='1.0.6',verification_fixture_only=True)
+                release=json.loads((newer/'RELEASE.json').read_text());release.update(packaging_version=upgrade_version,release_version=upgrade_version,verification_fixture_only=True)
                 (newer/'RELEASE.json').write_text(json.dumps(release));create_content_manifest(newer,with_source=False)
                 active=newer/'CardioInsightDoctorEval.exe'
                 manager,_=await launch(active,home)
@@ -105,7 +108,7 @@ async def verify(args,result):
                 page=await resume(context,manager,workspace)
                 await open_case(page,m['duration_seconds']);await saved_work(page)
                 updated=json.loads((folder/'WORKSPACE.json').read_text());upgrade=updated['last_upgrade']
-                assert upgrade['from_packaging_version']=='1.0.5' and upgrade['to_packaging_version']=='1.0.6' and upgrade['snapshot_integrity']=='ok'
+                assert upgrade['from_packaging_version']==original_version and upgrade['to_packaging_version']==upgrade_version and upgrade['snapshot_integrity']=='ok'
                 assert digest(folder/'upgrade-snapshots'/upgrade['snapshot'])==upgrade['snapshot_sha256']
                 assert (home/'source-selection.json').read_bytes()==binding
                 record(result,'P01-same-core-version-upgrade-retains-work-source-and-backup')

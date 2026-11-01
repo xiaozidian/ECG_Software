@@ -37,5 +37,8 @@
   "tests/test_synthetic_hrv_reference.py",
   "tests/test_doctor_feedback_api.py",
   "tests/test_deidentified_doctor_source.py",
-  "tests/test_windows_deidentified_package.py"
+  "tests/test_windows_deidentified_package.py",
+  "tests/test_report_evidence_review.py",
+  "tests/test_overview_identity.py",
+  "tests/test_overview_closed_lasso.py"
 ]

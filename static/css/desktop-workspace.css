@@ -463,3 +463,11 @@
 @media screen and (max-width:1000px) {
   #page-stt.stt-review-layout .stt-wave-canvas-wrap:has(#sttWaveformCanvas[data-stt-render-leads="12"]){height:438px;min-height:438px;max-height:438px}
 }
+
+/* Long source/time metadata must shrink within the template wave toolbar. */
+#page-edit .edit-wave-toolbar>div:first-child>div{min-width:0;flex:1}
+@media screen and (max-width:1099px){
+  #page-edit .edit-wave-toolbar{height:auto;flex-direction:column;align-items:stretch;flex-wrap:nowrap}
+  #page-edit .edit-wave-toolbar>div:first-child{flex:0 1 auto;width:100%;max-width:100%}
+  #page-edit .edit-wave-toolbar .edit-wave-actions{width:100%;min-width:0;flex-wrap:wrap;max-width:100%}
+}

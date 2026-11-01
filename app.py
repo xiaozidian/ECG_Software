@@ -759,39 +759,48 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
     def report_rr_evidence(case_id):
         case=case_or_404(case_id)
         identity=linked_read_identity(case, request.args)
-        event=longest_event(clinical_index(case), identity, storage.list_report_evidence(case_id))
+        event=clinical_projection(case, lambda index:
+            longest_event(index, identity, storage.list_report_evidence(case_id)))
         linked_read_identity(case, identity)
         return jsonify(event=event, **identity)
 
-    def read_report_evidence(case, body):
+    def read_report_evidence(case, body, *, confirm=False):
         if any(k not in body for k in ('case_id','analysis_basis','analysis_revision','beat_revision')):
             raise ValueError('核对图条须提供完整病例、记录和逐搏依据')
         identity=linked_read_identity(case, body)
-        index=clinical_index(case)
-        if body.get('target')=='longest':
-            event=longest_event(index, identity, storage.list_report_evidence(case['case_id']))
-        else:
-            event=next((e for e in index['events'] if e['event_id']==body.get('event_id')), None)
-        if event is None or (body.get('basis_version') and body['basis_version']!=event['basis_version']):
-            raise ReportConflict('图条依据已变化，请重新核对或移出本次报告')
-        descriptor=evidence_descriptor(index, event, identity)
-        entry=body.get('entry', {})
-        if not isinstance(entry,dict):raise ValueError('图条核对设置无效')
-        settings=event.get('retained_settings',{}) if not entry else entry
-        entry={**settings, 'caption':entry.get('caption') or event['label'], 'notes':entry.get('notes','')}
-        if any(not isinstance(entry[k],str) or len(entry[k])>limit for k,limit in (('caption',500),('notes',2000))):
-            raise ValueError('图注或注释无效')
-        proof=evidence_presentation(index,event,entry)
-        wave=prepare_strip(index,event,entry,
-            lambda a,b,leads,points:read_event_waveform(case['paths']['data'],a,b,leads,points))
-        check_read_wave(wave)
+        def project(index):
+            if body.get('target')=='longest':
+                event=longest_event(index, identity, storage.list_report_evidence(case['case_id']))
+            else:
+                event=next((e for e in index['events'] if e['event_id']==body.get('event_id')), None)
+            if event is None or (body.get('basis_version') and body['basis_version']!=event['basis_version']):
+                raise ReportConflict('图条依据已变化，请重新核对或移出本次报告')
+            descriptor=evidence_descriptor(index, event, identity)
+            entry=body.get('entry', {})
+            if not isinstance(entry,dict):raise ValueError('图条核对设置无效')
+            settings=event.get('retained_settings',{}) if not entry else entry
+            entry={**settings, 'caption':entry.get('caption') or event['label'], 'notes':entry.get('notes','')}
+            if any(not isinstance(entry[k],str) or len(entry[k])>limit for k,limit in (('caption',500),('notes',2000))):
+                raise ValueError('图注或注释无效')
+            proof=evidence_presentation(index,event,entry)
+            # Read the signal on every preview and confirmation. Only the
+            # private, versioned event index is reused, never a prior wave read.
+            wave=prepare_strip(index,event,entry,
+                lambda a,b,leads,points:read_event_waveform(case['paths']['data'],a,b,leads,points))
+            check_read_wave(wave)
+            if confirm:
+                if body.get('evidence_key')!=evidence_digest(descriptor) or body.get('presentation_key')!=evidence_digest(proof):
+                    raise ReportConflict('图条与刚才读取的波形不一致，请重新打开后核对')
+                assert_evidence_caption(index,event,entry)
+            return event,entry,descriptor,proof,wave
+        result=clinical_projection(case,project)
         linked_read_identity(case,identity)
-        return identity,index,event,entry,descriptor,proof,wave
+        return identity,*result
 
     @app.post('/api/cases/<case_id>/report-evidence/preview')
     def report_evidence_preview(case_id):
         case=case_or_404(case_id)
-        identity,index,event,entry,descriptor,proof,wave=read_report_evidence(case,_json_object())
+        identity,event,entry,descriptor,proof,wave=read_report_evidence(case,_json_object())
         return jsonify(**wave,event=event,entry=entry,evidence_key=evidence_digest(descriptor),
             presentation_key=evidence_digest(proof),report_version=storage.get_report(case_id,'')['version'],**identity)
 
@@ -799,10 +808,7 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
     def report_evidence_confirm(case_id):
         case=case_or_404(case_id);body=_json_object()
         if body.get('confirmed') is not True:raise ValueError('请明确确认当前图条证据')
-        identity,index,event,entry,descriptor,proof,wave=read_report_evidence(case,body)
-        if body.get('evidence_key')!=evidence_digest(descriptor) or body.get('presentation_key')!=evidence_digest(proof):
-            raise ReportConflict('图条与刚才读取的波形不一致，请重新打开后核对')
-        assert_evidence_caption(index,event,entry)
+        identity,event,entry,descriptor,proof,wave=read_report_evidence(case,body,confirm=True)
         version=body.get('report_version')
         if type(version) is not int:raise ValueError('缺少核对时的报告版本')
         original_guard=candidate_guard(case,identity)

@@ -520,7 +520,9 @@ const clinicalUI=(()=>{
     if(!clinicalWorkflow.writable())throw Error('当前服务只读，不能保存核对');
     ECGReportRange.assertApplied?.();
     const id=state.caseId,caseToken=state.caseRequestId,own=()=>id===state.caseId&&caseToken===state.caseRequestId&&state.currentPage==='report';
-    const retained=index==='active'?selected().find(s=>s.event_id===active?.event_id):selected()[Number(index)];
+    // The longest numeric value owns its automatic range, independently of
+    // whichever printed strip is first or currently active.
+    const retained=target?null:index==='active'?selected().find(s=>s.event_id===active?.event_id):selected()[Number(index)];
     const event=target?null:index==='active'?active:retained?selectedLookup.get(retained.event_id):null;
     if(!target&&(!ECGReportEvidenceUI.eligible(event)||retained&&retained.basis_version!==event.basis_version))throw Error('本条依据已变化，请重新选择');
     const entry=retained?copy(retained):event?{...ECGReportEngine.settings(event.retained_settings||composition().strip_defaults),caption:event.label}:{};
@@ -1050,7 +1052,7 @@ const clinicalUI=(()=>{
     const privacyToken=state.privacyRequestId;
     const values=await ECGAnalysisConsistency.read(api,id,[basis=>api(withPhi(ECGAnalysisConsistency.url(id,'',{},basis)))],anchor);
     if(!isCurrent()||id!==state.caseId||caseToken!==state.caseRequestId)return false;
-    const value=values[0];if(value.case_id!==id)throw Error('HRV 刷新返回的病例不一致');
+    const value=values[0];if(value.case_id!==id)throw Error('刷新返回的病例不一致');
     preserveCurrentIdentity(value,privacyToken);state.caseData=value;
     // These existing receivers preserve the version paired with a dirty draft.
     // Do not replace reportComposition, its window or the doctor's text here.
@@ -1575,7 +1577,7 @@ const clinicalUI=(()=>{
     beatEditor.syncOccurrenceSelection?.();renderOccurrences();renderEditWaveform();if(state.editMode==='library')renderEditLibrary();
     return true;
   }
-  return {receiveCandidateState,showRRCandidates(){category='rr_candidate';reportMode='all';reportOffset=0;reportTimeRange=null;goPage('report');},reviewReportEvidence,showReportStrips(){category='strips';reportMode='all';reportOffset=0;ECGReportWorkspace.setReviewFilter('all');goPage('report');},setRRDestination(){category='rr_candidate';reportMode='all';reportOffset=0;reportTimeRange=null;},includeRRCandidate,queueReportAutosave,flushReportAutosave,setPauseEdges(edges){state.reportComposition=composition();state.reportComposition.pause_edges_ms=ECGOverviewEngine.pauseEdges(edges);dirty();},linkedContext,focusLinkedBeat,setLinkedChecked,prepareHrvLoad,refreshPrivacyViews,cancelReportExport,hasRhythmReturn,returnFromRhythm,captureEditView,activateEditView,occurrenceBookmark,currentOccurrenceBookmark,loadOccurrences,renderOccurrences,releaseOccurrenceWaves,refreshReport,renderReportShell,loadHrv,save,print,applyVoltageEstimate,addStrip(e){category='strips';selectEvent(e,true)}};
+  return {refreshCurrentCaseEvidence:refreshHrvCase,receiveCandidateState,showRRCandidates(){category='rr_candidate';reportMode='all';reportOffset=0;reportTimeRange=null;goPage('report');},reviewReportEvidence,showReportStrips(){category='strips';reportMode='all';reportOffset=0;ECGReportWorkspace.setReviewFilter('all');goPage('report');},setRRDestination(){category='rr_candidate';reportMode='all';reportOffset=0;reportTimeRange=null;},includeRRCandidate,queueReportAutosave,flushReportAutosave,setPauseEdges(edges){state.reportComposition=composition();state.reportComposition.pause_edges_ms=ECGOverviewEngine.pauseEdges(edges);dirty();},linkedContext,focusLinkedBeat,setLinkedChecked,prepareHrvLoad,refreshPrivacyViews,cancelReportExport,hasRhythmReturn,returnFromRhythm,captureEditView,activateEditView,occurrenceBookmark,currentOccurrenceBookmark,loadOccurrences,renderOccurrences,releaseOccurrenceWaves,refreshReport,renderReportShell,loadHrv,save,print,applyVoltageEstimate,addStrip(e){category='strips';selectEvent(e,true)}};
 })();
 // Replace representative-only loaders; preserve existing continuous-waveform editor tools.
 loadEditTemplateStrips=clinicalUI.loadOccurrences;
