@@ -85,7 +85,7 @@ async def verify(args,result):
                     return s?.model && !s.busy && !s.failed && !c.pending();}""")
                 assert await page.locator('[data-hrv-edit-action="locate"]').first.is_enabled()
                 record(result,'P01-native-STT-and-HRV-source-read',{'saved_HRV_model_ready':True})
-                await report_ready(page);await page.locator('#conclusionEditor').fill(NOTE);await page.locator('#saveReport').click()
+                await report_ready(page);await page.locator('#conclusionEditor').fill(NOTE)
                 await page.wait_for_function('()=>!state.reportSaving && !state.reportDirty')
                 await saved_work(page)
                 await navigate(page,'dashboard');await open_case(page,m['duration_seconds']);await saved_work(page)

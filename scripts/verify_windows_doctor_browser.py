@@ -626,7 +626,6 @@ async def save_math_work(page, result):
     await report_ready(page)
     version = await page.evaluate("() => state.report.version")
     await page.locator("#conclusionEditor").fill(REPORT_NOTE)
-    await page.locator("#saveReport").click()
     await page.wait_for_function("() => !state.reportSaving && !state.reportDirty && state.report.conclusion===" + json.dumps(REPORT_NOTE))
     report = await browser_json(page, "/api/cases/" + CASE_ID + "/report")
     require(report["conclusion"] == REPORT_NOTE and report["status"] == "draft" and report["version"] > version, "Native report draft was not saved")

@@ -112,7 +112,7 @@ async def verify_latest_ui(page, screenshots):
             leads:[...s.querySelectorAll('[data-wave-lead]')].map(x=>x.dataset.waveLead),
             baselines:[...s.querySelectorAll('[data-wave-baseline]')].map(x=>Number(x.dataset.waveBaseline)),
             width:s.getBoundingClientRect().width,plot:Number(s.dataset.plotWidth),
-            ticks:s.querySelectorAll('[data-wave-time]').length,axis:document.querySelector('#v2EventWave .rw-main-time-axis')?.textContent||''})""")
+            ticks:s.querySelectorAll('[data-wave-time]').length,axis:[...s.querySelectorAll('[data-wave-time]')].map(x=>x.textContent).join(' ')})""")
         assert shape['columns']=='1' and shape['leads']==LEADS and len(shape['axis'])>12, json.dumps(shape)
         assert shape['plot']/shape['width']>.8
         assert all(b-a>=45 for a,b in zip(shape['baselines'],shape['baselines'][1:]))
@@ -125,7 +125,6 @@ async def verify_latest_ui(page, screenshots):
     await page.locator('.rw-mini-wave svg').first.wait_for()
     await page.locator('.rw-mini-wave svg').first.dblclick();await modal()
     checks.append('report-included-source-strip-and-twelve-lead-preview')
-    await page.locator('#saveReport').click()
     await page.wait_for_function('()=>!state.reportSaving && !state.reportDirty')
     await navigate(page,'dashboard')
     await page.locator('#openFirstCase').click();await wait_edit(page)
