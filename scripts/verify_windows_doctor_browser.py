@@ -1082,6 +1082,24 @@ async def verify(args, receipt):
                             resumed = await resume(context, manager_state, workspace_id)
                             await live_state(home, workspace_id, active_exe)
                             await persistence_check(resumed, receipt, "frozen-exe-stop-relaunch-preserves-work", annotation_id)
+                    except Exception:
+                        # Capture only the disposable M01 UI, before closing
+                        # its browser, so a failed check retains its actual state.
+                        try:
+                            live_page = next((p for p in reversed(context.pages) if not p.is_closed()), None)
+                            if live_page is not None:
+                                receipt['failure_ui'] = await live_page.evaluate("""() => ({
+                                    page:typeof state==='undefined'?null:state.currentPage,
+                                    caseLoading:typeof state==='undefined'?null:state.caseLoading,
+                                    nextStep:typeof state==='undefined'?null:state.cases?.[0]?.review_workflow?.next_step,
+                                    editRead:document.querySelector('#editTemplateGallery')?.dataset.readState,
+                                    editWaves:document.querySelectorAll('#editTemplateGallery .occurrence-wave svg').length,
+                                    reportSaving:typeof state==='undefined'?null:state.reportSaving
+                                })""")
+                                await live_page.screenshot(path=str(screenshots/'mathematical-failure-state.png'))
+                        except Exception as diagnostic_error:
+                            receipt['failure_ui_observation_error'] = safe_error(diagnostic_error, private_values)
+                        raise
                     finally:
                         await settle_http_observations()
                         await context.close()
