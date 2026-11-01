@@ -47,7 +47,7 @@ const tick=()=>new Promise(r=>setImmediate(r));
  reportRequests[6].resolve(response({current:true}));assert.equal((await newPage).current,true);
  // Candidate and report acknowledgements must preserve the live raw read while
  // a fresh report-metadata request must not join its pre-write predecessor.
- for(const [path,method] of [['evidence-candidates','POST'],['evidence-candidates','PATCH'],['report-evidence/confirm','POST']]){
+ for(const [path,method] of [['report','PUT'],['evidence-candidates','POST'],['evidence-candidates','PATCH'],['report-evidence/confirm','POST']]){
   const requests=[],state={caseId:'C01',caseRequestId:1,currentPage:'report'};
   const ctx=vm.createContext({state,ECGReadRequests:Reads.create(),fetch:(path,options)=>{const g=gate();requests.push({path,options,...g});return g.promise}});vm.runInContext(adapter,ctx);
   const raw=ctx.api('/api/cases/C01/waveform').catch(e=>({error:e.name}));await tick();

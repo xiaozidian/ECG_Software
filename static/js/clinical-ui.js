@@ -516,7 +516,7 @@ const clinicalUI=(()=>{
   }
   let reportEvidenceOpening=false;
   async function reviewReportEvidence(index='active',target=null){
-    if(reportEvidenceOpening||!reportData||state.reportStale||state.reportEvidenceLoading||state.reportSaving)throw Error('请先载入当前报告依据并等候保存完成');
+    if(reportEvidenceOpening||!reportData||state.reportStale||state.reportEvidenceLoading)throw Error('请先载入当前报告依据');
     if(!clinicalWorkflow.writable())throw Error('当前服务只读，不能保存核对');
     ECGReportRange.assertApplied?.();
     const id=state.caseId,caseToken=state.caseRequestId,own=()=>id===state.caseId&&caseToken===state.caseRequestId&&state.currentPage==='report';
