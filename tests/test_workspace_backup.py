@@ -8,6 +8,7 @@ from pathlib import Path
 import sqlite3
 import subprocess
 import sys
+import uuid
 from types import SimpleNamespace
 import zipfile
 
@@ -118,6 +119,79 @@ def test_restore_preserves_work_but_requires_review(workspace, tmp_path):
     with pytest.raises(ValueError, match='报告审核前'):
         recovered.save_report('synthetic', new_report['conclusion'], 'reviewed', 'test')
     assert backup.recovery_epoch(recovered.path) != backup.recovery_epoch(workspace.path)
+
+
+@pytest.mark.parametrize('schema', ['v22-six-columns', 'current-seven-columns'])
+def test_rhythm_receipt_backup_restores_new_and_legacy_schema_without_clinical_loss(workspace, tmp_path, schema):
+    with closing(workspace.connect()) as db, db:
+        revision = db.execute("SELECT revision FROM rhythm_reviews WHERE case_id='synthetic'").fetchone()[0]
+        receipt = dict(request_id=str(uuid.uuid4()), operation='save', revision=revision)
+        db.execute('UPDATE rhythm_reviews SET last_operation=?', (json.dumps(receipt),))
+        if schema == 'v22-six-columns':
+            db.execute('ALTER TABLE rhythm_reviews RENAME TO rhythm_reviews_current')
+            db.execute('''CREATE TABLE rhythm_reviews
+                (case_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, document TEXT NOT NULL,
+                 undo TEXT NOT NULL, redo TEXT NOT NULL, updated_at TEXT NOT NULL)''')
+            db.execute('INSERT INTO rhythm_reviews SELECT case_id,revision,document,undo,redo,updated_at FROM rhythm_reviews_current')
+            db.execute('DROP TABLE rhythm_reviews_current')
+    before = dump_tables(workspace.path)
+    with closing(workspace.connect()) as db:
+        source = dict(db.execute("SELECT * FROM rhythm_reviews WHERE case_id='synthetic'").fetchone())
+    created = backup.create_backup(workspace.path, tmp_path/'backups')
+    archive = Path(created['path'])
+    if schema == 'v22-six-columns':
+        old_archive = tmp_path/'original-v22.ecgbackup'
+        repack(archive, old_archive, change_manifest=lambda value: value.update(app_version='0.12.22-workstation.20261102'))
+        archive = old_archive
+    assert backup.verify_backup(archive)['verified']
+    restored = backup.restore_backup(archive, tmp_path/'recovered-receipt')
+    assert dump_tables(workspace.path) == before
+    with closing(sqlite3.connect(restored['database'])) as db:
+        db.row_factory = sqlite3.Row
+        row = dict(db.execute("SELECT * FROM rhythm_reviews WHERE case_id='synthetic'").fetchone())
+        assert set(row) == set(backup.OPTIONAL['rhythm_reviews'].split())
+        assert row['revision'] == source['revision']+1
+        assert json.loads(row['last_operation']) == {}
+        for field in ('document', 'undo', 'redo'):
+            assert json.loads(row[field]) == json.loads(source[field])
+    recovered = Storage(Path(restored['database']))
+    for table in ('annotations', 'patient_overrides', 'beat_templates', 'beat_overrides', 'beat_edit_template_refs'):
+        assert dump_tables(recovered.path)[table] == before[table]
+    assert recovered.get_report('synthetic', '')['conclusion'] == workspace.get_report('synthetic', '')['conclusion']
+    assert recovered.get_report('synthetic', '')['status'] == 'draft'
+    # A migrated archive must itself be fully valid and back up again.
+    repeated = backup.create_backup(recovered.path, tmp_path/'recovered-backups')
+    assert backup.verify_backup(repeated['path'])['verified']
+
+
+@pytest.mark.parametrize('mutation', ['future-column', 'missing-required-column'])
+def test_rhythm_schema_allowlist_does_not_accept_other_column_sets(workspace, tmp_path, mutation):
+    with closing(workspace.connect()) as db, db:
+        if mutation == 'future-column':
+            db.execute('ALTER TABLE rhythm_reviews ADD COLUMN future_receipt TEXT')
+        else:
+            db.execute('ALTER TABLE rhythm_reviews DROP COLUMN updated_at')
+    before = dump_tables(workspace.path)
+    with pytest.raises(backup.BackupError, match='字段版本'):
+        backup.create_backup(workspace.path, tmp_path/'backups')
+    assert dump_tables(workspace.path) == before
+    assert not list((tmp_path/'backups').glob('*.ecgbackup'))
+
+
+@pytest.mark.parametrize('receipt', ['broken json', '[]', 'null',
+    json.dumps(dict(request_id='not-a-uuid', operation='save', revision=1)),
+    json.dumps(dict(request_id='2f9f65ce-3053-4bba-9c07-c565ea75c371', operation='unknown', revision=1)),
+    json.dumps(dict(request_id='2f9f65ce-3053-4bba-9c07-c565ea75c371', operation='save', revision=True)),
+    json.dumps(dict(request_id='2f9f65ce-3053-4bba-9c07-c565ea75c371', operation='save', revision=999)),
+    json.dumps(dict(request_id='2f9f65ce-3053-4bba-9c07-c565ea75c371', operation='save', revision=1, future='unsupported'))])
+def test_malformed_rhythm_receipt_is_rejected_before_backup_publish(workspace, tmp_path, receipt):
+    with closing(workspace.connect()) as db, db:
+        db.execute('UPDATE rhythm_reviews SET last_operation=?', (receipt,))
+    before = dump_tables(workspace.path)
+    with pytest.raises(backup.BackupError, match='结构化记录|回执结构'):
+        backup.create_backup(workspace.path, tmp_path/'backups')
+    assert dump_tables(workspace.path) == before
+    assert not list((tmp_path/'backups').glob('*.ecgbackup'))
 
 
 @pytest.mark.parametrize('alteration', ['hash', 'size', 'tables', 'schema', 'format', 'truncated', 'database', 'traversal', 'duplicate'])
