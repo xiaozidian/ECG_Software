@@ -2,7 +2,7 @@
   "schema": 1,
   "release_id": "0.12.23-af-editor.20261102",
   "app_version": "0.12.23-af-editor.20261102",
-  "source_sha256": "729b585b725983fd9322de346be632f5643c6dce9d37abc8b16e8bdbdd80ed75",
+  "source_sha256": "75e5278a48002b0758b535f40069281f36bfc21f0714fcadfe448cf9653042d3",
   "production_file_count": 125,
   "files": {
     "CardioInsightMacCandidate.spec": {
@@ -150,8 +150,8 @@
       "sha256": "52d0c3dfc40ea0e8129bbd997974dfff54974782eb0b953561f81e1f16a4fbf7"
     },
     "ecg_core/workspace_backup.py": {
-      "bytes": 17295,
-      "sha256": "e249646194ea12de1875ba90d9a1ea689b1cdf89b57e634ea7d1556357fe6693"
+      "bytes": 19380,
+      "sha256": "7c213502f69a75529d02a57ebbc203f012f4ec0d271170eb83d2e51c07b05c80"
     },
     "mac_release.py": {
       "bytes": 212,

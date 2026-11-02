@@ -40,13 +40,18 @@ OPTIONAL = {
     'evidence_candidates': 'id case_id kind candidate_key scope payload status',
     'beat_edit_documents': 'case_id revision document undo redo',
     'beat_edit_template_refs': 'template_id case_id beat_ids',
-    'rhythm_reviews': 'case_id revision document undo redo updated_at',
+    'rhythm_reviews': 'case_id revision document undo redo updated_at last_operation',
     'workspace_recovery': 'id epoch source_sha256 restored_at',
     'hrv_review_documents': 'case_id revision document document_scope confirmations undo redo updated_at',
     'hrv_review_previews': 'token case_id revision scope operation document preview_digest actor window_index created_at',
     'hrv_review_audit': 'id case_id actor action revision document_digest created_at',
     'terminology_catalog_state': 'singleton revision',
     'terminology_catalogs': 'namespace version sha256 payload created_at',
+}
+# An older saved-work archive remains verifiable as its exact original schema.
+# Restore migrates only the detached copy after its hashes/schema are verified.
+LEGACY_FIELDS = {
+    'rhythm_reviews': {'case_id', 'revision', 'document', 'undo', 'redo', 'updated_at'},
 }
 JSON_FIELDS = {
     'report_evidence_reviews': {'descriptor':dict,'presentations':list},
@@ -59,7 +64,7 @@ JSON_FIELDS = {
     'case_review': {'steps': dict, 'events': dict},
     'beat_edit_documents': {'document': dict, 'undo': list, 'redo': list},
     'beat_edit_template_refs': {'beat_ids': list},
-    'rhythm_reviews': {'document': dict, 'undo': list, 'redo': list},
+    'rhythm_reviews': {'document': dict, 'undo': list, 'redo': list, 'last_operation': dict},
     'hrv_review_documents': {'document': dict,'document_scope':dict,'confirmations':dict,'undo':list,'redo':list},
     'hrv_review_previews': {'scope':dict,'document':dict},
     'terminology_catalogs': {'payload':dict},
@@ -122,11 +127,16 @@ def _check_database(path):
         counts = {}
         for table in sorted(tables):
             fields = set((CORE | OPTIONAL)[table].split())
-            if {row[1] for row in db.execute(f'PRAGMA table_info("{table}")')} != fields:
+            actual_fields = {row[1] for row in db.execute(f'PRAGMA table_info("{table}")')}
+            if actual_fields != fields and actual_fields != LEGACY_FIELDS.get(table):
                 raise BackupError('数据库字段版本不受支持，请使用匹配的软件版本')
             counts[table] = db.execute(f'SELECT count(*) FROM "{table}"').fetchone()[0]
             for field, kind in JSON_FIELDS.get(table, {}).items():
-                for row in db.execute(f'SELECT "{field}" FROM "{table}"'):
+                if field not in actual_fields:
+                    continue  # Only the explicitly recognized legacy schema.
+                receipt = table == 'rhythm_reviews' and field == 'last_operation'
+                extra = ',revision' if receipt else ''
+                for row in db.execute(f'SELECT "{field}"{extra} FROM "{table}"'):
                     try:
                         valid = isinstance(json.loads(row[0]), kind)
                     except (ValueError, TypeError):
@@ -134,6 +144,18 @@ def _check_database(path):
                     if not valid:
                         raise BackupError(f'数据库 {table} 的结构化记录损坏，未恢复')
                     value = json.loads(row[0])
+                    if receipt and value:
+                        try:
+                            valid_receipt = (set(value) == {'request_id', 'operation', 'revision'}
+                                and isinstance(value['request_id'], str)
+                                and str(uuid.UUID(value['request_id'])) == value['request_id']
+                                and value['operation'] in ('save', 'undo', 'redo')
+                                and type(value['revision']) is int
+                                and 0 < value['revision'] <= row[1])
+                        except (ValueError, TypeError, AttributeError):
+                            valid_receipt = False
+                        if not valid_receipt:
+                            raise BackupError('房颤片段保存回执结构损坏，未恢复')
                     if table == 'case_review' and any(not isinstance(x, dict) for x in value.values()):
                         raise BackupError('复核状态结构损坏，未恢复')
                     if table == 'report_drafts' and field == 'composition':
@@ -304,6 +326,13 @@ def restore_backup(path, destination_root, *, actor='本机恢复操作'):
                                  '恢复已保存工作；审核需重新确认；source_sha256=' + manifest['sha256'])
                 for table in ('beat_edit_documents', 'rhythm_reviews'):
                     if table in tables:
+                        if table == 'rhythm_reviews':
+                            fields = {r[1] for r in db.execute('PRAGMA table_info(rhythm_reviews)')}
+                            if 'last_operation' not in fields:
+                                db.execute("ALTER TABLE rhythm_reviews ADD COLUMN last_operation TEXT NOT NULL DEFAULT '{}'")
+                            # Recovery is a new workspace/revision. A receipt from
+                            # its source cannot acknowledge an in-flight UI write.
+                            db.execute("UPDATE rhythm_reviews SET last_operation='{}'")
                         db.execute(f'UPDATE {table} SET revision=revision+1')
             # Consolidate any WAL generated by migrations into the final DB.
             final_db = staging / 'restored.sqlite3'
