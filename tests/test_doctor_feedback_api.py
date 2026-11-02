@@ -378,19 +378,24 @@ def test_rhythm_uuid_document_reopens_with_separate_document_and_global_revision
         kind="AF", status="pending", source="manual", note="Synthetic UUID note")],
         bookmarks={"fastest": 40.005, "slowest": 70.0})
     payload = dict(**{key: before[key] for key in IDENTITY_FIELDS},
-        revision=before["revision"], confirmed=True, document=document)
+        revision=before["revision"], confirmed=True, document=document, request_id=str(uuid4()))
     saved = ok(client.put(base + "/rhythm-review", json=payload))
     assert saved["revision"] == 1
     assert saved["analysis_revision"] == beat_changes + 4
     assert saved["beat_revision"] == beat_changes
     assert saved["case_id"] == cid and saved["analysis_basis"] == before["analysis_basis"]
     assert saved["document"] == document
+    # The write response reports this operation's effects separately from the
+    # persistent rhythm resource. This creation had no selected report figures.
+    assert saved["removed_report_events"] == []
+    assert saved["last_operation"] == dict(request_id=payload['request_id'], operation='save', revision=1)
     after_save = rows(store)
     reopened = create_app(data_root=synthetic_case[0], db_path=tmp_path / "case.db", testing=True)
     reopened_client = reopened.test_client()
     current = ok(reopened_client.get(base + "/rhythm-review", query_string={
         key: saved[key] for key in IDENTITY_FIELDS}))
-    assert current == saved
+    assert 'removed_report_events' not in current
+    assert current == {key:value for key,value in saved.items() if key != 'removed_report_events'}
     assert rows(reopened.extensions["storage"]) == after_save
     old = reopened_client.put(base + "/rhythm-review", json=payload)
     assert old.status_code == 409, old.get_json()

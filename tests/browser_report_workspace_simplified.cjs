@@ -8,18 +8,18 @@ const ui=read('static/js/clinical-ui.js'),workflow=read('static/js/clinical-work
 function region(source,a,b){const i=source.indexOf(a),j=source.indexOf(b,i);assert(i>=0&&j>i,`Shipped source region missing: ${a}`);return source.slice(i,j);}
 const shipped=[
   region(ui,'  function composition(){','  function svg(wave,'),
-  region(ui,'  function renderReportShell(){','  async function reloadReport('),
+  region(ui,'  function pendingRhythmPicks(){','  async function reloadReport('),
   region(ui,"  async function save(status='draft')",'  function gainHtml('),
   region(ui,'  async function selectedReportWaves(id){','  async function reportReviewWave('),
   region(ui,'  async function readPaperEvidence(id){','  async function printHtml('),
 ].join('\n');
 const preflight=region(workflow,'  function renderPreflight()','  function decision(');
-const assets=['static/js/report-workspace.js','static/css/report-workspace.css','static/css/clinical-review-tools.css','static/js/clinical-ui.js','static/js/clinical-workflow.js','static/js/report-range-editor.js','static/js/analysis-consistency.js','static/js/report-consistency.js','static/js/report-sections.js','static/js/report-engine.js'];
+const assets=['static/js/report-workspace.js','static/css/report-workspace.css','static/css/clinical-review-tools.css','static/js/clinical-ui.js','static/js/clinical-workflow.js','static/js/report-range-editor.js','static/js/analysis-consistency.js','static/js/report-consistency.js','static/js/report-sections.js','static/js/report-engine.js','static/js/report-evidence-ui.js'];
 const out=path.resolve(process.env.ECG_REPORT_SIMPLIFIED_EVIDENCE||'/tmp/ecg-report-simplified-'+new Date().toISOString().replace(/[:.]/g,'-'));
 const result={scope:'mathematical DOM fixture; actual shipped report functions; no services or clinical source data',checks:[],page_errors:[],network:[],assets:assets.map(p=>({path:p,sha256:crypto.createHash('sha256').update(read(p)).digest('hex')})),browser_closed:false};
 const save=()=>fs.writeFileSync(path.join(out,'results.json'),JSON.stringify(result,null,2)+'\n');
 function record(name){result.checks.push(name);save();console.log('PASS '+name);}
-const scripts=['static/js/clinical-review-tools.js','static/js/occurrence-card.js','static/js/report-engine.js','static/js/report-sections.js','static/js/report-consistency.js','static/js/analysis-consistency.js','static/js/report-range-editor.js','static/js/report-workspace.js'].map(p=>`<script>${read(p)}</script>`).join('');
+const scripts=['static/js/clinical-review-tools.js','static/js/occurrence-card.js','static/js/report-engine.js','static/js/report-sections.js','static/js/report-consistency.js','static/js/analysis-consistency.js','static/js/report-range-editor.js','static/js/report-workspace.js','static/js/report-evidence-ui.js'].map(p=>`<script>${read(p)}</script>`).join('');
 function fixture(){return `<!doctype html><meta charset="utf-8"><title>Mathematical report simplification</title><style>body{margin:0;font:14px system-ui}*{box-sizing:border-box}button,input{font:inherit}#page-report{padding:12px}#reportV2Content{height:640px}.report-conclusion-dock{background:white}#conclusionEditor{width:100%}#fixtureRange{position:fixed;bottom:0;right:0;width:380px;max-height:240px;overflow:auto;background:white;z-index:100}#fixtureRange:empty{display:none}${read('static/css/clinical-review-tools.css')}${read('static/css/report-workspace.css')}</style>
 <main id="mainContent"><section id="page-report" class="active"><header><button id="saveReport">保存</button><button id="approveReport">审核</button><button id="returnReport">返回</button><button id="downloadReport">导出 PDF</button><button id="cancelReportExport" hidden>取消导出</button><span id="reportStatus"></span><span id="reportVersion"></span></header><div id="reportV2"><div id="reportV2Nav"></div><p id="reportV2Notice"></p><details id="reportPreflightDisclosure" open><summary>审核前检查</summary><article id="reportPreflight" tabindex="-1"></article></details><div id="reportV2Content"></div></div><article class="report-conclusion-dock"><header class="report-panel-heading"><strong>报告结论</strong><span id="reportSaveState"></span></header><textarea id="conclusionEditor" maxlength="12000"></textarea><footer>数学夹具</footer></article><span id="reportProvenance"></span><div id="fixtureRange"></div></section></main>${scripts}<script>
 const clone=x=>structuredClone(x),qs=s=>document.querySelector(s),$=qs,esc=x=>String(x??''),escapeHtml=esc,formatElapsed=n=>'D1 '+Number(n).toFixed(3);
@@ -67,6 +67,7 @@ renderReportShell();mount();
   browser=await chromium.launch({executablePath:process.env.ECG_CHROME||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true,chromiumSandbox:true});result.browser=await browser.version();
   context=await browser.newContext({viewport:{width:1600,height:1000}});await context.route('**/*',r=>{result.network.push(r.request().url());return r.abort();});
   const page=await context.newPage();page.setDefaultTimeout(10000);page.on('pageerror',e=>result.page_errors.push(e.message));await page.setContent(fixture());
+  assert.deepEqual(result.page_errors,[],'the complete shipped fixture must initialize before any visual assertions');
   assert.equal(await page.locator('[data-rw-terms],[data-rw-term],.rw-research,.rw-review-help').count(),0);
   assert.equal(await page.locator('#reportPreflightDisclosure').isVisible(),false);assert.equal(await page.locator('#reportPreflight').isVisible(),false);
   assert.deepEqual(await page.evaluate(()=>[termMounts,termApiCalls,advancedMounts,usagesDirty]),[0,0,0,0]);

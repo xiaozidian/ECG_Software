@@ -1,7 +1,8 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const ctx=vm.createContext({document:{dispatchEvent(){}},CustomEvent:class{constructor(t){this.type=t;}},ECGReviewTools:{markSvg:()=>''}});
-vm.runInContext(fs.readFileSync('static/js/report-range-editor.js','utf8'),ctx);
+ctx.ECGOccurrenceCard=require('../static/js/occurrence-card.js');
+  vm.runInContext(fs.readFileSync('static/js/report-range-editor.js','utf8'),ctx);
 function host(){const nodes=new Map();const node=s=>{if(!nodes.has(s))nodes.set(s,{value:'',textContent:'',innerHTML:'',style:{},dataset:{bound:s.includes('start')?'start':'end'},addEventListener(){},focus(){}});return nodes.get(s);};return {style:{setProperty(){}},addEventListener(){},querySelector:node,querySelectorAll:s=>s==='[data-bound]'?[node('[data-bound=start]'),node('[data-bound=end]')]:s==='button,input'?[]:[node(s)]};}
 const R=ctx.ECGReportRange,h=host(),entry={sample_index:2000,inReport:true,strip:{start_s:7,end_s:14}},wave={start_s:0,duration_s:30,leads:{II:[0,1,0]},beats:Array.from({length:8},(_,i)=>({sample_index:(7+i)*200,class_code:'N'}))};
 R.mount(h,entry,wave,async()=>{},async()=>{},{context:'A:2',basis:'raw-A:r4',event:{event_id:'e0',category:'V',subtype:'single'}});
