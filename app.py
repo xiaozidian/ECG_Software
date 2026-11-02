@@ -1440,15 +1440,18 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
             linked_read_identity(case, identity)
             return jsonify({**result, **identity})
         linked_read_identity(case, identity)
+        aliases = {}
+        for event in clinical_index(case)['events']:
+            if event.get('category') == 'AF' and event.get('rhythm_episode_id'):
+                aliases.setdefault(event['rhythm_episode_id'], []).append(event['event_id'])
         result = rhythms.commit(case_id, payload, duration, initial, ACTOR, revision,
-                                analysis_revision=basis['analysis_revision'])
+                                analysis_revision=basis['analysis_revision'], event_aliases=aliases)
         # This write advances review revision. Validate unchanged source/beat
         # identity, and expose the new global revision rather than comparing it
         # to the pre-write revision or confusing rhythm revision with beat revision.
         current = linked_read_identity(case, {name: identity[name] for name in
                                        ('case_id', 'analysis_basis', 'beat_revision')})
         return jsonify({**result, **current})
-
     @app.route("/api/cases/<case_id>/waveform-density", methods=["GET", "POST"])
     def waveform_density(case_id):
         case = case_or_404(case_id)

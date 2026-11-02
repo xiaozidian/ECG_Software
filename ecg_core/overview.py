@@ -5,6 +5,7 @@ import copy
 import json
 import math
 import mmap
+import uuid
 from datetime import datetime, timezone
 
 import numpy as np
@@ -72,7 +73,10 @@ class RhythmReviewStore:
         with storage.connect() as db:
             db.execute("""CREATE TABLE IF NOT EXISTS rhythm_reviews
                 (case_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, document TEXT NOT NULL,
-                 undo TEXT NOT NULL, redo TEXT NOT NULL, updated_at TEXT NOT NULL)""")
+                 undo TEXT NOT NULL, redo TEXT NOT NULL, updated_at TEXT NOT NULL,
+                 last_operation TEXT NOT NULL DEFAULT '{}')""")
+            if 'last_operation' not in {row['name'] for row in db.execute('PRAGMA table_info(rhythm_reviews)')}:
+                db.execute("ALTER TABLE rhythm_reviews ADD COLUMN last_operation TEXT NOT NULL DEFAULT '{}'")
 
     def read(self, case_id, initial=None, db=None):
         if db is None:
@@ -80,18 +84,71 @@ class RhythmReviewStore:
                 return self.read(case_id, initial, connection)
         row = db.execute("SELECT * FROM rhythm_reviews WHERE case_id=?", (case_id,)).fetchone()
         if not row:
-            return dict(revision=0, document=copy.deepcopy(initial or {"episodes": [], "bookmarks": {}}), undo=[], redo=[], updated_at="")
-        return dict(revision=row["revision"], document=json.loads(row["document"]), undo=json.loads(row["undo"]), redo=json.loads(row["redo"]), updated_at=row["updated_at"])
+            return dict(revision=0, document=copy.deepcopy(initial or {"episodes": [], "bookmarks": {}}), undo=[], redo=[], updated_at="", last_operation={})
+        return dict(revision=row["revision"], document=json.loads(row["document"]), undo=json.loads(row["undo"]), redo=json.loads(row["redo"]), updated_at=row["updated_at"], last_operation=json.loads(row['last_operation']))
 
     @staticmethod
     def public(value):
-        return {key: value[key] for key in ("revision", "document", "updated_at")} | dict(can_undo=bool(value["undo"]), can_redo=bool(value["redo"]))
+        return {key: value[key] for key in ("revision", "document", "updated_at", "last_operation")} | dict(can_undo=bool(value["undo"]), can_redo=bool(value["redo"]))
 
-    def commit(self, case_id, payload, duration, initial, actor, beat_revision, *, analysis_revision=None):
+    def _remove_retired_report_picks(self, db, case_id, before, after, actor, event_aliases):
+        """Withdraw deleted/excluded episode figures in the same write transaction.
+
+        Undo restores rhythm evidence, never the doctor's previous report picks.
+        Event aliases cover pre-review source IDs as well as saved episode IDs.
+        """
+        current = {x['id']: x for x in after['episodes']}
+        retired = {x['id'] for x in before['episodes'] if x['id'] not in current}
+        retired.update(key for key, x in current.items() if x['status'] == 'excluded')
+        if not retired:
+            return []
+        withdrawn = set()
+        for key in retired:
+            withdrawn.add('annotation:af:'+key)
+            if key.startswith('source-'):
+                withdrawn.add('annotation:'+key[7:])
+            withdrawn.update((event_aliases or {}).get(key, ()))
+        row = db.execute('SELECT composition,analysis_provenance FROM report_drafts WHERE case_id=?', (case_id,)).fetchone()
+        if not row:
+            return []
+        composition = json.loads(row['composition'] or '{}')
+        selected = composition.get('selected_events', [])
+        removed = [x['event_id'] for x in selected if x['event_id'] in withdrawn]
+        if not removed:
+            return []
+        composition['selected_events'] = [x for x in selected if x['event_id'] not in withdrawn]
+        composition.get('category_reviews', {}).pop('AF', None)
+        # Explicit prose is retained for physician reconciliation. Automatically
+        # composed AF paragraphs no longer have withdrawn figures as support.
+        blocks = []
+        for block in composition.get('diagnosis_blocks', []):
+            if str(block.get('key', '')).startswith('AF:') and not block.get('manual'):
+                continue
+            blocks.append(block)
+        composition['diagnosis_blocks'] = blocks
+        from .analysis_provenance import digest
+        provenance = json.loads(row['analysis_provenance'] or '{}')
+        if provenance:
+            provenance['composition_sha256'] = digest(composition)
+        # invalidate_review has already advanced the report version and reset
+        # approval. Do not advance it a second time for this same atomic write.
+        db.execute('UPDATE report_drafts SET composition=?,analysis_provenance=? WHERE case_id=?',
+                   (json.dumps(composition, ensure_ascii=False), json.dumps(provenance, ensure_ascii=False), case_id))
+        self.storage._audit(db, actor, 'rhythm_report.unselect', case_id, json.dumps(removed))
+        return removed
+
+    def commit(self, case_id, payload, duration, initial, actor, beat_revision, *, analysis_revision=None, event_aliases=None):
         if payload.get("confirmed") is not True:
             raise ValueError("请核对修改并确认保存")
         if type(payload.get("revision")) is not int or type(payload.get("beat_revision")) is not int:
             raise ValueError("缺少复核版本")
+        request_id = payload.get('request_id')
+        if request_id is not None:
+            try:
+                if not isinstance(request_id, str) or str(uuid.UUID(request_id)) != request_id:
+                    raise ValueError()
+            except (ValueError, AttributeError):
+                raise ValueError('保存请求编号无效') from None
         with self.storage.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             # Legacy overrides/annotations can change evidence without changing
@@ -117,14 +174,18 @@ class RhythmReviewStore:
             else:
                 raise ValueError("不支持的房颤复核操作")
             value["revision"] += 1
+            value['last_operation'] = dict(request_id=request_id, operation=action, revision=value['revision']) if request_id else {}
             value["updated_at"] = datetime.now(timezone.utc).isoformat()
-            db.execute("""INSERT INTO rhythm_reviews VALUES(?,?,?,?,?,?) ON CONFLICT(case_id) DO UPDATE SET
-                revision=excluded.revision, document=excluded.document, undo=excluded.undo, redo=excluded.redo, updated_at=excluded.updated_at""",
-                (case_id, value["revision"], json.dumps(value["document"], ensure_ascii=False), json.dumps(value["undo"]), json.dumps(value["redo"]), value["updated_at"]))
+            db.execute("""INSERT INTO rhythm_reviews(case_id,revision,document,undo,redo,updated_at,last_operation)
+                VALUES(?,?,?,?,?,?,?) ON CONFLICT(case_id) DO UPDATE SET
+                revision=excluded.revision, document=excluded.document, undo=excluded.undo, redo=excluded.redo,
+                updated_at=excluded.updated_at,last_operation=excluded.last_operation""",
+                (case_id, value["revision"], json.dumps(value["document"], ensure_ascii=False), json.dumps(value["undo"]), json.dumps(value["redo"]), value["updated_at"], json.dumps(value['last_operation'])))
             self.storage.invalidate_review(db, case_id, "annotation.rhythm_review")
+            removed = self._remove_retired_report_picks(db, case_id, before, value['document'], actor, event_aliases)
             db.execute("INSERT INTO audit_log(case_id,actor,action,detail,created_at) VALUES(?,?,?,?,?)",
                        (case_id, actor, "annotation.rhythm_"+action, "revision="+str(value["revision"]), value["updated_at"]))
-        return self.public(value)
+        return {**self.public(value), 'removed_report_events': removed}
 
 
 def initial_episodes(feed, annotations, duration):

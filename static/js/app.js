@@ -258,6 +258,7 @@ function syncRhythmRangeEditor() {
 }
 
 function allowRhythmRangeLeave() {
+  if(typeof overviewWorkbench!=='undefined'&&overviewWorkbench.isSaving()){toast('正在保存片段，请等待结果','error');return false;}
   if(!globalThis.ecgRhythmRangeEditor?.isSaving())return true;
   toast('正在保存房颤片段，请等待保存结果核实后再离开','error');return false;
 }
@@ -959,7 +960,7 @@ function updateWaveformModeUI() {
     : "最多三导联连续心电波形；右键或 Shift+F10 设置房颤片段起点与终点，也可进入心搏编辑，双击或按 F 查看十二导联，滚轮缩放时间轴，拖动平移");
   if (hint) hint.textContent = state.waveformExpanded
     ? "全部 12 导联 · 右键最近心搏重标注 · 双击或按 F 退出 · 滚轮缩放 · 拖动平移"
-    : "右键设置房颤段起点 / 终点或编辑心搏 · 双击或按 F 查看 12 导联 · 滚轮缩放 · 拖动平移";
+    : "右键设置起止 / 编辑心搏 · 双击或按 F 查看 12 导联 · 滚轮缩放 · 拖动平移";
   if(typeof syncRhythmRangeEditor==='function')syncRhythmRangeEditor();
 }
 
@@ -1237,7 +1238,8 @@ function renderWaveform() {
   const canvas = $("#waveformCanvas");
   const scroller = $("#waveformScroller");
   const leadNames = (globalThis.ECGChartInspection?.names(state.waveform.leads)||Object.keys(state.waveform.leads));
-  const height = state.waveformExpanded
+  const afFit=!state.waveformExpanded&&!!document.querySelector('#page-review.ov-af-mode');
+  const height = afFit?Math.max(240,scroller.clientHeight):state.waveformExpanded
     ? Math.max(560, scroller.clientHeight, leadNames.length * 56+48)
     : document.querySelector('#page-review.overview-workbench')
       ? innerWidth>=1100&&!document.querySelector('#page-review.ov-af-mode')?Math.max(195,scroller.clientHeight):Math.max(innerHeight <= 780 && innerWidth <= 1500 ? 195 : 264, leadNames.length * (innerHeight <= 780 && innerWidth <= 1500 ? 65 : 88))
@@ -1246,8 +1248,10 @@ function renderWaveform() {
   const domainKey=JSON.stringify([state.caseId,state.caseRequestId,state.waveform.filter,state.waveform.source_digest,state.waveform.data_version,state.waveform.analysis_basis,state.waveform.analysis_revision,'overview']);
   const domain=(state.editFullscreenReturn?.amplitudeDomain||state.sttFullscreenReturn?.amplitudeDomain||ECGReviewTools.waveDomain(state.waveform,domainKey))*10/(state.gain||10);
   const gainKey=JSON.stringify([domainKey,domain]),lock=canvas._overviewAmplitudeLock;
-  const stack=ECGReviewTools.lockedWaveRows(leadNames.map(name=>state.waveform.leads[name]),{top:annotationHeight,rowHeight:(height-axisHeight-annotationHeight)/leadNames.length,domain,scale:lock?.key===gainKey?lock.scale:null,labelY:3});
-  canvas._overviewAmplitudeLock={key:gainKey,scale:stack.scale};
+  let afPeak=domain;if(afFit)for(const values of Object.values(state.waveform.leads))for(const v of values)if(Number.isFinite(Number(v)))afPeak=Math.max(afPeak,Math.abs(Number(v)));
+  const afScale=afFit?Math.max(1,(height-axisHeight-annotationHeight)/leadNames.length-12)/(2*afPeak):null;
+  const stack=ECGReviewTools.lockedWaveRows(leadNames.map(name=>state.waveform.leads[name]),{top:annotationHeight,rowHeight:(height-axisHeight-annotationHeight)/leadNames.length,domain,scale:afFit?afScale:lock?.key===gainKey?lock.scale:null,labelY:3});
+  if(!afFit)canvas._overviewAmplitudeLock={key:gainKey,scale:stack.scale};
   const displayHeight=annotationHeight+stack.rowHeight*leadNames.length+axisHeight;
   const {ctx, width, height: h} = canvasContext(canvas, displayHeight);
   // Keep CSS and backing-store coordinates equal; larger source peaks add

@@ -37,23 +37,38 @@ function navigator(){
   return {ctx,state,ui,requests,out,canvas,geometries,wave};
 }
 function beatMeasurementContracts(){
-  const basis={analysis_basis:'synthetic',analysis_revision:1},list={style:{},innerHTML:''},host={dataset:{},scrollLeft:0,querySelector:()=>list,setAttribute(){}};
+  const basis={analysis_basis:'synthetic',analysis_revision:1},list={style:{},innerHTML:''},host={style:{},dataset:{},scrollLeft:0,querySelector:()=>list,setAttribute(){}};
   const ui={},ctx={ui,qs:()=>host,waveformBasis:()=>basis,ECGAnalysisConsistency:C,esc:String,formatElapsed:String,formatElapsedPrecise:String,editEffectiveCode:r=>r.class_code};
   vm.createContext(ctx);vm.runInContext(chunk('  function drawBeatMetrics(', '  function waveformOverlay('),ctx);
-  const wave={...basis,start_s:0,duration_s:10,beats:[{time_s:1,hr:80,rr_ms:750,class_code:'AP'},{time_s:1.1,hr:100,rr_ms:600,class_code:'VP'},{time_s:5,hr:0,rr_ms:0,class_code:'fP'}]};
-  ctx.drawBeatMetrics(wave,200);assert.equal(host.dataset.metricCount,'3');assert.equal((list.innerHTML.match(/role="listitem"/g)||[]).length,3);assert.match(list.innerHTML,/80 bpm/);assert.match(list.innerHTML,/750 ms/);assert.match(list.innerHTML,/AP/);assert.match(list.innerHTML,/VP/);assert.match(list.innerHTML,/fP/);assert.match(list.innerHTML,/— bpm/);assert.match(list.innerHTML,/— ms/);assert(parseFloat(list.style.width)>200,'dense intervals keep every label in a scrollable band');
+  const wave={...basis,start_s:0,duration_s:10,beats:[{sample_index:200,time_s:1,hr:80,rr_ms:750,class_code:'AP'},{sample_index:320,time_s:1.6,hr:100,rr_ms:600,class_code:'VP'},{sample_index:1000,time_s:5,hr:0,rr_ms:0,class_code:'fP'}]};
+  const positions=()=>[...list.innerHTML.matchAll(/left:([\d.]+)px;top:(\d+)px/g)].map(x=>[Number(x[1]),Number(x[2])]);
+  ctx.drawBeatMetrics(wave,200);assert.equal(host.dataset.metricCount,'3');assert.equal((list.innerHTML.match(/role="listitem"/g)||[]).length,3);assert.match(list.innerHTML,/80 bpm/);assert.match(list.innerHTML,/750 ms/);assert.match(list.innerHTML,/AP/);assert.match(list.innerHTML,/VP/);assert.match(list.innerHTML,/fP/);assert.match(list.innerHTML,/— bpm/);assert.match(list.innerHTML,/— ms/);
+  assert.equal(parseFloat(list.style.width),200,'dense labels must retain the waveform time scale');
+  assert.deepEqual(positions().map(x=>x[0]),[12.5,26,66],'RR and HR belong at interval midpoints, not current beats');
+  assert(positions()[1][1]>positions()[0][1],'colliding labels use separate rows without moving along time');
+  const before=JSON.stringify(wave);ctx.drawBeatMetrics(wave,1200);assert.deepEqual(positions().map(x=>x[0]),[75,156,396]);assert.equal(JSON.stringify(wave),before);
+  ctx.drawBeatMetrics({...wave,start_s:.8,duration_s:4},800);assert.equal(host.dataset.metricCount,'2','an offscreen midpoint is not clamped onto a beat or window edge');assert.deepEqual(positions().map(x=>x[0]),[100,500]);
+  ctx.drawBeatMetrics({...basis,start_s:0,duration_s:2,beats:[{sample_index:0,time_s:99,hr:null,rr_ms:null,class_code:'N'},{sample_index:200,time_s:99,hr:60,rr_ms:1000,class_code:'V'}]},600);assert.equal(host.dataset.metricCount,'1');assert.deepEqual(positions().map(x=>x[0]),[150],'sample indices are the canonical endpoints; absent first RR is not fabricated');
   ctx.drawBeatMetrics({...wave,analysis_revision:2},200);assert.equal(list.innerHTML,'');assert.equal(host.dataset.metricCount,'0','stale evidence removes measurement labels');
 }
 function initialMeasurementHarness(){
-  const basis={analysis_basis:'synthetic',analysis_revision:1},list={style:{},innerHTML:''},host={dataset:{},scrollLeft:0,querySelector:()=>list,setAttribute(){}},status=node();
+  const basis={analysis_basis:'synthetic',analysis_revision:1},list={style:{},innerHTML:''},host={style:{},dataset:{},scrollLeft:0,querySelector:()=>list,setAttribute(){}},status=node();
   const wave={...basis,start_s:0,duration_s:10,beats:[{sample_index:200,time_s:1,hr:80,rr_ms:750,class_code:'AP'},{sample_index:220,time_s:1.1,hr:100,rr_ms:600,class_code:'VP'},{sample_index:1000,time_s:5,hr:null,rr_ms:null,class_code:'fP'}]};
   const data={...basis,revision:1,duration_s:10,rows:[[200,750,'AP'],[220,600,'VP'],[1000,null,'fP']],settings:{pause:2.5}},rhythm={...basis,beat_revision:1,document:{episodes:[],bookmarks:{}}};
-  const state={caseId:'synthetic',caseRequestId:1,currentPage:'review',scatterMode:'rr',waveform:wave},ui={loadToken:0,id:null,rows:[],ratio:false},calls={render:0,fetch:0};
-  const ctx={state,ui,E,ECGAnalysisConsistency:{...C,read:async()=>[data,rhythm]},overviewReady:false,episodeFilter:'all',episodePage:0,episodeEditor:null,episodeNavigation:0,geometries:new WeakMap(),api(){},qs:s=>s==='#ovBeatMetrics'?host:s==='#ovBeatMetrics .ov-beat-metrics-list'?list:s==='#ovStatus'?status:null,document:{querySelectorAll:()=>[]},rememberEpisodeForm(){},hour:()=>0,duration:()=>10,renderCoverage(){},resetCoverage(){},draw(){},renderEpisodes(){},fmtNumber:String,esc:String,formatElapsed:String,formatElapsedPrecise:String,editEffectiveCode:r=>r.class_code,button:()=>''};
+  const state={caseId:'synthetic',caseRequestId:1,currentPage:'review',scatterMode:'rr',waveform:wave,caseData:{case_id:'synthetic',clinical_identity:basis}},ui={loadToken:0,id:null,rows:[],ratio:false},calls={render:0,fetch:0};
+  const ctx={state,ui,E,ECGAnalysisConsistency:{...C,read:async()=>[data,rhythm]},overviewReady:false,episodeFilter:'all',episodePage:0,episodeEditor:null,episodeNavigation:0,geometries:new WeakMap(),api(){},qs:s=>s==='#ovBeatMetrics'?host:s==='#ovBeatMetrics .ov-beat-metrics-list'?list:s==='#ovStatus'?status:s==='#ovScatterRange'?{value:'auto'}:null,document:{querySelectorAll:()=>[]},rememberEpisodeForm(){},hour:()=>0,duration:()=>10,renderCoverage(){},resetCoverage(){},draw(){},renderEpisodes(){},fmtNumber:String,esc:String,formatElapsed:String,formatElapsedPrecise:String,editEffectiveCode:r=>r.class_code,button:()=>''};
   ctx.renderWaveform=()=>{calls.render++;ctx.drawBeatMetrics(state.waveform,200);};ctx.loadWaveform=async()=>{calls.fetch++;state.waveform=wave;ctx.renderWaveform();};
   vm.createContext(ctx);vm.runInContext(chunk('  async function load(', '  function waveformFailed(')+chunk('  function drawBeatMetrics(', '  function waveformOverlay('),ctx);
   ctx.drawBeatMetrics(wave,200);assert.equal(list.innerHTML,'','an early waveform cannot show unconfirmed measurement evidence');
   return {ctx,state,ui,calls,host,list,data,rhythm};
+}
+function expandedRulerContracts(){
+  const texts=[],painter=new Proxy({fillText:t=>texts.push(t)},{get:(o,k)=>k in o?o[k]:()=>{},set:(o,k,v)=>(o[k]=v,true)});
+  const canvas={dataset:{waveScales:JSON.stringify(Array(12).fill(.02)),waveRowHeight:'56'},style:{height:'720px'},getClientRects:()=>[{}],getBoundingClientRect:()=>({width:600,height:720}),getContext:()=>painter};
+  const ui={ruler:'parallel',rulerPoints:[{y:40/720,time:1},{y:60/720,time:1}]},ctx={ui,state:{waveform:{start_s:0,duration_s:10,beats:[]}},qs:s=>s==='#ovAFBoundaryOverlay'?null:canvas,drawBeatMetrics(){},linked:null,UI_FONT:'sans-serif'};
+  vm.createContext(ctx);vm.runInContext(chunk('  function drawAFOverlay(', '  async function action('),ctx);
+  ctx.waveformOverlay();assert(texts.includes('Δ幅度 1000.0 设备单位（未校准）'),'the amplitude ruler must use the drawn source-unit gain');
+  ui.rulerPoints[1].y=85/720;ctx.waveformOverlay();assert(texts.includes('请在同一导联内放置两条平行线'),'row boundaries include the shared annotation lane');
 }
 async function initialMeasurementContracts(){
   let h=initialMeasurementHarness();await h.ctx.load();assert.equal(h.calls.fetch,0,'same-basis cached waveform needs no extra request');assert.equal(h.calls.render,1,'first confirmed overview load repaints its cached waveform');assert.equal(h.host.dataset.metricCount,'3');assert.match(h.list.innerHTML,/80 bpm/);assert.match(h.list.innerHTML,/750 ms/);assert.match(h.list.innerHTML,/— bpm/);assert.match(h.list.innerHTML,/— ms/);assert.match(h.list.innerHTML,/fP/);
@@ -66,4 +81,4 @@ async function navigationContracts(){
   h=navigator();const oldCase=h.ctx.navigatorWave();h.state.caseRequestId=2;h.requests[0].resolve(h.wave(20));await oldCase;assert.equal(h.ui.nav,null,'same case id with new request scope rejects old result');
   h=navigator();const wrongRevision=h.ctx.navigatorWave();h.requests[0].resolve(h.wave(20,{analysis_basis:'synthetic',analysis_revision:2}));await wrongRevision;assert.equal(h.ui.nav,null);assert.match(h.out.innerHTML,/navigator-retry/);
 }
-(async()=>{gestureContracts();beatMeasurementContracts();const h=gestures();h.fire('pointerdown');h.fire('pointermove',{clientX:350,clientY:50});await h.ctx.action('selection:lasso');assert.equal(h.ui.selectionMode,'lasso');assert.deepEqual(h.state.scatterSelectedSamples,[200]);assert.equal(h.calls.clear,0);assert.equal(h.buttons[2].attrs['aria-pressed'],'true');h.fire('pointerup');assert.equal(h.calls.select,0);await initialMeasurementContracts();await navigationContracts();console.log('hospital overview: gesture cancellation, exact paced sample cohorts, scope changes, pending deduplication, A/B/A navigation, failure retry, filter/revision guards and first-load/all-beat HR/RR measurement labels passed');})().catch(error=>{console.error(error);process.exitCode=1;});
+(async()=>{gestureContracts();beatMeasurementContracts();const h=gestures();h.fire('pointerdown');h.fire('pointermove',{clientX:350,clientY:50});await h.ctx.action('selection:lasso');assert.equal(h.ui.selectionMode,'lasso');assert.deepEqual(h.state.scatterSelectedSamples,[200]);assert.equal(h.calls.clear,0);assert.equal(h.buttons[2].attrs['aria-pressed'],'true');h.fire('pointerup');assert.equal(h.calls.select,0);expandedRulerContracts();await initialMeasurementContracts();await navigationContracts();console.log('hospital overview: gesture cancellation, exact paced sample cohorts, scope changes, pending deduplication, A/B/A navigation, failure retry, filter/revision guards and first-load/all-beat HR/RR measurement labels passed');})().catch(error=>{console.error(error);process.exitCode=1;});

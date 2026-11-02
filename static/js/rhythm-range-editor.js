@@ -463,7 +463,31 @@
         surfaces.clear(); fieldDrafts.clear();
       }};
   }
-  const api = {mount, createSession, scope, identity, same, currentSurface, pointerSample, secondsSample, range, episode, overlaps, append, matchingEpisode, overlayGeometry};
+  // Use the recorded wall clock without applying the computer's timezone.
+  function clockBase(recordStart) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?/.exec(recordStart || '');
+    if(!m)return null;
+    const value=Date.UTC(+m[1],+m[2]-1,+m[3],+m[4],+m[5],+m[6],+(m[7]||'').padEnd(3,'0').slice(0,3)),d=new Date(value);
+    return d.getUTCFullYear()===+m[1]&&d.getUTCMonth()===+m[2]-1&&d.getUTCDate()===+m[3]&&d.getUTCHours()===+m[4]&&d.getUTCMinutes()===+m[5]&&d.getUTCSeconds()===+m[6]?value:null;
+  }
+  function boundaryClock(seconds, recordStart) {
+    if (!finite(seconds)) return '';
+    const base = clockBase(recordStart);
+    return base === null ? '+' + seconds.toFixed(3) : new Date(base + Math.round(seconds*1000)).toISOString().slice(0,23).replace('T',' ');
+  }
+  function parseBoundaryClock(text, recordStart, duration) {
+    const base = clockBase(recordStart); let seconds;
+    if (base === null) seconds = Number(String(text).replace(/^\+/,''));
+    else {
+      if (!/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?$/.test(text)) throw Error('请输入日期和时间');
+      const value = clockBase(text);
+      if (value === null || boundaryClock((value-base)/1000,recordStart).slice(0,19) !== text.replace('T',' ').slice(0,19)) throw Error('日期或时间无效');
+      seconds = (value-base)/1000;
+    }
+    if (!String(text).trim() || !finite(seconds) || seconds<0 || seconds>duration) throw Error('时间超出记录范围');
+    return Math.round(seconds*200)/200;
+  }
+  const api = {mount, createSession, scope, identity, same, currentSurface, pointerSample, secondsSample, range, episode, overlaps, append, matchingEpisode, overlayGeometry, boundaryClock, parseBoundaryClock};
   root.ECGRhythmRangeEditor = api;
   if (typeof module !== 'undefined') module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

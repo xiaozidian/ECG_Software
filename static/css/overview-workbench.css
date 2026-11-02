@@ -383,3 +383,172 @@ body:has(#page-review.active) .case-workflow-context small,body:has(#page-review
 #page-review.overview-workbench .ov-scatter-mode-picker select{min-height:28px;font:inherit;max-width:none;min-width:100px}
 #page-review.overview-workbench .ov-scatter-options{padding:4px 0 0;border-top:1px solid var(--ov-line)}
 #page-review.overview-workbench .workspace-scatter-controls{display:block;height:auto;min-height:28px}
+
+/* AF/AFL workbench: retain the waveform while lists and evidence scroll locally. */
+#page-review.ov-af-mode .ov-commandbar{display:none}
+#page-review.ov-af-mode #ovAF{min-width:0;min-height:0}
+#page-review.ov-af-mode .ov-af-heading{margin:0;gap:8px;flex-wrap:nowrap}
+#page-review.ov-af-mode .ov-af-heading h2{font-size:15px;line-height:22px;white-space:nowrap}
+#page-review.ov-af-mode .ov-af-heading p,#page-review.ov-af-mode #ovAF>.ov-method{display:none}
+#page-review.ov-af-mode .ov-af-heading>div:last-child{gap:5px;flex-wrap:nowrap;min-width:0}
+#page-review.ov-af-mode .ov-af-heading [data-ov]{min-height:28px;padding:3px 8px;white-space:nowrap;font-size:12px}
+.ov-af-tabs{display:flex;gap:3px;padding:0 0 5px;flex:0 0 auto;border-bottom:1px solid var(--ov-line)}
+.ov-af-tabs button{flex:1;min-width:0;min-height:28px;font-size:12px;padding:3px 6px}
+.ov-af-tabs button[aria-selected=true]{background:#e2f2ef;color:#086e6d;border-color:#75aaa6}
+.ov-af-side-panel{min-width:0;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#7f9fa7 #f1f6f7}
+.ov-af-side-panel[hidden]{display:none!important}
+#page-review.ov-af-mode .ov-episodes{margin:0;padding:6px;border-radius:4px;min-width:0;min-height:0;display:flex;flex-direction:column;height:100%;box-sizing:border-box}
+#page-review.ov-af-mode .ov-episodes>header{min-height:28px;flex:0 0 auto;gap:5px}
+#page-review.ov-af-mode .ov-episodes h3{font-size:12px;margin:0;white-space:nowrap}
+#page-review.ov-af-mode #ovAFSummary{font-size:11px;line-height:16px;margin:4px 0;gap:3px;flex:0 0 auto}
+#page-review.ov-af-mode #ovAFSummary>span{display:flex;justify-content:space-between;gap:4px;flex-wrap:wrap}
+#page-review.ov-af-mode #ovAFSummary>span>span{display:inline}
+#page-review.ov-af-mode #ovAFSummary small{display:none}
+#page-review.ov-af-mode .ov-episode-controls{margin:3px 0;gap:5px;flex:0 0 auto;font-size:11px}
+#page-review.ov-af-mode .ov-episode-controls select{min-height:28px;height:28px;font:inherit}
+#page-review.ov-af-mode .ov-episode-table{margin:3px 0 0;max-height:none;min-height:0;flex:1;overflow:auto;overscroll-behavior:contain}
+#page-review.ov-af-mode .ov-episode-table table{font-size:11px;line-height:16px;font-variant-numeric:tabular-nums}
+#page-review.ov-af-mode .ov-episode-table thead{position:sticky;top:0;z-index:1;background:#f4f8f9}
+#page-review.ov-af-mode .ov-episode-table th{padding:3px 2px;font-size:11px}
+#page-review.ov-af-mode .ov-episode-table td{padding:4px 2px;vertical-align:top}
+#page-review.ov-af-mode .ov-episode-table button{min-height:27px;padding:3px;font-size:11px;white-space:nowrap}
+#page-review.ov-af-mode .ov-episode-table small{padding-top:1px}
+#page-review.ov-af-mode .ov-episode-pages{margin-top:4px;gap:3px;flex:0 0 auto}
+#page-review.ov-af-mode .ov-episode-pages button{min-height:26px;padding:2px 6px;font-size:11px}
+#page-review.ov-af-mode .ov-episode-pages output{font-size:11px}
+#page-review.ov-af-mode .ov-af-lorenz{padding:6px;margin:0;min-width:0;border-radius:4px}
+#page-review.ov-af-mode .ov-af-lorenz canvas{width:100%;max-width:100%}
+#page-review.ov-af-mode .ov-af-coverage,#page-review.ov-af-mode .ov-af-window-evidence{margin:0;padding:6px;border-radius:4px;font-size:11px;line-height:1.5}
+#page-review.ov-af-mode .ov-af-coverage header{gap:5px;align-items:flex-start}
+#page-review.ov-af-mode .ov-coverage-actions{gap:4px}
+#page-review.ov-af-mode .ov-af-coverage button,#page-review.ov-af-mode .ov-af-window-evidence button{min-height:28px;padding:3px 6px;font-size:11px}
+#page-review.ov-af-mode .ov-af-coverage .ov-coverage-note{display:none}
+#page-review.ov-af-mode .ov-af-coverage li>span{min-width:0;width:100%;margin:0 0 3px}
+#page-review.ov-af-mode .ov-af-coverage summary{min-height:26px;padding:4px 0}
+#page-review.ov-af-mode .ov-af-coverage ol{max-height:none;padding-left:20px;overflow:visible}
+#page-review.ov-af-mode .ov-af-window-evidence dl{grid-template-columns:1fr 1fr;gap:6px;margin:6px 0}
+#page-review.ov-af-mode .ov-af-window-evidence dt{font-size:11px}
+#page-review.ov-af-mode .ov-af-gap-nav{font-size:11px;padding:5px 0;gap:4px}
+#page-review.ov-af-mode .ov-af-gap-nav button{min-height:26px;padding:2px 5px;font-size:11px}
+#page-review.ov-af-mode .ov-episode-navigation{padding:0;gap:6px;flex-wrap:nowrap;min-height:0;overflow:hidden;font-size:11px;scroll-margin-top:0}
+#page-review.ov-af-mode .ov-episode-navigation>div:first-child{display:block;min-width:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#page-review.ov-af-mode .ov-episode-navigation>div:first-child>span{margin-left:6px}
+#page-review.ov-af-mode .ov-episode-navigation>div:last-child{flex:0 0 auto;flex-wrap:nowrap;gap:4px}
+#page-review.ov-af-mode .ov-episode-navigation button{min-height:26px;height:26px;padding:2px 6px;font-size:11px;white-space:nowrap}
+#page-review.ov-af-mode #ovEpisodeEditor{padding:4px 6px;min-height:0;min-width:0;font-size:12px;border-radius:4px;box-sizing:border-box;overflow:visible}
+#page-review.ov-af-mode #ovEpisodeEditor>p{margin:0;line-height:22px}
+#page-review.ov-af-mode .ov-episode-details[open]{max-height:none;overflow:visible}
+#page-review.ov-af-mode .ov-episode-details>summary{font-size:11px;line-height:20px}
+#page-review.ov-af-mode .ov-episode-details[open]>summary{margin-bottom:3px}
+#page-review.ov-af-mode #ovEpisodeEditor h3{margin:0;font-size:12px;line-height:20px}
+#page-review.ov-af-mode #ovEpisodeDraftHint{margin:0;font-size:11px;line-height:18px}
+#page-review.ov-af-mode #ovEpisodeEditor .ov-fields{grid-template-columns:repeat(2,minmax(130px,1fr)) minmax(75px,.55fr) minmax(85px,.7fr);gap:5px;align-items:center}
+#page-review.ov-af-mode #ovEpisodeEditor .ov-fields label{flex-direction:row;align-items:center;gap:5px;font-size:11px;white-space:nowrap}
+#page-review.ov-af-mode #ovEpisodeEditor input,#page-review.ov-af-mode #ovEpisodeEditor select{min-height:28px;height:28px;padding:3px 5px;font-size:12px;font-variant-numeric:tabular-nums}
+#page-review.ov-af-mode #ovEpisodeEditor textarea{padding:3px 5px;font-size:12px;line-height:20px;min-height:28px;max-height:50px}
+#page-review.ov-af-mode #ovEpisodeEditor .ov-wide{grid-column:auto}
+#page-review.ov-af-mode #ovEpisodeEditor footer,.ov-boundary-actions{display:flex;align-items:center;gap:5px;min-height:28px;margin:3px 0 0;flex-wrap:nowrap}
+#page-review.ov-af-mode #ovEpisodeEditor footer button,#page-review.ov-af-mode #ovEpisodeEditor .ov-boundary-actions button{min-height:27px;height:27px;padding:2px 6px;font-size:11px;white-space:nowrap}
+#page-review.ov-af-mode #ovEpisodeEditor footer>span{font-size:11px;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.ov-boundary-fields{display:flex;align-items:center;gap:8px;min-width:0;flex-wrap:nowrap;font-variant-numeric:tabular-nums}
+.ov-boundary-fields label{display:flex;align-items:center;gap:5px;min-width:0;white-space:nowrap}
+.ov-boundary-fields input{min-width:0;width:180px}
+.ov-boundary-fields output{font-size:12px;white-space:nowrap}
+.ov-boundary-actions [data-ov="af-save-confirmed"]{margin-left:auto}
+.ov-af-boundary-status{font-size:11px;color:var(--ov-muted);white-space:nowrap}
+.ov-af-boundary-status[role=alert]{color:#9d3027}
+.ov-af-editor-fields{display:grid;grid-template-columns:82px minmax(0,1fr) minmax(0,1fr) auto;align-items:center;gap:6px;min-width:0}
+.ov-af-editor-fields label{display:flex;align-items:center;gap:4px;min-width:0;white-space:nowrap;font-size:11px}
+.ov-af-editor-fields input,.ov-af-editor-fields select{min-width:0;width:100%}
+.ov-af-editor-fields output{white-space:nowrap;font-size:11px;font-variant-numeric:tabular-nums}
+.ov-af-editor-actions{display:flex;align-items:center;gap:4px;min-width:0;margin-top:4px}
+#page-review.ov-af-mode #ovEpisodeEditor .ov-af-editor-actions button{min-height:27px;height:27px;padding:2px 6px;font-size:11px;white-space:nowrap;flex:0 0 auto}
+.ov-af-editor-actions input[name=note]{min-width:60px;max-width:200px;flex:1}
+.ov-af-editor-actions [data-ov="af-save-candidate"],.ov-af-editor-actions [data-ov="af-save-confirmed"]{background:#087777;border-color:#087777;color:#fff}
+.ov-af-editor-actions [data-ov="af-save-confirmed"]{margin-left:auto}
+
+@media(min-width:900px){
+  #page-review.ov-af-mode #ovAF{display:grid;height:100%;grid-template-columns:230px minmax(0,1fr);grid-template-rows:30px 58px 226px 26px minmax(332px,1fr);gap:5px;overflow:hidden;position:relative}
+  #page-review.ov-af-mode #ovAF[hidden]{display:none}
+  #page-review.ov-af-mode .ov-af-heading{grid-column:1/-1;grid-row:1}
+  #page-review.ov-af-mode #ovAF>.ov-lane{grid-column:1/-1;grid-row:2;min-height:0;height:100%;margin:0;position:relative;display:flex;flex-direction:column}
+  #page-review.ov-af-mode .ov-af-grid{display:contents;margin:0}
+  #page-review.ov-af-mode .ov-af-grid>aside{grid-column:1;grid-row:3/6;min-width:0;min-height:0;display:flex;flex-direction:column;gap:5px;overflow:hidden}
+  #page-review.ov-af-mode .ov-af-grid>aside>.ov-af-side-panel{flex:1}
+  #page-review.ov-af-mode .ov-af-grid>aside>.ov-af-side-panel:has(>.ov-episodes){overflow:hidden}
+  #page-review.ov-af-mode .ov-af-grid>aside>.ov-episodes{flex:1}
+  #page-review.ov-af-mode .ov-af-grid>div{grid-column:2;grid-row:3;min-height:0;min-width:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:24px minmax(0,1fr) minmax(0,1fr) auto;gap:4px;align-content:stretch;overflow:visible}
+  #page-review.ov-af-mode .ov-af-hour{grid-column:1/-1;grid-row:1;min-height:0;height:24px;font-size:11px;gap:5px}
+  #page-review.ov-af-mode .ov-af-hour button{height:24px;min-height:24px;padding:1px 7px;font-size:11px}
+  #page-review.ov-af-mode .ov-af-hour output{font-size:11px}
+  #page-review.ov-af-mode .ov-af-grid>div>.ov-lane{min-height:0;height:100%;margin:0;position:relative;display:flex;flex-direction:column}
+  #page-review.ov-af-mode .ov-af-grid>div>.ov-lane:nth-of-type(1){grid-column:1;grid-row:2}
+  #page-review.ov-af-mode .ov-af-grid>div>.ov-lane:nth-of-type(2){grid-column:2;grid-row:2}
+  #page-review.ov-af-mode .ov-af-grid>div>.ov-lane:nth-of-type(3){grid-column:1;grid-row:3}
+  #page-review.ov-af-mode .ov-af-grid>div>.ov-lane:nth-of-type(4){grid-column:2;grid-row:3}
+  #page-review.ov-af-mode #ovEpisodeEditor{grid-column:1/-1;grid-row:4}
+  #page-review.ov-af-mode #ovAF .ov-lane>header{position:absolute;left:42px;right:3px;top:0;z-index:1;height:15px;min-height:15px;padding:0 2px;border:0;gap:3px;pointer-events:none}
+  #page-review.ov-af-mode #ovAF .ov-lane h2{font-size:10px;line-height:14px;background:#fbfdfde8}
+  #page-review.ov-af-mode #ovAF .ov-lane output{font-size:10px;line-height:14px;background:#fbfdfde8;max-width:55%;overflow:hidden}
+  #page-review.ov-af-mode #ovAF .ov-lane [data-ov]{min-height:16px;height:16px;padding:0 3px;font-size:10px;pointer-events:auto}
+  #page-review.ov-af-mode #ovAF .ov-lane canvas{height:100%!important;min-height:0;flex:1}
+  #page-review.ov-af-mode #ovEpisodeNavigation{grid-column:2;grid-row:4}
+  #page-review.ov-af-mode #ovAFWaveHost{grid-column:2;grid-row:5;min-width:0;min-height:0;height:100%;display:flex;overflow:hidden}
+  #page-review.ov-af-mode #waveformCard:not(.waveform-expanded){height:100%;min-height:0;max-height:none;display:flex;flex-direction:column;overflow:hidden;border-radius:4px}
+  #page-review.ov-af-mode #waveformCard:not(.waveform-expanded) .waveform-title{height:28px;min-height:28px;flex:0 0 28px;box-sizing:border-box;padding:0 6px;gap:4px}
+  #page-review.ov-af-mode #waveformCard:not(.waveform-expanded) .waveform-title>div{min-width:0;flex-wrap:nowrap;gap:5px}
+  #page-review.ov-af-mode #waveformCard:not(.waveform-expanded) .waveform-title strong{font-size:11px}
+  #page-review.ov-af-mode #waveformCard:not(.waveform-expanded) .waveform-title small{font-size:10px;max-width:50vw;overflow:hidden;text-overflow:ellipsis}
+  #page-review.ov-af-mode #waveformCard:not(.waveform-expanded) .waveform-title-actions{flex:0 0 auto}
+  #page-review.ov-af-mode .waveform-title-actions .lead-toolbar-group{display:flex;flex-direction:row;align-items:center;gap:3px;margin:0}
+  #page-review.ov-af-mode .waveform-title-actions .lead-toolbar-group>label,#page-review.ov-af-mode .waveform-title-actions .lead-picker-trigger small{display:none}
+  #page-review.ov-af-mode .waveform-title-actions .lead-picker-trigger,#page-review.ov-af-mode #toggleWaveformFullscreen{height:24px;min-height:24px;padding:1px 5px;font-size:11px}
+  #page-review.ov-af-mode #waveformCard:not(.waveform-expanded) #waveformScroller{height:0;flex:1;min-height:240px;max-height:none;overflow:hidden!important}
+  #page-review.ov-af-mode #waveformCard:not(.waveform-expanded) #waveformCanvas{min-width:0;max-width:100%;width:100%;display:block}
+  #page-review.ov-af-mode #waveformCard:not(.waveform-expanded) #timeSlider{height:14px;min-height:14px;flex:0 0 14px;margin:0 6px;width:calc(100% - 12px)}
+  #page-review.ov-af-mode #waveformCard:not(.waveform-expanded) .waveform-foot{height:22px;min-height:22px;flex:0 0 22px;box-sizing:border-box;padding:0 6px;gap:6px;flex-wrap:nowrap;overflow:hidden;font-size:10px;line-height:16px}
+  #page-review.ov-af-mode #waveInteractionHint{display:none}
+  #page-review.ov-af-mode #calibrationNote{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+  #page-review.ov-af-mode #ovBeatMetrics{min-height:26px;max-height:50px}
+}
+@media(min-width:900px) and (max-height:820px){
+  #page-review.ov-af-mode #ovAF{grid-template-rows:28px 46px 220px 24px minmax(332px,1fr);gap:4px}
+  #page-review.ov-af-mode .ov-af-heading h2{font-size:14px}
+  #page-review.ov-af-mode #ovEpisodeEditor{padding:3px 5px}
+  #page-review.ov-af-mode #ovEpisodeEditor .ov-fields{gap:4px}
+  #page-review.ov-af-mode .ov-episode-navigation>div:first-child>span{display:none}
+}
+@media(min-width:900px) and (max-width:1200px){
+  #page-review.ov-af-mode #ovAF{grid-template-columns:200px minmax(0,1fr)}
+  #page-review.ov-af-mode .ov-af-heading{gap:5px}
+  #page-review.ov-af-mode .ov-af-heading [data-ov]{padding:3px 5px;font-size:11px}
+  #page-review.ov-af-mode #ovEpisodeEditor .ov-fields{grid-template-columns:repeat(2,minmax(115px,1fr)) 70px 76px}
+  #page-review.ov-af-mode .ov-boundary-fields{gap:5px;font-size:11px}
+  #page-review.ov-af-mode .ov-boundary-fields input{width:150px;font-size:11px}
+  #page-review.ov-af-mode .ov-af-editor-fields{grid-template-columns:72px minmax(0,1fr) minmax(0,1fr) auto;gap:4px}
+  #page-review.ov-af-mode .ov-af-editor-actions{gap:3px}
+  #page-review.ov-af-mode #ovEpisodeEditor .ov-af-editor-actions button{padding:2px 4px;font-size:10px}
+  #page-review.ov-af-mode .ov-af-editor-actions input[name=note]{max-width:100px;min-width:50px}
+  #page-review.ov-af-mode .ov-episode-navigation [data-ov="episode-edit"],#page-review.ov-af-mode .ov-episode-navigation [data-ov="episode-list"]{display:none}
+}
+@media(max-width:899px){
+  #page-review.ov-af-mode .ov-af-heading{flex-wrap:wrap}
+  #page-review.ov-af-mode .ov-af-heading>div:last-child{flex-wrap:wrap}
+  #page-review.ov-af-mode .ov-af-grid{grid-template-columns:180px minmax(0,1fr);gap:5px;margin:5px 0}
+  #page-review.ov-af-mode .ov-af-grid>aside{display:flex;min-height:0;max-height:310px;flex-direction:column;gap:5px;overflow:hidden}
+  #page-review.ov-af-mode .ov-af-grid>div{min-width:0;display:grid;gap:4px;grid-template-columns:1fr 1fr}
+  #page-review.ov-af-mode .ov-af-hour,#page-review.ov-af-mode #ovEpisodeEditor{grid-column:1/-1}
+  #page-review.ov-af-mode .ov-af-grid .ov-lane{margin:0}
+  #page-review.ov-af-mode .ov-af-grid .ov-lane canvas{height:50px!important}
+  #page-review.ov-af-mode .ov-af-grid .ov-lane h2{font-size:10px}
+  #page-review.ov-af-mode .ov-af-grid .ov-lane>header{padding:1px 3px;min-height:20px}
+  #page-review.ov-af-mode #ovEpisodeEditor .ov-fields{grid-template-columns:1fr 1fr}
+  #page-review.ov-af-mode #ovEpisodeEditor .ov-fields label{white-space:normal}
+  #page-review.ov-af-mode #ovEpisodeEditor footer,.ov-boundary-actions,.ov-boundary-fields{flex-wrap:wrap}
+  #page-review.ov-af-mode .ov-af-editor-fields{grid-template-columns:72px minmax(0,1fr);gap:4px}
+  #page-review.ov-af-mode .ov-af-editor-actions{flex-wrap:wrap}
+  #page-review.ov-af-mode .ov-episode-navigation{flex-wrap:wrap;min-height:28px}
+  #page-review.ov-af-mode .ov-episode-navigation>div:last-child{flex-wrap:wrap}
+  #page-review.ov-af-mode #ovAFWaveHost{min-height:330px}
+  #page-review.ov-af-mode #waveformCard:not(.waveform-expanded) #waveformScroller{min-height:240px}
+}

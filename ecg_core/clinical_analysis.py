@@ -170,6 +170,17 @@ def build_index(feed, templates=(), annotations=(), review=None):
             # Saved measurement evidence, separate from the physician's label.
             item['range_statistics'] = copy.deepcopy(d['range_statistics'])
             item['end_s'] = (end + 1) / 200  # New range statistics use [start, end+1).
+    # A report strip owns one rhythm episode. Other saved AF/AFL episodes may
+    # alter aggregate burden/NN derivatives, but do not change this strip's
+    # waveform bounds or physician decision. Keep the full-category basis for
+    # browsing while giving each selected strip its own guarded evidence basis.
+    for item in events:
+        if item['category'] == 'AF':
+            item['basis_version'] = bv+'-'+fingerprint(encode([
+                item['event_id'], item['start_sample'], item['end_sample'],
+                item['end_s'], item['subtype'], item['rhythm_status'], item['label'],
+                item.get('lead', ''), item.get('note', '')
+            ]))+'-episode-local-v1-episode-status-v2-inclusive-end-v1'
     events.sort(key=lambda x:(x['start_sample'],x['event_id']))
     return dict(quality_control=dict(artifact_count=sum(r['class_code']=='X' for r in rows+markers),artifact_samples=[r['sample_index'] for r in rows+markers if r['class_code']=='X'],role='quality_control_only'),events=events,rows=rows+markers,templates=list(templates),basis_versions=basis,data_version=bv+'-'+av+DATA_VERSION_SUFFIX,beat_version=bv,duration_s=feed.duration)
 

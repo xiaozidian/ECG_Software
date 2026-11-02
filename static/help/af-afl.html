@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>房颤 / 房扑操作说明 · CardioInsight</title>
+  <style>
+    :root{color-scheme:light;font:15px/1.7 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;color:#243f4b;background:#f3f7f8}
+    *{box-sizing:border-box}body{margin:0}header{background:#193b48;color:#f2f8f8;padding:16px max(20px,calc((100% - 880px)/2));border-bottom:1px solid #b7ced2}
+    header span{font-size:13px;color:#c4d8dd}h1{font-size:23px;line-height:1.4;margin:3px 0;font-weight:650}
+    main{max-width:920px;margin:0 auto;padding:22px 20px 50px}nav{display:flex;gap:8px 20px;flex-wrap:wrap;padding-bottom:14px;border-bottom:1px solid #cddce0}a{color:#086f70;text-underline-offset:3px}a:focus-visible{outline:2px solid #087777;outline-offset:3px}
+    h2{font-size:18px;line-height:1.5;margin:26px 0 8px;color:#193b48;scroll-margin-top:12px}h3{font-size:15px;margin:18px 0 5px}p{margin:7px 0}ol,ul{padding-left:24px;margin:8px 0}li{margin:5px 0}strong{font-weight:650}table{width:100%;border-collapse:collapse;margin:12px 0;background:#fff}th,td{padding:9px 11px;text-align:left;vertical-align:top;border:1px solid #cddce0}th{background:#e7f0f1}small{font-size:13px;color:#526773}footer{margin-top:28px;border-top:1px solid #cddce0;padding-top:12px;color:#526773;font-size:13px}::selection{background:#b8dfda;color:#173d45}
+    @media(max-width:540px){:root{font-size:14px}h1{font-size:20px}main{padding:16px 14px 30px}th,td{padding:7px}nav{gap:6px 14px}}
+  </style>
+</head>
+<body>
+  <header><span>CardioInsight 使用说明</span><h1>房颤 / 房扑编辑与分析</h1></header>
+  <main>
+    <nav aria-label="本页目录"><a href="#boundaries">设置起止</a><a href="#save">保存与入报</a><a href="#screening">RR 筛查</a><a href="#statistics">统计口径</a><a href="#recovery">修订与恢复</a></nav>
+    <p>从总览进入“房颤 / 房扑分析”。全程 RR 用于定位总体时段，小时内 RR 用于逐段查看，主区三导联用于核对边界和形态。片段列表、散点及筛查详情在侧栏切换查看。</p>
+
+    <h2 id="boundaries">设置片段起止</h2>
+    <ol>
+      <li>点击“新建房颤”或“新建房扑”。</li>
+      <li>在 RR 图找到时段，继续查看三导联波形。</li>
+      <li>在起始位置使用<strong>“设为起点”</strong>；在终止位置使用<strong>“设为终点”</strong>。右键菜单和工具栏执行相同操作。</li>
+      <li>拖动“起 / 止”边界线，或修改时间输入，精细调整。边界、持续时间和高亮选区一起更新。“回起点 / 回终点”定位当前编辑的边界。</li>
+      <li>核对后保存候选，或明确确认片段。</li>
+    </ol>
+    <p>没有明确选区时，新建片段的起止留空。普通点击只移动查看位置；平移、缩放和跨小时查看会保留已经设置的边界。</p>
+    <p>起止优先使用记录的日期和时钟，与波形时间一致。来源没有时钟时，统一显示记录开始后的相对时间。持续时间独立显示。当前 200 Hz 来源的采样间隔为 0.005 秒；片段包含起点样本，不包含终点样本。</p>
+    <p>Esc 取消当前设置或拖动动作；“取消修改”恢复本次编辑前的边界。未保存的本地修改不等于已保存片段，刷新或关闭浏览器前应完成保存或取消。切换 12 导联核对后，返回三导联可继续当前片段编辑。</p>
+
+    <h2 id="save">候选、确认与报告图条</h2>
+    <table>
+      <thead><tr><th scope="col">操作</th><th scope="col">结果</th></tr></thead>
+      <tbody>
+        <tr><td>保存候选</td><td>保存边界和类型，保留待复核状态；不会自动勾选入报。</td></tr>
+        <tr><td>确认片段</td><td>记录医生对该段的判断，按现有口径计入确认时长和负荷；不会自动选择报告图条。</td></tr>
+        <tr><td>报告中勾选</td><td>把该事件的代表性图条加入报告草稿。取消勾选会移出对应图条。</td></tr>
+      </tbody>
+    </table>
+    <p>已确认片段调整起止或类型后，应核对新的范围。原有确认不能替代对新边界的确认。报告可以先收集待复核图条，再确认本次实际使用的片段；最终审核检查本次使用的证据，无需逐条处理全部候选。</p>
+    <p><strong>片段起止与入报图条范围分别保存。</strong>持续数分钟的节律片段，可以选取数秒代表波形入报。裁剪代表图条，不会改写整个节律片段的起止。</p>
+    <p>从报告进入复核后，可返回原图条。片段修改后，核对并更新对应图条，保留需要的导联和图注。删除或排除片段时，应核对受影响的已选图条及相关手写结论。</p>
+
+    <h2 id="screening">RR 散点与筛查详情</h2>
+    <p>相邻 RR 散点用于定位不规则时段，连续波形用于核对形态和边界。当前筛查器未分析 P 波，不能仅凭 RR 提示判定房颤或房扑，也不能排除早搏或伪差。</p>
+    <p>“检查全程覆盖 / 检查选区覆盖”为只读检查，显示已评估、提示候选和未评估窗口，不直接保存诊断片段。未评估、未提示或没有已保存片段，都不代表该时段正常。</p>
+    <p>重分析沿用固定 30 秒窗口及既有工程规则：至少 20 搏、正常类型占比不低于 90%、有效时间覆盖至少 25 秒，CV ≥ 0.12、归一化 RMSSD ≥ 0.14、转折率 0.45–0.85。这些是当前实现的筛查规则，不是诊断标准。</p>
+    <p>重分析只替换相应可评估范围内的算法待复核片段，保留人工片段、源片段、医生已确认 / 已排除结果和未评估区域。</p>
+
+    <h2 id="statistics">时长、负荷与 NN 分析</h2>
+    <p>确认负荷以完整记录时长为分母，重叠时段按既有规则合并，只有已确认片段参与确认负荷。确认片段决定诊断状态与统计，报告勾选决定展示哪些图条。</p>
+    <p>待复核与确认的 AF / AFL 区间按现有规则排除在窦性专用 NN 分析之外。这里的编辑不改变 NN 定义。设备幅度使用原波形设置；电压未校准时，屏幕显示大小不能当作 mm/mV 标定。</p>
+
+    <h2 id="recovery">保存、撤销与结果核对</h2>
+    <p>保存成功后，列表和状态会更新。若显示“保存结果待核实”，点击<strong>“核对保存结果”</strong>。系统会比对最近一次保存的操作回执和片段内容：已保存时直接恢复成功状态，不重复插入；尚未写入时提示重新核对后保存；记录已经变化时重新载入当前内容。</p>
+    <p>病例、源依据或修订版本变化时，应载入当前内容再编辑。</p>
+    <p>撤销和重做作用于节律片段修订历史。撤销恢复片段，并不自动替医生重新勾选报告图条。原始心电来源保持只读，人工修订与审计记录单独保存。</p>
+    <footer>本页收录操作方法和统计口径。工作台主屏保留波形、时间、状态和当前操作所需的提示。</footer>
+  </main>
+</body>
+</html>

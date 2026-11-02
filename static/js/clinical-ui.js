@@ -613,10 +613,13 @@ const clinicalUI=(()=>{
   async function replaceReturnedRhythm(){
     ECGReportRange.assertApplied?.();
     const e=active,old=returnedRhythmSelection(e);
-    if(!reportWaveReady||!old||!reportData?.items.includes(e)||state.reportStale||state.reportSaving)throw Error('请先读取当前片段波形，核对后再替换');
+    if(!canReplaceReturnedRhythm(e))throw Error('请等待保存和当前片段波形读取完成后再替换');
     replaceRhythmSelection(e,returnedRhythmSettings(e));category=rhythmReturn.category;
     renderReportShell();await renderReportBody();
     toast('已替换原图条，保留导联与图注；区间恢复自动 7 秒／至少 5 搏，请核对并保存草稿');
+  }
+  function canReplaceReturnedRhythm(e=active){
+    return !!(reportWaveReady&&returnedRhythmSelection(e)&&reportData?.items.includes(e)&&!state.reportStale&&!state.reportSaving);
   }
   function replaceRhythmSelection(e,spec){
     const old=returnedRhythmSelection(e);
@@ -663,7 +666,7 @@ const clinicalUI=(()=>{
     if(returnedRhythmSelection(active)){
       host.querySelector('[data-review-include]').disabled=true;
       host.querySelector('[data-review-include]').title='此事件对应旧入报图条，请核对后使用“用当前片段替换原图条”';
-      host.insertAdjacentHTML('beforeend','<p>替换时保留原导联和图注；原人工区间将重置为自动 7 秒／至少 5 搏。当前预览使用这一新区间。也可拖动游标后“应用区间”，以人工区间替换原图条，不重复添加。</p><div class="v2-review-actions"><button type="button" data-rhythm-replace '+(!ready?'disabled':'')+'>用当前片段替换原图条</button></div>');
+      host.insertAdjacentHTML('beforeend','<p>替换时保留原导联和图注；原人工区间将重置为自动 7 秒／至少 5 搏。当前预览使用这一新区间。也可拖动游标后“应用区间”，以人工区间替换原图条，不重复添加。</p><div class="v2-review-actions"><button type="button" data-rhythm-replace '+(!canReplaceReturnedRhythm()?'disabled':'')+'>用当前片段替换原图条</button></div>');
     }
   }
   async function stepReportEvent(delta){
@@ -800,6 +803,9 @@ const clinicalUI=(()=>{
     renderExportState();
     document.dispatchEvent?.(new Event('ecg-report-privacy-change'));
   }
+  function pendingRhythmPicks(){
+    return selected().flatMap((s,i)=>{const e=selectedLookup.get(s.event_id);return e?.category==='AF'&&e.rhythm_status!=='confirmed'&&globalThis.ECGReportEvidenceUI?.used(composition(),s,e)?[i]:[];});
+  }
   function renderReportShell(){
     state.reportCategoryPending=[]; // Category browsing does not require a completion attestation.
     if(!qs('#reportV2'))return;
@@ -817,10 +823,15 @@ const clinicalUI=(()=>{
     qs('.report-conclusion-dock').hidden=category!=='final';
     const stale=selected().filter(s=>!selectedLookup.has(s.event_id)||selectedLookup.get(s.event_id).basis_version!==s.basis_version).length;
     state.reportEvidencePending=selected().flatMap((s,i)=>{const e=selectedLookup.get(s.event_id);if(!globalThis.ECGReportEvidenceUI?.used(composition(),s,e))return [];return !e||e.basis_version!==s.basis_version?[{index:i,status:'stale'}]:e.evidence_only&&!ECGReportEvidenceUI.confirmed(s,e)?[{index:i,status:'pending'}]:[];});
+    state.reportRhythmPending=pendingRhythmPicks();
     let evidenceNotice=qs('#reportEvidencePending');
     if(!evidenceNotice){evidenceNotice=document.createElement('div');evidenceNotice.id='reportEvidencePending';evidenceNotice.className='rw-evidence-pending';qs('#reportV2Notice').after(evidenceNotice);}
     evidenceNotice.hidden=!state.reportEvidencePending.length||state.reportEvidenceLoading;
     if(!evidenceNotice.hidden){evidenceNotice.replaceChildren(document.createTextNode(`${state.reportEvidencePending.length} 条本次报告证据待核对或依据已变化 `));const button=document.createElement('button');button.type='button';button.textContent='查看待处理图条';button.onclick=()=>run(async()=>{ECGReportWorkspace.setReviewFilter(state.reportEvidencePending[0].status);await chooseReportCategory('strips');});evidenceNotice.append(button);}
+    let rhythmNotice=qs('#reportRhythmPending');
+    if(!rhythmNotice){rhythmNotice=document.createElement('div');rhythmNotice.id='reportRhythmPending';rhythmNotice.className='rw-evidence-pending';qs('#reportV2Notice').after(rhythmNotice);}
+    rhythmNotice.hidden=!state.reportRhythmPending.length||state.reportEvidenceLoading;
+    if(!rhythmNotice.hidden){rhythmNotice.replaceChildren(document.createTextNode(`${state.reportRhythmPending.length} 条入报房颤 / 房扑片段待确认 `));const button=document.createElement('button');button.type='button';button.textContent='复核片段';button.disabled=!!(state.reportSaving||state.reportStale||state.reportViewLoading||state.reportViewError);button.onclick=()=>run(()=>openRhythmReview(String(state.reportRhythmPending[0])));rhythmNotice.append(button);}
     qs('#reportV2Notice').textContent=state.reportEvidenceLoading?`正在核对报告依据；原有选图和人工文字保留${reportData?` · 下列计数仍为已读取依据 r${reportData.analysis_revision}，本次核对未完成`:''}`:state.reportEvidenceError?'报告依据未能完整读取，请重新加载后复核；不能认定无事件':`已选 ${selected().length} 条 · 统计为全记录${reportData?.analysis_revision!==undefined?' · 依据 r'+reportData.analysis_revision:''} · ${clinicalWorkflow.readiness()?"编辑 / ST‑T 已确认":"编辑 / ST‑T 待确认"}${state.reportCategoryPending.length?' · '+state.reportCategoryPending.length+' 类报告筛选待确认':''}${stale?' · '+stale+'条已失效，须重新核对；房颤片段可复核后替换，其余移除后重新筛选':''}`;
     let viewStatus=qs('#reportViewStatus');
     if(!viewStatus&&typeof document!=='undefined'){viewStatus=document.createElement('section');viewStatus.id='reportViewStatus';viewStatus.className='v2-view-status';viewStatus.setAttribute('role','status');qs('#reportV2Content').before(viewStatus);}
@@ -844,9 +855,10 @@ const clinicalUI=(()=>{
     conflict.hidden=!state.reportStale;
     for(const key of ['saveReport','approveReport','returnReport']){
       const button=qs('#'+key);if(button)button.disabled=key==='approveReport'
-        ?Boolean(state.reportViewLoading||state.reportViewError)||!ECGReportConsistency.canApprove(state,qs('#conclusionEditor').value,clinicalWorkflow.readiness(),clinicalWorkflow.writable())
+        ?Boolean(state.reportViewLoading||state.reportViewError||state.reportEvidencePending.length||state.reportRhythmPending.length)||!ECGReportConsistency.canApprove(state,qs('#conclusionEditor').value,clinicalWorkflow.readiness(),clinicalWorkflow.writable())
         :Boolean(!clinicalWorkflow.writable()||state.reportSaving||state.reportStale);
     }
+    document.querySelectorAll('[data-rhythm-replace]').forEach(button=>{button.disabled=!canReplaceReturnedRhythm();});
     renderExportState();
     // Reload/conflict responses can change report state without a workflow fetch.
     clinicalWorkflow.renderPreflight();
@@ -1154,6 +1166,7 @@ const clinicalUI=(()=>{
     if(state.reportStale)throw Error('病例或报告已有新版本，请先载入最新版本核对');
     if(status==='reviewed'&&(state.reportEvidenceLoading||state.reportEvidenceError||state.reportViewLoading||state.reportViewError))throw Error('请先完整读取当前报告依据与类别');
     if(status==='reviewed'&&state.reportDirty)throw Error('请先保存草稿，再审核当前版本');
+    if(status==='reviewed'&&pendingRhythmPicks().length)throw Error('请先确认本次入报的房颤 / 房扑片段');
     const id=state.caseId,caseToken=state.caseRequestId,payload={status,expected_version:state.report.version,expected_review_revision:state.report.review_revision,conclusion:qs('#conclusionEditor').value,composition:copy(composition())};
     let submitted=ECGReportConsistency.content(payload.conclusion,payload.composition);
     state.reportSaving=true;renderReportShell();

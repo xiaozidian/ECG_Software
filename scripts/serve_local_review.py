@@ -99,7 +99,7 @@ def create_review_app(data_root: Path, workspace: Path, *, purpose: str = 'user_
 
     @app.after_request
     def local_presentation(response):
-        if response.is_json:
+        if response.is_json and not response.direct_passthrough:
             value = response.get_json(silent=True)
             if value is not None:
                 response.set_data(app.json.dumps(present(value)))

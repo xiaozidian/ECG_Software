@@ -455,6 +455,19 @@
   #page-review.overview-workbench.ov-hospital-columns:not(.ov-af-mode) .scatter-canvas-wrap{height:160px;flex-basis:160px}
 }
 
+/* AF/AFL owns one desktop viewport; auxiliary evidence stays inside its sidebar. */
+@media(min-width:900px){
+  html:has(#page-review.active.ov-af-mode),body:has(#page-review.active.ov-af-mode){height:100%;overflow:hidden}
+  #mainContent:has(#page-review.active.ov-af-mode){height:100dvh;min-height:0;padding-top:56px;display:flex;flex-direction:column;overflow:hidden;box-sizing:border-box}
+  #mainContent:has(#page-review.active.ov-af-mode)>.safety-banner{flex:0 0 26px;height:26px;min-height:26px;margin:0;padding:3px 10px;box-sizing:border-box;align-items:center;font-size:12px;line-height:18px}
+  #mainContent:has(#page-review.active.ov-af-mode)>.safety-banner.hidden{display:none}
+  #mainContent #page-review.active.overview-workbench.ov-af-mode{flex:1;min-height:0;height:auto;max-width:none;width:100%;margin:0;padding:5px 10px 7px;box-sizing:border-box;display:block;overflow:hidden;animation:none}
+  #page-review.ov-af-mode .waveform-title-actions .lead-picker-trigger{min-width:100px;max-width:130px}
+  #page-review.ov-af-mode .waveform-title-actions .wave-legend{display:none}
+  #page-review.ov-af-mode .waveform-foot .beat-edit-history{min-width:0;white-space:nowrap}
+  #page-review.ov-af-mode #rhythmRangeDockHost{flex:0 0 auto;max-height:92px;overflow:auto;overscroll-behavior:contain}
+}
+
 /* ST-T twelve-channel view: scroll source-painted rows, retain external controls. */
 @media screen {
   #page-stt.stt-review-layout #sttWaveformCanvas[data-stt-render-leads="12"]{height:814px!important;min-height:814px}
