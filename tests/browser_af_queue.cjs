@@ -8,7 +8,7 @@ const boundaryCode=source.slice(source.indexOf('  const afClock='),source.indexO
 const savingCode=source.slice(source.indexOf('  function syncAFSaveState('),source.indexOf('  const rhythmBasis='));
 const esc=x=>String(x).replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;');
 const unesc=x=>x.replaceAll('&quot;','"').replaceAll('&lt;','<').replaceAll('&gt;','>').replaceAll('&amp;','&');
-let focuses=0,scrolls=0,seeks=[],requests=0,accept=null,confirmation=null,currentForm=null,resolveSeek=null;
+let focuses=0,scrolls=0,seeks=[],requests=0,accept=null,confirmation=null,currentForm=null,resolveSeek=null,leaveChoice='stay',leavePrompts=0;
 const nodes=new Map(),node=()=>({innerHTML:'',textContent:'',value:'',hidden:false,disabled:false,dataset:{},focus(){focuses++;},scrollIntoView(){scrolls++;},setAttribute(){}});
 function qs(key){
   if(key==='#ovEpisodeForm')return currentForm;
@@ -64,6 +64,7 @@ const c={ui:{id:'case',episode:null,af:true,revision:2,rhythm:{revision:3,docume
   dialog:(title,body,fn)=>{accept=fn;},E:require('../static/js/overview-engine.js'),
   confirmRhythm:(title,doc)=>{confirmation=doc;},
   saveRhythm:async doc=>{requests++;confirmation=doc;},
+  ECGUnsavedNavigation:{resolve:async options=>{leavePrompts++;if(leaveChoice==='discard'){await options.discard();return true;}if(leaveChoice==='save'){await options.save();return true;}return false;}},
   FormData:class{constructor(form){this.form=form;}get(k){return this.form.elements[k].value;}},
 };
 vm.createContext(c);vm.runInContext('let episodeFilter="all",episodePage=0,episodeNavigation=0,episodeEditor=null;const episodeDrafts=new Map();'+basisCode+boundaryCode+savingCode+helpers+action,c);
@@ -153,14 +154,14 @@ const input=(name,value)=>{currentForm.elements[name].value=value;currentForm.on
   edit('draft <script> & 中文');
   if(scenario==='removed-draft'){
     c.ui.rhythm.document.episodes=episodes.filter(x=>x.id!=='e:0003');c.ui.rhythm.revision++;
-    await select('e:0006');await call('action("episode-filter:drafts")');assert.match(qs('#ovEpisodeRows').innerHTML,/片段已移除/);
+    await select('e:0006');assert.equal(c.ui.episode,'e:0003');assert.equal(leavePrompts,1);await call('action("episode-filter:drafts")');assert.match(qs('#ovEpisodeRows').innerHTML,/片段已移除/);
     await select();assert.equal(currentForm.elements.note.value,'draft <script> & 中文');assert.equal(currentForm.dataset.stale,'true');assert(currentForm.querySelector('[data-ov="af-save:pending"]').disabled);await assert.rejects(call('action("af-save:pending")'),/修订已变化/);assert.equal(requests,0);return;
   }
   if(scenario==='retain-form'){
     const original=currentForm;await call('action("episode-filter:pending")');await call('action("episode-page:1")');assert.equal(currentForm,original);assert.equal(currentForm.elements.note.value,'draft <script> & 中文');return;
   }
   if(scenario==='retain-navigation'){
-    await select('e:0006');assert.equal(currentForm.elements.note.value,'note');await select();assert.equal(currentForm.elements.note.value,'draft <script> & 中文');assert(!qs('#ovEpisodeEditor').innerHTML.includes('<script>'));return;
+    await select('e:0006');assert.equal(c.ui.episode,'e:0003');assert.equal(leavePrompts,1);assert.equal(currentForm.elements.note.value,'draft <script> & 中文');assert(!qs('#ovEpisodeEditor').innerHTML.includes('<script>'));leaveChoice='discard';await select('e:0006');assert.equal(c.ui.episode,'e:0006');assert.equal(currentForm.elements.note.value,'note');assert.equal(call('episodeDrafts.size'),0);return;
   }
   if(scenario==='case-isolation'){
     c.ui.id=c.state.caseId='other';await select();assert.equal(currentForm.elements.note.value,'note');c.ui.id=c.state.caseId='case';await select();assert.equal(currentForm.elements.note.value,'draft <script> & 中文');return;
@@ -172,7 +173,7 @@ const input=(name,value)=>{currentForm.elements[name].value=value;currentForm.on
     await assert.rejects(call('action("af-save:pending")'),/修订已变化/);assert.equal(confirmation,null);assert.equal(requests,0);return;
   }
   if(scenario==='save-clears-draft'){
-    c.ui.rhythm.document.episodes[3]={...episodes[3],note:'draft <script> & 中文'};c.ui.rhythm.revision++;call('renderEpisodes()');assert.equal(call('episodeDrafts.size'),0);assert.equal(currentForm.elements.status.value,'pending');assert.equal(qs('#ovEpisodeDraftHint').textContent,'待复核');
+    c.ui.rhythm.document.episodes[3]={...episodes[3],note:'draft <script> & 中文'};c.ui.rhythm.revision++;call('renderEpisodes()');assert.equal(call('episodeDrafts.size'),0);assert.equal(currentForm.elements.status.value,'pending');assert.match(qs('#ovEpisodeDraftHint').textContent,/已保存/);
     assert.match(qs('#ovEpisodeFilter').innerHTML,/本地未保存（0）/);assert(!qs('#ovEpisodeRows').innerHTML.includes(' · 未保存'));return;
   }
   if(scenario==='discard'){

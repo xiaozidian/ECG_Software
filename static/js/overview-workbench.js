@@ -360,7 +360,9 @@ const overviewWorkbench=(()=>{
       return saveRhythm(document);
     });
   }
-  function episodeForm(kind='AF',whole=false){
+  async function episodeForm(kind='AF',whole=false){
+    if(ui.rhythmSaving||ui.rhythmUncertain)return;
+    if(hasUnsavedEpisode()&&!await resolveEpisodeLeave())return;
     if(!overviewReady||!ui.rhythm)throw Error('请等待片段载入');
     rememberEpisodeForm();
     const bounds=whole?[0,duration()]:ui.creationRange?[...ui.creationRange]:null;ui.creationRange=null;
@@ -390,13 +392,13 @@ const overviewWorkbench=(()=>{
     const valid=Number.isFinite(bounds.start)&&Number.isFinite(bounds.end)&&bounds.end>bounds.start;
     ui.range=valid?[bounds.start,bounds.end]:null;
     form.querySelector('[data-af-duration]').textContent=valid?(bounds.end-bounds.start).toFixed(3)+' s':'—';
-    const hint=qs('#ovEpisodeDraftHint');if(hint)hint.textContent=form.dataset.stale==='true'?'依据已变化，请重新编辑':bounds.start!==null&&bounds.end!==null&&!valid?'终点须晚于起点':episodeDrafts.has(episodeEditor.key)?'未保存':statusName(form.elements.status.value);
+    const hint=qs('#ovEpisodeDraftHint');if(hint)hint.textContent=form.dataset.stale==='true'?'依据已变化，请重新编辑':bounds.start!==null&&bounds.end!==null&&!valid?'终点须晚于起点':episodeDrafts.has(episodeEditor.key)?(episodeEditor.isNew?'新增候选 · 未保存':'修改候选 · 未保存'):'已保存 · 可继续添加或到报告筛选';
     for(const action of ['pending','confirmed','excluded']){
       const b=form.querySelector('[data-ov="af-save:'+action+'"]');if(b)b.disabled=!valid||form.dataset.stale==='true'||!!ui.rhythmSaving||!!ui.rhythmUncertain;
     }
     renderWaveform();draw();
   }
-  async function saveAFDraft(status){
+  async function saveAFDraft(status='pending'){
     const form=qs('#ovEpisodeForm');if(!form||!episodeEditor)return;
     const owner=episodeEditor;requireRhythmBasis(owner.basis);
     for(const k of ['start','end']){
@@ -409,6 +411,26 @@ const overviewWorkbench=(()=>{
     if(old)Object.assign(old,item);else if(owner.isNew)doc.episodes.push(item);else throw Error('片段已移除，请重新选择');
     E.validateDocument(doc,duration());form.elements.status.value=status;rememberEpisodeForm();
     await saveRhythm(doc);
+  }
+  function hasUnsavedEpisode(){
+    if(!ui.af||!episodeEditor||episodeEditor.basis.caseId!==state.caseId)return false;
+    rememberEpisodeForm();const d=episodeDrafts.get(episodeEditor.key);
+    return !!d&&(!d.isNew||d.values.start!==''||d.values.end!==''||!!d.values.note.trim());
+  }
+  function discardEpisodeDraft(){
+    if(!episodeEditor)return;
+    episodeDrafts.delete(episodeEditor.key);episodeEditor=null;ui.rangeAnchor=null;
+    if(!ui.rhythm?.document.episodes.some(x=>x.id===ui.episode))ui.episode=null;
+    renderEpisodes();draw();renderWaveform();
+  }
+  async function resolveEpisodeLeave(){
+    if(ui.rhythmSaving||ui.rhythmUncertain)return false;
+    if(!hasUnsavedEpisode())return true;
+    const owner=episodeEditor,id=state.caseId,token=state.caseRequestId;
+    return ECGUnsavedNavigation.resolve({title:'候选尚未保存',detail:'保存当前范围，或放弃本次修改后继续。',saveLabel:'保存候选并继续',
+      isCurrent:()=>id===state.caseId&&token===state.caseRequestId,
+      save:async()=>{if(episodeEditor!==owner)throw Error('片段已变化，请继续编辑');await saveAFDraft();if(hasUnsavedEpisode())throw Error('候选尚未保存，请重试');},
+      discard:()=>discardEpisodeDraft()});
   }
   // The queue is read-only: navigating or filtering never confirms an episode.
   const episodeOrder=(a,b)=>a.start_s-b.start_s||a.end_s-b.end_s||a.id.localeCompare(b.id);
@@ -444,6 +466,7 @@ const overviewWorkbench=(()=>{
     nav.innerHTML=`<div><strong>${x?`选中片段：${name(x.kind)} · ${statusName(x.status)} · ${afClock(x.start_s).replace(/^\d{4}-/,'')}–${afClock(x.end_s).replace(/^.* /,'')}`:'选择或新建片段'}</strong><span>${esc(label)} ${q.index>=0?`${q.index+1} / ${q.items.length}`:`${q.items.length} 段${x?' · 当前片段不在此筛选内':''}`} · 按开始时间排序</span></div><div>${link('上一段',q.before)}${link(x?'下一段':'开始复核',q.after)}${button('回看起点','episode-start',x?'':'disabled')}${button('回看末尾','episode-end',x?'':'disabled')}${button('编辑片段','episode-edit',x?'':'disabled')}${button('返回列表','episode-list')}</div>`;
   }
   async function locateEpisode(id,edge='start'){
+    if(id!==ui.episode&&hasUnsavedEpisode()&&!await resolveEpisodeLeave())return;
     if(!overviewReady||ui.id!==state.caseId)throw Error('请等待当前病例片段载入。');
     const q=episodeQueue(),x=q.all.find(x=>x.id===id);
     if(!x){if(episodeDrafts.has(episodeKey(id))){ui.episode=id;renderEpisodes();qs('#ovEpisodeEditor').scrollIntoView({block:'center'});return;}throw Error('片段已变化，请重新选择。');}
@@ -477,7 +500,7 @@ const overviewWorkbench=(()=>{
     if(episodeEditor?.key===key&&episodeEditor.version===version){syncAFDraft();return;}
     const missing=!x&&!draft?.isNew;x=x||draft.original;
     const fields=draft?.values||episodeFields(x),basis=draft?.basis||rhythmBasis(),stale=missing||basis.rhythm!==ui.rhythm.revision||basis.beats!==ui.revision||basis.identity!==rhythmBasis().identity;
-    editor.innerHTML=`<form id="ovEpisodeForm" data-stale="${stale}"><input type="hidden" name="start" value="${esc(fields.start)}"><input type="hidden" name="end" value="${esc(fields.end)}"><input type="hidden" name="status" value="${esc(fields.status)}"><div class="ov-af-editor-fields"><label>类型<select name="kind">${['AF','AFL'].map(k=>`<option value="${k}" ${fields.kind===k?'selected':''}>${name(k)}</option>`).join('')}</select></label>${['start','end'].map((k,i)=>`<label>${i?'终点':'起点'}<input name="${k}Clock" aria-label="${i?'终点':'起点'}记录时钟" value="${esc(fields[k]===''?'':afClock(Number(fields[k])))}" placeholder="日期 时间" autocomplete="off"></label>`).join('')}<output data-af-duration></output><output id="ovEpisodeDraftHint" role="status" style="grid-column:1/-1"></output></div><div class="ov-af-editor-actions">${button('设为起点','af-boundary-start')}${button('设为终点','af-boundary-end')}${button('回起点','af-boundary-home')}${button('回终点','af-boundary-tail')}${button('取消修改','episode-discard')}<input name="note" aria-label="片段备注" placeholder="备注" maxlength="1000" value="${esc(fields.note)}">${button('保存候选','af-save:pending')}${button('确认片段','af-save:confirmed','class="button primary"')}${button('排除','af-save:excluded',draft?.isNew?'hidden':'')}${button('删除','af-delete-current',draft?.isNew?'hidden':'')}${button('核对保存结果','af-reconcile','hidden')}</div><p class="ov-af-input-error" role="alert" hidden></p></form>`;
+    editor.innerHTML=`<form id="ovEpisodeForm" data-stale="${stale}"><input type="hidden" name="start" value="${esc(fields.start)}"><input type="hidden" name="end" value="${esc(fields.end)}"><input type="hidden" name="status" value="${esc(fields.status)}"><div class="ov-af-editor-fields"><label>类型<select name="kind">${['AF','AFL'].map(k=>`<option value="${k}" ${fields.kind===k?'selected':''}>${name(k)}</option>`).join('')}</select></label>${['start','end'].map((k,i)=>`<label>${i?'终点':'起点'}<input name="${k}Clock" aria-label="${i?'终点':'起点'}记录时钟" value="${esc(fields[k]===''?'':afClock(Number(fields[k])))}" placeholder="日期 时间" autocomplete="off"></label>`).join('')}<output data-af-duration></output><output id="ovEpisodeDraftHint" role="status" style="grid-column:1/-1"></output></div><div class="ov-af-editor-actions">${button('设为起点','af-boundary-start')}${button('设为终点','af-boundary-end')}${button('回起点','af-boundary-home')}${button('回终点','af-boundary-tail')}${button('取消修改','episode-discard')}<input name="note" aria-label="片段备注" placeholder="备注" maxlength="1000" value="${esc(fields.note)}">${button('保存候选','af-save:pending','class="button primary"')}${button('继续添加','af-add:'+fields.kind,draft?.isNew?'hidden':'')}${button('报告筛选','af-report')}${button('删除','af-delete-current',draft?.isNew?'hidden':'')}${button('核对保存结果','af-reconcile','hidden')}</div><p class="ov-af-input-error" role="alert" hidden></p></form>`;
     const form=qs('#ovEpisodeForm');episodeEditor={key,version,form,basis,original:draft?.original||copy(x),isNew:!!draft?.isNew};
     form.onsubmit=event=>event.preventDefault();
     form.oninput=event=>{
@@ -704,7 +727,7 @@ const overviewWorkbench=(()=>{
     if(key==='af-side'){document.querySelectorAll('.ov-af-side-panel').forEach(n=>n.hidden=n.dataset.afPanel!==arg);document.querySelectorAll('[data-ov^="af-side:"]').forEach(n=>n.setAttribute('aria-pressed',String(n.dataset.ov==='af-side:'+arg)));draw();return;}
     if(key==='af-save')return saveAFDraft(arg);
     if(key==='af-boundary-start'||key==='af-boundary-end'){
-      if(!qs('#ovEpisodeForm'))episodeForm('AF');
+      if(!qs('#ovEpisodeForm'))await episodeForm('AF');
       const at=Number.isFinite(ui.afCursor)?ui.afCursor:state.locatedTime?.caseId===state.caseId?state.locatedTime.time:state.waveform?.start_s;
       const fromMenu=!!element?.closest?.('#ovMenu');
       if(!Number.isFinite(at)||!fromMenu&&(at<(state.waveform?.start_s??0)||at>(state.waveform?.start_s??0)+(state.waveform?.duration_s??0)))throw Error('请先在当前波形中点击定位');
@@ -714,7 +737,8 @@ const overviewWorkbench=(()=>{
       const b=afDraftBounds(),at=key==='af-boundary-home'?b?.start:b?.end;if(!Number.isFinite(at))throw Error('请先设置该边界');
       await seek(Math.max(0,at-state.duration/3),true,Math.min(at,duration()-.005));return;
     }
-    if(key==='af-open'||key==='af-close'){if(ui.rhythmSaving)throw Error('请等待保存完成');afMode(key==='af-open');return}
+    if(key==='af-open'||key==='af-close'){if(ui.rhythmSaving)throw Error('请等待保存完成');if(key==='af-close'&&!await resolveEpisodeLeave())return;afMode(key==='af-open');return}
+    if(key==='af-report'){if(!await resolveEpisodeLeave())return;return clinicalUI.showAFCandidates(ui.episode);}
     if(key==='af-prev'||key==='af-next'){seek(ui.hour+(key==='af-next'?3600:-3600));return}
     if(key==='af-add'||key==='af-all')return episodeForm(arg||'AF',key==='af-all');
     if(key==='af-screen')return screenAF();
@@ -801,7 +825,7 @@ const overviewWorkbench=(()=>{
   }
   function bind(){
     qs('#ovEpisodeFilter').onchange=event=>run(()=>action('episode-filter:'+event.target.value));
-    window.addEventListener('beforeunload',event=>{rememberEpisodeForm();if(episodeDrafts.size){event.preventDefault();event.returnValue='';}});
+    window.addEventListener('beforeunload',event=>{if(hasUnsavedEpisode()){event.preventDefault();event.returnValue='';}});
     const ruler=document.createElement('div');ruler.id='ovRulerStatus';ruler.className='ov-ruler-status';ruler.hidden=true;qs('#waveformCard').prepend(ruler);
     document.addEventListener('click',event=>{const button=event.target.closest('[data-ov]');if(button){event.preventDefault();run(()=>action(button.dataset.ov,button))}},true);
     qs('#ovLog').onchange=event=>{ui.log=event.target.checked;drawHistogram()};qs('#ovScatterRange').onchange=event=>run(()=>action('bound:'+event.target.value));
@@ -932,5 +956,5 @@ const overviewWorkbench=(()=>{
       qs('#waveformCard').scrollIntoView({block:'center'});
     }
   }
-  return {isSaving:()=>!!ui.rhythmSaving,load,draw,waveformBasis,waveformFailed,openReportEpisode,invalidateAfterWrite,waveAction,closeMenu};
+  return {isSaving:()=>!!ui.rhythmSaving,hasUnsaved:hasUnsavedEpisode,resolveLeave:resolveEpisodeLeave,load,draw,waveformBasis,waveformFailed,openReportEpisode,invalidateAfterWrite,waveAction,closeMenu};
 })();

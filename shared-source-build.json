@@ -16,7 +16,7 @@
   },
   "clinical_acceptance": false,
   "core_contract": "ecg-core-1",
-  "core_version": "core-864ee781364de03e",
+  "core_version": "core-1fef53b14eafb0f4",
   "files": {
     "demo/static/js/demo-api.js": {
       "bytes": 72527,
@@ -54,9 +54,9 @@
       "sha256": "e3a7e351a95ac4f78c8dceedda5a21c135737d4aebb0485d1c4af442bb7b5ff1"
     },
     "ecg_core/clinical_analysis.py": {
-      "bytes": 29289,
+      "bytes": 29274,
       "component": "core",
-      "sha256": "12e2f7b8db70ab9e2687359a9b4d0feafcc8e04e7076dd031fc825573984f04a"
+      "sha256": "90ac76cd759ed346b5c2e6cc4a93dcb169e0c6ed267063d56a37548d0706da5b"
     },
     "ecg_core/clinical_query_cache.py": {
       "bytes": 6306,
@@ -199,9 +199,9 @@
       "sha256": "10fd59c6744673f69ac6a1eca1c5468115700714733ce6c26a3b3c5ef3c2dac7"
     },
     "scripts/build_static_demo.py": {
-      "bytes": 11699,
+      "bytes": 11704,
       "component": "build",
-      "sha256": "ba5045acf5de6872218e311d534931a9afd8d3b3d85d7b5fea5eea34a25f2393"
+      "sha256": "8356099a5f5235919e526b95231d67c6bae282926ade9b84d9c8e5f5098440d5"
     },
     "scripts/generate_synthetic_demo.py": {
       "bytes": 16740,
@@ -294,9 +294,9 @@
       "sha256": "c65249c41cc31bb2bb48d722bf49a4d61f6a5774c790ddd6d658a64332cc70d7"
     },
     "static/css/report-workspace.css": {
-      "bytes": 90837,
+      "bytes": 91356,
       "component": "ui",
-      "sha256": "a8fa24a5cb9bc2713469e55e0de05c8e67c1f2726bb0386686a9d25ba3548320"
+      "sha256": "99535b183201edc7c93498ee3ceb173c81dd80af3ac9f197b5b5abf327dc5b8b"
     },
     "static/css/review-candidates.css": {
       "bytes": 2856,
@@ -349,9 +349,9 @@
       "sha256": "1012ab83a16a362ac21e4f8c8e65da817f0744c9b5e0a2eb5365207978ded31e"
     },
     "static/help/af-afl.html": {
-      "bytes": 7249,
+      "bytes": 7646,
       "component": "ui",
-      "sha256": "c433b6514593177f9f20906d442e67831b18f31e6a53bd13897f26d1cc12500f"
+      "sha256": "c6b572a8e3688405a62a7382ddb943d30ca2c9bbff7f451ee7b38f1d03ac94fc"
     },
     "static/icon.svg": {
       "bytes": 304,
@@ -359,9 +359,9 @@
       "sha256": "e04d9eb149fc04433a0be582a3ead0e66736a890130d4b3aa5bb0912d1b13d2e"
     },
     "static/js/advanced-analysis.js": {
-      "bytes": 23860,
+      "bytes": 24185,
       "component": "ui",
-      "sha256": "4286102d5a5c0b0bf6b3e6a82da2d38e4a2105995a3818e87dd600c8df7d17ed"
+      "sha256": "b6254795c78f8867bc566c8b28049887e39511e52b104ea9c78abb9a2b33d686"
     },
     "static/js/af-coverage.js": {
       "bytes": 3973,
@@ -374,9 +374,9 @@
       "sha256": "fb20b4aa33e0cd2cc5fae8bf8a2a7968b22f8506cdc012ae507c465ea59da3ee"
     },
     "static/js/app.js": {
-      "bytes": 288267,
+      "bytes": 288824,
       "component": "ui",
-      "sha256": "40d71887132a4f92c78d1896a75976aa192d33d77a6d7e9bb41db888b42d255e"
+      "sha256": "cbde892c76563ad839eea38c9d3b662bc56b253c2d3c98287ed28277efc061ca"
     },
     "static/js/beat-editor-ui.js": {
       "bytes": 46326,
@@ -394,9 +394,9 @@
       "sha256": "47f32312b1d39e805259f2af1325231b9e8ab875295a27903f315cd16c51c770"
     },
     "static/js/clinical-analysis.js": {
-      "bytes": 23927,
+      "bytes": 23912,
       "component": "ui",
-      "sha256": "949edd0362d2e6dd96f2b66476e2893ae0615033debd47205d573c48e16c9854"
+      "sha256": "2e7a139f6f0a1facecb7e3ccab251ed01b91c9cf170884e24873f631bd683e21"
     },
     "static/js/clinical-review-tools.js": {
       "bytes": 11730,
@@ -404,9 +404,9 @@
       "sha256": "a6388fe03f33d7e58efdbf0a962794231b1d291d14940b6aedc91305edcd4330"
     },
     "static/js/clinical-ui.js": {
-      "bytes": 200682,
+      "bytes": 209351,
       "component": "ui",
-      "sha256": "0d88d04d4c03ce7ec3a264bd1e7a77f2e7b7873a6dfc61c5de2aa4c96470e6b9"
+      "sha256": "0aff5e1149a19d898aeb5cb5ec498d0dddfe66a63178fadf6ee53a126e6d3310"
     },
     "static/js/clinical-workflow.js": {
       "bytes": 15113,
@@ -434,9 +434,9 @@
       "sha256": "96e967936824426e35974d0495e1a65fc2d94d5ae6c7185ebab6659e4851bcb6"
     },
     "static/js/hrv-review-editor.js": {
-      "bytes": 28594,
+      "bytes": 28993,
       "component": "ui",
-      "sha256": "032e2736172c7d07375d59ce89093777cb65f7105f460a7c80a16dbdaaecd268"
+      "sha256": "b9c79a4bba3125aad1bfcdf5cbe719a4426cde25b5cd8b865090cba5156f775e"
     },
     "static/js/hrv-review-evidence.js": {
       "bytes": 11871,
@@ -474,9 +474,9 @@
       "sha256": "7026c9b3e01ed16b02f35f1b11939156ede296c06fdd9ff3ceae2de334d164b6"
     },
     "static/js/overview-workbench.js": {
-      "bytes": 123467,
+      "bytes": 125222,
       "component": "ui",
-      "sha256": "b6d0c64e97361023cbe02909181ccc2f2b9209a7149619ffd101cceb5a978a38"
+      "sha256": "5eb132538cbeaed21e6ab87b3163d2715ea12fcd870c7c7935f38e7635f6a7ae"
     },
     "static/js/read-requests.js": {
       "bytes": 2715,
@@ -499,9 +499,9 @@
       "sha256": "16dbf664a2577a05cb564dce14fdbf6bee7b3dce55dcdf8797d8e4e92db7044c"
     },
     "static/js/report-narrative-templates.js": {
-      "bytes": 12194,
+      "bytes": 12813,
       "component": "ui",
-      "sha256": "b19ff1b43e923ac4d96529fa8c071f6cfa3b96c3174667446e56e0c07d469e1e"
+      "sha256": "11647a6a5f4920650b0a1ecf67316048ce515c7809ff72c55f7cc2c0edffbec7"
     },
     "static/js/report-paper.js": {
       "bytes": 17355,
@@ -509,9 +509,9 @@
       "sha256": "ca4fd8abf3e3000e2307eb7dba2611f18f5bec79979d34e0b351682fdf5c4084"
     },
     "static/js/report-range-editor.js": {
-      "bytes": 13737,
+      "bytes": 17224,
       "component": "ui",
-      "sha256": "027dd98c54043928d395251b4d7bb402e59e0476e7d8061bbc7bbc3c95e1f142"
+      "sha256": "47daf66ff4fa1b89ea785daf72418665a54a2fe8528999ab4dc2dbb051f805b3"
     },
     "static/js/report-sections.js": {
       "bytes": 14092,
@@ -519,9 +519,9 @@
       "sha256": "8de3e33f80a44bf2f8e62af1d8c3b89a3641b1a994d075de2db2b2feaf01221f"
     },
     "static/js/report-strip-editor.js": {
-      "bytes": 10847,
+      "bytes": 11674,
       "component": "ui",
-      "sha256": "13732e2df5b93c357f7ddfdbb92516483d4bd1227336a3d1213bb74902c8d44b"
+      "sha256": "db9862654a8952ef7450940278d693c9e6db732fa18082b490380c1c3ffcc4fe"
     },
     "static/js/report-workspace.js": {
       "bytes": 60163,
@@ -610,7 +610,7 @@
     }
   },
   "schema": 1,
-  "source_fingerprint": "3dc33586eb890d05db82d0d252217f4acbf44719935bcbe5f732b39e2a8a44f5",
+  "source_fingerprint": "d63d9d11756ac6fd9b4bc0fee6924b7acbad3f2363a4a4146086d5db2b47d04a",
   "source_revision": null,
-  "ui_version": "ui-60620293b59f9a3d"
+  "ui_version": "ui-f2df70a24751a215"
 }

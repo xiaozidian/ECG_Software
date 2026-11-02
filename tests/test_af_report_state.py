@@ -112,7 +112,7 @@ def test_report_selection_lifecycle_rejects_stale_evidence(synthetic_app, synthe
     rhythm(document=dict(episodes=[episode]));ready()
     draft, pending = select_current()
     denied=save(draft, 'reviewed')
-    assert denied.status_code == 400 and '片段诊断确认' in denied.json['error']
+    assert denied.status_code == 400 and '报告候选区确认本段' in denied.json['error']
     assert client.get(base+'/report.pdf').status_code == 200 # A clearly marked draft is allowed.
     episode['status']='confirmed';rhythm(document=dict(episodes=[episode]));ready()
     assert client.get(base+'/report.pdf').status_code in (400,409) # Old pending selection is stale.

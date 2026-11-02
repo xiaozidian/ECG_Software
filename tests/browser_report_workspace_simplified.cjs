@@ -35,6 +35,7 @@ const wave={start_s:1,duration_s:7,sample_rate_hz:200,stride:10,beats:[],leads:O
 const entry={...basis,event_id:'math-first',caption:'原数学图注',waveform:wave,strip:{start_s:1,end_s:8,duration_s:7,visible_beat_count:7,leads:['II','V1','V5']}};
 window.calls=[];window.downloads=[];window.renders=[];window.prints=[];window.termMounts=0;window.termApiCalls=0;window.advancedMounts=0;window.usagesDirty=0;window.heldReads=[];window.heldWaves=[];window.heldReports=[];window.heldBlobs=[];window.holdEvidence=false;window.holdWave=false;window.holdReport=false;window.holdBlob=false;window.changeFinalBasis=false;let basisReads=0;
 const ECGReportPaper={render(model,entries){renders.push({model:clone(model),entries:clone(entries)});return '<article class="rp-page">数学 A4 输出</article>';},number(){}};
+const resolveWorkstationLeave=async()=>true;
 const run=fn=>Promise.resolve().then(fn),toast=()=>{},updateConclusionCount=()=>{},renderRhythmReturn=()=>{},renderRangeDraftNotice=()=>{},refreshReport=async()=>{};
 ${preflight}
 const clinicalWorkflow={writable,readiness:()=>true,renderPreflight,refresh:async()=>{}};

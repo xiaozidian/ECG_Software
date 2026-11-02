@@ -128,10 +128,14 @@ globalThis.ECGHRVEditor=(()=>{
     q('.hrv-edit-table-scroll')?.addEventListener('scroll',remember,{passive:true});controls();const ready=reload();
     const controller={ready,reload,select,preview:makePreview,addExclusion,restore,apply,cancel,confirm,locate:locateSelected,setDomain(value){if(!['time','frequency'].includes(value))return;requireActive();domain=value;renderDetail();controls();remember();},current:()=>selected,domain:()=>domain,state:()=>copy({model,preview,busy,failed,error,rangeDirty}),active,pending,pendingDetails:()=>({busy,preview:!!preview,rangeDirty,statementDirty:!!els.ack.checked||!!els.note.value.trim()}),discard,destroy(){disposed=true;++epoch;++waveEpoch;editors.delete(controller);}};editors.add(controller);return controller;
   }
+  async function resolveLeave(){
+    const owners=[...editors].filter(c=>c.active()&&c.pending());if(!owners.length)return true;
+    return ECGUnsavedNavigation.resolve({title:'HRV 修改尚未保存',detail:'继续在此处复核并保存，或放弃本次未保存修改。',isCurrent:()=>owners.every(c=>c.active()),discard:async()=>{for(const c of owners)await c.discard();}});
+  }
   function allowLeave(){const pending=[...editors].filter(c=>c.active()&&c.pending());if(!pending.length)return true;if(pending.some(c=>c.pendingDetails().busy)){if(typeof globalThis.toast==='function')globalThis.toast('HRV 正在读取或保存，请等待完成后再离开。','error');return false;}if(typeof globalThis.confirm!=='function'||!globalThis.confirm('HRV 有尚未保存的区间修改。取消这些修改并离开？'))return false;pending.forEach(c=>c.discard().catch(()=>{}));return true;}
   globalThis.addEventListener?.('beforeunload',event=>{if([...editors].some(c=>c.active()&&c.pending())){event.preventDefault();event.returnValue='';}});
   const pending=()=>[...editors].some(c=>c.active()&&c.pending());
   function assertApplied(){if(pending())throw Error('HRV 有未保存范围、预览或复核声明，请先保存或取消后继续报告操作');}
-  return {mount,allowLeave,pending,assertApplied,validateScope,sameScope,sameSource,rangeInput,compare,blockTable,availability,format:n};
+  return {mount,allowLeave,resolveLeave,pending,assertApplied,validateScope,sameScope,sameSource,rangeInput,compare,blockTable,availability,format:n};
 })();
 if(typeof module!=='undefined'&&module.exports)module.exports=globalThis.ECGHRVEditor;

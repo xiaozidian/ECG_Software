@@ -382,7 +382,7 @@ def validate_report(index,composition,review,approving=False):
         # RR/NN is an output filter, not a destructive change to curated picks.
         # All retained picks still undergo the normal staleness/review checks.
         if approving and used and e['category']=='AF' and e.get('rhythm_status')!='confirmed':
-            raise ValueError('所选房颤／房扑片段尚未确认；请在房颤／房扑页完成片段诊断确认，或从报告中移除该图条。')
+            raise ValueError('所选房颤／房扑片段尚未确认；请在报告候选区确认本段，或从报告中移除该图条。')
         if approving and used:
             if e.get('evidence_only'):
                 if not evidence_confirmed(index,e,entry):
