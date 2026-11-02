@@ -40,5 +40,10 @@
   "tests/test_windows_deidentified_package.py",
   "tests/test_report_evidence_review.py",
   "tests/test_overview_identity.py",
-  "tests/test_overview_closed_lasso.py"
+  "tests/test_overview_closed_lasso.py",
+  "tests/test_af_boundary_clock.py",
+  "tests/test_af_queue.py",
+  "tests/test_af_report_linkage.py",
+  "tests/test_af_report_state.py",
+  "tests/test_local_static_passthrough.py"
 ]

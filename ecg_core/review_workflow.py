@@ -46,7 +46,10 @@ class ReviewWorkflowMixin:
         elif action.startswith("beat_template."):
             affected = STEPS
         elif action.startswith("annotation.rhythm"):
-            affected = STEPS
+            # Episode decisions do not modify QRS types or ST markings. Their
+            # own status guards AF report use; the new review revision below
+            # still refreshes NN-derived evidence and invalidates report approval.
+            affected = ()
         elif action.startswith("annotation."):
             affected = ("stt",)
         elif action == "patient.update":

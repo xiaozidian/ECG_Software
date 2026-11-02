@@ -980,6 +980,9 @@ async def verify(args, receipt):
                             from verify_report_rr_browser import verify_report_rr
                             rr_review = await verify_report_rr(page, screenshots)
                             record(receipt, "rr-candidate-selection-and-final-approval", rr_review)
+                            from verify_windows_af_editor import verify_af_editor
+                            af_editor = await verify_af_editor(page, screenshots)
+                            record(receipt, "native-af-afl-single-screen-editor", af_editor)
                             await fault_checks(page, receipt, selector, sample)
                             annotation_id = await save_math_work(page, receipt)
                             receipt.setdefault("not_run", []).append({"name":"PDF opening/export/download", "reason":"Explicit request for this packaging task", "status":"not_run"})

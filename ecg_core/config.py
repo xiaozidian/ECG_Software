@@ -8,7 +8,7 @@ from pathlib import Path
 from .core_contract import SAMPLE_RATE, CHANNEL_COUNT
 
 APP_NAME = "CardioInsight Holter 心电分析工作站"
-APP_VERSION = "0.12.22-workstation.20261102"
+APP_VERSION = "0.12.23-af-editor.20261102"
 RAW_FOLDER_NAME = "10个病人的心电数据"
 
 

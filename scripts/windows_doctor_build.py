@@ -23,6 +23,7 @@ import tempfile
 import zipfile
 
 ASSET_FILES = (
+    'static/help/af-afl.html',
     'shared-source-build.json',
     'static/js/report-evidence-ui.js',
     'static/css/advanced-analysis.css',

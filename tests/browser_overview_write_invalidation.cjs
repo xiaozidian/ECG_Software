@@ -17,7 +17,14 @@ function fixture(){
   geometries:new WeakMap(),document:{querySelectorAll:()=>[qs('canvas')]},
   resetCoverage(message){ctx.coverage=null;ctx.coverageMessage=message;},renderCoverage(){},renderEpisodes(){ctx.renders++;},draw(){},hour:()=>0,
   updateZoomControls(){},renderWaveform(){},renderVisibleEvents(){},renderAnnotations(){},renderOverview(){},syncHourScatter(){},
-  waveformRequestLeads:()=>['II'],ECGVoltage:{snapshot:()=>null},clinicalUI:{hasRhythmReturn:()=>false},
+  waveformRequestLeads:()=>['II'],ECGVoltage:{snapshot:()=>null},clinicalUI:{hasRhythmReturn:()=>false,
+    async refreshCurrentCaseEvidence(id,token,current,data){
+      if(id!==state.caseId||token!==state.caseRequestId||!current())return false;
+      // This fixture owns the companion case header. Keep its source identity
+      // paired with the newly read overview, as the production receiver does.
+      state.caseData={...state.caseData,case_id:id,clinical_identity:C.identity(data)};
+      return current();
+    }},
   clinicalWorkflow:{refresh:async()=>{},receive(){}},toast(){},
   ECGReadRequests:{clear(){},read:(_scope,_path,read)=>read()},
   fetch:async(raw,options)=>{

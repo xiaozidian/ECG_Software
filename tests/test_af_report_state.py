@@ -126,9 +126,12 @@ def test_report_selection_lifecycle_rejects_stale_evidence(synthetic_app, synthe
     rhythm(document=dict(episodes=[] if change=='delete' else [changed]))
     invalid=report()
     assert invalid['status']=='draft'
-    assert invalid['composition']['selected_events']==approved.json['composition']['selected_events']
+    retired=change in ('delete','excluded')
+    assert invalid['composition']['selected_events']==([] if retired else approved.json['composition']['selected_events'])
     assert save(approved.json, 'reviewed').status_code == 409
-    assert client.get(base+'/report.pdf').status_code in (400,409)
+    # Explicitly retired AF/AFL candidates withdraw their report figures too.
+    # Other edits keep old figures visible until their new evidence is reviewed.
+    assert client.get(base+'/report.pdf').status_code in ((200,) if retired else (400,409))
     if change in ('delete','excluded'):assert events()['total']==0
     else:
         current=events()['items'][0]

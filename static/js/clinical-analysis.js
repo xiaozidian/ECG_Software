@@ -76,6 +76,8 @@
       if(cat==='AF'){item.end_s=(end+1)/200;item.rhythm_status=d.status||'pending';} // Keep episode review separate from workflow approval.
     });
     events.filter(e=>e.category==='AF').forEach(e=>{const annotation=e.event_id.startsWith('annotation:')?e.event_id.slice(11):null;e.rhythm_episode_id=annotation===null?'beat-'+e.start_sample:annotation.startsWith('af:')?annotation.slice(3):'source-'+annotation;});
+    // Selected rhythm strips depend on their own episode, not other AF/AFL edits.
+    events.filter(e=>e.category==='AF').forEach(e=>{e.basis_version=bv+'-'+fingerprint(encode([e.event_id,e.start_sample,e.end_sample,e.end_s,e.subtype,e.rhythm_status,e.label,e.lead||'',e.note||'']))+'-episode-local-v1-episode-status-v2-inclusive-end-v1';});
     events.sort((a,b)=>a.start_sample-b.start_sample||(a.event_id<b.event_id?-1:1));
     return {quality_control:{artifact_count:rows.concat(markers).filter(r=>r.class_code==='X').length,artifact_samples:rows.concat(markers).filter(r=>r.class_code==='X').map(r=>r.sample_index),role:'quality_control_only'},events,rows:rows.concat(markers),templates,basis_versions:basis,data_version:bv+'-'+av+'-rr-quality-v3-'+periodicVersion+'-af-end-v1-status-v2-no-artifact-v1',beat_version:bv,duration_s:feed.duration};
   }

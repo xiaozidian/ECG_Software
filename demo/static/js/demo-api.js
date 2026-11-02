@@ -75,7 +75,7 @@
     let affected;
     if(action.startsWith("beat_override.")||action==="patient.update"||action==="analysis.basis_changed")affected=reviewSteps;
     else if(action.startsWith("beat_template."))affected=reviewSteps;
-    else if(action.startsWith("annotation.rhythm"))affected=reviewSteps;
+    else if(action.startsWith("annotation.rhythm"))affected=[];
     else if(action.startsWith("annotation."))affected=["stt","events"];
     else if(action==="event.review")affected=["events"];
     else return;
@@ -87,6 +87,16 @@
       (report.composition.diagnosis_blocks||[]).forEach(block=>{if(block.manual)Object.assign(block,{needs_review:true,acknowledged:false})});
     }
     if(report){report.status="draft";report.reviewed_by="";report.version++;report.updated_at=now();}
+  }
+  function removeRetiredRhythmPicks(before,after,aliases){
+    const current=new Map(after.episodes.map(x=>[x.id,x])),retired=new Set(before.episodes.filter(x=>!current.has(x.id)).map(x=>x.id));
+    current.forEach(x=>{if(x.status==='excluded')retired.add(x.id)});
+    const withdrawn=new Set();retired.forEach(id=>{withdrawn.add('annotation:af:'+id);if(id.startsWith('source-'))withdrawn.add('annotation:'+id.slice(7));(aliases[id]||[]).forEach(key=>withdrawn.add(key));});
+    const report=saved.reports[caseId],composition=report?.composition;if(!composition)return [];
+    const selected=composition.selected_events||[],removed=selected.filter(x=>withdrawn.has(x.event_id)).map(x=>x.event_id);if(!removed.length)return [];
+    composition.selected_events=selected.filter(x=>!withdrawn.has(x.event_id));delete composition.category_reviews?.AF;
+    composition.diagnosis_blocks=(composition.diagnosis_blocks||[]).filter(x=>!String(x.key||'').startsWith('AF:')||x.manual);
+    return removed;
   }
   function confirmWorkflow(payload){
     const current=workflow();
@@ -338,6 +348,7 @@
     if(action==="overview")return response({revision:editorValue().revision,duration_s:duration,columns:['sample_index','rr_ms','class_code'],rows:editedFeed().beats.map(r=>[r.sample_index,r.rr_ms,r.class_code]),estimated_beats:sourceCase.summary.total_beats,settings:editorValue().document.settings});
     if(action==="rhythm-review"){
       const previous=copy(saved);
+      let removed=[];
       try{
         saved={...savedDefault,...JSON.parse(localStorage.getItem(STORE_KEY)||"{}")};
         const initial=ECGOverviewEngine.initialEpisodes(editedFeed().beats,annotationList(),duration);
@@ -345,18 +356,22 @@
         if(method==='PUT'){
           const p=requestBody(options),basis=demoReviewScope();
           if(p.confirmed!==true)throw Error('请核对修改并明确确认保存');
+          if(p.request_id!==undefined&&p.request_id!==null&&(typeof p.request_id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(p.request_id)))throw Error('保存请求编号无效');
           if(!Number.isSafeInteger(p.revision)||p.revision<0||!Number.isSafeInteger(p.beat_revision)||p.beat_revision<0)throw Error('缺少有效的复核或心搏版本');
           for(const key of ['analysis_revision','beat_revision'])if(p[key]!==undefined&&(!Number.isSafeInteger(p[key])||p[key]<0))throw Error('病例版本必须为非负整数');
           if(Object.keys(basis).some(key=>p[key]!==undefined&&p[key]!==basis[key])||p.revision!==value.revision||p.beat_revision!==editorValue().revision)return failure('病例依据已变化，未保存片段；请重新载入后核对',409);
+          const before=copy(value.document),aliases={};clinicalBaseIndex().events.filter(e=>e.category==='AF').forEach(e=>{(aliases[e.rhythm_episode_id]||=[]).push(e.event_id)});
           if(['undo','redo'].includes(p.operation)){if(!value[p.operation].length)throw Error('没有可撤销/重做的操作');value[p.operation==='undo'?'redo':'undo'].push(value.document);value.document=value[p.operation].pop()}
           else if(!p.operation||p.operation==='save'){const document=ECGOverviewEngine.validateDocument(p.document,duration);value.undo=(value.undo.concat([value.document])).slice(-20);value.redo=[];value.document=document}else throw Error('不支持的复核操作');
           value.revision++;value.updated_at=now();saved.rhythms[caseId]=value;
+          value.last_operation=p.request_id?{request_id:p.request_id,operation:p.operation||'save',revision:value.revision}:{};
           invalidateWorkflow('annotation.rhythm_review');
+          removed=removeRetiredRhythmPicks(before,value.document,aliases);
           saved.audit.unshift({created_at:now(),actor:'pages-demo',case_id:caseId,action:'annotation.rhythm_review',detail:'r'+value.revision});saved.audit=saved.audit.slice(0,300);
           persist();
         }
         else if(method!=='GET')return failure('节律复核接口方法不受支持',405);
-        return response({revision:value.revision,document:value.document,can_undo:!!value.undo.length,can_redo:!!value.redo.length,updated_at:value.updated_at,...demoReviewScope()});
+        return response({revision:value.revision,document:value.document,can_undo:!!value.undo.length,can_redo:!!value.redo.length,updated_at:value.updated_at,last_operation:value.last_operation||{},removed_report_events:removed,...demoReviewScope()});
       }catch(error){saved=previous;return failure(error.message)}
     }
     if(action==='waveform-density'){

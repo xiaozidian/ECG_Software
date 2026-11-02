@@ -8,6 +8,8 @@ const overviewWorkbench=(()=>{
   let episodeFilter='all',episodePage=0,episodeNavigation=0,episodeEditor=null;
   let linked=null,cancelGesture=()=>false,menuScope=null;
   const episodeDrafts=new Map();
+  const rhythmPending=new Map();
+  Object.defineProperty(ui,'rhythmUncertain',{get:()=>rhythmPending.get(state.caseId)||null,set:value=>{if(value)rhythmPending.set(value.id,value);else rhythmPending.delete(state.caseId);}});
   const request=(path,options)=>api(`/api/cases/${state.caseId}/${path}`,options);
   const button=(label,action,attrs='')=>`<button type="button" data-ov="${action}" ${attrs}>${label}</button>`;
   const duration=()=>state.caseData?.technical.duration_seconds_raw||1;
@@ -43,7 +45,7 @@ const overviewWorkbench=(()=>{
     qs('#scatterCanvas').dataset.ovPlot='scatter';qs('#scatterCanvas').setAttribute('aria-label','Lorenz 相邻 RR 散点图；拖动框选，右键或 Shift+F10 编辑选中心搏');
     const metrics=document.createElement('div');metrics.id='ovBeatMetrics';metrics.className='ov-beat-metrics';metrics.tabIndex=0;metrics.setAttribute('role','list');metrics.setAttribute('aria-label','相邻心搏间的心率 bpm 与 RR ms');metrics.title='心率和 RR 位于对应间期中点；密集时分行显示，上下键可滚动';metrics.innerHTML='<div class="ov-beat-metrics-list"></div>';metrics.addEventListener('keydown',event=>{if(['ArrowUp','ArrowDown'].includes(event.key)){event.preventDefault();event.stopPropagation();metrics.scrollTop+=(event.key==='ArrowUp'?-1:1)*24;}});qs('#waveformScroller').before(metrics);
     const navigator=document.createElement('details');navigator.className='ov-navigator';navigator.open=innerWidth<=1000||innerHeight>780;navigator.innerHTML='<summary><strong>连续波形导航 · II</strong><output id="ovNavigatorTime"></output></summary><canvas id="ovNavigator" height="60" tabindex="0" aria-label="当前窗口前后连续波形导航；点击定位，左右键移动"></canvas>';navigator.addEventListener('toggle',()=>{if(navigator.open)run(navigatorWave)});qs('#waveformCard').after(navigator);
-    const af=document.createElement('section');af.id='ovAF';af.hidden=true;af.innerHTML=`<header class="ov-af-heading"><div><h2>房颤 / 房扑编辑与分析</h2><p>RR 散点定位 → 原始波形核对 → 医生确认片段</p></div><div>${button('返回总览','af-close')}${button('重分析 RR 候选','af-screen')}${button('撤销','af-undo')}${button('重做','af-redo')}</div></header>${lane('ovAFFull','全程 RR 散点图','rr')}<div class="ov-af-grid"><aside><section class="ov-af-lorenz"><h3>相邻 RR 散点 · 选中时段</h3><canvas id="ovAFLorenz" height="230" tabindex="0" data-ov-plot="scatter" aria-label="房颤时段 Lorenz 散点图"></canvas></section><section class="ov-episodes"><header><h3>房颤 / 房扑片段</h3>${button('添加片段','af-add')}</header><output id="ovAFSummary"></output><div class="ov-episode-table"><table><thead><tr><th>开始 / 持续</th><th>类型</th><th>状态</th></tr></thead><tbody id="ovEpisodeRows"></tbody></table></div></section></aside><div><div class="ov-af-hour">${button('前一小时','af-prev')}<output id="ovAFHour"></output>${button('后一小时','af-next')}</div>${[0,1,2,3].map(i=>lane('ovQuarter'+i,'15 分钟 RR · '+(i+1),'rr')).join('')}<div id="ovEpisodeEditor"></div></div></div><div id="ovAFWaveHost"></div><p class="ov-method">RR 自动筛查只提示不规则候选，未识别 P 波，不能区分所有早搏、伪差或房扑；确认后才计入医生确认负荷。原始 DATA / EBI 保持只读。</p>`;grid.after(af);
+    const af=document.createElement('section');af.id='ovAF';af.hidden=true;af.innerHTML=`<header class="ov-af-heading"><div><h2>房颤 / 房扑编辑与分析</h2></div><div>${button('新建房颤','af-add:AF')}${button('新建房扑','af-add:AFL')}${button('帮助','af-help')}${button('返回总览','af-close')}${button('重分析 RR 候选','af-screen')}${button('撤销','af-undo')}${button('重做','af-redo')}</div></header>${lane('ovAFFull','全程 RR 散点图','rr')}<div class="ov-af-grid"><aside><section class="ov-af-lorenz"><h3>相邻 RR 散点 · 选中时段</h3><canvas id="ovAFLorenz" height="230" tabindex="0" data-ov-plot="scatter" aria-label="房颤时段 Lorenz 散点图"></canvas></section><section class="ov-episodes"><header><h3>房颤 / 房扑片段</h3>${button('添加片段','af-add')}</header><output id="ovAFSummary"></output><div class="ov-episode-table"><table><thead><tr><th>开始 / 持续</th><th>类型</th><th>状态</th></tr></thead><tbody id="ovEpisodeRows"></tbody></table></div></section></aside><div><div class="ov-af-hour">${button('前一小时','af-prev')}<output id="ovAFHour"></output>${button('后一小时','af-next')}</div>${[0,1,2,3].map(i=>lane('ovQuarter'+i,'15 分钟 RR · '+(i+1),'rr')).join('')}<div id="ovEpisodeEditor"></div></div></div><div id="ovAFWaveHost"></div><p class="ov-method">RR 自动筛查只提示不规则候选，未识别 P 波，不能区分所有早搏、伪差或房扑；确认后才计入医生确认负荷。原始 DATA / EBI 保持只读。</p>`;grid.after(af);
     const menu=document.createElement('div');menu.id='ovMenu';menu.className='ov-menu';menu.hidden=true;menu.setAttribute('popover','manual');menu.setAttribute('role','menu');document.body.append(menu);
     const dialog=document.createElement('dialog');dialog.id='ovDialog';dialog.className='ov-dialog';document.body.append(dialog);
     const coverageHost=document.createElement('section');coverageHost.id='ovAFCoverage';coverageHost.className='ov-af-coverage';coverageHost.setAttribute('aria-label','RR 筛查覆盖检查');af.firstElementChild.after(coverageHost);
@@ -77,6 +79,13 @@ const overviewWorkbench=(()=>{
       if(evidenceTabs){const disclosure=document.createElement('details');disclosure.className='ov-window-evidence';disclosure.innerHTML='<summary>当前窗口 / 人工标注</summary>';disclosure.append(evidenceTabs);plot.append(disclosure);}
       page.classList.add('ov-hospital-columns');draw();linked?.renderMini();
     });
+    const aside=qs('#ovAF .ov-af-grid>aside'),tabs=document.createElement('nav');tabs.className='ov-af-tabs';
+    tabs.innerHTML=['episodes','scatter','coverage'].map((k,i)=>button(['片段','散点','筛查'][i],'af-side:'+k,`aria-pressed="${i===0}"`)).join('');aside.prepend(tabs);
+    const panels={};for(const k of ['episodes','scatter','coverage']){const panel=document.createElement('section');panel.className='ov-af-side-panel';panel.dataset.afPanel=k;panel.hidden=k!=='episodes';aside.append(panel);panels[k]=panel;}
+    panels.episodes.append(qs('#ovAF .ov-episodes'));panels.scatter.append(qs('#ovAF .ov-af-lorenz'));
+    panels.coverage.append(coverageHost,gapNav,evidence);
+    qs('#ovAF .ov-method')?.remove();
+    const surface=qs('#waveformCanvas'),overlay=document.createElementNS('http://www.w3.org/2000/svg','svg');overlay.id='ovAFBoundaryOverlay';overlay.setAttribute('aria-label','片段边界');surface.parentElement.style.position='relative';surface.after(overlay);
     renderCoverage();bind();
   }
   async function openReportEpisode(episodeId,basis,id,caseToken){
@@ -122,7 +131,7 @@ const overviewWorkbench=(()=>{
       globalThis.ecgOverviewLinked?.attach({caseId:id,caseToken,...ui.identity,beatRevision:ui.revision},ui.rows);
       // A cached waveform may have painted before the overview basis was confirmed.
       renderWaveform();
-      coverageMessage='尚未检查覆盖；没有已保存片段不代表没有房颤。';renderCoverage();
+      coverageMessage='尚未检查覆盖';renderCoverage();
       qs('#ovStatus').textContent=`${fmtNumber(ui.rows.length)} 条逐搏记录 · 修订 r${data.revision}`;draw();renderEpisodes();
     }catch(error){if(token===ui.loadToken&&id===state.caseId&&caseToken===state.caseRequestId){invalidateEvidence('未取得一致的病例依据，请重试载入。');qs('#ovStatus').innerHTML=`${esc(error.message)} · ${button('重试载入','reload')}`;}throw error}
   }
@@ -264,8 +273,8 @@ const overviewWorkbench=(()=>{
   }
   function seek(time,keepRange=false,locatedTime=time,preserveWindow=false){
     if(coverage&&!preserveWindow){coverage.focus=-1;coverage.navigation++;renderWindowEvidence();}
-    if(!keepRange)ui.range=null;
-    state.locatedTime={caseId:state.caseId,time:Number(locatedTime)||0};
+    if(!keepRange&&!ui.af){ui.range=null;ui.rangeExplicit=false;}
+    state.locatedTime={caseId:state.caseId,time:Number(locatedTime)||0};if(ui.af)ui.afCursor=state.locatedTime.time;
     state.start=E.clamp(Number(time)||0,0,Math.max(0,duration()-state.duration));state.editStart=state.start;ui.hour=hour();draw();return run(()=>loadWaveform());
   }
   function timeAt(event,canvas){const g=geometries.get(canvas),r=canvas.getBoundingClientRect();return g?E.clamp(g.start+(event.clientX-r.left-g.l)/g.w*(g.end-g.start),g.start,g.end):state.start}
@@ -277,12 +286,12 @@ const overviewWorkbench=(()=>{
     if(!ui.rows.length||!overviewReady||ui.id!==state.caseId||ui.caseToken!==state.caseRequestId)return;event?.preventDefault?.();const canvas=qs('#'+(canvasId||'ovFullRR')),rect=canvas.getBoundingClientRect(),x=event?.clientX??rect.left+50,y=event?.clientY??rect.top+20;
     menuScope={caseId:state.caseId,caseToken:state.caseRequestId,page:state.currentPage,identity:ui.identity,loadToken:ui.loadToken};
     // Only the full-record RR surfaces own AF/AFL episode commands.
-    if(kind==='rr'&&!['ovFullRR','ovAFFull'].includes(canvas.id))kind='hr';
+    if(kind==='rr'&&!['ovFullRR','ovAFFull'].includes(canvas.id)&&!ui.af)kind='hr';
     closeBeatRelabelMenu();globalThis.ecgRhythmRangeEditor?.closeMenu();globalThis.ECGOccurrenceCard?.closeMenu();
-    if(kind!=='scatter'&&event?.clientX!==undefined){ui.contextTime=timeAt(event,canvas);if(!ui.range){ui.range=[ui.contextTime,Math.min(duration(),ui.contextTime+state.duration)];draw()}}else ui.contextTime=span()[0];
-    if(kind==='rr')ui.episode=ui.rhythm?.document.episodes.find(x=>x.start_s<=ui.contextTime&&x.end_s>ui.contextTime)?.id||null;
+    if(kind!=='scatter'&&event?.clientX!==undefined){ui.contextTime=timeAt(event,canvas);if(ui.af)ui.afCursor=ui.contextTime;if(!ui.range){ui.range=[ui.contextTime,Math.min(duration(),ui.contextTime+state.duration)];draw()}}else ui.contextTime=span()[0];
+    if(kind==='rr'&&!ui.af)ui.episode=ui.rhythm?.document.episodes.find(x=>x.start_s<=ui.contextTime&&x.end_s>ui.contextTime)?.id||null;
     const codes=['N','S','V','X','A','C','P','O','OTHER'],types=action=>codes.map(c=>button(`${c} · ${ECGBeatEngine.types[c].name}`,action+':'+c)).join('');let html='';
-    if(kind==='rr')html=button('添加房颤段','af-add:AF')+button('添加房扑段','af-add:AFL')+button('删除当前房颤 / 房扑','af-delete-current',ui.episode?'':'disabled')+button('移除选区内的房颤 / 房扑','af-cut')+button('移除所有房颤 / 房扑段','af-clear')+button('标记为全程房颤','af-all:AF')+button('标记为全程房扑','af-all:AFL')+button('重分析房颤（全程 RR 候选）','af-screen')+button('重分析选择区段房颤','af-screen-range')+button('设置选项 / 筛查方法','af-settings')+button('进入房颤编辑与分析','af-open');
+    if(kind==='rr')html=(ui.af?button('设为起点','af-boundary-start')+button('设为终点','af-boundary-end'):'')+button('添加房颤段','af-add:AF')+button('添加房扑段','af-add:AFL')+button('删除当前房颤 / 房扑','af-delete-current',ui.episode?'':'disabled')+button('移除选区内的房颤 / 房扑','af-cut')+button('移除所有房颤 / 房扑段','af-clear')+button('标记为全程房颤','af-all:AF')+button('标记为全程房扑','af-all:AFL')+button('重分析房颤（全程 RR 候选）','af-screen')+button('重分析选择区段房颤','af-screen-range')+button('设置选项 / 筛查方法','af-settings')+button('进入房颤编辑与分析','af-open');
     if(kind==='scatter')html=group('修改心拍',types('beat'))+button('排除房颤 / 房扑','af-exclude-scatter')+button('手动批量添加 QRS 波','edit:insert')+button('自动向前插入候选','edit:detect-before')+button('自动向后插入候选','edit:detect-after')+group('修改前一心搏',types('previous'))+group('修改后一心搏',types('next'))+group('散点图类型',[['n','N 散点'],['s','S 散点'],['v','V 散点'],['hour','小时散点'],['nn','N–N 散点'],['rr','R–R 散点']].map(([k,v])=>button(v,'mode:'+k)).join(''))+group('框选模式',button('矩形框选','selection:box')+button('自由圈选','selection:lasso')+button('单点定位','selection:point'))+group('显示范围',button('自动全量','bound:auto')+[2000,3000,5000].map(n=>button('0–'+n+' ms','bound:'+n)).join(''))+group('散点大小',[1,1.4,2.4,3.4].map(n=>button(n+' px','size:'+n)).join(''))+button((ui.guides?'隐藏':'显示')+'辅助线','guides');
     if(kind==='hr')html=button('插入图条','strip')+button('插入缩略图条','strip-short')+group('即时打印图条',button('三导联图条','print:3')+button('十二导联图条','print:12'))+button('插入心搏','edit:insert')+button('选择起始位置','range-anchor')+button('删除前面区段的标记','delete-before')+button('删除后面区段的标记','delete-after')+button('测量尺','ruler:measure')+button('分规尺','ruler:divider')+button('平行尺','ruler:parallel')+button('跳转到时间','jump')+button('转到诊断图','diagnostic')+button('转到全览图','af-close')+button((ui.showEvents?'隐藏':'显示')+'患者事件','events')+button('设为最快心率图条','bookmark:fastest')+button('设为最慢心率图条','bookmark:slowest')+button('设为最快窦性心率图条','bookmark:fastest_nn')+button('设为最慢窦性心率图条','bookmark:slowest_nn')+button('重分析房早','pac-screen')+button('设置选项','edit:settings');
     const menu=qs('#ovMenu');menu.innerHTML=`<header><strong>${kind==='rr'?'房颤 / 房扑':kind==='hr'?'心率与图条':'Lorenz 散点操作'}</strong>${button('关闭','menu-close','aria-label="关闭菜单"')}</header><p>${formatElapsed(span()[0])}–${formatElapsed(span()[1])}${kind==='scatter'?' · 已选 '+state.scatterSelectedSamples.length+' 搏':''}</p><div class="ov-menu-body">${html}</div>`;
@@ -294,14 +303,50 @@ const overviewWorkbench=(()=>{
     if(!el.open)el.showModal();
   }
   async function saveRhythm(document,operation='save'){
-    const id=state.caseId,base=ui.rhythm;if(!base)throw Error('请等待复核数据载入');if(!clinicalWorkflow.writable())throw Error('当前服务只读');
-    if(!overviewReady||ui.id!==id||!ui.identity)throw Error('病例依据尚未核对，请重试载入后保存');
-    const value=await request('rhythm-review',{method:'PUT',body:JSON.stringify({...ui.identity,document,operation,revision:base.revision,beat_revision:ui.revision,confirmed:true})});
-    if(id!==state.caseId||ui.rhythm!==base)return;ui.rhythm=value;qs('#ovDialog').close();state.reportComposer=null;
-    await clinicalWorkflow.refresh(id).catch(()=>toast('片段已保存，报告复核状态读取失败，请重新核对报告。','error',6000));
-    if(id!==state.caseId||ui.rhythm!==value)return;
-    try{await load(true);}catch(error){toast('片段已保存，但新依据读取失败；请重试载入，不要重复保存。','error',6000);return;}
-    toast('片段复核已保存 · 可撤销','success');
+    const id=state.caseId,caseToken=state.caseRequestId,epoch=state.workspaceEpoch,base=ui.rhythm,identity=ui.identity;
+    if(!base||!overviewReady||!identity)throw Error('请等待当前片段载入');
+    if(ui.rhythmSaving||ui.rhythmUncertain)throw Error('请等待保存结果核实');
+    if(!clinicalWorkflow.writable())throw Error('当前服务只读');
+    const current=()=>id===state.caseId&&caseToken===state.caseRequestId&&epoch===state.workspaceEpoch;
+    const payload={...identity,case_id:id,request_id:crypto.randomUUID(),document,operation,revision:base.revision,beat_revision:ui.revision,confirmed:true};
+    ui.rhythmSaving=true;syncAFSaveState();let value;
+    try{
+      try{value=await request('rhythm-review',{method:'PUT',body:JSON.stringify(payload)});}
+      catch(error){
+        // A lost response must be reconciled before any retry of a mutation.
+        ui.rhythmUncertain={id,caseToken,epoch,payload,base:copy(base),message:error.message};
+        try{value=await reconcileRhythmWrite(false);}catch(_){throw Error('保存结果待核实，请点“核对保存结果”');}
+        if(!value)throw error;
+      }
+      if(!current())return;
+      ui.rhythmUncertain=null;ui.rhythm=value;qs('#ovDialog').close();state.reportComposer=null;
+      toast('片段已保存','success');
+      try{await clinicalWorkflow.refresh(id);if(current())await load(true);}
+      catch(_){if(current())toast('已保存；显示更新失败，请重新载入，勿重复保存','error',6000);}
+    }finally{ui.rhythmSaving=false;syncAFSaveState();if(current()&&qs('#ovEpisodeForm'))syncAFDraft();}
+  }
+  async function reconcileRhythmWrite(refresh=true){
+    const pending=ui.rhythmUncertain;if(!pending)return null;
+    if(pending.id!==state.caseId||pending.caseToken!==state.caseRequestId||pending.epoch!==state.workspaceEpoch)throw Error('请回到原病例核对保存结果');
+    const {analysis_revision,...source}=pending.payload;
+    const value=await request('rhythm-review?'+new URLSearchParams(Object.fromEntries(['case_id','analysis_basis','beat_revision'].map(k=>[k,source[k]]))));
+    const canonical=value=>JSON.stringify(value,(_,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.keys(v).sort().map(k=>[k,v[k]])):v);
+    const expected=pending.payload.operation==='save'?E.validateDocument(pending.payload.document,duration()):null;
+    if(value.last_operation?.request_id===pending.payload.request_id&&value.last_operation.operation===pending.payload.operation&&value.last_operation.revision===value.revision&&(!expected||canonical(value.document)===canonical(expected))){
+      ui.rhythmUncertain=null;
+      if(refresh){ui.rhythm=value;await load(true);toast('已核实保存成功');}
+      return value;
+    }
+    if(value.revision===pending.base.revision){ui.rhythmUncertain=null;if(refresh)await load(true);throw Error('片段未写入，请重新核对后保存');}
+    throw Error('记录已变化，请重新读取核对');
+  }
+  function syncAFSaveState(){
+    const form=qs('#ovEpisodeForm');if(!form)return;
+    form.querySelectorAll('button,input,select').forEach(n=>n.disabled=!!ui.rhythmSaving||!!ui.rhythmUncertain||form.dataset.stale==='true');
+    const cancel=form.querySelector('[data-ov="episode-discard"]');if(cancel)cancel.disabled=!!ui.rhythmSaving||!!ui.rhythmUncertain;
+    const retry=form.querySelector('[data-ov="af-reconcile"]');if(retry){retry.hidden=!ui.rhythmUncertain;retry.disabled=!!ui.rhythmSaving;}
+    const hint=qs('#ovEpisodeDraftHint');if(hint&&ui.rhythmSaving)hint.textContent='保存中…';
+    else if(hint&&ui.rhythmUncertain)hint.textContent='保存结果待核实';
   }
   const rhythmBasis=()=>({caseId:state.caseId,rhythm:ui.rhythm?.revision,beats:ui.revision,identity:JSON.stringify(ui.identity||null)});
   function requireRhythmBasis(basis){
@@ -310,24 +355,66 @@ const overviewWorkbench=(()=>{
   function confirmRhythm(title,document,detail){
     const count=document.episodes.length,excluded=document.episodes.filter(x=>x.status==='excluded').length;
     const basis=rhythmBasis();
-    dialog(title,`<p>${esc(detail)}</p><p>保存后保留 ${count} 条片段记录（含 ${excluded} 条已排除记录）。片段边界和复核状态会同步到报告事件；源波形不变，可撤销。</p>`,()=>{
+    dialog(title,`<p>${esc(detail)}</p><p>相关已选图条将同步更新或移除。此操作可撤销。</p>`,()=>{
       requireRhythmBasis(basis);
       return saveRhythm(document);
     });
   }
   function episodeForm(kind='AF',whole=false){
-    const basis=rhythmBasis();
-    const bounds=whole?[0,duration()]:span();dialog(whole?'标记全程'+name(kind):'添加'+name(kind)+'片段',`<p>${whole?'将替换现有片段，原记录保留在撤销历史。':'输入记录起点后的秒数；核对波形后再确认诊断。'}</p><div class="ov-fields"><label>开始（秒）<input name="start" type="number" step=".005" min="0" max="${duration()}" value="${bounds[0].toFixed(3)}" required></label><label>结束（秒）<input name="end" type="number" step=".005" min="0" max="${duration()}" value="${bounds[1].toFixed(3)}" required></label><label>类型<select name="kind"><option value="AF" ${kind==='AF'?'selected':''}>房颤</option><option value="AFL" ${kind==='AFL'?'selected':''}>房扑</option></select></label><label>复核状态<select name="status"><option value="pending">待复核</option><option value="confirmed">医生确认</option></select></label><label class="ov-wide">备注<textarea name="note" maxlength="1000" rows="2"></textarea></label></div>`,data=>{
-      requireRhythmBasis(basis);
-      const start=Number(data.get('start')),end=Number(data.get('end')),doc=copy(ui.rhythm.document);if(whole)doc.episodes=[];
-      doc.episodes.push({id:crypto.randomUUID(),start_s:start,end_s:end,kind:data.get('kind'),status:data.get('status'),source:'manual',note:data.get('note')});E.validateDocument(doc,duration());return saveRhythm(doc);
-    });
+    if(!overviewReady||!ui.rhythm)throw Error('请等待片段载入');
+    rememberEpisodeForm();
+    const bounds=whole?[0,duration()]:ui.creationRange?[...ui.creationRange]:null;ui.creationRange=null;
+    afMode(true);const id=crypto.randomUUID();
+    const original={id,start_s:null,end_s:null,kind,status:'pending',source:'manual',note:''};
+    const values={start:bounds?String(Math.round(bounds[0]*200)/200):'',end:bounds?String(Math.round(bounds[1]*200)/200):'',kind,status:'pending',note:''};
+    episodeDrafts.set(episodeKey(id),{basis:rhythmBasis(),original,values,isNew:true});
+    ui.episode=id;ui.range=bounds;episodeEditor=null;renderEpisodes();qs('#ovEpisodeForm [name="startClock"]')?.focus({preventScroll:true});
+  }
+  const afClock=seconds=>ECGRhythmRangeEditor.boundaryClock(seconds,state.caseData?.metadata?.start_time);
+  function afDraftBounds(){
+    const form=qs('#ovEpisodeForm');if(!form)return null;
+    const read=n=>form.elements[n].value===''?null:Number(form.elements[n].value);
+    return {start:read('start'),end:read('end')};
+  }
+  function updateAFBounds(fields){
+    const form=qs('#ovEpisodeForm');if(!form||form.dataset.stale==='true'||ui.rhythmSaving||ui.rhythmUncertain)return;
+    for(const [k,v] of Object.entries(fields)){
+      form.elements[k].value=v===null?'':String(Math.round(v*200)/200);
+      form.elements[k+'Clock'].value=v===null?'':afClock(Math.round(v*200)/200);
+    }
+    rememberEpisodeForm();syncAFDraft();
+  }
+  function syncAFDraft(){
+    const form=qs('#ovEpisodeForm'),bounds=afDraftBounds();if(!form||!bounds)return;
+    form.dataset.startS=bounds.start??'';form.dataset.endS=bounds.end??'';
+    const valid=Number.isFinite(bounds.start)&&Number.isFinite(bounds.end)&&bounds.end>bounds.start;
+    ui.range=valid?[bounds.start,bounds.end]:null;
+    form.querySelector('[data-af-duration]').textContent=valid?(bounds.end-bounds.start).toFixed(3)+' s':'—';
+    const hint=qs('#ovEpisodeDraftHint');if(hint)hint.textContent=form.dataset.stale==='true'?'依据已变化，请重新编辑':bounds.start!==null&&bounds.end!==null&&!valid?'终点须晚于起点':episodeDrafts.has(episodeEditor.key)?'未保存':statusName(form.elements.status.value);
+    for(const action of ['pending','confirmed','excluded']){
+      const b=form.querySelector('[data-ov="af-save:'+action+'"]');if(b)b.disabled=!valid||form.dataset.stale==='true'||!!ui.rhythmSaving||!!ui.rhythmUncertain;
+    }
+    renderWaveform();draw();
+  }
+  async function saveAFDraft(status){
+    const form=qs('#ovEpisodeForm');if(!form||!episodeEditor)return;
+    const owner=episodeEditor;requireRhythmBasis(owner.basis);
+    for(const k of ['start','end']){
+      if(!form.elements[k+'Clock'].value)throw Error('请设置起点和终点');
+      const value=ECGRhythmRangeEditor.parseBoundaryClock(form.elements[k+'Clock'].value,state.caseData?.metadata?.start_time,duration());
+      form.elements[k].value=String(value);
+    }
+    rememberEpisodeForm();const data=new FormData(form),doc=copy(ui.rhythm.document),old=doc.episodes.find(e=>e.id===owner.original.id);
+    const item={id:owner.original.id,start_s:Number(data.get('start')),end_s:Number(data.get('end')),kind:data.get('kind'),status,source:'manual',note:data.get('note')};
+    if(old)Object.assign(old,item);else if(owner.isNew)doc.episodes.push(item);else throw Error('片段已移除，请重新选择');
+    E.validateDocument(doc,duration());form.elements.status.value=status;rememberEpisodeForm();
+    await saveRhythm(doc);
   }
   // The queue is read-only: navigating or filtering never confirms an episode.
   const episodeOrder=(a,b)=>a.start_s-b.start_s||a.end_s-b.end_s||a.id.localeCompare(b.id);
   const episodeKey=id=>JSON.stringify([state.caseId,id]);
   const episodeFilterName=s=>s==='all'?'全部片段':s==='drafts'?'本地未保存':statusName(s);
-  const episodeFields=x=>({start:String(x.start_s),end:String(x.end_s),kind:x.kind,status:x.status,note:x.note||''});
+  const episodeFields=x=>({start:x.start_s==null?'':String(x.start_s),end:x.end_s==null?'':String(x.end_s),kind:x.kind,status:x.status,note:x.note||''});
   const sameEpisodeFields=(a,b)=>['start','end','kind','status','note'].every(k=>a[k]===b[k]||(['start','end'].includes(k)&&a[k]!==''&&b[k]!==''&&Number(a[k])===Number(b[k])));
   function episodeQueue(){
     const all=[...(ui.rhythm?.document.episodes||[])].sort(episodeOrder),counts={all:all.length,pending:0,confirmed:0,excluded:0};
@@ -343,8 +430,8 @@ const overviewWorkbench=(()=>{
     if(!episodeEditor)return;
     const {form,key,basis,original}=episodeEditor,values={};
     for(const k of ['start','end','kind','status','note'])values[k]=form.elements[k].value;
-    if(sameEpisodeFields(values,episodeFields(original)))episodeDrafts.delete(key);
-    else episodeDrafts.set(key,{basis,original,values});
+    if(!episodeEditor.isNew&&sameEpisodeFields(values,episodeFields(original)))episodeDrafts.delete(key);
+    else episodeDrafts.set(key,{basis,original,values,isNew:episodeEditor.isNew});
   }
   function episodeDraftHint(){
     const hint=qs('#ovEpisodeDraftHint');if(!hint||!episodeEditor)return;
@@ -354,7 +441,7 @@ const overviewWorkbench=(()=>{
   function renderEpisodeNavigation(q=episodeQueue()){
     const nav=qs('#ovEpisodeNavigation');if(!nav)return;
     const x=q.current,label=episodeFilterName(episodeFilter),link=(text,item)=>button(text,'episode:'+(item?encodeURIComponent(item.id):''),item?'':'disabled');
-    nav.innerHTML=`<div><strong>${x?`选中片段：${name(x.kind)} · ${statusName(x.status)} · ${formatElapsedPrecise(x.start_s)}–${formatElapsedPrecise(x.end_s)}`:'选择片段开始逐段复核'}</strong><span>${esc(label)} ${q.index>=0?`${q.index+1} / ${q.items.length}`:`${q.items.length} 段${x?' · 当前片段不在此筛选内':''}`} · 按开始时间排序</span></div><div>${link('上一段',q.before)}${link(x?'下一段':'开始复核',q.after)}${button('回看起点','episode-start',x?'':'disabled')}${button('回看末尾','episode-end',x?'':'disabled')}${button('编辑片段','episode-edit',x?'':'disabled')}${button('返回列表','episode-list')}</div>`;
+    nav.innerHTML=`<div><strong>${x?`选中片段：${name(x.kind)} · ${statusName(x.status)} · ${afClock(x.start_s).replace(/^\d{4}-/,'')}–${afClock(x.end_s).replace(/^.* /,'')}`:'选择或新建片段'}</strong><span>${esc(label)} ${q.index>=0?`${q.index+1} / ${q.items.length}`:`${q.items.length} 段${x?' · 当前片段不在此筛选内':''}`} · 按开始时间排序</span></div><div>${link('上一段',q.before)}${link(x?'下一段':'开始复核',q.after)}${button('回看起点','episode-start',x?'':'disabled')}${button('回看末尾','episode-end',x?'':'disabled')}${button('编辑片段','episode-edit',x?'':'disabled')}${button('返回列表','episode-list')}</div>`;
   }
   async function locateEpisode(id,edge='start'){
     if(!overviewReady||ui.id!==state.caseId)throw Error('请等待当前病例片段载入。');
@@ -364,10 +451,11 @@ const overviewWorkbench=(()=>{
     ui.episode=id;ui.range=[x.start_s,x.end_s];const index=q.items.findIndex(e=>e.id===id);if(index>=0)episodePage=Math.floor(index/20);
     coverageFocus=-1;renderGapNavigation();renderEpisodes();
     // Show context before the boundary; do not turn an exclusive end into an event sample.
-    const at=edge==='end'?Math.max(x.start_s,x.end_s-state.duration/2):Math.max(0,x.start_s-Math.min(2,state.duration/4));
-    await seek(at,true,edge==='end'?Math.max(x.start_s,x.end_s-.005):x.start_s);
+    const draft=episodeDrafts.get(episodeKey(id)),start=draft?.values.start!==undefined&&draft.values.start!==''?Number(draft.values.start):x.start_s,end=draft?.values.end!==undefined&&draft.values.end!==''?Number(draft.values.end):x.end_s;
+    const at=edge==='end'?Math.max(start,end-state.duration/2):Math.max(0,start-Math.min(2,state.duration/4));
+    await seek(at,true,edge==='end'?Math.max(start,end-.005):start);
     if(token!==episodeNavigation||!ui.af||!sameCoverageBasis(basis)||rhythm!==ui.rhythm.revision||ui.episode!==id)return;
-    const nav=qs('#ovEpisodeNavigation');nav.scrollIntoView({block:'start'});nav.focus({preventScroll:true});
+    const nav=qs('#ovEpisodeNavigation');if(!ui.af)nav.scrollIntoView({block:'start'});nav.focus({preventScroll:true});
   }
   function renderEpisodes(){
     if(!ui.rhythm)return;rememberEpisodeForm();
@@ -378,31 +466,36 @@ const overviewWorkbench=(()=>{
       if(draft.basis.caseId===state.caseId&&x&&sameEpisodeFields(draft.values,episodeFields(x)))episodeDrafts.delete(key);
     }
     const q=episodeQueue(),episodes=q.all,summary=E.rhythmSummary(ui.rhythm.document.episodes,duration());
-    qs('#ovAFSummary').innerHTML=['confirmed_af','confirmed_afl'].map((key,i)=>{const r=summary[key];return `<span><strong>已确认${i?'房扑':'房颤'} ${r.count} 段</strong><span>${r.seconds.toFixed(3)} 秒 · 负荷 ${r.pct==null?'—':r.pct.toFixed(2)+'%'}</span></span>`}).join('')+`<span>待复核 ${summary.pending_any.count} 段 · 不计入确认负荷</span><small>分母：完整记录 ${summary.denominator_s.toFixed(3)} 秒；重叠时段只计一次。仅统计已保存片段，0 不代表排除。</small>`;
+    qs('#ovAFSummary').innerHTML=['confirmed_af','confirmed_afl'].map((key,i)=>{const r=summary[key];return `<span><strong>已确认${i?'房扑':'房颤'} ${r.count} 段</strong><span>${r.seconds.toFixed(3)} 秒 · 负荷 ${r.pct==null?'—':r.pct.toFixed(2)+'%'}</span></span>`}).join('')+`<span>待复核 ${summary.pending_any.count} 段</span>`;
     const select=qs('#ovEpisodeFilter');select.innerHTML=['all','pending','confirmed','excluded','drafts'].map(s=>`<option value="${s}" ${s===episodeFilter?'selected':''}>${episodeFilterName(s)}（${q.counts[s]}）</option>`).join('');
-    qs('#ovEpisodeRows').innerHTML=q.visible.length?q.visible.map(x=>`<tr ${ui.episode===x.id?'aria-selected="true"':''}><td>${button(formatElapsedPrecise(x.start_s),'episode:'+encodeURIComponent(x.id),ui.episode===x.id?'aria-current="true"':'')}<small>${(x.end_s-x.start_s).toFixed(3)} 秒${episodeDrafts.has(episodeKey(x.id))?' · 未保存':''}</small></td><td>${name(x.kind)}</td><td>${x.removed?'片段已移除':statusName(x.status)}</td></tr>`).join(''):`<tr><td colspan="3">${episodes.length?'此筛选下没有片段，可切换查看全部。':'暂无已保存片段；请检查覆盖并回看原始波形。'} 不代表排除房颤。</td></tr>`;
+    qs('#ovEpisodeRows').innerHTML=q.visible.length?q.visible.map(x=>`<tr ${ui.episode===x.id?'aria-selected="true"':''}><td>${button(afClock(x.start_s).replace(/^\d{4}-/,''),'episode:'+encodeURIComponent(x.id),ui.episode===x.id?'aria-current="true"':'')}<small>${(x.end_s-x.start_s).toFixed(3)} 秒${episodeDrafts.has(episodeKey(x.id))?' · 未保存':''}</small></td><td>${name(x.kind)}</td><td>${x.removed?'片段已移除':statusName(x.status)}</td></tr>`).join(''):`<tr><td colspan="3">${episodes.length?'此筛选下无片段。':'暂无片段。'}</td></tr>`;
     qs('#ovEpisodePages').innerHTML=`${button('上页','episode-page:'+(episodePage-1),episodePage?'':'disabled')}<output aria-live="polite">${episodePage+1} / ${q.pages} 页 · ${q.items.length} 段</output>${button('下页','episode-page:'+(episodePage+1),episodePage<q.pages-1?'':'disabled')}`;
     qs('[data-ov="af-undo"]').disabled=!ui.rhythm.can_undo;qs('[data-ov="af-redo"]').disabled=!ui.rhythm.can_redo;renderEpisodeNavigation(q);
     const key=episodeKey(ui.episode),editor=qs('#ovEpisodeEditor');let draft=episodeDrafts.get(key),x=q.current;
-    if(!x&&!draft){episodeEditor=null;editor.innerHTML='<p>选择片段可调整起止、类型和复核状态。</p>';return;}
+    if(!x&&!draft){episodeEditor=null;editor.innerHTML='<div class="ov-af-empty-editor">'+button('新建房颤片段','af-add:AF')+button('新建房扑片段','af-add:AFL')+'</div>';return;}
     const version=JSON.stringify(rhythmBasis());
-    if(episodeEditor?.key===key&&episodeEditor.version===version){episodeDraftHint();return;}
-    const missing=!x;x=x||draft.original;const fields=draft?.values||episodeFields(x),basis=draft?.basis||rhythmBasis(),stale=missing||basis.rhythm!==ui.rhythm.revision||basis.beats!==ui.revision||basis.identity!==rhythmBasis().identity;
-    editor.innerHTML=`<details class="ov-episode-details" ${innerWidth>1500||stale?'open':''}><summary>编辑选中片段 · ${formatElapsedPrecise(x.start_s)} · ${missing?'已移除':statusName(x.status)}</summary><form id="ovEpisodeForm"><h3>编辑选中片段</h3><p id="ovEpisodeDraftHint" role="status"></p><div class="ov-fields"><label>开始（秒）<input name="start" type="number" step=".005" min="0" max="${duration()}" value="${esc(fields.start)}" required></label><label>结束（秒）<input name="end" type="number" step=".005" min="0" max="${duration()}" value="${esc(fields.end)}" required></label><label>类型<select name="kind">${['AF','AFL'].map(k=>`<option value="${k}" ${fields.kind===k?'selected':''}>${name(k)}</option>`).join('')}</select></label><label>复核状态<select name="status">${['pending','confirmed','excluded'].map(s=>`<option value="${s}" ${s===fields.status?'selected':''}>${statusName(s)}</option>`).join('')}</select></label><label class="ov-wide">备注<textarea name="note" rows="2" maxlength="1000">${esc(fields.note)}</textarea></label></div><footer><span>${esc(x.source)}</span>${button('放弃本地修改','episode-discard')}${button('删除片段','af-delete-current',missing?'disabled':'')}<button type="submit" class="button primary" ${stale?'disabled':''}>核对并保存片段</button></footer></form></details>`;
-    const form=qs('#ovEpisodeForm');episodeEditor={key,version,form,basis,original:draft?.original||copy(x)};episodeDraftHint();
-    form.oninput=form.onchange=()=>{rememberEpisodeForm();episodeDraftHint();};
-    form.onsubmit=event=>{event.preventDefault();run(()=>{
-      requireRhythmBasis(basis);rememberEpisodeForm();
-      const data=new FormData(event.target),doc=copy(ui.rhythm.document),item=doc.episodes.find(e=>e.id===x.id);
-      if(!item)throw Error('该片段已不在当前记录中，请重新选择后编辑。');
-      Object.assign(item,{start_s:Number(data.get('start')),end_s:Number(data.get('end')),kind:data.get('kind'),status:data.get('status'),note:data.get('note'),source:'manual'});
-      E.validateDocument(doc,duration());
-      confirmRhythm('确认片段修订',doc,`${name(item.kind)} · ${formatElapsedPrecise(item.start_s)}–${formatElapsedPrecise(item.end_s)} · ${statusName(item.status)}。保存后作为人工片段保留，自动重分析不会替换；复核状态以此处选择为准。`);
-    })};
+    if(episodeEditor?.key===key&&episodeEditor.version===version){syncAFDraft();return;}
+    const missing=!x&&!draft?.isNew;x=x||draft.original;
+    const fields=draft?.values||episodeFields(x),basis=draft?.basis||rhythmBasis(),stale=missing||basis.rhythm!==ui.rhythm.revision||basis.beats!==ui.revision||basis.identity!==rhythmBasis().identity;
+    editor.innerHTML=`<form id="ovEpisodeForm" data-stale="${stale}"><input type="hidden" name="start" value="${esc(fields.start)}"><input type="hidden" name="end" value="${esc(fields.end)}"><input type="hidden" name="status" value="${esc(fields.status)}"><div class="ov-af-editor-fields"><label>类型<select name="kind">${['AF','AFL'].map(k=>`<option value="${k}" ${fields.kind===k?'selected':''}>${name(k)}</option>`).join('')}</select></label>${['start','end'].map((k,i)=>`<label>${i?'终点':'起点'}<input name="${k}Clock" aria-label="${i?'终点':'起点'}记录时钟" value="${esc(fields[k]===''?'':afClock(Number(fields[k])))}" placeholder="日期 时间" autocomplete="off"></label>`).join('')}<output data-af-duration></output><output id="ovEpisodeDraftHint" role="status" style="grid-column:1/-1"></output></div><div class="ov-af-editor-actions">${button('设为起点','af-boundary-start')}${button('设为终点','af-boundary-end')}${button('回起点','af-boundary-home')}${button('回终点','af-boundary-tail')}${button('取消修改','episode-discard')}<input name="note" aria-label="片段备注" placeholder="备注" maxlength="1000" value="${esc(fields.note)}">${button('保存候选','af-save:pending')}${button('确认片段','af-save:confirmed','class="button primary"')}${button('排除','af-save:excluded',draft?.isNew?'hidden':'')}${button('删除','af-delete-current',draft?.isNew?'hidden':'')}${button('核对保存结果','af-reconcile','hidden')}</div><p class="ov-af-input-error" role="alert" hidden></p></form>`;
+    const form=qs('#ovEpisodeForm');episodeEditor={key,version,form,basis,original:draft?.original||copy(x),isNew:!!draft?.isNew};
+    form.onsubmit=event=>event.preventDefault();
+    form.oninput=event=>{
+      const field=event.target.name,error=form.querySelector('[role="alert"]');error.hidden=true;
+      if(field==='startClock'||field==='endClock'){
+        const k=field==='startClock'?'start':'end';
+        try{form.elements[k].value=event.target.value?String(ECGRhythmRangeEditor.parseBoundaryClock(event.target.value,state.caseData?.metadata?.start_time,duration())):'';}
+        catch(e){form.elements[k].value='';error.textContent=e.message;error.hidden=false;}
+      }
+      if(['startClock','endClock','kind'].includes(field)&&form.elements.status.value==='confirmed')form.elements.status.value='pending';
+      rememberEpisodeForm();syncAFDraft();
+    };
+    syncAFDraft();syncAFSaveState();
   }
+
   function afMode(enabled){
     ui.af=enabled;const page=qs('#page-review'),wave=qs('#waveformCard');page.classList.toggle('ov-af-mode',enabled);qs('#ovAF').hidden=!enabled;
-    if(enabled&&!ui.range)ui.range=[hour(),Math.min(duration(),hour()+3600)];
+    if(enabled&&!ui.rangeExplicit)ui.range=null;
     if(enabled)qs('#ovAFWaveHost').append(wave);else page.querySelector('.analysis-main').insertBefore(wave,qs('.ov-navigator'));
     renderCoverage();draw();renderEpisodes();renderWaveform();
   }
@@ -430,7 +523,7 @@ const overviewWorkbench=(()=>{
     renderGapNavigation();renderWindowEvidence();
     const disabled=!overviewReady||ui.id!==state.caseId||coverageBusy;
     const tools=`<div class="ov-coverage-actions">${button('检查全程覆盖','af-coverage',disabled?'disabled':'')}${button('检查选区覆盖','af-coverage-range',disabled?'disabled':'')}${!overviewReady?button('重试载入','reload'):''}</div>`;
-    const note='<p class="ov-coverage-note">只读检查，不保存诊断片段。覆盖率不是正常率；未评估不代表正常，已评估未提示也不能排除房颤。此结果仅对应本次范围及逐搏修订，不作为已保存报告的覆盖证明。</p>';
+    const note='';
     if(!coverage){host.innerHTML=`<header><strong>RR 筛查覆盖</strong>${tools}</header><p role="status">${esc(coverageBusy?'正在检查 RR 窗口…':coverageMessage||'尚未检查覆盖。')}</p>${note}`;return;}
     const s=coverage.summary,p=ECGAFCoverage.page(s,coveragePage),seconds=n=>`${Number(n.toFixed(3))} 秒`,detailsOpen=host.querySelector('details')?.open||false,windowsOpen=host.querySelector('#ovAFWindows')?.open||false;
     coveragePage=p.index;
@@ -563,6 +656,18 @@ const overviewWorkbench=(()=>{
     list.style.width=width+'px';list.style.height=contentHeight+'px';list.innerHTML=items.join('');host.style.height=bandHeight+'px';host.style.flexBasis=bandHeight+'px';host.dataset.metricCount=String(items.length);host.dataset.overflow=String(contentHeight>72);host.setAttribute('aria-label',`当前波形窗口 ${formatElapsed(wave.start_s)}–${formatElapsed(wave.start_s+wave.duration_s)} · ${items.length} 个 RR 间期 · 心率与 RR 位于间期中点；密集时分行显示`);
     if(ui.metricsWave!==wave)host.scrollTop=0;host.scrollLeft=0;ui.metricsWave=wave;ui.metricsWidth=width;
   }
+  function drawAFOverlay(){
+    const svg=qs('#ovAFBoundaryOverlay'),c=qs('#waveformCanvas'),wave=state.waveform;if(!svg)return;
+    const b=afDraftBounds(),active=ui.af&&!state.waveformExpanded&&wave&&waveformBasis()&&c.getClientRects().length;
+    svg.hidden=!active;if(!active){svg.innerHTML='';return;}
+    const width=c.getBoundingClientRect().width,height=c.getBoundingClientRect().height,x=t=>(t-wave.start_s)/wave.duration_s*width;
+    svg.style.cssText=`position:absolute;left:0;top:0;width:${width}px;height:${height}px;pointer-events:none;overflow:hidden;z-index:4`;
+    svg.setAttribute('viewBox',`0 0 ${width} ${height}`);
+    const line=(t,k,color)=>Number.isFinite(t)&&x(t)>=0&&x(t)<=width?`<g><line data-af-edge="${k}" tabindex="0" role="slider" aria-label="${k==='start'?'起点':'终点'}边界" aria-valuemin="0" aria-valuemax="${duration()}" aria-valuenow="${t}" aria-valuetext="${esc(afClock(t))}" x1="${x(t)}" x2="${x(t)}" y1="0" y2="${height}" stroke="${color}" stroke-width="8" stroke-opacity=".14" style="pointer-events:stroke;cursor:ew-resize"/><line x1="${x(t)}" x2="${x(t)}" y1="0" y2="${height}" stroke="${color}" stroke-width="1.5"/><text x="${Math.max(2,Math.min(width-34,x(t)+4))}" y="17" fill="${color}" style="font:12px sans-serif;paint-order:stroke;stroke:#fff;stroke-width:3px">${k==='start'?'起':'止'}</text></g>`:'';
+    const shade=b&&Number.isFinite(b.start)&&Number.isFinite(b.end)&&b.end>b.start?`<rect x="${Math.max(0,x(b.start))}" y="0" width="${Math.max(0,Math.min(width,x(b.end))-Math.max(0,x(b.start)))}" height="${height}" fill="#078986" fill-opacity=".07"/>`:'';
+    const cursor=Number.isFinite(ui.afCursor)&&x(ui.afCursor)>=0&&x(ui.afCursor)<=width?`<line x1="${x(ui.afCursor)}" x2="${x(ui.afCursor)}" y1="20" y2="${height}" stroke="#59849e" stroke-dasharray="3 3"/>`:'';
+    svg.innerHTML=shade+cursor+(b?line(b.start,'start','#087777')+line(b.end,'end','#a25c0a'):'');
+  }
   function waveformOverlay(){
     const canvas=qs('#waveformCanvas'),wave=state.waveform;if(!wave||!canvas?.getClientRects().length)return;const ctx=canvas.getContext('2d'),rect=canvas.getBoundingClientRect(),width=rect.width,height=rect.height;
     const beats=wave.beats||[];drawBeatMetrics(wave,width);ctx.fillStyle='#35616a';ctx.font=`9px ${UI_FONT}`;
@@ -570,6 +675,7 @@ const overviewWorkbench=(()=>{
       let same=false;try{ECGAnalysisConsistency.assertSame(ui.identity,wave);same=true;}catch(_){}
       if(same){const members=linked.snapshot().kind==='samples'?linked.currentSet():null,focus=linked.snapshot().focusSample;ctx.save();ctx.fillStyle='rgba(208,138,46,.12)';ctx.strokeStyle='#a86920';for(const r of beats){const x=(r.sample_index/200-wave.start_s)/wave.duration_s*width;if(x<0||x>=width)continue;if(members?.has(r.sample_index))ctx.fillRect(x-2,0,4,height);if(r.sample_index===focus){ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,height);ctx.stroke();}}ctx.restore();}
     }
+    drawAFOverlay();
     if(!ui.ruler||!ui.rulerPoints.length)return;const points=ui.rulerPoints,xAt=t=>(t-wave.start_s)/wave.duration_s*width;
     ctx.save();ctx.strokeStyle='#b9671d';ctx.fillStyle='#965119';ctx.lineWidth=1;
     if(ui.ruler==='parallel'){points.forEach(p=>{const y=p.y*height;ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(width,y);ctx.stroke()})}
@@ -589,12 +695,26 @@ const overviewWorkbench=(()=>{
     if(key==='reload')return load(true);
     if(key==='cancel-gesture'){cancelGesture();return;}
     if(key==='navigator-retry'){ui.navKey=null;return navigatorWave();}
-    if(key==='clear-range'){cancelGesture();ui.range=null;ui.rangeAnchor=null;ui.bin=null;ui.polygon=[];linked?.clear();draw();return}
+    if(key==='clear-range'){cancelGesture();ui.range=null;ui.rangeAnchor=null;ui.rangeExplicit=false;ui.creationRange=null;ui.bin=null;ui.polygon=[];linked?.clear();draw();return}
     if(key==='linked-reload'){await linked?.refresh(true);return;}
     if(key==='hist-rr'||key==='hist-ratio'){cancelGesture();ui.ratio=key==='hist-ratio';ui.bin=null;ui.hist=E.histogram(ui.rows,ui.ratio);qs('[data-ov="hist-rr"]').setAttribute('aria-pressed',String(!ui.ratio));qs('[data-ov="hist-ratio"]').setAttribute('aria-pressed',String(ui.ratio));drawHistogram();return}
     if(key==='hist-longest'){const last=histogramNonempty().at(-1);if(last!==undefined)selectHistogramBin(last);return}
     if(key==='hist-shorter'){navigateHistogram(-1);return}
-    if(key==='af-open'||key==='af-close'){afMode(key==='af-open');return}
+    if(key==='af-reconcile')return reconcileRhythmWrite();
+    if(key==='af-side'){document.querySelectorAll('.ov-af-side-panel').forEach(n=>n.hidden=n.dataset.afPanel!==arg);document.querySelectorAll('[data-ov^="af-side:"]').forEach(n=>n.setAttribute('aria-pressed',String(n.dataset.ov==='af-side:'+arg)));draw();return;}
+    if(key==='af-save')return saveAFDraft(arg);
+    if(key==='af-boundary-start'||key==='af-boundary-end'){
+      if(!qs('#ovEpisodeForm'))episodeForm('AF');
+      const at=Number.isFinite(ui.afCursor)?ui.afCursor:state.locatedTime?.caseId===state.caseId?state.locatedTime.time:state.waveform?.start_s;
+      const fromMenu=!!element?.closest?.('#ovMenu');
+      if(!Number.isFinite(at)||!fromMenu&&(at<(state.waveform?.start_s??0)||at>(state.waveform?.start_s??0)+(state.waveform?.duration_s??0)))throw Error('请先在当前波形中点击定位');
+      updateAFBounds({[key==='af-boundary-start'?'start':'end']:Math.min(duration(),Math.max(0,at))});if(fromMenu)await seek(Math.max(0,at-state.duration/3),true,Math.min(at,duration()-.005));return;
+    }
+    if(key==='af-boundary-home'||key==='af-boundary-tail'){
+      const b=afDraftBounds(),at=key==='af-boundary-home'?b?.start:b?.end;if(!Number.isFinite(at))throw Error('请先设置该边界');
+      await seek(Math.max(0,at-state.duration/3),true,Math.min(at,duration()-.005));return;
+    }
+    if(key==='af-open'||key==='af-close'){if(ui.rhythmSaving)throw Error('请等待保存完成');afMode(key==='af-open');return}
     if(key==='af-prev'||key==='af-next'){seek(ui.hour+(key==='af-next'?3600:-3600));return}
     if(key==='af-add'||key==='af-all')return episodeForm(arg||'AF',key==='af-all');
     if(key==='af-screen')return screenAF();
@@ -605,6 +725,8 @@ const overviewWorkbench=(()=>{
     if(['af-window-filter','af-window-page','af-window-list'].includes(key))return windowListAction(key,arg);
     if(key==='af-coverage-list'){coveragePage=Math.max(0,Math.floor(coverageFocus/20));renderCoverage();const host=qs('#ovAFCoverage'),details=host.querySelector('details');if(details)details.open=true;host.scrollIntoView({block:'start'});host.querySelector('summary')?.focus({preventScroll:true});return;}
     if(key==='af-gap-page'){const page=Number(arg);if(!Number.isInteger(page)||page<0)throw Error('页码无效');coveragePage=page;renderCoverage();qs('#ovAFCoverage summary')?.focus();return;}
+    if(key==='af-wave-tools'){const c=qs('#waveformCanvas'),r=c.getBoundingClientRect();return beatEditor.open({preventDefault(){},clientX:r.left+r.width*ui.afMenuFraction,clientY:r.top+r.height/3},c,state.waveform,'review');}
+    if(key==='af-help'){window.open('static/help/af-afl.html','_blank','noopener');return;}
     if(key==='af-settings')return dialog('房颤筛查方法与设置','<p>当前算法：30 秒固定窗口的 RR 不规则研究性筛查。至少 20 搏、正常类型占比 ≥90%、时间覆盖 ≥25 秒；CV≥0.12、归一化 RMSSD≥0.14、转折率 0.45–0.85。阈值固定，不是诊断标准。</p><p>右键拖动或左键拖动 RR 图可选择时段；右键点击保留已选范围。人工房颤/房扑片段不会被自动重分析覆盖。通用心搏、NN 和长 RR 设置可在下方打开。</p>',()=>{qs('#ovDialog').close();return beatEditor.invoke('settings',{time:ui.contextTime})},'打开通用分析设置');
     if(key==='af-undo'||key==='af-redo')return saveRhythm(null,key==='af-undo'?'undo':'redo');
     if(key==='episode')return locateEpisode(decodeURIComponent(arg));
@@ -626,8 +748,10 @@ const overviewWorkbench=(()=>{
       qs('#ovEpisodeEditor').scrollIntoView({block:'center'});qs('#ovEpisodeForm [name="status"]')?.focus({preventScroll:true});return;
     }
     if(key==='episode-discard'){
-      const key=episodeKey(ui.episode),basis=rhythmBasis();
-      return dialog('放弃本地修改','<p>仅清除本片段尚未保存的表单输入，重新显示已保存版本；不会删除已保存片段。</p>',()=>{requireRhythmBasis(basis);episodeDrafts.delete(key);episodeEditor=null;qs('#ovDialog').close();renderEpisodes();},'放弃并重新读取');
+      if(ui.rhythmSaving||ui.rhythmUncertain)throw Error('请先核实保存结果');
+      episodeDrafts.delete(episodeKey(ui.episode));episodeEditor=null;ui.rangeAnchor=null;
+      if(!ui.rhythm.document.episodes.some(x=>x.id===ui.episode))ui.episode=null;
+      renderEpisodes();draw();renderWaveform();return;
     }
     if(['af-delete-current','af-cut','af-clear','af-exclude-scatter'].includes(key)){
       const doc=copy(ui.rhythm.document);let detail='';
@@ -681,6 +805,34 @@ const overviewWorkbench=(()=>{
     const ruler=document.createElement('div');ruler.id='ovRulerStatus';ruler.className='ov-ruler-status';ruler.hidden=true;qs('#waveformCard').prepend(ruler);
     document.addEventListener('click',event=>{const button=event.target.closest('[data-ov]');if(button){event.preventDefault();run(()=>action(button.dataset.ov,button))}},true);
     qs('#ovLog').onchange=event=>{ui.log=event.target.checked;drawHistogram()};qs('#ovScatterRange').onchange=event=>run(()=>action('bound:'+event.target.value));
+    let afDrag=null,afPoint=null;
+    const waveSample=event=>{const c=qs('#waveformCanvas'),r=c.getBoundingClientRect(),w=state.waveform;return w?Math.max(0,Math.min(duration(),Math.round((w.start_s+E.clamp((event.clientX-r.left)/r.width,0,1)*w.duration_s)*200)/200)):null;};
+    const afCurrent=job=>job&&job.caseId===state.caseId&&job.caseToken===state.caseRequestId&&job.wave===state.waveform&&job.basis===JSON.stringify(rhythmBasis())&&ui.af&&!state.waveformExpanded;
+    const afCancel=()=>{if(!afDrag)return false;const job=afDrag;afDrag=null;try{qs('#waveformCanvas').releasePointerCapture(job.pointerId);}catch(_){}if(afCurrent(job))updateAFBounds(job.before);return true;};
+    document.addEventListener('pointerdown',event=>{
+      if(!ui.af||state.waveformExpanded||ui.rhythmSaving||!waveformBasis())return;
+      const edge=event.target.closest?.('[data-af-edge]');
+      if(edge){event.preventDefault();event.stopImmediatePropagation();afDrag={caseId:state.caseId,caseToken:state.caseRequestId,wave:state.waveform,basis:JSON.stringify(rhythmBasis()),before:afDraftBounds(),edge:edge.dataset.afEdge,pointerId:event.pointerId};qs('#waveformCanvas').setPointerCapture(event.pointerId);return;}
+      if(event.target.id==='waveformCanvas'&&event.button===0)afPoint={x:event.clientX,y:event.clientY,time:waveSample(event),wave:state.waveform};
+    },true);
+    document.addEventListener('pointermove',event=>{if(!afDrag)return;if(!afCurrent(afDrag)){afCancel();return;}event.preventDefault();event.stopImmediatePropagation();updateAFBounds({[afDrag.edge]:waveSample(event)});},true);
+    document.addEventListener('pointerup',event=>{
+      if(afDrag){event.preventDefault();event.stopImmediatePropagation();const job=afDrag;afDrag=null;try{qs('#waveformCanvas').releasePointerCapture(job.pointerId);}catch(_){}return;}
+      if(ui.af&&afPoint&&afPoint.wave===state.waveform&&Math.hypot(event.clientX-afPoint.x,event.clientY-afPoint.y)<4){ui.afCursor=afPoint.time;state.locatedTime={caseId:state.caseId,time:afPoint.time};renderWaveform();}afPoint=null;
+    },true);
+    document.addEventListener('pointercancel',()=>{afCancel();afPoint=null;},true);
+    document.addEventListener('keydown',event=>{
+      if(!ui.af)return;
+      if(event.key==='Escape'&&afCancel()){event.preventDefault();event.stopImmediatePropagation();return;}
+      const edge=event.target.closest?.('[data-af-edge]');
+      if(edge&&['ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();event.stopImmediatePropagation();const k=edge.dataset.afEdge,b=afDraftBounds();updateAFBounds({[k]:E.clamp(b[k]+(event.key==='ArrowRight'?1:-1)*(event.shiftKey?.1:.005),0,duration())});qs(`[data-af-edge="${k}"]`)?.focus();}
+    },true);
+    document.addEventListener('contextmenu',event=>{
+      if(!ui.af||event.target.id!=='waveformCanvas'||state.waveformExpanded||!waveformBasis())return;
+      event.preventDefault();event.stopImmediatePropagation();closeBeatRelabelMenu();ui.afCursor=waveSample(event);const c=event.target,r=c.getBoundingClientRect();ui.afMenuFraction=(event.clientX-r.left)/r.width;
+      menuScope={caseId:state.caseId,caseToken:state.caseRequestId,page:state.currentPage,identity:ui.identity,loadToken:ui.loadToken};
+      const menu=qs('#ovMenu');menu.innerHTML=`<header><strong>片段边界</strong>${button('关闭','menu-close')}</header><p>${esc(afClock(ui.afCursor))}</p><div class="ov-menu-body">${button('设为起点','af-boundary-start')}${button('设为终点','af-boundary-end')}${button('心搏 / 图条操作','af-wave-tools')}</div>`;menu.hidden=false;try{menu.showPopover()}catch(_){}menu.style.left=Math.min(event.clientX,innerWidth-280)+'px';menu.style.top=Math.min(event.clientY,innerHeight-210)+'px';drawAFOverlay();
+    },true);
     let drag=null;
     const dragCurrent=job=>job.caseId===state.caseId&&job.caseToken===state.caseRequestId&&job.loadToken===ui.loadToken&&job.page===state.currentPage&&job.start===state.start&&job.duration===state.duration&&job.filter===state.filter&&job.mode===ui.mode&&job.bound===ui.bound&&job.selectionMode===ui.selectionMode&&job.ratio===ui.ratio&&job.selectionGeneration===(linked?.snapshot()?.selectionGeneration??null);
     const release=job=>{try{if(job.canvas.hasPointerCapture(job.pointerId))job.canvas.releasePointerCapture(job.pointerId);}catch(_){}};
@@ -715,13 +867,13 @@ const overviewWorkbench=(()=>{
       if(canvas.hasPointerCapture(job.pointerId))canvas.releasePointerCapture(job.pointerId);
       if(!dragCurrent(job))return;
       if(g.kind==='density'){const current=linked?.gatePoint(event,canvas);if(dist>=4&&current)run(()=>linked.gate(canvas,job.densityPoint,current));return;}
-      if(job.button===2){if(dist>=4){linked?.timeInterval(...span());seek(span()[0],true);}showMenu('rr',event,canvas.id);return;}
+      if(job.button===2){if(dist>=4){ui.rangeExplicit=true;ui.creationRange=[...span()];linked?.timeInterval(...span());seek(span()[0],true);}showMenu('rr',event,canvas.id);return;}
       if(g.kind==='hist'){if(point.x>=g.l&&point.x<g.l+g.w&&point.y>=g.t&&point.y<=g.t+g.h)selectHistogramBin(Math.floor((point.x-g.l)/g.w*ui.hist.bins.length));return}
       if(g.kind==='scatter'){
         if(dist<4||ui.selectionMode==='point'){const [x,y]=scatterAt(event,canvas),distance=r=>Math.hypot((r.x-x)/g.bound*g.w,(r.y-y)/g.bound*g.h),nearest=g.points.filter(r=>r.x<=g.bound&&r.y<=g.bound).reduce((a,b)=>!a||distance(b)<distance(a)?b:a,null);ui.polygon=[];if(nearest&&distance(nearest)<=14){selectSamples([nearest.sample_index],{origin:'overview-point',focusSample:nearest.sample_index});seek(nearest.time_s)}}
         else selectSamples(g.points.filter(r=>inside(r.x,r.y,ui.polygon)).map(r=>r.sample_index),{origin:'overview-box'});return;
       }
-      const time=timeAt(event,canvas);if(ui.rangeAnchor!==undefined&&ui.rangeAnchor!==null){ui.range=[Math.min(ui.rangeAnchor,time),Math.max(ui.rangeAnchor,time)];ui.rangeAnchor=null;linked?.timeInterval(...ui.range);seek(ui.range[0],true)}else if(dist<4){if(['hr','rr'].includes(g.kind)&&linked?.active()){const row=ui.rows.filter(r=>r.time_s>=g.start&&r.time_s<g.end&&E.valid(r)).reduce((a,b)=>!a||Math.abs(b.time_s-time)<Math.abs(a.time_s-time)?b:a,null);if(row){selectSamples([row.sample_index],{origin:'overview-time-point',focusSample:row.sample_index});seek(row.time_s);}}else seek(time);}else{if(span()[1]-span()[0]<.005)ui.range=null;else linked?.timeInterval(...span());seek(span()[0],true)}
+      const time=timeAt(event,canvas);if(!ui.af&&ui.rangeAnchor!==undefined&&ui.rangeAnchor!==null){ui.range=[Math.min(ui.rangeAnchor,time),Math.max(ui.rangeAnchor,time)];ui.rangeAnchor=null;linked?.timeInterval(...ui.range);seek(ui.range[0],true)}else if(dist<4){if(['hr','rr'].includes(g.kind)&&linked?.active()){const row=ui.rows.filter(r=>r.time_s>=g.start&&r.time_s<g.end&&E.valid(r)).reduce((a,b)=>!a||Math.abs(b.time_s-time)<Math.abs(a.time_s-time)?b:a,null);if(row){selectSamples([row.sample_index],{origin:'overview-time-point',focusSample:row.sample_index});seek(row.time_s);}}else seek(time);}else{if(span()[1]-span()[0]<.005)ui.range=null;else ui.rangeExplicit=true;ui.creationRange=[...span()];linked?.timeInterval(...span());seek(span()[0],true)}
     },true);
     document.addEventListener('pointercancel',event=>{if(drag&&event.pointerId===drag.pointerId)cancelGesture();},true);
     document.addEventListener('click',event=>{if(own(event.target)){event.preventDefault();event.stopImmediatePropagation()}
@@ -736,7 +888,7 @@ const overviewWorkbench=(()=>{
       const menu=qs('#ovMenu');if(!menu.hidden){if(event.key==='Escape'){closeMenu();event.preventDefault();event.stopImmediatePropagation();return}if(['ArrowDown','ArrowUp'].includes(event.key)){const items=[...menu.querySelectorAll('button,summary')].filter(x=>x.getClientRects().length),index=items.indexOf(document.activeElement);items[(index+(event.key==='ArrowDown'?1:-1)+items.length)%items.length]?.focus();event.preventDefault();event.stopImmediatePropagation()}return}
       const canvas=own(event.target);if(!canvas)return;
       if(event.shiftKey&&event.key==='F10'){const g=geometries.get(canvas);if(['rr','hr','scatter'].includes(g?.kind)){showMenu(g.kind,null,canvas.id);event.preventDefault();event.stopImmediatePropagation()}return}
-      if(event.key==='Escape'){if(cancelGesture()){event.preventDefault();event.stopImmediatePropagation();return;}ui.range=null;ui.polygon=[];ui.densityBox=null;ui.bin=null;linked?.clear('overview-escape');draw();event.preventDefault();event.stopImmediatePropagation();return}
+      if(event.key==='Escape'){if(cancelGesture()){event.preventDefault();event.stopImmediatePropagation();return;}ui.range=null;ui.rangeAnchor=null;ui.rangeExplicit=false;ui.creationRange=null;ui.polygon=[];ui.densityBox=null;ui.bin=null;linked?.clear('overview-escape');draw();event.preventDefault();event.stopImmediatePropagation();return}
       if(canvas.id==='ovHistogram'&&['Home','End'].includes(event.key)){event.preventDefault();event.stopImmediatePropagation();const bins=histogramNonempty(),index=event.key==='End'?bins.at(-1):bins[0];if(index!==undefined)selectHistogramBin(index);return}
       if(['ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();event.stopImmediatePropagation();const direction=event.key==='ArrowLeft'?-1:1;if(canvas.id==='ovHistogram'){navigateHistogram(direction)}else seek(state.start+direction*(event.shiftKey?60:state.duration))}
     },true);
@@ -780,5 +932,5 @@ const overviewWorkbench=(()=>{
       qs('#waveformCard').scrollIntoView({block:'center'});
     }
   }
-  return {load,draw,waveformBasis,waveformFailed,openReportEpisode,invalidateAfterWrite,waveAction,closeMenu};
+  return {isSaving:()=>!!ui.rhythmSaving,load,draw,waveformBasis,waveformFailed,openReportEpisode,invalidateAfterWrite,waveAction,closeMenu};
 })();
