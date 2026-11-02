@@ -1,4 +1,4 @@
-"""AF/AFL pointer and save checks against the actual frozen native M01 workspace."""
+"""AF/AFL single-save candidate and report confirmation checks against the actual frozen native M01 workspace."""
 import time
 
 
@@ -43,7 +43,10 @@ async def verify_af_editor(page, screenshots):
         for kind, start, end in [('AF', 3598, 3608), ('AFL', 7200, 7210)]:
             await page.locator('[data-ov="af-add:' + kind + '"]').first.click()
             await page.locator('#ovEpisodeForm').wait_for(state='visible')
+            await page.wait_for_function("kind=>{const f=document.querySelector('#ovEpisodeForm');return f&&f.elements.kind.value===kind&&f.dataset.startS===''&&f.dataset.endS==='';}", arg=kind)
             assert await bounds() == {'start': None, 'end': None, 'kind': kind}
+            assert await page.locator('[data-ov="af-save:confirmed"]').count() == 0
+            assert await page.locator('[data-ov="af-save:excluded"]').count() == 0
             checks.append(kind + '-new-boundaries-empty')
             await clocks(start, end)
             await page.locator('[data-ov="af-boundary-home"]').click()
@@ -76,18 +79,42 @@ async def verify_af_editor(page, screenshots):
                 await page.wait_for_function('()=>!state.waveformExpanded')
                 assert await bounds() == before_bounds
                 checks.append('three-twelve-return-preserves-AF-boundaries')
+                await page.locator('[data-ov="af-report"]').click()
+                await page.wait_for_function("()=>state.currentPage==='report'&&state.reportDisplayedCategory==='AF'&&!state.reportViewLoading&&!state.reportEvidenceLoading")
+                event_id = 'annotation:af:' + items[0]['id']
+                row = page.locator('tr[data-report-event-id="' + event_id + '"]')
+                await row.locator('[data-locate]').click()
+                await page.wait_for_function("id=>document.querySelector('#v2EventWave .report-range-editor')?._rangeEventId===id", arg=event_id)
+                await row.locator('[data-include]').check()
+                decision = page.locator('#unsavedChangesDialog')
+                await decision.wait_for(state='visible')
+                assert await page.evaluate("()=>state.currentPage") == 'report'
                 async with page.expect_response(lambda response: '/rhythm-review' in response.url and response.request.method == 'PUT') as pending:
-                    await page.locator('[data-ov="af-save:confirmed"]').click()
+                    await decision.locator('[data-unsaved-save]').click()
                 response = await pending.value
                 assert response.ok
                 successful_commits += 1
                 saved = await response.json()
                 assert next(e for e in saved['document']['episodes'] if e['id'] == items[0]['id'])['status'] == 'confirmed'
-                await page.wait_for_function("()=>{const b=document.querySelector('#ovEpisodeForm [data-ov=\"af-save:pending\"]');return !!state.waveform&&b&&!b.disabled;}")
-                checks.append('explicit-AF-confirmation-saved-in-native-workspace')
+                await decision.wait_for(state='hidden', timeout=90000)
+                await page.wait_for_function("()=>!state.reportSaving&&!state.reportDirty")
+                report = await browser_json(page, '/api/cases/' + CASE_ID + '/report?analysis=edited')
+                assert any(e['event_id'] == event_id for e in report['composition']['selected_events'])
+                checks.append('AF-confirmation-and-inclusion-stay-in-native-report')
+                await row.locator('[data-include]').uncheck()
+                await page.wait_for_function("()=>!state.reportSaving&&!state.reportDirty")
+                report = await browser_json(page, '/api/cases/' + CASE_ID + '/report?analysis=edited')
+                assert not any(e['event_id'] == event_id for e in report['composition']['selected_events'])
+                checks.append('native-report-uncheck-removes-AF-strip')
+                await navigate(page, 'review')
+                if not await page.locator('#ovAF').is_visible():
+                    await page.locator('[data-ov="af-open"]').click()
+                await page.locator('#ovAF').wait_for(state='visible')
+                await page.wait_for_function("()=>/逐搏记录/.test(document.querySelector('#ovStatus')?.textContent||'')&&!!state.waveform?.leads&&!document.querySelector('#ovAFCoverage [data-ov=\"af-coverage\"]').disabled")
         for width, height in [(1366, 768), (1440, 900), (1920, 1080)]:
             await page.set_viewport_size({'width': width, 'height': height})
             await page.evaluate('()=>scrollTo(0,0)')
+            await page.wait_for_function("()=>{const c=document.querySelector('#waveformCanvas'),r=c?.getBoundingClientRect();return r&&r.bottom<=innerHeight+1&&r.height>=239;}")
             await two_frames(page)
             for side in ('episodes', 'scatter', 'coverage'):
                 await page.locator('[data-ov="af-side:' + side + '"]').click()
@@ -101,6 +128,9 @@ async def verify_af_editor(page, screenshots):
             await page.locator('[data-ov="af-side:episodes"]').click()
             await page.screenshot(path=str(screenshots / ('mathematical-af-' + str(width) + 'x' + str(height) + '.png')))
     finally:
+        await navigate(page, 'review')
+        if not await page.locator('#ovAF').is_visible():
+            await page.locator('[data-ov="af-open"]').click()
         await page.wait_for_function("()=>!!state.waveform&&document.querySelector('#ovAFCoverage [data-ov=\"af-coverage\"]')&&!document.querySelector('#ovAFCoverage [data-ov=\"af-coverage\"]').disabled")
         for _ in range(successful_commits):
             async with page.expect_response(lambda response: '/rhythm-review' in response.url and response.request.method == 'PUT') as pending:

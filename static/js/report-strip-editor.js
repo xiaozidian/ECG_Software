@@ -39,7 +39,7 @@ globalThis.ECGReportStripEditor=(()=>{
     if(document.querySelector('dialog[open]')||!isCurrent())return;
     const original=structuredClone(selection),dialog=document.createElement('dialog');dialog.className='rw-strip-editor-dialog';dialog.setAttribute('aria-labelledby','rwStripEditorTitle');
     dialog.innerHTML='<header><h2 id="rwStripEditorTitle">编辑图条</h2><button type="button" data-se-close>关闭</button></header><div data-se-body role="status">正在读取本条真实波形…</div>';
-    document.body.append(dialog);dialog.querySelector('[data-se-close]').onclick=()=>dialog.close();let active=true;
+    document.body.append(dialog);let requestClose=()=>dialog.close();dialog.querySelector('[data-se-close]').onclick=()=>requestClose();dialog.addEventListener('cancel',e=>{e.preventDefault();requestClose();});let active=true;
     dialog.addEventListener('close',()=>{active=false;dialog.remove();},{once:true});dialog.showModal();
     const current=()=>active&&dialog.open&&isCurrent();
     try{
@@ -48,7 +48,7 @@ globalThis.ECGReportStripEditor=(()=>{
       body.removeAttribute('role');body.innerHTML=`<form><div class="se-fields"><label>图条起始时间（记录时钟）<input data-se-clock type="datetime-local" step="0.005" value="${clockAt(base,wave.start_s)}" ${base==null?'disabled':''}></label><label>记录起点后秒数<input data-se-start type="number" min="0" max="${total}" step="0.005" value="${wave.start_s}"></label><label>打印时长（秒）<input data-se-duration type="number" min="1" max="120" step="0.005" value="${wave.duration_s}"></label><label>图条名称<input data-se-caption maxlength="500" value="${esc(original.caption||event.label)}"></label><label>心率<input readonly value="${ECGReviewTools.bpm(event.hr)} bpm"></label><label>预览导联<select data-se-preview aria-label="预览导联">${ECGReportEngine.leads.map(n=>`<option ${options.preview_lead===n?'selected':''}>${n}</option>`).join('')}</select></label></div><fieldset><legend>本条展示与打印通道</legend><div class="se-leads">${ECGReportEngine.leads.map(n=>`<label><input type="checkbox" data-se-lead value="${n}" ${original.leads.includes(n)?'checked':''}>${n}</label>`).join('')}</div><div class="se-shortcuts"><button type="button" data-se-preset="three">3L · II / V1 / V5</button><button type="button" data-se-preset="all">全选 / 12L</button><button type="button" data-se-preset="clear">清空</button><button type="button" data-se-preset="original">恢复本条设置</button></div><label><input type="checkbox" data-se-default>将导联选择设为本报告后续选图默认</label><label><input type="checkbox" data-se-print ${options.print_enabled?'checked':''}>本次打印此图条</label></fieldset><p class="rw-hint">网格与 N/S/V 等标注保留。本窗各导联共用显示增益，默认三导联，12 导联可切换；设备电压未校准。范围调整须覆盖事件及至少 5 个可用心搏；RR 候选还须包含原始两个计时点。</p><label class="se-notes">图条注释<textarea data-se-notes aria-label="图条注释" rows="3" maxlength="2000">${esc(options.notes)}</textarea></label><div class="se-shortcuts"><button type="button" data-se-preview-button>预览本条草稿</button><span>预览不写入报告；点击确定后自动保存草稿。</span></div><div data-se-wave></div><p role="status" data-se-status></p><footer><button type="submit">确定</button><button type="button" data-se-cancel>取消</button></footer></form>`;
       const q=s=>body.querySelector(s),form=q('form'),status=q('[data-se-status]');
       const values=()=>({caption:q('[data-se-caption]').value,start_s:Number(q('[data-se-start]').value),duration_s:Number(q('[data-se-duration]').value),leads:[...body.querySelectorAll('[data-se-lead]:checked')].map(n=>n.value),notes:q('[data-se-notes]').value,preview_lead:q('[data-se-preview]').value,print_enabled:q('[data-se-print]').checked});
-      q('[data-se-cancel]').onclick=()=>dialog.close();q('[data-se-start]').oninput=()=>{q('[data-se-clock]').value=clockAt(base,Number(q('[data-se-start]').value));};
+      q('[data-se-cancel]').onclick=()=>requestClose();q('[data-se-start]').oninput=()=>{q('[data-se-clock]').value=clockAt(base,Number(q('[data-se-start]').value));};
       q('[data-se-clock]').oninput=()=>{const t=Date.parse(q('[data-se-clock]').value+'Z');if(base!=null&&Number.isFinite(t))q('[data-se-start]').value=String(Math.round((t-base)/5)/200);};
       body.querySelectorAll('[data-se-preset]').forEach(b=>b.onclick=()=>{const names=b.dataset.sePreset==='three'?['II','V1','V5']:b.dataset.sePreset==='all'?ECGReportEngine.leads:b.dataset.sePreset==='original'?original.leads:[];body.querySelectorAll('[data-se-lead]').forEach(n=>n.checked=names.includes(n.value));});
       function draw(result,name){const host=q('[data-se-wave]'),displayProfile=ECGReviewTools.reportAmplitude(result.waveform);let twelve=false;
@@ -57,7 +57,19 @@ globalThis.ECGReportStripEditor=(()=>{
       draw(entry,options.preview_lead);
       async function checked(){if(!current())throw Error('病例或报告依据已变化，请关闭后重开');const next=draft(original,entry,values(),total),validated=await loadWave(event,next);if(!current())throw Error('病例或报告已变化，本次修改未应用');return {next,validated};}
       q('[data-se-preview-button]').onclick=async()=>{const token=++previewSerial;status.textContent='正在校验预览范围…';try{const {validated,next}=await checked();if(current()&&token===previewSerial){draw(validated,next.preview_lead);status.textContent='仅预览本条草稿；原图条尚未修改。';}}catch(error){if(current())status.textContent=error.message;}};
-      form.onsubmit=async e=>{e.preventDefault();previewSerial++;const submit=form.querySelector('[type=submit]');submit.disabled=true;status.textContent='正在校验图条…';try{const {next}=await checked();await onApply(next,{setDefaults:q('[data-se-default]').checked});if(current())dialog.close();else if(dialog.open)dialog.close();}catch(error){if(current()){status.textContent=error.message;submit.disabled=false;}}};
+      const baseline=JSON.stringify(values());let saving=false;
+      async function apply(){
+        if(saving)throw Error('图条正在保存，请稍候');saving=true;previewSerial++;
+        form.querySelectorAll('button,input,select,textarea').forEach(n=>n.disabled=true);status.textContent='正在校验图条…';
+        try{const {next}=await checked();await onApply(next,{setDefaults:q('[data-se-default]').checked});if(dialog.open)dialog.close();}
+        finally{saving=false;if(dialog.open)form.querySelectorAll('button,input,select,textarea').forEach(n=>n.disabled=false);}
+      }
+      requestClose=async()=>{
+        if(saving)return;
+        if(JSON.stringify(values())===baseline&&!q('[data-se-default]').checked){dialog.close();return;}
+        await ECGUnsavedNavigation.resolve({title:'图条修改尚未保存',detail:original.caption||event.label,saveLabel:'保存图条并关闭',discardLabel:'放弃修改并关闭',isCurrent:()=>active||!dialog.open,save:apply,discard:()=>dialog.close()});
+      };
+      form.onsubmit=e=>{e.preventDefault();apply().catch(error=>{if(current())status.textContent=error.message;});};
     }catch(error){if(current())dialog.querySelector('[data-se-body]').textContent='读取失败：'+error.message;}
   }
   return {project,curation,draft,clockAt,clockBase,open,menu,closeMenu};

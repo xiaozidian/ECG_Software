@@ -28,7 +28,7 @@ async function verify(){
 
   let forwarded,released=0;
   const navState={caseId:'CASE',currentPage:'edit',editStart:120,editLead:'V1',start:40,leads:['II','V5']};
-  const nav=vm.createContext({state:navState,goPage:(name,options)=>{forwarded={name,options};navState.currentPage=name},clinicalUI:{cancelReportExport(){},releaseOccurrenceWaves(){released++}}});
+  const nav=vm.createContext({overviewWorkbench:{hasUnsaved:()=>false},state:navState,goPage:(name,options)=>{forwarded={name,options};navState.currentPage=name},clinicalUI:{cancelReportExport(){},releaseOccurrenceWaves(){released++}}});
   vm.runInContext(section(ui,'const goPageLegacy=goPage;', 'const setEditModeLegacy=setEditMode;'),nav);
   nav.goPage('review',{editFullscreenTransition:true});assert.equal(navState.start,40);assert.deepEqual(navState.leads,['II','V5']);assert.equal(forwarded.options.editFullscreenTransition,true);assert.equal(released,0);
   nav.goPage('edit',{editFullscreenTransition:true,reuseEditWorkspace:true});assert.equal(navState.editStart,120);assert.equal(navState.editLead,'V1');assert.equal(forwarded.options.reuseEditWorkspace,true);

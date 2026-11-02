@@ -257,6 +257,15 @@ function syncRhythmRangeEditor() {
   controller.sync();
 }
 
+async function resolveWorkstationLeave(){
+  if(globalThis.ECGUnsavedNavigation?.isOpen())return false;
+  if(globalThis.ECGReportRange&&!await ECGReportRange.resolveLeave())return false;
+  if(globalThis.ECGAdvancedAnalysis?.resolveLeave&&!await ECGAdvancedAnalysis.resolveLeave())return false;
+  if(globalThis.ECGHRVEditor?.resolveLeave&&!await ECGHRVEditor.resolveLeave())return false;
+  if(typeof overviewWorkbench!=='undefined'&&!await overviewWorkbench.resolveLeave())return false;
+  return true;
+}
+
 function allowRhythmRangeLeave() {
   if(typeof overviewWorkbench!=='undefined'&&overviewWorkbench.isSaving()){toast('正在保存片段，请等待结果','error');return false;}
   if(!globalThis.ecgRhythmRangeEditor?.isSaving())return true;
@@ -668,10 +677,11 @@ function allowSttCaseSelection(caseId) {
 }
 
 async function selectCase(caseId, destination = "review") {
+  if(!await resolveWorkstationLeave())return;
   if(typeof allowRhythmRangeLeave==='function'&&!allowRhythmRangeLeave())return;
   if(state.caseId!==caseId&&globalThis.ECGHRVEditor?.allowLeave()===false)return;
   if(!allowSttCaseSelection(caseId))return;
-  if((state.reportDirty||state.reportSaving)&&typeof clinicalUI!=='undefined'){try{await clinicalUI.flushReportAutosave();}catch(error){handleError(error);return;}}
+  if((state.reportDirty||state.reportSaving)&&typeof clinicalUI!=='undefined'&&!await clinicalUI.resolveReportLeave())return;
   if(!clinicalWorkflow.allowLeave())return;
   closeBeatRelabelMenu();globalThis.ECGOccurrenceCard?.closeMenu();
   if(typeof overviewWorkbench!=='undefined')overviewWorkbench.closeMenu();
@@ -3190,7 +3200,7 @@ function handleError(error) {if(error.name==='AbortError')return;console.error(e
 
 function bindEvents() {
   window.addEventListener("beforeunload",event=>{
-    if(sttReviewHasUnsavedNote() || state.sttSaving || globalThis.ecgRhythmRangeEditor?.pending() || globalThis.ecgRhythmRangeEditor?.isSaving()){event.preventDefault();event.returnValue="";}
+    if(globalThis.ECGReportRange?.pending().length || sttReviewHasUnsavedNote() || state.sttSaving || globalThis.ecgRhythmRangeEditor?.pending() || globalThis.ecgRhythmRangeEditor?.isSaving()){event.preventDefault();event.returnValue="";}
   });
   $$(".nav-item").forEach(button=>button.addEventListener("click",()=>goPage(button.dataset.page)));
   $$('[data-go]').forEach(button=>button.addEventListener("click",()=>goPage(button.dataset.go)));

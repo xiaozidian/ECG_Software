@@ -914,3 +914,10 @@
 .rw-evidence-pending[hidden]{display:none}
 .rw-strip-actions .rw-evidence-reference{display:inline-flex;align-items:center;gap:4px;font-size:12px}
 .rw-longest-measurement{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+
+.unsaved-changes-dialog{width:min(560px,calc(100vw - 32px));padding:20px;border:1px solid var(--line);border-radius:10px;background:var(--surface,#fff);color:var(--ink-800,#17343e)}
+.unsaved-changes-dialog::backdrop{background:rgba(16,40,50,.42)}
+.unsaved-changes-dialog h2{margin:0;font-size:18px}
+.unsaved-changes-dialog p{line-height:1.6;overflow-wrap:anywhere}
+.unsaved-changes-dialog [role=alert]{color:#a33930}
+.unsaved-changes-dialog .modal-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}

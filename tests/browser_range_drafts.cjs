@@ -1,7 +1,8 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
 const events=[];
 const ctx=vm.createContext({document:{dispatchEvent:e=>events.push(e.type)},CustomEvent:class{constructor(type){this.type=type}},ECGReviewTools:{markSvg:()=>''}});
-vm.runInContext(fs.readFileSync('static/js/report-range-editor.js','utf8'),ctx);
+ctx.ECGOccurrenceCard=require('../static/js/occurrence-card.js');
+  vm.runInContext(fs.readFileSync('static/js/report-range-editor.js','utf8'),ctx);
 const R=ctx.ECGReportRange;
 function host(){
  const nodes=new Map(),handlers={};
@@ -45,7 +46,8 @@ function change(h,value){const n=h.querySelector('[data-bound=start]');n.value=S
  accepted=true;assert.equal(ctx.allowLeave(),true);assert.equal(R.pending().length,0);
  for(const name of ['save','previewPaper','print','reloadReport','downloadReport']){
    const start=ui.indexOf('  async function '+name+'(');assert(start>=0);
-   const end=ui.indexOf('\n  }',start)+4;const blocked=vm.createContext({ECGReportRange:{assertApplied(){throw Error('pending-range')}}});
+   const end=ui.indexOf('\n  }',start)+4;const blocked=vm.createContext({resolveWorkstationLeave:async()=>{throw Error('pending-range')},reportSavePromise:null,ECGReportRange:{assertApplied(){throw Error('pending-range')}}});
+   if(name==='save'){const p=ui.indexOf('  async function persistReport('),q=ui.indexOf('\n  }',p)+4;vm.runInContext(ui.slice(p,q),blocked);}
    vm.runInContext(ui.slice(start,end),blocked);await assert.rejects(blocked[name](),/pending-range/);
  }
  assert(ui.slice(ui.indexOf("qs('#downloadReport').addEventListener")).includes('run(downloadReport)'));

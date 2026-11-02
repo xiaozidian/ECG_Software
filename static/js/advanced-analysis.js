@@ -20,6 +20,11 @@ globalThis.ECGAdvancedAnalysis=(()=>{
     throw Error('研究测量有未应用修改或正在计算。请回到“报告 → 报告”的研究测量区，计算并复核，或明确放弃修改后再保存、预览或导出。');
   }
   function clear(){retained?.controller?.cancel();retained=null;}
+  async function resolveLeave(){
+    if(!pending())return true;
+    const owner=retained;
+    return ECGUnsavedNavigation.resolve({title:'研究测量尚未应用',detail:'继续在此处计算并复核，或放弃本次未应用修改。',isCurrent:()=>retained===owner&&owner.contextCurrent(),discard:()=>owner.controller.discard()});
+  }
   const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const titles={qtd:'QT 离散度',vcg:'推导 VCG',twa:'T 波电交替',sap:'ECG 呼吸暂停筛查',hrt:'HRT / DC'};
   const value=x=>x==null?'—':String(x);
@@ -81,7 +86,7 @@ globalThis.ECGAdvancedAnalysis=(()=>{
     host.querySelector('[data-reset-markers]').onclick=()=>{if(form.reportValidity()){try{calculate({...read(),markers:{},marker_basis:''});}catch(error){status.textContent=error.message;}}};
     host.querySelectorAll('[data-am-tab]').forEach(button=>button.onclick=()=>{if(edited){status.textContent='请先应用本导联端点或放弃修改，再切换测量类型。';return;}tab=button.dataset.amTab;render();});
     // Unsaved settings must not leave an old result looking current or printable.
-    lock(false);form.oninput=()=>{if(busy)return;edited=true;discard.hidden=false;lock(false);host.querySelector('.am-results').hidden=true;status.textContent='参数尚未计算，仅在本窗口暂存。筛选和子页往返会保留输入；请计算并复核，或放弃修改后再保存、预览或导出。';};
+    lock(false);form.oninput=()=>{if(busy)return;edited=true;discard.hidden=false;lock(false);host.querySelector('.am-results').hidden=true;status.textContent='参数尚未计算，仅在本窗口暂存。离开前请选择继续复核或放弃修改。';};
     function render(){
       if(!isCurrent()){host.querySelector('.am-results').hidden=true;status.textContent='分析依据已变化，请载入最新版本后重新计算。';return;}
       host.querySelectorAll('[data-am-tab]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.amTab===tab)));
@@ -124,8 +129,8 @@ globalThis.ECGAdvancedAnalysis=(()=>{
       content.querySelectorAll('[data-am-locate]').forEach(b=>b.onclick=()=>{if(isCurrent())onLocate(Number(b.dataset.amLocate),{raw:b.hasAttribute?.('data-am-raw')||false});else{host.querySelector('.am-results').hidden=true;status.textContent='分析依据已变化，请载入最新版本后重新计算。';}});
       content.querySelectorAll('svg').forEach(svg=>{svg.setAttribute('data-inspect-chart','');svg.setAttribute('data-inspect-title',svg.getAttribute('aria-label')||titles[tab]);});
     }
-    return {pending:()=>edited||busy,cancel};
+    return {pending:()=>edited||busy,cancel,discard(){cancel();restore();}};
   }
-  return {mount,mountRetained,plot,pending,assertApplied,clear};
+  return {mount,mountRetained,plot,pending,assertApplied,resolveLeave,clear};
 })();
 if(typeof window!=='undefined')window.addEventListener('beforeunload',event=>{if(ECGAdvancedAnalysis.pending()){event.preventDefault();event.returnValue='';}});

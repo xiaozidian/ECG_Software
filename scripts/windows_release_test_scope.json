@@ -45,5 +45,6 @@
   "tests/test_af_queue.py",
   "tests/test_af_report_linkage.py",
   "tests/test_af_report_state.py",
-  "tests/test_local_static_passthrough.py"
+  "tests/test_local_static_passthrough.py",
+  "tests/test_unsaved_navigation.py"
 ]

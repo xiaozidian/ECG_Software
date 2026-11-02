@@ -12,7 +12,7 @@ const status=h.querySelector('output').innerHTML;assert.match(status,/data-range
 assert.equal(R.pending()[0].applied.a,7);assert.equal(R.pending()[0].applied.b,14);assert.equal(R.pending()[0].applied.inReport,true);assert.throws(()=>R.assertApplied(),/尚未应用/);
 const notice=host();ctx.qs=s=>s==='#reportRangeDraftNotice'?notice:{};ctx.run=f=>f();ctx.renderReportBody=()=>{};
 const ui=fs.readFileSync('static/js/clinical-ui.js','utf8');vm.runInContext(ui.slice(ui.indexOf('  function renderRangeDraftNotice('),ui.indexOf('  function hrvForReport(')),ctx);ctx.renderRangeDraftNotice();
-assert.equal(notice.className,'v2-range-draft-bar');assert.match(notice.innerHTML,/1 处待应用区间/);assert.match(notice.innerHTML,/当前已应用区间.*00:00:07.000/);assert.match(notice.innerHTML,/保存、预览、导出前须处理/);assert.match(notice.innerHTML,/data-range-resume>回到草稿/);assert.match(notice.innerHTML,/data-range-discard>放弃修改/);
+assert.equal(notice.className,'v2-range-draft-bar');assert.match(notice.innerHTML,/1 处待应用区间/);assert.match(notice.innerHTML,/当前已应用区间.*00:00:07.000/);assert.match(notice.innerHTML,/切换前可应用或放弃本次修改/);assert.match(notice.innerHTML,/data-range-resume>回到草稿/);assert.match(notice.innerHTML,/data-range-discard>放弃修改/);
 notice.querySelector('[data-range-discard]').onclick();notice.querySelector('[data-range-keep]').onclick();assert.equal(R.pending().length,1);
 notice.querySelector('[data-range-discard]').onclick();notice.querySelector('[data-range-confirm-discard]').onclick();assert.equal(R.pending().length,0);
 assert.equal(R.formatTime(86399.9996),'D2 00:00:00.000','millisecond rollover must carry into the next day');

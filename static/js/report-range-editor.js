@@ -1,5 +1,35 @@
 "use strict";
 /* Explicit range drafts: moving a handle never silently saves a report. */
+
+const ECGUnsavedNavigation=(()=>{
+ let open=false;
+ async function resolve({title,detail,stayLabel='继续编辑',saveLabel='保存并继续',discardLabel='放弃修改并继续',save,discard,isCurrent=()=>true}){
+  if(open)return false;open=true;
+  const focus=document.activeElement,dialog=document.createElement('dialog');
+  dialog.id='unsavedChangesDialog';dialog.className='modal unsaved-changes-dialog';
+  dialog.setAttribute('aria-labelledby','unsavedChangesTitle');
+  dialog.setAttribute('aria-describedby','unsavedChangesDetail');
+  dialog.innerHTML='<header class="modal-header"><h2 id="unsavedChangesTitle"></h2></header><p id="unsavedChangesDetail"></p><p data-unsaved-error role="alert"></p><footer class="modal-actions"><button type="button" class="button secondary" data-unsaved-stay autofocus>继续编辑</button><button type="button" class="button secondary" data-unsaved-discard></button><button type="button" class="button primary" data-unsaved-save></button></footer>';
+  dialog.querySelector('h2').textContent=title;dialog.querySelector('#unsavedChangesDetail').textContent=detail;
+  const saveButton=dialog.querySelector('[data-unsaved-save]');saveButton.textContent=saveLabel;saveButton.hidden=!save;
+  dialog.querySelector('[data-unsaved-stay]').textContent=stayLabel;dialog.querySelector('[data-unsaved-discard]').textContent=discardLabel;dialog.querySelector('[data-unsaved-discard]').hidden=!discard;document.body.append(dialog);
+  return new Promise(resolve=>{
+   let busy=false,done=false;
+   function finish(value){if(done)return;done=true;open=false;dialog.close();dialog.remove();if(focus?.isConnected)focus.focus({preventScroll:true});resolve(value);}
+   dialog.addEventListener('cancel',e=>{e.preventDefault();if(!busy)finish(false);});
+   dialog.querySelector('[data-unsaved-stay]').onclick=()=>finish(false);
+   async function act(fn){if(busy)return;if(!isCurrent()){finish(false);return;}busy=true;dialog.querySelectorAll('button').forEach(b=>b.disabled=true);
+    try{await fn();if(!isCurrent()){finish(false);return;}finish(true);}
+    catch(error){dialog.querySelector('[data-unsaved-error]').textContent=error.message;}
+    finally{busy=false;if(!done)dialog.querySelectorAll('button').forEach(b=>b.disabled=false);}
+   }
+   saveButton.onclick=()=>act(save);dialog.querySelector('[data-unsaved-discard]').onclick=()=>act(discard);dialog.showModal();
+  });
+ }
+ return {resolve,isOpen:()=>open};
+})();
+globalThis.ECGUnsavedNavigation=ECGUnsavedNavigation;
+
 (()=>{
  let context=null;const drafts=new Map();
  const notify=()=>{if(typeof document!=='undefined')document.dispatchEvent(new CustomEvent('ecg-report-range-change'));};
@@ -7,7 +37,16 @@
  const pending=()=>Array.from(drafts.values());
  function clear(){drafts.clear();notify();}
  function forget(key){drafts.delete(key);notify();}
- function assertApplied(){if(drafts.size)throw Error(`还有 ${drafts.size} 处游标修改尚未应用，请返回处理或明确放弃后再保存、预览或导出。`);}
+ function assertApplied(){if(drafts.size)throw Error('当前区间尚未应用，请先应用或取消修改。');}
+ async function resolveLeave(){
+  const items=pending(),owner=context;if(!items.length)return true;
+  const first=items[0],current=()=>context===owner;
+  return ECGUnsavedNavigation.resolve({title:'离开前处理区间修改',detail:`${first.event?.label||'当前图条'} · ${stamp(first.a)} — ${stamp(first.b)}${items.length>1?' · 共 '+items.length+' 处':''}`,
+   saveLabel:first.applied?.inReport?'应用区间并继续':'应用区间、加入报告并继续',isCurrent:current,
+   save:items.every(d=>d.isCurrent?.())?async()=>{for(const d of items){if(!current()||drafts.get(d.event.event_id)!==d)throw Error('区间已变化，请继续编辑');await d.apply();}}:null,
+   discard:()=>{for(const d of items){if(drafts.get(d.event?.event_id)===d){if(d.isCurrent?.())d.discard();else forget(d.event.event_id);}}}
+  });
+ }
  const esc=x=>String(x).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const stamp=s=>{const n=Math.round(s*1000),ms=n%1000,sec=Math.floor(n/1000);return `D${Math.floor(sec/86400)+1} ${String(Math.floor(sec%86400/3600)).padStart(2,'0')}:${String(Math.floor(sec%3600/60)).padStart(2,'0')}:${String(sec%60).padStart(2,'0')}.${String(ms).padStart(3,'0')}`};
  function mount(host,entry,wave,onApply,onReset,options={}){
@@ -20,7 +59,7 @@
   const key=options.event?.event_id,ownContext=context,baseline=JSON.stringify([entry.strip.start_s,entry.strip.end_s]),draft=key&&drafts.get(key);
   const current=()=>host._rangeMountToken===mountToken&&host.isConnected!==false&&host.querySelector('.report-range-stage')===stage&&context===ownContext;
   if(draft&&draft.basis===options.basis&&draft.baseline===baseline){a=draft.a;b=draft.b;}
-  function remember(){if(!key||!current())return;const changed=Math.abs(a-entry.strip.start_s)>.001||Math.abs(b-entry.strip.end_s)>.001;if(changed)drafts.set(key,{...options,baseline,a,b,applied:{a:entry.strip.start_s,b:entry.strip.end_s,inReport:entry.inReport}});else drafts.delete(key);notify();}
+  function remember(){if(!key||!current())return;const changed=Math.abs(a-entry.strip.start_s)>.001||Math.abs(b-entry.strip.end_s)>.001;if(changed)drafts.set(key,{...options,baseline,a,b,isCurrent:current,apply:async()=>{if(!await commit(false))throw Error(host.querySelector('.range-error')?.textContent||'区间尚未应用');},discard:cancel,applied:{a:entry.strip.start_s,b:entry.strip.end_s,inReport:entry.inReport}});else drafts.delete(key);notify();}
   const columns=1; // Full-width shared clock; never split twelve leads.
   // One desktop row geometry and locked gain across report categories. Only a
   // genuine out-of-domain signal may grow the rows; never hide source samples.
@@ -56,9 +95,9 @@
   host.querySelectorAll('[data-bound]').forEach(input=>input.onchange=()=>{if(busy||!current())return;const x=input.value===''?NaN:Number(input.value);if(Number.isFinite(x)){if(input.dataset.bound==='start')a=clamp(x,Math.max(lo,b-120),b-1);else b=clamp(x,a+1,Math.min(hi,a+120))}render();remember()});
   // Reconcile numeric drafts on blur as well as change (including autofill).
   host.querySelectorAll('[data-bound]').forEach(input=>input.addEventListener('blur',()=>input.onchange()));
-  async function commit(reset){if(busy||!current())return;busy=true;const error=host.querySelector('.range-error');error.textContent='正在校验区间与心搏数…';host.querySelectorAll('button,input').forEach(x=>x.disabled=true);const saved=key&&drafts.get(key);try{await(reset?onReset():onApply({range_start_s:a,range_end_s:b}));if(current()){error.textContent='';if(drafts.get(key)===saved)forget(key);}}catch(e){if(current())error.textContent=e.message;}finally{busy=false;if(current()){host.querySelectorAll('button,input').forEach(x=>x.disabled=false);render();}}}
-  host.querySelector('[data-range-cancel]').onclick=()=>{if(busy||!current())return;a=entry.strip.start_s;b=entry.strip.end_s;drag=null;host.querySelector('.range-error').textContent='';render();remember();};host.querySelector('[data-range-reset]').title='重新校验自动 7 秒 / 至少 5 个可用心搏；不改诊断确认';
+  async function commit(reset){if(busy||!current())return;busy=true;const error=host.querySelector('.range-error');error.textContent='正在校验区间与心搏数…';host.querySelectorAll('button,input').forEach(x=>x.disabled=true);const saved=key&&drafts.get(key);try{await(reset?onReset():onApply({range_start_s:a,range_end_s:b}));if(current()){error.textContent='';if(drafts.get(key)===saved)forget(key);}return true;}catch(e){if(current())error.textContent=e.message;return false;}finally{busy=false;if(current()){host.querySelectorAll('button,input').forEach(x=>x.disabled=false);render();}}}
+  function cancel(){if(busy||!current())return;a=entry.strip.start_s;b=entry.strip.end_s;drag=null;host.querySelector('.range-error').textContent='';render();remember();}host.querySelector('[data-range-cancel]').onclick=cancel;host.querySelector('[data-range-reset]').title='重新校验自动 7 秒 / 至少 5 个可用心搏；不改诊断确认';
   host.querySelector('[data-range-apply]').onclick=()=>commit(false);host.querySelector('[data-range-reset]').onclick=()=>commit(true);host._rangeReady=true;render();
  }
- globalThis.ECGReportRange={mount,setContext,pending,clear,forget,assertApplied,formatTime:stamp};
+ globalThis.ECGReportRange={mount,setContext,pending,clear,forget,assertApplied,resolveLeave,formatTime:stamp};
 })();
