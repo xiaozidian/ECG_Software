@@ -1,8 +1,6 @@
 name: Windows UI2 immutable artifact native continuation 1.0.12
 
 on:
-  push:
-    branches: ["codex/windows-doctor-deidentified-x64-20261028"]
   workflow_dispatch:
 
 permissions:

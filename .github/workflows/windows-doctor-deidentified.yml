@@ -1,6 +1,8 @@
 name: Windows UI-only repack 1.0.12 (same27 binary; math CI only)
 
 on:
+  push:
+    branches: ["codex/windows-doctor-deidentified-x64-20261028"]
   workflow_dispatch:
 
 permissions:
