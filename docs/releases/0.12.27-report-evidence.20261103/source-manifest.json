@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "release_id": "0.12.27-report-evidence.20261103",
+  "release_id": "0.12.27-report-evidence.20261103-ui2",
   "app_version": "0.12.27-report-evidence.20261103",
-  "source_sha256": "00fcf05595368118dd1cbef73627ce6dbaccc229f2a2a0d4c15e2df1e998842b",
+  "source_sha256": "090594a0b36065f0b6f464e53dd6ae035f46bff9c40d7c901c5d679cc7b2162b",
   "production_file_count": 128,
   "files": {
     "CardioInsightMacCandidate.spec": {
@@ -226,8 +226,8 @@
       "sha256": "db46cebc522231c0b96b69a91942e4f5d0ece0f7165c8bccf586cec411f81357"
     },
     "static/css/overview-workbench.css": {
-      "bytes": 62196,
-      "sha256": "a8f2360ae1a8f0ac907ce69f8f0d5751992a38ade003996b7d48fa08e3f4129c"
+      "bytes": 62207,
+      "sha256": "24ee88475fded99b5d581f5a2312e26a6d34ffa2398a7a0f1c003da40b552c3d"
     },
     "static/css/report-curation.css": {
       "bytes": 8407,
@@ -242,8 +242,8 @@
       "sha256": "6cb2d9917d3168a6c5ab5c6335efcc259c12aa70352f357a598e31fe7f63a565"
     },
     "static/css/report-workspace.css": {
-      "bytes": 95233,
-      "sha256": "d802298fb41e561fde12420b8ab5b152b130c6fa3a0c050079f0a1e20f5459d8"
+      "bytes": 95223,
+      "sha256": "c90ee183c9bf809a1d036806b4fa70020b4379db8bd1f55c9ad2d68d554ae7e3"
     },
     "static/css/review-candidates.css": {
       "bytes": 2856,
@@ -306,8 +306,8 @@
       "sha256": "fb20b4aa33e0cd2cc5fae8bf8a2a7968b22f8506cdc012ae507c465ea59da3ee"
     },
     "static/js/app.js": {
-      "bytes": 291677,
-      "sha256": "4e60f101bb89cb963b6e11ab1863f2ff221e40d8d152e1c14e7678be479f22c9"
+      "bytes": 292596,
+      "sha256": "dd9be9f775d0e16180e2270c0260c1b990e9c28a212e827b041613bb36a99e15"
     },
     "static/js/beat-editor-ui.js": {
       "bytes": 46712,
@@ -330,8 +330,8 @@
       "sha256": "a6388fe03f33d7e58efdbf0a962794231b1d291d14940b6aedc91305edcd4330"
     },
     "static/js/clinical-ui.js": {
-      "bytes": 239536,
-      "sha256": "e9554f49f71fb4bda9350be5cdbe93f3bafb0a66edbeccc0b6ec1d28534972ab"
+      "bytes": 239540,
+      "sha256": "1a1966136ebef0d3d87e8c9d3dc5eee4203ebc0c31d4ae5fc91093d90164bfd9"
     },
     "static/js/clinical-workflow.js": {
       "bytes": 15113,
@@ -414,8 +414,8 @@
       "sha256": "ca4fd8abf3e3000e2307eb7dba2611f18f5bec79979d34e0b351682fdf5c4084"
     },
     "static/js/report-range-editor.js": {
-      "bytes": 18476,
-      "sha256": "c70cf28a89f7ae41cf7dcf77778d650686bbabe759dc4cf3231ecde189c777d3"
+      "bytes": 18432,
+      "sha256": "e85bba7ce6e5b1a61da132929c20503eb2506702dbd6b71cda46afd39613405f"
     },
     "static/js/report-sections.js": {
       "bytes": 16412,
@@ -494,8 +494,8 @@
       "sha256": "ef1988abc91dd81b85d87f7c00b933c6efdc2101cb8915ce939f62c412f5ebcf"
     },
     "templates/index.html": {
-      "bytes": 82505,
-      "sha256": "38175a5fb3bcb80e13cf01bb0f662cc02b9f4caade347d6bdf0dfad80b0f3743"
+      "bytes": 82512,
+      "sha256": "e6b50bed38ef033a6dc9baa0b74f58ff196543fa05f1a5afc03bacfb013591d5"
     },
     "停止Mac评估版.command": {
       "bytes": 125,
@@ -518,6 +518,7 @@
       "sha256": "418c669b1c5bf1c2e3f952635363c63a27e20c528d2c24312101e014d122a6ee"
     }
   },
-  "base_release_id": "0.12.26-report-candidates.20261103",
-  "base_source_sha256": "8c752c51cbf707c2e951546183cf2dcd2a1d917d17f189936b913c7f4b1d09f9"
+  "base_release_id": "0.12.27-report-evidence.20261103",
+  "base_source_sha256": "00fcf05595368118dd1cbef73627ce6dbaccc229f2a2a0d4c15e2df1e998842b",
+  "ui_revision": "UI2"
 }
