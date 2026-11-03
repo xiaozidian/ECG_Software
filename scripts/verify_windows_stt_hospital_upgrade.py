@@ -271,8 +271,15 @@ def compare_api(before, after, package):
     require(new['analysis_provenance']['basis']['digest'] == b0['digest'] != b1['digest'], 'Old proof was silently re-signed')
     require(after['basis']['analysis_basis'] == b1['digest'] and after['basis']['analysis_revision'] == new['review_revision'],
             'New linked-read identity does not match report basis')
-    require(before['basis']['beat_revision'] == after['basis']['beat_revision'], 'Upgrade modified the beat editor')
+    r0,r1=before['beat_editor'].get('revision'),after['beat_editor'].get('revision')
+    require(type(r0) is int and r0>=0 and type(r1) is int and r1>=0,
+            'Actual beat-editor revision is missing or invalid')
+    require(r0==r1, 'Upgrade modified the beat editor')
     h0,h1=old['current_hrv_reference'],new['current_hrv_reference']
+    for reference,revision in ((h0,r0),(h1,r1)):
+        linked=reference['scope'].get('beat_revision')
+        require(type(linked) is int and linked>=0 and linked==revision,
+                'Actual beat-editor revision differs from linked HRV scope')
     exact({k:v for k,v in h0.items() if k!='scope'},{k:v for k,v in h1.items() if k!='scope'},
           'Upgrade modified the HRV document, revision, window or profile')
     exact({k:v for k,v in h0['scope'].items() if k not in ('analysis_basis','analysis_revision')},
@@ -314,6 +321,7 @@ async def capture(page, case_id, get, *, after=False):
     report = await get(page, case_id, 'report')
     ids = list(dict.fromkeys(p['event_id'] for p in report['composition']['selected_events']))
     value = dict(report=report, basis=await get(page, case_id, 'analysis-basis'),
+                 beat_editor=await get(page, case_id, 'beat-editor'),
                  events=await get(page, case_id, 'report-events?' + urlencode(dict(ids='|'.join(ids), limit=2000))),
                  annotations=await get(page, case_id, 'annotations'), workflow=await get(page, case_id, 'review-workflow'))
     if after:
@@ -514,9 +522,9 @@ def probe_comparators():
     events1 = [dict(event_id='annotation:1', category='ST', stt_event_evidence=proof,
                    stt_review_state='stale', stt_report_group='pending', diagnosis_status='pending',
                    stt_report_eligibility=dict(table=False,text=False,strip=False)), events0[-1]]
-    api0 = dict(report=report0, basis=dict(analysis_basis=b0['digest'], analysis_revision=3, beat_revision=0),
+    api0 = dict(report=report0, basis=dict(analysis_basis=b0['digest'], analysis_revision=3),beat_editor=dict(revision=0),
                 events={'items':events0}, annotations={'items':[annotation]}, workflow={})
-    api1 = dict(report=report1, basis=dict(analysis_basis=b1['digest'], analysis_revision=4, beat_revision=0),
+    api1 = dict(report=report1, basis=dict(analysis_basis=b1['digest'], analysis_revision=4),beat_editor=dict(revision=0),
         events={'items':events1}, annotations={'items':[{**annotation,'stt_review_receipt':{'review_state':'stale'}}]},
         workflow=dict(steps=dict(edit={'status':'stale'},stt={'status':'stale'}),report_status='draft'),
         stt=dict(analysis={'algorithm_version':NEW_ALGORITHM},review_records=[annotation]))
@@ -546,6 +554,21 @@ def probe_comparators():
                              dict(id=3,case_id=case,actor='math-doctor',action='case.open',detail='',created_at=stamp)]
     checks=[]
     compare_api(api0,api1,package); checks.append('valid-new-engine-invalidation-and-preserved-six-picks')
+    requested=[]
+    async def mathematical_get(page, requested_case, kind):
+        require(requested_case==case, 'Capture substituted a different case')
+        requested.append(kind)
+        key={'report':'report','analysis-basis':'basis','beat-editor':'beat_editor',
+             'annotations':'annotations','review-workflow':'workflow'}.get(kind)
+        if kind.startswith('report-events?'):
+            key='events'
+        require(key is not None, 'Unexpected endpoint in read-only capture probe')
+        return copy.deepcopy(api0[key])
+    captured=asyncio.run(capture(None,case,mathematical_get))
+    exact(captured,api0,'Read-only capture changed the actual endpoint envelopes')
+    require(requested.count('beat-editor')==1 and set(captured['basis'])=={'analysis_basis','analysis_revision'},
+            'Capture did not read the real beat-editor endpoint separately')
+    checks.append('capture-uses-real-two-field-basis-and-separate-readonly-beat-editor')
     compare_database(db0,db1,case,first,last,b0,b1); checks.append('valid-exact-new-table-invalidation-and-two-audit-appends')
     def reject_api(name, mutation):
         value=copy.deepcopy(api1);mutation(value)
@@ -559,7 +582,13 @@ def probe_comparators():
     reject_api('reject-old-ST-still-table-eligible',lambda x:x['events']['items'][0]['stt_report_eligibility'].update(table=True))
     reject_api('reject-old-ST-disappears',lambda x:x['events']['items'].pop(0))
     reject_api('reject-record-proof-range-change',lambda x:x['annotations']['items'][0]['details']['stt_event_evidence'].update(end_s=353))
-    reject_api('reject-unchanged-beat-revision-violation',lambda x:x['basis'].update(beat_revision=1))
+    reject_api('reject-unchanged-beat-revision-violation',lambda x:x['beat_editor'].update(revision=1))
+    reject_api('reject-missing-actual-beat-editor-revision',lambda x:x['beat_editor'].pop('revision'))
+    reject_api('reject-boolean-actual-beat-editor-revision',lambda x:x['beat_editor'].update(revision=False))
+    reject_api('reject-negative-actual-beat-editor-revision',lambda x:x['beat_editor'].update(revision=-1))
+    reject_api('reject-missing-linked-HRV-beat-revision',lambda x:x['report']['current_hrv_reference']['scope'].pop('beat_revision'))
+    reject_api('reject-mismatched-linked-HRV-beat-revision',lambda x:x['report']['current_hrv_reference']['scope'].update(beat_revision=1))
+    reject_api('reject-boolean-linked-HRV-beat-revision',lambda x:x['report']['current_hrv_reference']['scope'].update(beat_revision=False))
     reject_api('reject-HRV-document-change',lambda x:x['report']['current_hrv_reference'].update(document_digest='tampered'))
     def reject_db(name, mutation):
         value=copy.deepcopy(db1);mutation(value)

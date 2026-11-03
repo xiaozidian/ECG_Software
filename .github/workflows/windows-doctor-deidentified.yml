@@ -9,6 +9,7 @@ on:
       - 'scripts/prepare_stt_native_continuation.py'
       - 'scripts/stt-native-continuation-contract.json'
       - 'scripts/verify_windows_doctor_browser.py'
+      - 'scripts/verify_windows_stt_hospital_upgrade.py'
   workflow_dispatch:
 
 permissions:
