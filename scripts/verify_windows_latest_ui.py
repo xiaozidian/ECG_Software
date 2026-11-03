@@ -103,7 +103,7 @@ async def verify_latest_ui(page, screenshots):
     checks.append('HRV-overview-and-detail-double-click-vertical-twelve')
 
     await navigate(page,'report')
-    await page.locator('#v2EventWave [data-display-leads="12"]').click()
+    await page.locator('#v2EventWave button[data-display-leads="12"]').click()
     await page.locator('#v2EventWave [data-wave-lead="V6"]').wait_for()
     geometries=[]
     for viewport in [{'width':1440,'height':1000},{'width':1280,'height':800}]:
