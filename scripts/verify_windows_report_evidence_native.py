@@ -24,7 +24,7 @@ from verify_report_evidence_ui import verify_report_evidence_ui
 from deidentify_patient_source import export_case
 from windows_deidentified_package import unpack
 from windows_doctor_build import verify_content_manifest
-from verify_windows_doctor_browser import launch,stop,live_state,manager_page,pe_is_x64,safe_error
+from verify_windows_doctor_browser import launch,stop,live_state,manager_page,pe_is_x64,safe_error,worklist_ready
 from ecg_core import doctor_source
 from ecg_core.repository import CaseRepository
 from ecg_core.ebi import load_records
@@ -89,7 +89,7 @@ async def verify(args,result):
 
                 async with page.expect_response(lambda r:urlsplit(r.url).path=='/continue'):
                     await page.locator('#continueExperience').click()
-                await page.wait_for_function('()=>state.dashboardStatus==="ready"')
+                await worklist_ready(page)
                 catalog=json.loads((home/'catalog.json').read_text());workspace=catalog['selected_workspace']
                 await live_state(home,workspace,exe)
                 await page.locator('#openFirstCase').click()

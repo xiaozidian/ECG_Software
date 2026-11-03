@@ -1,0 +1,105 @@
+name: Windows UI2 immutable artifact native continuation 1.0.12
+
+on:
+  push:
+    branches: ["codex/windows-doctor-deidentified-x64-20261028"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: windows-ui2-continuation-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  remaining-native:
+    name: Verify immutable UI2 packages and complete remaining native protections
+    runs-on: windows-latest
+    timeout-minutes: 35
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+      ECG_ALLOW_PHI: "0"
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: project
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: project
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12.10"
+          architecture: x64
+          cache: pip
+          cache-dependency-path: project/requirements-doctor-build.txt
+      - name: Create isolated verification environment
+        run: |
+          python -m venv "$env:RUNNER_TEMP\ui2-native-tools"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "$env:RUNNER_TEMP\ui2-native-tools\Scripts" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Install pinned inspection and CI browser control dependencies
+        run: |
+          python -m pip install -r requirements-doctor-build.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify exact producer failed only empty APP wait and all immutable artifacts and previous passed gates
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/prepare_ui_native_continuation.py --output "$env:RUNNER_TEMP\ui2-continuation"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Actual EXE600s continuous ST all12 minute evidence and four AF strips
+        run: |
+          $input = Get-Content "$env:RUNNER_TEMP\ui2-continuation\continuation-input.json" -Raw | ConvertFrom-Json
+          python scripts/verify_windows_report_evidence_native.py --software-archive "$($input.paths.p01)" --output "$env:RUNNER_TEMP\ui2-continuation\evidence\report-evidence-native.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Actual same workspace base27 to UI2 retains reviewed evidence and bounded waveforms
+        run: |
+          $input = Get-Content "$env:RUNNER_TEMP\ui2-continuation\continuation-input.json" -Raw | ConvertFrom-Json
+          python scripts/verify_windows_ui_upgrade_native.py --base-software-archive "$($input.paths.base27)" --software-archive "$($input.paths.p01)" --output "$env:RUNNER_TEMP\ui2-continuation\evidence\ui-upgrade-native.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Retain byte identical source free P01 software
+        uses: actions/upload-artifact@v4
+        with:
+          name: CardioInsight-Windows-x64-1.0.12-P01-software-only
+          path: ${{ runner.temp }}/ui2-continuation/original-artifacts/p01/*
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+      - name: Retain byte identical M01 full package
+        uses: actions/upload-artifact@v4
+        with:
+          name: CardioInsight-Windows-x64-1.0.12-M01-full
+          path: ${{ runner.temp }}/ui2-continuation/original-artifacts/full/*
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+      - name: Retain byte identical M01 software update
+        uses: actions/upload-artifact@v4
+        with:
+          name: CardioInsight-Windows-x64-1.0.12-software-update
+          path: ${{ runner.temp }}/ui2-continuation/original-artifacts/update/*
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+      - name: Retain byte identical independent mathematical source package
+        uses: actions/upload-artifact@v4
+        with:
+          name: CardioInsight-Synthetic-M01-24h-v1-for-1.0.12
+          path: ${{ runner.temp }}/ui2-continuation/original-artifacts/math/*
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+      - name: Retain original passed gates and new actual native evidence separately
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-doctor-eval-mathematical-validation-1.0.12
+          path: ${{ runner.temp }}/ui2-continuation/evidence
+          if-no-files-found: warn
+          retention-days: 14
