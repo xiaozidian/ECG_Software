@@ -7,6 +7,7 @@ from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 from uuid import uuid4
+import re
 
 import pytest
 
@@ -438,6 +439,37 @@ def mean_save_payload(client, base, *, status="pending", point=15000):
         label="数学区间统计", note="Synthetic review note; not a patient or diagnosis.", details=details)
 
 
+def assert_legacy_mean_read(items, saved):
+    """An added read-only receipt must not replace any signed/stored field."""
+    assert len(items) == 1
+    annotation = deepcopy(items[0])
+    receipt = annotation.pop("stt_review_receipt")
+    assert annotation == saved
+    details = saved["details"]
+    profile = details["range_statistics"]["method_profile"]
+    first, end = saved["sample_index"], details["end_sample"] + 1
+    event_id = "annotation:" + str(saved["id"])
+    assert re.fullmatch(r"[0-9a-f]{8}-stt-record-v1-[0-9a-f]{24}", receipt["basis_version"])
+    assert receipt == dict(
+        schema_version="stt-review-record-v1", record_id=event_id, event_id=event_id,
+        annotation_id=saved["id"], record_version=1, review_state="unreviewed",
+        result_code="nonspecific" if details["status"] == "confirmed" else "indeterminate",
+        result_kind="NOTE", report_group="pending", status=details["status"], review_extent="point",
+        range=dict(start_sample=first, end_sample=end, start_s=first / 200,
+                   end_s=end / 200, duration_s=(end - first) / 200),
+        basis_version=receipt["basis_version"],
+        measurement_protocol=dict(method_version=profile["id"], measurement_ms=profile["measurement_ms"],
+            extent="whole", baseline_method="pre_qrs_stable", units=profile["units"],
+            calibration_verified=False, range_profile=profile),
+        point_measurement_protocol=None, report_eligibility=dict(table=False, text=False, strip=False),
+        report_use=dict(event_id=event_id, basis_version=receipt["basis_version"],
+                        table=False, text=False, strip=False),
+        source_scope=None, finding=details["finding"], note=saved["note"], physician_note=None,
+        leads=[saved["lead"]], legacy=True)
+    assert items[0]["details"]["range_statistics"] == saved["details"]["range_statistics"]
+    return receipt
+
+
 @pytest.mark.parametrize("status", ["pending", "confirmed", "excluded"])
 @pytest.mark.parametrize("point", [None, 15000])
 def test_mean_signed_compact_save_get_reopen_preserves_full_provenance(
@@ -456,14 +488,14 @@ def test_mean_signed_compact_save_get_reopen_preserves_full_provenance(
     assert saved["details"] == payload["details"]
     assert saved["note"] == payload["note"]
     assert store.get_review(synthetic_case[1])["revision"] == before_review + 1
-    assert ok(client.get(base + "/annotations"))["items"] == [saved]
+    receipt = assert_legacy_mean_read(ok(client.get(base + "/annotations"))["items"], saved)
     after_save = rows(store)
     repeated = client.post(base + "/annotations", json=payload)
     assert repeated.status_code == 409, repeated.get_json()
     assert rows(store) == after_save
     reopened = create_app(data_root=synthetic_case[0], db_path=tmp_path / "case.db", testing=True)
     returned = ok(reopened.test_client().get(base + "/annotations"))["items"]
-    assert returned == [saved]
+    assert assert_legacy_mean_read(returned, saved) == receipt
     assert returned[0]["details"]["range_statistics"] == compact
     assert rows(reopened.extensions["storage"]) == after_save
 
@@ -651,7 +683,7 @@ def test_mean_uuid_saved_retry_is_exact_ack_without_duplicate_or_audit(
     assert retry.status_code == 201, retry.get_json()
     assert retry.get_json() == saved
     assert rows(store) == before
-    assert ok(app.test_client().get(base + "/annotations"))["items"] == [saved]
+    assert_legacy_mean_read(ok(app.test_client().get(base + "/annotations"))["items"], saved)
     assert len([item for item in store.list_audit() if item["action"] == "annotation.create"]) == 1
 
 
