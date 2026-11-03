@@ -280,9 +280,10 @@
     "tests/test_startup_dom_bindings.py::test_eager_static_id_bindings_have_real_template_targets",
     "tests/test_static_demo_builder.py::test_mathematical_st_save_targets_actual_unique_control_and_preserves_boundaries",
     "tests/test_demo_stt_hospital.py::test_actual_demo_stt_hospital_save_history_and_report_contract",
-    "tests/test_stt_report_adoption.py::test_actual_stt_report_adoption_handlers"
+    "tests/test_stt_report_adoption.py::test_actual_stt_report_adoption_handlers",
+    "tests/test_demo_stt_text_reconciliation.py::test_demo_stt_text_reconciliation_and_atomic_replay"
   ],
-  "file_count": 112,
+  "file_count": 113,
   "reasons": {
     "tests/test_advanced_analysis.py::test_documents_pdf_and_browser_share_evidence": "JS/CSS/HTML literal, referenced global, or transitive local wrapper helper",
     "tests/test_advanced_session.py::test_measurement_requests_bind_the_displayed_basis": "JS/CSS/HTML literal, referenced global, or transitive local wrapper helper",
@@ -523,7 +524,8 @@
     "tests/test_waveform_performance.py::test_thumbnail_queue_batches_deduplicates_retries_and_bounds_concurrency": "JS/CSS/HTML literal, referenced global, or transitive local wrapper helper",
     "tests/test_waveform_performance.py::test_thumbnail_queue_does_not_replace_report_strip_map": "JS/CSS/HTML literal, referenced global, or transitive local wrapper helper",
     "tests/test_waveform_queue.py::test_thumbnail_demand": "JS/CSS/HTML literal, referenced global, or transitive local wrapper helper",
-    "tests/test_workspace_backup.py::test_backup_browser_states": "JS/CSS/HTML literal, referenced global, or transitive local wrapper helper"
+    "tests/test_workspace_backup.py::test_backup_browser_states": "JS/CSS/HTML literal, referenced global, or transitive local wrapper helper",
+    "tests/test_demo_stt_text_reconciliation.py::test_demo_stt_text_reconciliation_and_atomic_replay": "Actual shipped Demo fetch/localStorage adapter regression: exact same-record automatic text reconciliation, handwritten preservation, atomic failure and replay"
   },
   "clinical_validation": false,
   "not_run_actual_PDF_generation": [

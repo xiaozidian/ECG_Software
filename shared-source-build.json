@@ -19,9 +19,9 @@
   "core_version": "core-4151b74942843a73",
   "files": {
     "demo/static/js/demo-api.js": {
-      "bytes": 92189,
+      "bytes": 92770,
       "component": "build",
-      "sha256": "04b4f431f8372a37db6c657cadf08e30a89c2a2516b3f8271f8c34992fd1bf89"
+      "sha256": "d9759907c3569214f191ee55178de1834a2bff8f434b985eb829f342d293c502"
     },
     "demo/static/js/demo-review-api.js": {
       "bytes": 62638,
@@ -630,7 +630,7 @@
     }
   },
   "schema": 1,
-  "source_fingerprint": "f5301f306c3037cc22dd8e28b0d2d9ddf06fc531bd1a55304e57502533f028a1",
+  "source_fingerprint": "20336a25ae1f52a023370f6992a21a1f4a463fa91bc08365431cf441e90ebba3",
   "source_revision": null,
   "ui_version": "ui-d28fa0b393dd4bfa"
 }

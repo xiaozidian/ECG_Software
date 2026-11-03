@@ -1,5 +1,32 @@
-"""Frozen pre-optimization functions, for exact differential verification only."""
-from ecg_core.stt import _read_leads, _median, _mad, LEADS, SAMPLE_RATE
+"""Independent scalar arithmetic and the declared ST lead-availability contract.
+
+The original scalar landmarks, sample windows, tie rules and numerical outputs
+remain the differential oracle. Reading, derivation and robust statistics are
+implemented here rather than delegated to the production vectorized engine.
+"""
+import math
+import statistics
+import struct
+
+LEADS = ('I','II','III','aVR','aVL','aVF','V1','V2','V3','V4','V5','V6')
+SAMPLE_RATE = 200
+STORED_LEADS = frozenset(('I','II','V1','V2','V3','V4','V5','V6'))
+
+
+def _read_leads(buffer, sample, total_samples):
+    position = min(max(sample, 0), total_samples - 1)
+    i, ii, *chest = struct.unpack_from('<8h', buffer, position * 16)
+    return (i, ii, ii-i, -(i+ii)/2, i-ii/2, ii-i/2, *chest)
+
+
+def _median(values, default=0.0):
+    values = [float(v) for v in values if isinstance(v, (int, float)) and math.isfinite(v)]
+    return float(statistics.median(values)) if values else float(default)
+
+
+def _mad(values):
+    center = _median(values)
+    return _median(abs(float(v)-center) for v in values)
 
 def _estimate_j_sample(buffer, beats, total_samples) -> tuple[int, float]:
     """Estimate QRS end from multi-beat, multi-lead derivative energy."""
@@ -26,6 +53,7 @@ def _block_measurement(buffer, beats, all_count, total_samples, config) -> dict:
     j_sample, landmark_confidence = _estimate_j_sample(buffer, beats, total_samples)
     st_offset = j_sample + round(config["st_measurement_ms"] * SAMPLE_RATE / 1000)
     values = {lead: {key: [] for key in ("baseline", "st", "t", "qrs", "span")} for lead in LEADS}
+    clipped = {lead: False for lead in STORED_LEADS}
     for beat, _group, rr_ms in beats:
         baseline_frames = [_read_leads(buffer, beat + offset, total_samples) for offset in range(-40, -23, 4)]
         st_frames = [_read_leads(buffer, beat + st_offset + offset, total_samples) for offset in range(-2, 3)]
@@ -37,6 +65,8 @@ def _block_measurement(buffer, beats, all_count, total_samples, config) -> dict:
             baseline_values = [frame[lead_index] for frame in baseline_frames]
             baseline = _median(baseline_values)
             qrs_values = [frame[lead_index] for frame in qrs_frames]
+            if lead in STORED_LEADS:
+                clipped[lead] = clipped[lead] or any(v <= -32768 or v >= 32767 for v in qrs_values)
             t_values = [frame[lead_index] - baseline for frame in t_frames]
             values[lead]["baseline"].append(baseline)
             values[lead]["st"].append(_median(frame[lead_index] for frame in st_frames) - baseline)
@@ -56,7 +86,19 @@ def _block_measurement(buffer, beats, all_count, total_samples, config) -> dict:
             "st_level_units": round(_median(lead_data["st"]), 2),
             "t_amplitude_units": round(_median(lead_data["t"]), 2),
             "qrs_amplitude_units": round(qrs, 2), "quality_score": round(score, 3),
+            "eligible": qrs > 0 and score >= .42 and not clipped.get(lead, False),
+            "availability_reasons": ((['flatline'] if qrs <= 0 else [])
+                + (['lead_engineering_quality'] if score < .42 else [])
+                + (['source_clipping'] if clipped.get(lead, False) else [])),
         }
+    # A zero derived projection is real data when both measured limb inputs
+    # are available. Conversely a missing/clipped I or II invalidates all four
+    # derived limb leads even when their numerical projection is nonzero.
+    source_limb_available = all(lead_values[lead]['eligible'] for lead in ('I','II'))
+    for lead in ('III','aVR','aVL','aVF'):
+        available = source_limb_available and lead_values[lead]['quality_score'] >= .42
+        lead_values[lead]['eligible'] = available
+        lead_values[lead]['availability_reasons'] = [] if available else ['source_limb_unavailable']
     normal_ratio = len(beats) / max(all_count, 1)
     overall = max(0.0, min(1.0, _median(lead_scores) * min(1.0, normal_ratio / 0.6)))
     return {

@@ -62,5 +62,6 @@
   "tests/test_stt_record_mirror.py",
   "tests/test_stt_report_adoption.py",
   "tests/test_demo_stt_hospital.py",
-  "tests/test_startup_dom_bindings.py"
+  "tests/test_startup_dom_bindings.py",
+  "tests/test_demo_stt_text_reconciliation.py"
 ]

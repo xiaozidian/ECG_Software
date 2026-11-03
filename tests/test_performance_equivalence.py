@@ -41,6 +41,74 @@ def test_batched_landmarks_and_all_leads_match_scalar(kind, measurement_ms):
         assert stt._block_measurement(buffer, beats, max(9, len(beats)), 600, config) == scalar._block_measurement(buffer, beats, max(9, len(beats)), 600, config)
 
 
+def lead_availability_fixture():
+    frames = np.full((1000, 8), 100, dtype='<i2')
+    beats = [(sample, 1, 1000) for sample in (200, 400, 600, 800)]
+    for sample, _, _ in beats:
+        frames[sample:sample+4] += np.array([1000, 600, 250, 80], dtype='<i2')[:, None]
+    return frames, beats
+
+
+def compare_availability(frames, beats):
+    buffer = frames.astype('<i2').tobytes()
+    actual = stt._block_measurement(buffer, beats, len(beats), len(frames), stt.DEFAULT_CONFIG)
+    expected = scalar._block_measurement(buffer, beats, len(beats), len(frames), stt.DEFAULT_CONFIG)
+    assert actual == expected  # Keep every original numeric and boundary field.
+    return actual['leads']
+
+
+def test_independent_oracle_marks_flat_source_leads_unavailable_without_erasing_zero_values():
+    frames, beats = lead_availability_fixture(); frames[:] = 100
+    leads = compare_availability(frames, beats)
+    for name in ('I', 'II', 'V1', 'V2', 'V3', 'V4', 'V5', 'V6'):
+        assert leads[name]['eligible'] is False
+        assert leads[name]['availability_reasons'] == ['flatline']
+        assert leads[name]['st_level_units'] == leads[name]['t_amplitude_units'] == leads[name]['qrs_amplitude_units'] == 0
+    for name in ('III', 'aVR', 'aVL', 'aVF'):
+        assert leads[name]['eligible'] is False and leads[name]['availability_reasons'] == ['source_limb_unavailable']
+
+
+def test_zero_derived_limb_projection_is_available_when_measured_inputs_are_valid():
+    frames, beats = lead_availability_fixture()
+    leads = compare_availability(frames, beats)
+    assert leads['I']['eligible'] is True and leads['II']['eligible'] is True
+    assert leads['III']['qrs_amplitude_units'] == leads['III']['st_level_units'] == leads['III']['t_amplitude_units'] == 0
+    assert leads['III']['eligible'] is True and leads['III']['availability_reasons'] == []
+
+
+def test_missing_measured_limb_disables_all_derived_leads_but_not_other_sources():
+    frames, beats = lead_availability_fixture(); frames[:, 0] = 100
+    leads = compare_availability(frames, beats)
+    assert leads['I']['availability_reasons'] == ['flatline'] and leads['II']['eligible'] is True
+    assert leads['III']['qrs_amplitude_units'] > 0
+    for name in ('III', 'aVR', 'aVL', 'aVF'):
+        assert leads[name]['eligible'] is False and leads[name]['availability_reasons'] == ['source_limb_unavailable']
+    assert all(leads[name]['eligible'] for name in ('V1','V2','V3','V4','V5','V6'))
+
+
+@pytest.mark.parametrize('level,clipped', [(32767,True),(-32768,True),(32766,False),(-32767,False)])
+def test_int16_source_clipping_limits_are_inclusive_and_near_limits_stay_available(level, clipped):
+    frames, beats = lead_availability_fixture(); frames[200, 0] = level
+    leads = compare_availability(frames, beats)
+    assert leads['I']['qrs_amplitude_units'] > 0 and leads['I']['quality_score'] == 1
+    assert leads['I']['eligible'] is not clipped
+    assert leads['I']['availability_reasons'] == (['source_clipping'] if clipped else [])
+    assert leads['II']['eligible'] is True and leads['V1']['eligible'] is True
+    if clipped:
+        assert all(leads[name]['availability_reasons'] == ['source_limb_unavailable'] for name in ('III','aVR','aVL','aVF'))
+
+
+def test_noisy_baseline_has_finite_measurements_but_fails_the_lead_quality_gate():
+    frames, beats = lead_availability_fixture()
+    for sample, _, _ in beats:
+        frames[[sample-40,sample-36,sample-32,sample-28,sample-24],1] = [2000,-2000,2000,-2000,2000]
+    leads = compare_availability(frames, beats)
+    assert leads['II']['qrs_amplitude_units'] > 0 and leads['II']['quality_score'] == .35
+    assert leads['II']['eligible'] is False and leads['II']['availability_reasons'] == ['lead_engineering_quality']
+    assert leads['II']['st_level_units'] == -1900
+    assert leads['I']['eligible'] is True and leads['V1']['eligible'] is True
+
+
 @pytest.mark.parametrize('radius', [0, 1, 4, 75, 1000])
 def test_exact_centered_reference_with_duplicates_missing_and_nonfinite(radius):
     rng = random.Random(20261002)
