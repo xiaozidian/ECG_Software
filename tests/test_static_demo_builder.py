@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-MANIFEST = ROOT / 'docs/releases/0.12.25-af-return.20261103/source-manifest.json'
+MANIFEST = ROOT / 'docs/releases/0.12.26-report-candidates.20261103/source-manifest.json'
 
 
 def digest(path: Path) -> str:
@@ -27,7 +27,7 @@ def test_static_demo_builder(tmp_path: Path) -> None:
     receipt = json.loads((output / 'mathematical-source-manifest.json').read_text(encoding='utf-8'))
     assert receipt['release_id'] == source['release_id']
     assert receipt['production_source_sha256'] == source['source_sha256']
-    assert receipt['production_files_verified'] == source['production_file_count'] == 125
+    assert receipt['production_files_verified'] == source['production_file_count'] == 126
     assert receipt['production_files_modified'] is False
     assert receipt['legacy_demo_inputs_read'] is False
     assert receipt['storage_namespace'] == 'cardioinsight-public-math-4314-v2'

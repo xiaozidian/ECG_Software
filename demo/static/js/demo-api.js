@@ -462,7 +462,25 @@
     }
     if(action==="patient"&&method==="PATCH"){saved.patients[caseId]={...(saved.patients[caseId]||{}),...requestBody(options)};audit("patient.update","仅保存于当前浏览器");return response(saved.patients[caseId])}
     if(action==="report"&&method==="GET"){const value=report(present());return response({...value,current_hrv_reference:await demoReview().reference(value.composition.hrv_window||0)});}
-    if(action==="report"&&method==="PUT"){const payload=requestBody(options);if(!["draft","reviewed","returned"].includes(payload.status||"draft"))return failure("invalid report status");if(payload.status==="reviewed"&&(workflow().pending_steps.length||!String(payload.conclusion||"").trim()))return failure("请先确认全部复核环节并填写结论");const old=report(present());if(!Number.isInteger(payload.expected_version)||payload.expected_version!==old.version)return failure("报告版本已变更，请重新载入",409);if(!Number.isInteger(payload.expected_review_revision)||payload.expected_review_revision!==workflow().revision)return failure("报告复核依据已变更，请重新载入",409);try{if(payload.composition){payload.composition.strip_defaults=ECGReportEngine.settings(payload.composition.strip_defaults);payload.composition.selected_events=(payload.composition.selected_events||[]).map(s=>({...s,...ECGReportEngine.settings(s)}));}ECGClinicalAnalysis.validateReport(clinicalIndex(),payload.composition||{},workflow(),payload.status==="reviewed");await demoReview().validateReport(payload.composition||{},payload.status==="reviewed")}catch(error){return failure(error.message,error.status||400)}const item={status:payload.status||"draft",version:old.version+1,conclusion:String(payload.conclusion||""),composition:copy(payload.composition||old.composition),updated_at:now()};saved.reports[caseId]=item;audit(`report.${item.status}`,"仅保存于当前浏览器");persist();return response(report(present()))}
+    if(action==="report"&&method==="PUT"){
+      const payload=requestBody(options);
+      if(!["draft","reviewed","returned"].includes(payload.status||"draft"))return failure("invalid report status");
+      if(payload.status==="reviewed"&&(workflow().pending_steps.length||!String(payload.conclusion||"").trim()))return failure("请先确认全部复核环节并填写结论");
+      const old=report(present());
+      if(!Number.isInteger(payload.expected_version)||payload.expected_version!==old.version)return failure("报告版本已变更，请重新载入",409);
+      if(!Number.isInteger(payload.expected_review_revision)||payload.expected_review_revision!==workflow().revision)return failure("报告复核依据已变更，请重新载入",409);
+      const composition=copy(payload.composition||old.composition);let mergedRR=[];
+      try{
+        composition.strip_defaults=ECGReportEngine.settings(composition.strip_defaults);
+        const entries=(composition.selected_events||[]).map(s=>({...s,...ECGReportEngine.settings(s)})),index=clinicalIndex();
+        composition.selected_events=ECGClinicalAnalysis.normalizeRRSelections(index,entries);
+        const retained=new Set(composition.selected_events);mergedRR=entries.filter(s=>!retained.has(s)).map(s=>s.event_id);
+        ECGClinicalAnalysis.validateReport(index,composition,workflow(),payload.status==="reviewed");
+        await demoReview().validateReport(composition,payload.status==="reviewed");
+      }catch(error){return failure(error.message,error.status||400)}
+      const item={status:payload.status||"draft",version:old.version+1,conclusion:String(payload.conclusion||""),composition,updated_at:now()};
+      saved.reports[caseId]=item;audit(`report.${item.status}`,"仅保存于当前浏览器");persist();return response({...report(present()),rr_merged_event_ids:mergedRR});
+    }
     return failure("接口不存在",404);
   }
 

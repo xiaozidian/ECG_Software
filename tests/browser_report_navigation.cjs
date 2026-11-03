@@ -1,5 +1,8 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
 const source=fs.readFileSync('static/js/clinical-ui.js','utf8');
+const preparedReportHelpers=new WeakSet();
+function prepareReportHelpers(ctx){if(preparedReportHelpers.has(ctx))return;ctx.A||={categories:[]};vm.runInContext(source.slice(source.indexOf('  const reportCategories='),source.indexOf('  const tabs=')),ctx);preparedReportHelpers.add(ctx);}
+
 const event=n=>({event_id:'e'+n,basis_version:'basis',category:'fastest',subtype:'NN',time_s:n,label:'候选'+n});
 let requests=[],located=[],focused=0;
 const node={scrollIntoView(){},focus(){focused++}};
@@ -7,8 +10,8 @@ const ctx=vm.createContext({state:{caseId:'a'},category:'final',reportMode:'all'
  selected:()=>[{event_id:'e75',basis_version:'basis'}],selectedLookup:new Map([['e75',event(75)]]),
  composition:()=>({fast_slow_mode:'rr'}),qs:()=>node,
  refreshReport:async options=>{requests.push(options)},locate:async e=>{located.push(e.event_id)}});
-vm.runInContext(source.slice(source.indexOf('  function reportSequence('),source.indexOf('  function renderEventNavigation(')),ctx);
-vm.runInContext(source.slice(source.indexOf('  async function stepReportEvent('),source.indexOf('  function syncText(')),ctx);
+prepareReportHelpers(ctx);vm.runInContext(source.slice(source.indexOf('  function reportSequence('),source.indexOf('  function renderEventNavigation(')),ctx);
+prepareReportHelpers(ctx);vm.runInContext(source.slice(source.indexOf('  async function stepReportEvent('),source.indexOf('  function syncText(')),ctx);
 (async()=>{
   await ctx.backToReportEvent(0);
   assert.equal(ctx.category,'fastest');assert.equal(ctx.reportMode,'NN');assert.equal(ctx.reportSequence(),'nn');
