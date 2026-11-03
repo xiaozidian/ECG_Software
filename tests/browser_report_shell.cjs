@@ -14,13 +14,15 @@ const state = {
 };
 let pendingSteps = [], isWritable = true;
 const ctx = vm.createContext({
-  state, qs: element, $: element, tabs: [], A: {categories: []}, esc: String, reportData: null, category: 'final',
+  state, qs: element, $: element, document:{querySelectorAll:()=>[],dispatchEvent(){}},CustomEvent:function(type){this.type=type;},tabs: [], A: {categories: []}, esc: String, reportData: null, category: 'final',
   selected: () => [], selectedLookup: new Map(), STATUS_TEXT: {draft: '未审核'},
   updateConclusionCount: () => {}, pending: () => pendingSteps, writable: () => isWritable,
   data: {steps: {}, events: {}}, CASE_WORKFLOW_STEPS: [],
   escapeHtml: String, formatElapsed: String,
   renderRangeDraftNotice: () => {},
   renderRhythmReturn: () => {},
+  pendingRhythmPicks: () => [],
+  renderExportState: () => {},
 });
 vm.runInContext(fs.readFileSync('static/js/report-range-editor.js', 'utf8'), ctx);
 vm.runInContext(fs.readFileSync('static/js/report-consistency.js', 'utf8'), ctx);
@@ -28,6 +30,7 @@ const workflow = fs.readFileSync('static/js/clinical-workflow.js', 'utf8');
 vm.runInContext(workflow.slice(workflow.indexOf('  function renderPreflight('), workflow.indexOf('  function decision(')), ctx);
 ctx.clinicalWorkflow = {readiness: () => !pendingSteps.length, writable: () => isWritable, renderPreflight: ctx.renderPreflight};
 const ui = fs.readFileSync('static/js/clinical-ui.js', 'utf8');
+vm.runInContext(ui.slice(ui.indexOf('  const reportCategories='), ui.indexOf('  const tabs=')), ctx);
 vm.runInContext(ui.slice(ui.indexOf('  function renderReportShell('), ui.indexOf('  async function reloadReport(')), ctx);
 
 element('#conclusionEditor').value = 'unsaved local input';

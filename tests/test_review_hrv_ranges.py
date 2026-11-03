@@ -144,6 +144,7 @@ def test_range_editor_has_only_two_cursors_and_keeps_explicit_apply():
     code=r"""
     const assert=require('node:assert/strict');
     require('./static/js/clinical-review-tools.js');
+    require('./static/js/occurrence-card.js');
     require('./static/js/report-range-editor.js');
     const make=dataset=>({dataset,style:{},addEventListener(){},setPointerCapture(){},
       closest(){return this},parentElement:{getBoundingClientRect:()=>({width:1000})}});
@@ -151,13 +152,13 @@ def test_range_editor_has_only_two_cursors_and_keeps_explicit_apply():
     const from=make({bound:'start'}),to=make({bound:'end'}),output={},error={},apply={},reset={},cancel={};
     Object.defineProperty(output,'innerHTML',{set(value){this.textContent=value.replace(/<[^>]*>/g,'');}});
     let resizePlot,stageWidth=1000;const retainedSvg={outerHTML:''};
-    const stage={getBoundingClientRect:()=>({width:stageWidth,height:210}),querySelector:()=>retainedSvg};
+    const stage={getBoundingClientRect:()=>({width:stageWidth,height:240}),querySelector:()=>retainedSvg};
     globalThis.ResizeObserver=class{constructor(fn){resizePlot=fn}observe(){}disconnect(){}};
     const nodes={'[data-range-drag=start]':[start],'[data-range-drag=end]':[end],
       '[data-bound=start]':[from],'[data-bound=end]':[to],'[data-bound]':[from,to],
       'output':[output],'.range-error':[error],'[data-range-apply]':[apply],
       '[data-range-reset]':[reset],'[data-range-cancel]':[cancel],'button,input':[start,end,from,to,apply,reset,cancel],'.report-range-stage':[stage]};
-    const handlers={},host={isConnected:true,style:{setProperty(){}},
+    const handlers={},host={isConnected:true,dataset:{},style:{setProperty(){}},
       querySelector:s=>nodes[s]?.[0],querySelectorAll:s=>nodes[s]||[],
       addEventListener:(type,fn)=>handlers[type]=fn};
     let applied=null,resets=0;
@@ -171,7 +172,7 @@ def test_range_editor_has_only_two_cursors_and_keeps_explicit_apply():
     assert.equal((host.innerHTML.match(/<polyline /g)||[]).length,3);
     assert.equal((host.innerHTML.match(/class="report-range-handle"/g)||[]).length,2);
     assert(!/report-range-region|report-range-strip|data-range-drag="move"/.test(host.innerHTML));
-    assert(host.innerHTML.includes('#c92a2b')&&host.innerHTML.includes('#1760c2'));
+    assert(host.innerHTML.includes('data-fiducial-sample="1000"')&&host.innerHTML.includes('#b13e36'),'the real occurrence renderer retains the source V marker');
     const event={preventDefault(){},stopPropagation(){},target:start};
     handlers.keydown({...event,key:'ArrowRight',shiftKey:false});
     assert.equal(from.value,'2.005');
@@ -183,7 +184,7 @@ def test_range_editor_has_only_two_cursors_and_keeps_explicit_apply():
     assert.equal(to.value,'10.000');
     from.value='3.25';from.onchange();to.value='10.75';to.onchange();
     stageWidth=500;resizePlot();
-    assert(retainedSvg.outerHTML.includes('viewBox="0 0 500 210"'));
+    assert(retainedSvg.outerHTML.includes('viewBox="0 0 500 240"'));
     assert.equal((retainedSvg.outerHTML.match(/<polyline /g)||[]).length,3);
     assert(retainedSvg.outerHTML.includes('vector-effect="non-scaling-stroke"'));
     assert.equal(from.value,'3.250');assert.equal(to.value,'10.750');
@@ -206,8 +207,13 @@ def test_range_editor_has_only_two_cursors_and_keeps_explicit_apply():
 def test_manual_subsample_rounding_and_save_validation_match_demo():
     spec={'range_start_s':1.0025,'range_end_s':8.0025}
     assert strip_settings(spec)==js('ECGReportEngine.settings(input)',spec)
-    index=build_index(feed(60));event=index['events'][0]
+    index=build_index(feed(60))
+    # The default report outputs RR extrema. Index ordering may put a retained
+    # NN-only pick first; unused picks intentionally do not block saving.
+    event=next(e for e in index['events'] if e['category']=='fastest' and e['subtype']=='RR')
     invalid={'selected_events':[dict(event_id=event['event_id'],basis_version=event['basis_version'],range_start_s=0,range_end_s=1)]}
+    assert js('ECGClinicalAnalysis.reportUsed(input.comp,input.comp.selected_events[0],input.event)',{'comp':invalid,'event':event}) is True
+    with pytest.raises(ValueError):validate_report(index,invalid,{})
     result=js("(()=>{try{ECGClinicalAnalysis.validateReport(input.index,input.comp,{});return 'accepted'}catch(e){return e.message}})()",{'index':index,'comp':invalid})
     assert result!='accepted'
 

@@ -2,7 +2,7 @@
   "schema": 1,
   "release_id": "0.12.27-report-evidence.20261103-ui2",
   "app_version": "0.12.27-report-evidence.20261103",
-  "source_sha256": "a97f8e59de3caad6189f4b303c04f3115af650580765976eaafc9fa19893e106",
+  "source_sha256": "3a88634fa259e5700ae96a70ae9c8cf453cdcecc176df968b47fec06e09e28b3",
   "production_file_count": 128,
   "files": {
     "CardioInsightMacCandidate.spec": {
@@ -330,8 +330,8 @@
       "sha256": "a6388fe03f33d7e58efdbf0a962794231b1d291d14940b6aedc91305edcd4330"
     },
     "static/js/clinical-ui.js": {
-      "bytes": 239540,
-      "sha256": "1a1966136ebef0d3d87e8c9d3dc5eee4203ebc0c31d4ae5fc91093d90164bfd9"
+      "bytes": 239702,
+      "sha256": "fff3029a91ea9f41e2faed74bb23174716d3f2590ddb9e6b624c9686986f7430"
     },
     "static/js/clinical-workflow.js": {
       "bytes": 15113,

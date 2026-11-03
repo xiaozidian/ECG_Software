@@ -153,6 +153,7 @@ async function preview() {
       ECGAdvancedAnalysis: {assertApplied() {}}, ECGReportSections: {validate() {}},
       ECGReportConsistency: {content: (text, composition) => JSON.stringify([text, composition])},
       ECGReportPaper: {render(model) { rendered++; return `<p>${model.case.metadata.name}</p>`; }, number() {}},
+      resolveWorkstationLeave: async () => true, // No unrelated editor drafts in this privacy-only fixture.
       api: async path => {
         if (path.includes('/analysis-basis')) return {...basis};
         assert.match(path, /include_phi=1/);
@@ -315,15 +316,20 @@ async function download() {
       static revokeObjectURL() {}
     }
     const context = vm.createContext({
-      state, URLSearchParams, AbortController, URL: TestURL, setTimeout() {},
+      state, URLSearchParams, AbortController, URL: TestURL, setTimeout() {},clearTimeout() {},
+      resolveWorkstationLeave: async () => true, // No unrelated editor drafts in this privacy-only fixture.
+      qs: () => ({after() {}}),
       ECGAdvancedAnalysis: {assertApplied() {}}, ECGReportRange: {assertApplied() {}},
       ECGReportConsistency: {sameBase: (a, b) => a.version === b.version && a.review_revision === b.review_revision},
       renderExportState() {}, renderReportShell() { conflicts++; },
       api: () => remote.promise, fetch: () => response.promise,
-      document: {createElement: () => ({click() { clicked++; }})}
+      document: {createElement: () => ({...element('a'),click() { clicked++; }})}
     });
     production(context, 'downloadReport'); production(context, 'cancelReportExport', false);
     const task = context.downloadReport();
+    // The shared leave guard now settles before the export captures its privacy
+    // snapshot. Mutate only after the real output request has actually started.
+    await tick();assert(state.reportExportJob,'the real export must be pending before identity changes');
     if (phase !== 'remote') {
       remote.resolve({...state.report}); await tick();
       response.resolve(phase === 'blob' ? {ok: true, blob: () => blob.promise} : {ok: false, status: 409, json: () => errorJson.promise});

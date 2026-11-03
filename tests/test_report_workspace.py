@@ -70,6 +70,7 @@ def test_page_selection_migration_gates_and_pdf():
 def test_print_mode_preserves_curation_and_wave_context():
     script="""
 require('./static/js/report-workspace.js');
+require('./static/js/clinical-review-tools.js');
 global.formatElapsed=s=>'D1 '+s.toFixed(3);
 const a=global.ECGReportWorkspace;
 const selected=[{event_id:'rr',caption:'edited RR',leads:['II'],manual_start_s:3},
@@ -79,12 +80,13 @@ for(const mode of ['rr','both','nn','both'])c=a.withRateMode(c,mode);
 console.log(JSON.stringify({c,same:c.selected_events===selected,
   excluded:a.printEligible({category:'fastest',subtype:'NN'},'rr'),
   restored:a.printEligible({category:'fastest',subtype:'NN'},'both'),
-  html:a.waveContext({waveform:{start_s:10,duration_s:7.125},strip:{visible_beat_count:4}})}));
+  html:a.waveContext({waveform:{start_s:10,duration_s:7.125,sample_rate_hz:200,stride:1,leads:{II:[0,1,0],V1:[0,-1,0]}},strip:{visible_beat_count:4,warning:'当前可用波形不足 5 搏'}})}));
 """
     result=json.loads(subprocess.check_output(['node','-e',script],text=True))
     assert result['same'] and result['c']['selected_events'][1]['caption']=='edited NN'
+    assert [s['leads'] for s in result['c']['selected_events']]==[['II'],['V1']]
     assert result['excluded'] is False and result['restored'] is True
-    for text in ['7.125 秒','4 搏','不足 5 搏','电压未校准','7.13 s','rw-wave-scroll']:
+    for text in ['7.125 秒','4 搏','不足 5 搏','电压未校准','200 Hz','步进 1','00:00:10.000','00:00:17.125','rw-wave-scroll']:
         assert text in result['html']
 
 
@@ -94,11 +96,13 @@ def test_print_filter_does_not_block_approval_of_retained_picks(mode):
     index=build_index(feed(),review=review)
     picks=[next(e for e in index['events'] if e['category']=='fastest' and e['subtype']==s) for s in ('RR','NN')]
     composition=dict(fast_slow_mode=mode,category_reviews=index['basis_versions'],selected_events=[
-        dict(event_id=e['event_id'],basis_version=e['basis_version']) for e in picks])
+        dict(event_id=e['event_id'],basis_version=e['basis_version'],print_enabled=True,referenced_in_report=False,notes='') for e in picks])
     result=validate_report(index,composition,review,True)
     assert [r['subtype'] for r in result]==['RR','NN']
     script="require('./static/js/report-engine.js');const a=require('./static/js/clinical-analysis.js');const x=JSON.parse(require('fs').readFileSync(0,'utf8'));console.log(JSON.stringify(a.validateReport(x.i,x.c,x.r,true)))"
     actual=json.loads(subprocess.check_output(['node','-e',script],input=json.dumps(dict(i=index,c=composition,r=review)),text=True))
     assert actual==result
-    composition['selected_events'][1]['basis_version']='stale'
+    # Corrupt a figure actually used by this output mode; hidden retained NN
+    # curation is allowed in RR output and must not become an approval gate.
+    composition['selected_events'][0 if mode=='rr' else 1]['basis_version']='stale'
     with pytest.raises(ValueError,match='失效'):validate_report(index,composition,review,True)

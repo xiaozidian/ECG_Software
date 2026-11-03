@@ -107,5 +107,5 @@ def test_api_rate_candidates_and_report_strip(client):
 
 def test_rate_controls_are_wired_to_backend_sort_and_pagination():
     text=(Path(__file__).parents[1]/'static/js/clinical-ui.js').read_text()
-    for expected in ('sort:reportSort','id="v2RateSort"','id="v2ReportPage"','从快到慢','从慢到快','candidate-rate','reportStrip(e,returnedRhythmSettings(e)||selected().find'):
+    for expected in ('sort:reportSort','id="v2RateSort"','id="v2ReportPage"','从快到慢','从慢到快','candidate-rate','pick=selectionForEvent(e)', 'reportStrip(evidence,resumeSpec||returnedRhythmSettings(e)||pick||newStripSettings(e),id)'):
         assert expected in text

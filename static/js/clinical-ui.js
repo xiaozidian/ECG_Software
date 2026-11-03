@@ -809,7 +809,9 @@ const clinicalUI=(()=>{
     const old=returnedRhythmSelection(e);
     if(!old)throw Error('原选图已变化，请重新核对');
     const index=selected().indexOf(old);
-    state.reportComposition.selected_events[index]={...old,...spec,event_id:e.event_id,basis_version:e.basis_version,caption:old.caption};
+    const next={...old,...spec,event_id:e.event_id,basis_version:e.basis_version,caption:old.caption};
+    if(!Object.hasOwn(spec||{},'range_start_s')&&!Object.hasOwn(spec||{},'range_end_s')){delete next.range_start_s;delete next.range_end_s;}
+    state.reportComposition.selected_events[index]=next;
     delete state.reportComposition.category_reviews.AF;
     state.reportComposition.diagnosis_blocks.forEach(b=>{if(b.key.startsWith('AF:')){b.acknowledged=false;if(b.manual)b.needs_review=true;}});
     rhythmReturn.event_id=e.event_id;syncText();dirty();
