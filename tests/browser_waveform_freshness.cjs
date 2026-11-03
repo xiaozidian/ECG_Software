@@ -7,12 +7,13 @@ async function range(which){
   const target={children:[],appendChild(n){n.isConnected=true;this.children.push(n)},replaceChildren(n){this.children.forEach(x=>x.isConnected=false);n.isConnected=true;this.children=[n]},setAttribute(){},textContent:''};
   const state={caseId:'A',caseRequestId:1,caseData:{technical:{duration_seconds_raw:90}}};
   const entry=k=>({sample_index:2000,event_id:k,analysis_basis:'source',analysis_revision:1,strip:{start_s:7,end_s:14,actual_duration_s:7,leads:['II']}});
-  const ctx=vm.createContext({state,waveToken:1,reportToken:1,reportRenderToken:1,waveEvidenceScope:'one',waveEvidence:{analysis_basis:'source',analysis_revision:1},
+  const ctx=vm.createContext({state,innerHeight:1000,activeStripKey:null,waveToken:1,reportToken:1,reportRenderToken:1,waveEvidenceScope:'one',waveEvidence:{analysis_basis:'source',analysis_revision:1},
     copy:x=>JSON.parse(JSON.stringify(x)),document:{createElement:()=>({isConnected:false,textContent:'',setAttribute(){}})},
     endpoint:(kind,params)=>{const g=gate();pending.push({kind,params,...g});return g.promise},
     ECGReportRange:{mount:(host,e,w,apply)=>mounted.push({host,e,w,apply})},ECGReportEngine:{settings:x=>({...x})},
-    returnedRhythmSelection:()=>null,
+    returnedRhythmSelection:()=>null,selectionForEvent:()=>undefined,
     reportStrip:async(e,s,id,fresh)=>{assert.equal(fresh,true,'applying a range reused cached validation');saved.push(s);return entry(e.event_id)},selected:()=>[],selectEvent:(e)=>saved.push(e.event_id),dirty(){},renderReportBody(){}});
+  vm.runInContext(source.match(/^  const stripKey=.*$/m)[0],ctx);
   vm.runInContext(source.slice(source.indexOf('  async function mountRange('),source.indexOf('  function hrvForReport(')),ctx);
   const first=ctx.mountRange(target,{event_id:'old'},entry('old'));
   if(which==='range-order'){
@@ -30,13 +31,19 @@ async function range(which){
   }
 }
 async function detail(){
-  const g=gate(),host={innerHTML:'old range',textContent:'',setAttribute(){}},label={textContent:''};
+  // The former detailWindow entry was replaced by the same guarded candidate
+  // locate path. Exercise its shipped async loading/error protection directly.
+  const g=gate(),host={innerHTML:'old range',textContent:'',setAttribute(){},classList:{remove(){}}},label={textContent:''};
   let navigationInvalidated=false;
-  const ctx=vm.createContext({state:{caseId:'A',caseRequestId:1},waveToken:0,waveEvidenceScope:'one',waveEvidence:{},active:null,renderEventNavigation(ready){assert.notEqual(ready,true);navigationInvalidated=true;},qs:s=>s==='#v2EventWave'?host:label,endpoint:()=>g.promise,svg:()=>'',formatElapsed:String});
-  vm.runInContext(source.slice(source.indexOf('  async function detailWindow('),source.indexOf('  function statsTable(')),ctx);
-  const result=ctx.detailWindow(20);assert.notEqual(host.textContent,'','old range remains actionable while loading');
+  const ctx=vm.createContext({state:{caseId:'A',caseRequestId:1},waveToken:0,reportRenderToken:0,waveEvidenceScope:'one',waveEvidence:{},active:null,category:'V',rangeResume:null,
+    document:{querySelectorAll:()=>[]},reportCategoryOf:e=>e.category,ECGReportRange:{pending:()=>[]},selectionForEvent:()=>undefined,newStripSettings:()=>({duration_s:7}),returnedRhythmSettings:()=>null,
+    ECGReviewTools:require('../static/js/clinical-review-tools.js'),renderEventNavigation(ready){assert.notEqual(ready,true);navigationInvalidated=true;},
+    qs:s=>s==='#v2EventWave'?host:['#v2WaveLabel','#v2RetryEventWave'].includes(s)?label:null,reportStrip:()=>g.promise,formatElapsed:String});
+  vm.runInContext(source.slice(source.indexOf('  async function locate('),source.indexOf('  function hourlyMatrix(')),ctx);
+  const result=ctx.locate({event_id:'candidate',category:'V',time_s:20});
+  assert.match(host.textContent,/读取/,'old range remains actionable while loading');
   assert.equal(navigationInvalidated,true,'continuous browsing must disable candidate inclusion');
-  g.reject(Error('offline'));await assert.rejects(result,/offline/);assert.match(host.textContent,/失败|重试/);
+  g.reject(Error('offline'));await assert.rejects(result,/offline/);assert.match(host.innerHTML,/失败|重试/);
 }
 async function wave(which){
   const source=fs.readFileSync('static/js/app.js','utf8'),g=gate(),nodes=new Map(),renders=[];

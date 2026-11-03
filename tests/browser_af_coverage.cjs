@@ -21,7 +21,7 @@ const c={E,ECGAFCoverage:C,overviewReady:true,coverage:null,coveragePage:0,cover
   hour:()=>0,draw:()=>{},renderEpisodes:()=>{},fmtNumber:String,
   ECGAnalysisConsistency:require('../static/js/analysis-consistency.js'),rememberEpisodeForm(){},episodeEditor:null,episodeNavigation:0,
   document:{querySelectorAll:()=>[]},loadWaveform:async()=>{c.state.waveform=identity},
-  clinicalUI:{hasRhythmReturn:()=>false},
+  clinicalUI:{hasRhythmReturn:()=>false,refreshCurrentCaseEvidence:async(_id,_token,current,data)=>{if(!current())return false;c.state.caseData={clinical_identity:data};return true;}},
 };
 vm.createContext(c);vm.runInContext(helpers+load,c);
 const call=code=>vm.runInContext(code,c);
@@ -76,8 +76,8 @@ async function check(){const promise=call('checkCoverage()');assert.equal(c.cove
     }
     const before=focus;pending[0]();await first;assert.equal(focus,before);assert.equal(writes,0);return;
   }
-  if(which==='readonly'){await check();assert.equal(writes,0);assert.equal(c.coverage.summary.assessed_s,90);assert.equal(c.coverage.summary.skipped_s,5);assert.match(host.innerHTML,/不是正常率/);assert.match(host.innerHTML,/94.7%/);return;}
-  if(which==='empty'||which==='short'){c.ui.rows=[];if(which==='short')seconds=7;await check();assert.equal(writes,0);assert.equal(c.coverage.summary.assessed_s,0);assert.equal(c.coverage.summary.skipped_s,seconds);assert.match(host.innerHTML,/未评估不代表正常/);return;}
+  if(which==='readonly'){await check();assert.equal(writes,0);assert.equal(c.coverage.summary.assessed_s,90);assert.equal(c.coverage.summary.skipped_s,5);assert.match(host.innerHTML,/未提示不代表正常/);assert.match(host.innerHTML,/94.7%/);return;}
+  if(which==='empty'||which==='short'){c.ui.rows=[];if(which==='short')seconds=7;await check();assert.equal(writes,0);assert.equal(c.coverage.summary.assessed_s,0);assert.equal(c.coverage.summary.skipped_s,seconds);assert.match(host.innerHTML,/未提示不代表正常/);return;}
   if(which.startsWith('stale-')||which==='cancel'){
     const p=call('checkCoverage()');
     if(which==='stale-case')c.state.caseId='other';

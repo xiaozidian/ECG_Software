@@ -16,7 +16,7 @@ function fixture(){
     setCustomValidity(value){this.validationMessage=value} reportValidity(){this.validityReported=true}
     contains(node){return this===node||this.children.some(x=>x.contains(node))}
     focus(){document.activeElement=this}
-    closest(){return this.dataset.occIndex!==undefined?this:this.parentElement?.closest()}
+    closest(selector){if(selector==='svg')return null;return this.dataset.occIndex!==undefined?this:this.parentElement?.closest(selector)}
     remove(){if(this.contains(document.activeElement))document.activeElement=null;const p=this.parentElement;if(p)p.children.splice(p.children.indexOf(this),1);this.parentElement=null;}
     insertBefore(child,before){if(child===before)return child;child.remove();child.parentElement=this;const i=this.children.indexOf(before);this.children.splice(i<0?this.children.length:i,0,child);return child}
     appendChild(child){return this.insertBefore(child,null)}
@@ -60,12 +60,12 @@ async function main(which){
   const f=fixture(),{context:c,host,metrics,render,card,document,scopes}=f;
   if(which==='viewport-rows'){
     c.innerWidth=1280;c.state.editMode='cluster';host.dataset.workspaceRows='1';render();await tick();
-    assert.equal(c.qs('#editGalleryCount').textContent,'1–6 / 240');
+    assert.equal(c.qs('#editGalleryCount').textContent,'1–4 / 240');
     const samples=await scopes.get(card(0)).scope.samples(true);
-    assert.deepEqual([...samples],[200,400,600,800,1000,1200]);
-    assert(host.querySelector('.occurrence-lane').children.length>6,'test must include loaded off-screen rows');
-    host.scrollTop=142;render();await tick();assert.equal(c.qs('#editGalleryCount').textContent,'7–12 / 240');
-    assert.deepEqual([...(await scopes.get(card(6)).scope.samples(true))],[1400,1600,1800,2000,2200,2400]);return;
+    assert.deepEqual([...samples],[200,400,600,800]);
+    assert(host.querySelector('.occurrence-lane').children.length>4,'test must include loaded off-screen rows');
+    host.scrollTop=182;render();await tick();assert.equal(c.qs('#editGalleryCount').textContent,'5–8 / 240');
+    assert.deepEqual([...(await scopes.get(card(4)).scope.samples(true))],[1000,1200,1400,1600]);return;
   }
   const input=c.qs('#occJump'),go=c.qs('#occGo'),response=(total=20)=>({total,items:f.items.slice(0,total)});
   if(which.startsWith('read-')){
@@ -143,7 +143,7 @@ async function main(which){
     }else if(['jump-lazy-focus','jump-focus-abandoned','jump-focus-scrolled','jump-lazy-filter','jump-lazy-arrow'].includes(which)){
       const page=gate();c.pageCache.delete(96);c.endpoint=()=>page.promise;
       if(which==='jump-lazy-arrow'){
-        host.scrollTop=2130;render();await tick();assert.ok(card(95));card(95).querySelector('button').focus();card(95).onkeydown({key:'ArrowRight',preventDefault(){},stopPropagation(){}});
+        host.scrollTop=23*182;render();await tick();assert.ok(card(95));card(95).querySelector('button').focus();card(95).onkeydown({key:'ArrowRight',preventDefault(){},stopPropagation(){}});
       }else go.onclick();
       assert.equal(document.activeElement,host);
       if(which==='jump-focus-abandoned')input.focus();
@@ -164,21 +164,21 @@ async function main(which){
   }
   if(which==='late-response'){
     const old=gate(),fresh=gate();c.eventWave=()=>old.promise;render();const prior=card(0);
-    c.state.editLead='V5';c.eventWave=()=>fresh.promise;render();old.resolve(f.wave);await tick();
-    assert.equal(metrics.svg,0);assert.equal(prior.isConnected,false);fresh.resolve(f.wave);await tick();assert.equal(metrics.svg,24);return;
+    c.eventWave=()=>fresh.promise;scopes.get(prior).scope.onLeads(['II']);old.resolve(f.wave);await tick();
+    assert.equal(metrics.svg,0);assert.equal(prior.isConnected,false);fresh.resolve(f.wave);await tick();assert.equal(metrics.svg,16);return;
   }
   render();await tick();const initial=card(6),base=metrics.svg;
   if(which==='inactive'){
     c.state.currentPage='report';host.scrollTop=568;render();await tick();assert.equal(metrics.svg,base);assert.equal(f.retained.at(-1).keys.length,0);return;
   }
   if(which==='navigation'){
-    let blocked=true,releases=0;c.clinicalUI={releaseOccurrenceWaves:()=>releases++};c.goPage=name=>{if(!blocked)c.state.currentPage=name};
+    let blocked=true,releases=0;c.clinicalUI={releaseOccurrenceWaves:()=>releases++};c.ECGReportRange={pending:()=>[]};c.overviewWorkbench={hasUnsaved:()=>false};c.goPage=name=>{if(!blocked)c.state.currentPage=name};
     vm.runInContext(source.slice(source.indexOf('const goPageLegacy='),source.indexOf('const setEditModeLegacy=')),c);
     c.goPage('report');assert.equal(releases,0);blocked=false;c.goPage('report');assert.equal(releases,1);return;
   }
   if(which==='demand'){
-    assert.equal(f.retained.at(-1).owner,'occurrence');assert.equal(f.retained.at(-1).keys.length,24);
-    host.scrollTop=568;render();await tick();assert.equal(f.retained.at(-1).keys.length,30);assert.ok(f.retained.at(-1).keys.every(key=>Number(key.split('|')[3].slice(6))>=18));
+    assert.equal(f.retained.at(-1).owner,'occurrence');assert.equal(f.retained.at(-1).keys.length,16);
+    host.scrollTop=4*182;render();await tick();assert.equal(f.retained.at(-1).keys.length,20);assert.ok(f.retained.at(-1).keys.every(key=>Number(key.split('|')[3].slice(6))>=12));
     c.occurrence.total=0;render();assert.equal(f.retained.at(-1).keys.length,0);return;
   }
   if(which==='benchmark'||which==='reuse'){
@@ -187,8 +187,8 @@ async function main(which){
     if(which==='benchmark'){console.log(JSON.stringify(result));return}
     assert.equal(metrics.svg,base);assert.equal(card(6),initial);
   }else if(which==='rows'){
-    host.scrollTop=284;render();await tick();assert.equal(card(6),initial);assert.equal(card(0),null);assert.equal(metrics.svg,36);assert.equal(host.querySelector('.occurrence-lane').children.length,30);
-    host.scrollTop=0;render();await tick();assert.equal(card(6),initial);assert.deepEqual(host.querySelector('.occurrence-lane').children.map(n=>Number(n.dataset.occIndex)),Array.from({length:24},(_,i)=>i));
+    host.scrollTop=2*182;render();await tick();assert.equal(card(6),initial);assert.equal(card(0),null);assert.equal(metrics.svg,24);assert.equal(host.querySelector('.occurrence-lane').children.length,20);
+    host.scrollTop=0;render();await tick();assert.equal(card(6),initial);assert.deepEqual(host.querySelector('.occurrence-lane').children.map(n=>Number(n.dataset.occIndex)),Array.from({length:16},(_,i)=>i));
   }else if(which==='scope'){
     const reads=metrics.reads;c.waveEvidenceScope='A-r2';render();await tick();assert.equal(card(6),initial);assert.equal(metrics.reads,reads,'unvalidated basis dispatched old records');
     c.occurrenceContext={id:'A',caseToken:1,evidenceScope:'A-r2'};render();await tick();assert.notEqual(card(6),initial);const revised=card(6);c.occurrenceToken++;render();await tick();assert.notEqual(card(6),revised);
@@ -196,12 +196,12 @@ async function main(which){
     c.waveEvidenceScope='B-r1';c.occurrenceContext={id:'B',caseToken:2,evidenceScope:'B-r1'};render();await tick();assert.notEqual(card(6),filtered);
   }else if(which==='selection'){
     c.state.editSelectedSamples.add(1400);render();assert.equal(card(6).querySelector('input').checked,true);
-    host.scrollTop=142;render();await tick();const actual=await scopes.get(initial).scope.samples(true);assert.equal(actual[0],1400);assert.equal(actual.length,12);
+    host.scrollTop=182;render();await tick();const actual=await scopes.get(initial).scope.samples(true);assert.equal(actual[0],1000);assert.equal(actual.length,8);
   }else if(which==='focus'){
     initial.querySelector('input').focus();const focused=document.activeElement;host.scrollTop=40;render();await tick();assert.equal(document.activeElement,focused);assert.equal(focused.isConnected,true);
   }else if(which==='resize'){
     host.clientWidth=510;render();await tick();assert.equal(card(6),initial);const before=metrics.svg;
-    initial.onkeydown({key:'ArrowDown',stopPropagation(){},preventDefault(){}});await tick();assert.equal(document.activeElement.closest().dataset.occIndex,9);assert.equal(host.scrollTop,426);assert.ok(metrics.svg>=before);
+    initial.onkeydown({key:'ArrowDown',stopPropagation(){},preventDefault(){}});await tick();assert.equal(document.activeElement.closest().dataset.occIndex,8);assert.equal(host.scrollTop,4*182);assert.ok(metrics.svg>=before);
   }else if(which==='replaced-item'){
     c.pageCache.get(0)[6]={...f.items[6],label:'已修订',target_samples:[9999]};render();await tick();assert.notEqual(card(6),initial);assert.equal(scopes.get(card(6)).item.target_samples[0],9999);assert.equal(metrics.svg,base+1);
   }else throw Error('Unknown test '+which);

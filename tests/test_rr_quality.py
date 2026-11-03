@@ -173,15 +173,23 @@ def test_nn_extrema_exclude_reviewed_rhythm_without_suppressing_rr_extrema():
     assert browser('ECGClinicalAnalysis.buildIndex(x.f,[],[x.a])',dict(f=vars(f),a=a))==index
 
 
-@pytest.mark.parametrize('kind,label',[('AF','房颤'),('AFL','房扑'),('ST','ST 改变'),('STRIP','人工图条'),('AT','房速'),('VT','室速')])
-def test_explicit_annotation_kind_has_correct_default_label(kind,label):
+@pytest.mark.parametrize('kind,label,expected_status',[('AF','房颤','pending'),('AFL','房扑','pending'),('ST','ST 改变','confirmed'),('STRIP','人工图条','pending'),('AT','房速','pending'),('VT','室速','pending')])
+def test_explicit_annotation_kind_has_correct_default_label(kind,label,expected_status):
     f=recording([800]*10)
     a=dict(id=1,sample_index=0,details=dict(kind=kind,status='confirmed',end_sample=1000))
     index=build_index(f,annotations=[a])
     event=next(e for e in index['events'] if e['event_id']=='annotation:1')
     assert event['label']==label
-    assert event['diagnosis_status']=='pending'  # Label is not implicit approval.
+    # Explicitly reviewed ST annotations carry their own review status; other
+    # labels retain the separate editor/episode approval contract.
+    assert event['diagnosis_status']==expected_status
     assert browser('ECGClinicalAnalysis.buildIndex(x.f,[],[x.a])',dict(f=vars(f),a=a))==index
+    if kind=='ST':
+        assert 'stt_event_evidence' not in event  # Legacy point review is not continuous-duration proof.
+        pending=copy.deepcopy(a);pending['details']['status']='pending'
+        pending_index=build_index(f,annotations=[pending])
+        assert not any(e['event_id']=='annotation:1' for e in pending_index['events'])
+        assert browser('ECGClinicalAnalysis.buildIndex(x.f,[],[x.a])',dict(f=vars(f),a=pending))==pending_index
 
 
 @pytest.mark.parametrize('anchor,expected',[(820,5),(840,10)])

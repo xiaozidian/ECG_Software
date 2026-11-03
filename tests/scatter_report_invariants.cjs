@@ -69,7 +69,9 @@ const original = JSON.stringify(wave);
 for (const selected of [['II'], ['II', 'V1', 'V5'], names]) {
   const slice = { ...wave, leads: Object.fromEntries(selected.map(n => [n, wave.leads[n]])) };
   const svg = reportBox.ECGReportWorkspace.reviewWaveSvg(slice, {}, { width: 1000, domain: 2000, recordStart: '2026-01-01 12:00:00' });
-  const group = [...svg.matchAll(/<g data-wave-lead="([^"]+)" data-wave-scale="([^"]+)" data-wave-baseline="([^"]+)"/g)];
+  // Read named SVG attributes independently; display offset/quality metadata
+  // may be inserted without changing the source scale or geometry contract.
+  const group = [...svg.matchAll(/<g\b[^>]*data-wave-lead="([^"]+)"[^>]*>/g)].map(m=>[m[0],m[1],/data-wave-scale="([^"]+)"/.exec(m[0])[1],/data-wave-baseline="([^"]+)"/.exec(m[0])[1]]);
   const meta = Object.fromEntries(['columns', 'sample-rate', 'stride', 'source-start', 'source-duration', 'plot-width', 'fixed-row-height'].map(k => [k, new RegExp('data-' + k + '="([^"]+)"').exec(svg)?.[1]]));
   const ii = /<polyline[^>]*data-lead="II"[^>]*points="([^"]+)"/.exec(svg)[1].split(' ').map(p => p.split(',').map(Number));
   result.wave[selected.length] = { scales: group.map(m => Number(m[2])), II_baseline: Number(group.find(m => m[1] === 'II')[3]), metadata: meta, x: ii.map(p => p[0]), height: Number(/viewBox="0 0 [0-9.]+ ([0-9.]+)"/.exec(svg)[1]) };
@@ -85,6 +87,24 @@ if (!baseline) {
     assert.equal(observed.metadata['sample-rate'], '200'); assert.equal(observed.metadata.stride, '1');
   }
   assert.equal(JSON.stringify(wave), original, 'source samples and annotations are unchanged');
+  // Retained report frames use the explicit compact height contract; standalone
+  // expansions above still keep their native fixed rows. Test both real paths.
+  const profile=tools.reportAmplitude(wave),fitted=[];
+  for(const selected of [['II'],['II','V1','V5'],names]){
+    const slice={...wave,leads:Object.fromEntries(selected.map(n=>[n,wave.leads[n]]))};
+    const svg=reportBox.ECGReportWorkspace.reviewWaveSvg(slice,{}, {width:1000,fitHeight:420,displayProfile:profile});
+    const scale=[...svg.matchAll(/data-wave-scale="([^"]+)"/g)].map(m=>Number(m[1]));
+    assert.equal([...svg.matchAll(/<g\b[^>]*data-wave-lead=/g)].length,selected.length);
+    assert.equal(Number(/viewBox="0 0 [0-9.]+ ([0-9.]+)"/.exec(svg)[1]),420,'all report lead modes stay in one retained frame');
+    assert.equal(/data-columns="([^"]+)"/.exec(svg)[1],'1');
+    assert.equal(/data-source-duration="([^"]+)"/.exec(svg)[1],'7');
+    assert(scale.every(v=>v>0&&Math.abs(v-scale[0])<1e-12),'all fitted leads share one positive gain');
+    const x=/data-lead="II"[^>]*points="([^"]+)"/.exec(svg)[1].split(' ').map(p=>Number(p.split(',')[0]));
+    assert.deepEqual(x,one.x,'fitting twelve leads does not compress or discard source time samples');
+    fitted.push({leads:selected.length,height:420,gain:scale[0]});
+  }
+  result.fitted_report_frames=fitted;
+  assert.equal(JSON.stringify(wave),original,'fitting the retained frame does not modify source data');
 }
 result.gainInvariant = Object.values(result.wave).every(x => x.scales.every(v => Math.abs(v - result.wave[1].scales[0]) < 1e-12));
 for (const x of Object.values(result.wave)) delete x.x;

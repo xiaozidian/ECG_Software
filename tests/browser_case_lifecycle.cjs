@@ -21,9 +21,9 @@ function harness(){
   const noop=()=>{},asyncLoad=key=>async()=>{loads.push(key)};
   const ctx=vm.createContext({state,$,$$:selector=>selector==='.page'?pages:[],document:{createElement:()=>node(),body:node()},
     window:{scrollTo:noop},CASE_WORKFLOW_STEPS:[{page:'report',label:'报告'},{page:'edit',label:'模板编辑'}],
-    clinicalWorkflow:{allowLeave:()=>!state.reportSaving,reset:noop,receive:noop},
-    ECGReviewTools:{shouldConfirmNavigation:()=>false},loadCaseWorkflow:()=>new Set(),clearScatterSelection:noop,
-    renderCaseWorkflow:noop,updateZoomControls:noop,renderOverview:noop,renderReport:noop,markWorkflowVisited:noop,
+    clinicalWorkflow:{allowLeave:()=>!state.reportSaving,reset:noop,receive:noop},resolveWorkstationLeave:async()=>!state.reportSaving,
+    ECGReviewTools:require('../static/js/clinical-review-tools.js'),loadCaseWorkflow:()=>new Set(),clearScatterSelection:noop,
+    renderCaseWorkflow:noop,updateZoomControls:noop,renderOverview:noop,renderReport:noop,markWorkflowVisited:noop,closeBeatRelabelMenu:noop,
     escapeHtml:String,fmtNumber:String,withPhi:x=>x,setEditMode:noop,toast:noop,handleError:e=>{throw e},
     ...Object.fromEntries(['Dashboard','Waveform','Scatter','Trends','Stt','Edit','Events','Report','Audit','Settings'].map(k=>['load'+k,asyncLoad(k)])),
     api:async path=>{const id=path.split('/')[3],server=servers.get(id);assert.ok(server,'unknown synthetic case');
@@ -56,7 +56,7 @@ async function run(which){
   if(which==='saving-navigation'){
     state.reportSaving=true;state.caseId='old';await ctx.selectCase('A');assert.equal(state.caseId,'old');assert.equal(state.caseLoading,undefined);return;
   }
-  const first=ctx.selectCase('A','edit');assert.equal(elements.get('#caseLoadingPanel').hidden,false);
+  const first=ctx.selectCase('A','edit');await tick();assert.equal(elements.get('#caseLoadingPanel').hidden,false);
   if(which==='last-intent'){
     ctx.goPage('review');ctx.goPage('report');assert.deepEqual(loads,[]);
     assert.match(elements.get('#caseLoadingPanel').querySelector('p').textContent,/报告/);

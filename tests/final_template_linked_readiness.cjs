@@ -20,15 +20,15 @@ function fixture(){
     return nodes.get(id);
   };
   const calls=[],pending=[];
-  const box={ECGMorphologyGroups:G,ECGLinkedSelection:Linked.create(),AbortController,URLSearchParams,Promise,Map,Set,Object,JSON,Number,console,
+  const box={ECGMorphologyGroups:G,ECGLinkedSelection:Linked.create(),AbortController,URLSearchParams,Promise,Map,Set,Object,JSON,Number,console,queueMicrotask,
     state:{caseId:'synthetic-readiness',caseRequestId:1,currentPage:'edit',editMode:'cluster',caseData:{analysis_revision:2},editSelectedClass:'source-N',editReadIdentity:{id:'synthetic-readiness',caseToken:1,analysis_basis:'synthetic-basis',analysis_revision:4}},
     document:{querySelector:node,querySelectorAll:()=>[],activeElement:null},fmtNumber:n=>String(n),editClassLabel:()=> 'synthetic source',calls,pending,
     api:async(url,opts)=>{
-      const body=JSON.parse(opts.body),query=new URL(url,'https://synthetic.invalid').searchParams,lead=query.get('lead');calls.push({body,gate:query.get('gate')});
+      const body=JSON.parse(opts.body),query=new URL(url,'https://synthetic.invalid').searchParams,leads=(query.get('leads')||query.get('lead')).split(',');calls.push({body,gate:query.get('gate')});
       const samples=(body.samples||[200,400,600]).filter(s=>!(body.exclude_samples||[]).includes(s));
-      const data={revision:2,beat_revision:2,analysis_basis:'synthetic-basis',analysis_revision:4,lead,population_samples:samples,total:samples.length,included:samples.length,sample_indices:samples,amplitude_limit:100,skipped_edges:0};
-      if(JSON.stringify(body.samples)==='[200,400]'&&!query.has('gate'))return new Promise((resolve,reject)=>pending.push({resolve:()=>resolve(data),reject}));
-      return data;
+      const values=await Promise.all(leads.map(lead=>{const data={revision:2,beat_revision:2,analysis_basis:'synthetic-basis',analysis_revision:4,lead,population_samples:samples,total:samples.length,included:samples.length,sample_indices:samples,amplitude_limit:100,skipped_edges:0};
+       return JSON.stringify(body.samples)==='[200,400]'&&!query.has('gate')?new Promise((resolve,reject)=>pending.push({resolve:()=>resolve(data),reject})):data;}));
+      return leads.length===1?values[0]:{...values[0],items:values,source_total:samples.length};
     }};
   vm.createContext(box);
   vm.runInContext(`
@@ -38,6 +38,7 @@ function fixture(){
     const closeForm=()=>{},closeLeadPicker=()=>{},ownSaveTransition=()=>false,scheduleDraw=()=>drawAll();
     function draw(canvas,data){if(data)plots.set(canvas,{limit:data.amplitude_limit,data});else plots.delete(canvas);}
     ${declarations.map(declaration).join('\n')}
+    ${source.slice(source.indexOf('  const densityBatches='),source.indexOf('  async function request('))}
     ${functions.map(actual).join('\n')}
     const c=context();current={...c,key:key(c),phase:'ready',groups:new G.Groups([200,400,600]),saved:{},limits:{II:100,V1:100},base:{},data:{},pending:new Map(),partitionGeneration:2,viewedScope:{kind:'remainder'}};
     current.groups.move(7,[600]);current.groups.move(6,[200,400]);
@@ -49,7 +50,7 @@ function fixture(){
     controls();drawAll();
     globalThis.subject={undo,choose,refresh,refreshLinked,controls,snapshot:()=>({applyDisabled:qs('#applyEditRange').disabled,impact:qs('#morphImpact').textContent,status:qs('#morphStatus').textContent,linkedPhase:current.linked?.phase||null,groupSix:[...current.groups.slots[6]],groupSeven:[...current.groups.slots[7]],remainder:current.groups.remaining(),selection:selection?.samples||null,sourcePlot:plots.has(sourceCanvas('top')),templateDisabled:qs('#morphGroupTemplate').disabled,undoDisabled:qs('#morphUndo').disabled}),activeGroup:n=>{activeSlot=n;controls()},dropPlot:()=>plots.delete(sourceCanvas('top')),changeRevision:()=>{state.editReadIdentity.analysis_revision++;ECGLinkedSelection.setScope({...ECGLinkedSelection.snapshot().scope,analysis_revision:state.editReadIdentity.analysis_revision})},changeCase:()=>{state.caseRequestId++;ECGLinkedSelection.snapshot()},viewGroup:n=>{current.viewedScope={kind:'group',slot:n}},rangeSlot:slot=>{qs('#morphRangeLead').value=slot;controls()}};
   `,box);
-  const tick=async()=>{for(let i=0;i<8;i++)await Promise.resolve()};
+  const tick=()=>new Promise(setImmediate);
   const complete=async()=>{const reads=pending.splice(0);assert.equal(reads.length,2);reads.forEach(r=>r.resolve());await tick()};
   const reject=async()=>{const reads=pending.splice(0);assert.equal(reads.length,2);reads.forEach(r=>r.reject(Error('synthetic density failure')));await tick()};
   return {box,subject:box.subject,calls,pending,tick,complete,reject};

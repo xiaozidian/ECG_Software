@@ -5,7 +5,7 @@ const tick=()=>new Promise(r=>setImmediate(r));
 const app=fs.readFileSync('static/js/app.js','utf8'),ui=fs.readFileSync('static/js/clinical-ui.js','utf8');
 async function protocol(which){
   if(which==='missing-metrics'){
-    const host={innerHTML:''},ctx=vm.createContext({state:{caseData:{summary:{avg_hr:null,min_hr:null,max_hr:null,longest_rr_s:null},calculated:{avg_hr_from_rr:null,longest_rr_ms:null}}},$:()=>host,fmtNumber:x=>x??'—'});
+    const host={innerHTML:''},ctx=vm.createContext({state:{caseData:{summary:{avg_hr:null,min_hr:null,max_hr:null,longest_rr_s:null},calculated:{avg_hr_from_rr:null,longest_rr_ms:null}}},$:()=>host,fmtNumber:x=>x??'—',ECGReviewTools:require('../static/js/clinical-review-tools.js')});
     vm.runInContext(app.slice(app.indexOf('function renderTrendMetrics('),app.indexOf('function drawAxes(')),ctx);ctx.renderTrendMetrics();assert.doesNotMatch(host.innerHTML,/null|undefined|NaN|0\.000/);assert.match(host.innerHTML,/—/);return;
   }
   if(which==='missing'){assert.throws(()=>C.identity({}),/缺失/);return;}
@@ -26,7 +26,7 @@ async function panel(which){
     if(kind===(stt?'waveform':'hrv-analysis')){await g.promise;if(failing)throw Error('offline');if(which.endsWith('mixed'))return {...basis,analysis_revision:2};}
     return response(kind);
   };
-  const ctx=vm.createContext({state,$,api,AbortController,ECGAnalysisConsistency:C,URLSearchParams,withPhi:x=>x,ECGReportConsistency:{receive(){}},clinicalWorkflow:{receive(){}},
+  const ctx=vm.createContext({state,$,api,AbortController,ECGAnalysisConsistency:C,URLSearchParams,withPhi:x=>x,ECGReportConsistency:{receive(){}},clinicalWorkflow:{receive(){},writable:()=>true},
     analysisReadStatus:(s,m,retry,cancel)=>Object.assign($(s),{textContent:m,retry,cancel}),clearWaveformSurface:key=>{state[key]=null},
     renderTrendMetrics:()=>renders.push('trends'),renderTrendChart(){},renderHistogram(){},renderPoincare(){},renderHrv(){},renderSttCapability:()=>renders.push('stt'),renderSttOverview(){},renderSttTrendRows(){},renderSttWaveform(){}});
   vm.runInContext(app.match(/^const ALL_LEADS = .*;$/m)[0],ctx);

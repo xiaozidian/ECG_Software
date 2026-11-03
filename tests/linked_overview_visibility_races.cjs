@@ -6,12 +6,15 @@ const file=path.join(base,'static/js/overview-linked-view.js');
 const loadedSha256=crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 const L=require(file),E=require(path.join(base,'static/js/overview-engine.js'));
 const C=require(path.join(base,'static/js/linked-selection.js'));
+global.ECGOccurrenceCard=require(path.join(base,'static/js/occurrence-card.js'));
 global.document={activeElement:null};global.innerHeight=800;global.innerWidth=1280;
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 const rows=E.decode({duration_s:10,rows:[[0,0,'N'],[160,800,'N'],[360,1000,'S'],[500,700,'X'],[700,0,'N'],[880,900,'N'],[1060,900,'N']]});
 const scope={caseId:'synthetic',caseToken:1,analysis_basis:'synthetic-basis',analysis_revision:7,beatRevision:3};
 function setup(mini='absent'){
   const state={caseId:'synthetic',caseRequestId:1,currentPage:'review',filter:'raw'},jobs=[],nodes=new Map(),drawn=[];
+  const shippedCard=require(path.join(base,'static/js/occurrence-card.js'));
+  global.ECGOccurrenceCard={...shippedCard,svg:(strip,...args)=>{drawn.push(strip.marker);return shippedCard.svg(strip,...args);}};
   global.ECGLinkedSelection=C.create({getActiveCase:()=>({caseId:state.caseId,caseToken:state.caseRequestId}),onSubscriberError:error=>{throw error;}});
   if(mini!=='absent'){
     nodes.set('#scatterSelectionList',{scrollTop:0,clientHeight:mini==='hidden'?0:154,getClientRects:()=>mini==='hidden'?[]:[{}],getBoundingClientRect:()=>({top:mini==='offscreen'?1000:0,bottom:mini==='offscreen'?1154:154,left:0,right:300})});
@@ -32,7 +35,7 @@ function resolveDensity(job){
   const members=job.body.samples??rows.map(r=>r.sample_index);
   job.resolve({analysis_basis:job.body.analysis_basis,analysis_revision:job.body.analysis_revision,beat_revision:job.body.revision,population_samples:members,total:members.length,included:members.length,skipped_edges:0,lead:new URL(job.url,'http://synthetic.invalid').searchParams.get('lead'),bins:[members.length]});
 }
-function resolveStrip(job,marker){job.resolve({analysis_basis:job.body.analysis_basis,analysis_revision:job.body.analysis_revision,beat_revision:job.body.revision,items:job.body.sample_indices.map(sample_index=>({sample_index,marker}))});}
+function resolveStrip(job,marker){job.resolve({analysis_basis:job.body.analysis_basis,analysis_revision:job.body.analysis_revision,beat_revision:job.body.revision,items:job.body.sample_indices.map(sample_index=>({sample_index,marker,sample_rate_hz:200,start_s:Math.max(0,sample_index/200-1),duration_s:2,leads:{II:[0,1,0,-1]}}))});}
 (async()=>{
   const observations=[],passed=[];
   let x=setup();

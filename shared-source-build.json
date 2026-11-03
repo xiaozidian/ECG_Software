@@ -414,9 +414,9 @@
       "sha256": "a6388fe03f33d7e58efdbf0a962794231b1d291d14940b6aedc91305edcd4330"
     },
     "static/js/clinical-ui.js": {
-      "bytes": 239540,
+      "bytes": 239702,
       "component": "ui",
-      "sha256": "1a1966136ebef0d3d87e8c9d3dc5eee4203ebc0c31d4ae5fc91093d90164bfd9"
+      "sha256": "fff3029a91ea9f41e2faed74bb23174716d3f2590ddb9e6b624c9686986f7430"
     },
     "static/js/clinical-workflow.js": {
       "bytes": 15113,
@@ -625,7 +625,7 @@
     }
   },
   "schema": 1,
-  "source_fingerprint": "3ce8712ee9f91b28b796b0978f7b4146eabe02c07ac4f8a2c3923f9814add347",
+  "source_fingerprint": "140751b696bf22aa1a2eae53b684c17a5af48a605406c1658ff9178ebe6db150",
   "source_revision": null,
-  "ui_version": "ui-58ccdb582caadec0"
+  "ui_version": "ui-acb024d1fa86b2bb"
 }

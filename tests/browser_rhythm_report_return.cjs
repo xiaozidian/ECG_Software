@@ -1,6 +1,7 @@
 'use strict';
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
-const source=fs.readFileSync('static/js/clinical-ui.js','utf8');
+const sourceRoot=process.env.ECG_UI_SOURCE_ROOT||'.';
+const source=fs.readFileSync(sourceRoot+'/static/js/clinical-ui.js','utf8');
 const basis={analysis_basis:'b',analysis_revision:1};
 const old={event_id:'source-event',basis_version:'v1',caption:'doctor caption',leads:['V1','V5'],duration_s:9,range_start_s:8,range_end_s:17};
 const event={...basis,event_id:old.event_id,basis_version:'v1',category:'AF',subtype:'AF',rhythm_episode_id:'episode-1'};
@@ -15,9 +16,10 @@ function setup(){
     save:async()=>{saves++;c.state.reportDirty=false},goPage:name=>{c.state.currentPage=name},
     overviewWorkbench:{openReportEpisode:async(id,b,idCase,token)=>{opens++;assert.equal(id,'episode-1');assert.equal(idCase,'one');assert.equal(token,5)}},
     refreshReport:async()=>{refreshes++},renderReportShell(){},renderReportBody:async()=>{},syncText(){},dirty(){c.state.reportDirty=true},toast(){},
-    qs:()=>({scrollIntoView(){},focus(){}}),endpoint:async()=>({...basis,items:[{...event,event_id:'annotation:af:episode-1',basis_version:'v2'}]}),focusEventNavigation(){}
+    qs:()=>({scrollIntoView(){},focus(){},addEventListener(){}}),endpoint:async()=>({...basis,items:[{...event,event_id:'annotation:af:episode-1',basis_version:'v2'}]}),focusEventNavigation(){}
   };
   const ctx=vm.createContext(c);
+  vm.runInContext(source.slice(source.indexOf('  const eventAliases='),source.indexOf('  function newStripSettings(')),ctx);
   vm.runInContext(source.slice(source.indexOf('  let rhythmReturn='),source.indexOf('  async function backToReportEvent(')),ctx);
   vm.runInContext(source.slice(source.indexOf('  function selectEvent('),source.indexOf('  function removeReportSelection(')),ctx);
   return {c,call:x=>vm.runInContext(x,ctx),counts:()=>({saves,opens,refreshes}),comp};
@@ -63,16 +65,30 @@ function setup(){
   x.c.state.caseRequestId++;assert.equal(x.call('hasRhythmReturn()'),false);
   x=setup();await x.call('openRhythmReview("0")');x.c.active={...event,event_id:'annotation:af:episode-1',basis_version:'v2'};
   x.c.reportData.items=[x.c.active];x.c.reportWaveReady=false;await assert.rejects(x.call('replaceReturnedRhythm()'),/读取/);
-  x.c.reportWaveReady=true;x.comp.selected_events.push({...x.c.active});await assert.rejects(x.call('replaceReturnedRhythm()'),/另行入报/);
-  x.comp.selected_events.pop();x.call('replaceRhythmSelection(active,{leads:["V1","V5"],duration_s:7,range_start_s:11,range_end_s:20})');
+  x.c.reportWaveReady=true;
+  const currentSibling={...old,...x.c.active,strip_id:'current-sibling',caption:'separate AF figure',range_start_s:30,range_end_s:39};
+  x.comp.selected_events.push(structuredClone(currentSibling));await x.call('replaceReturnedRhythm()');
+  assert.equal(x.comp.selected_events.length,2);assert.deepEqual(x.comp.selected_events[1],currentSibling,'another valid AF figure must not be removed or rewritten');
+  assert.equal(x.comp.selected_events[0].range_start_s,undefined);assert.equal(x.comp.selected_events[0].range_end_s,undefined);
+  x=setup();await x.call('openRhythmReview("0")');x.c.active={...event,event_id:'annotation:af:episode-1',basis_version:'v2'};
+  x.call('replaceRhythmSelection(active,{leads:["V1","V5"],duration_s:7,range_start_s:11,range_end_s:20})');
   assert.equal(x.comp.selected_events.length,1);assert.equal(x.comp.selected_events[0].range_start_s,11);assert.equal(x.comp.selected_events[0].caption,old.caption);
+  assert.equal(x.comp.selected_events[0].range_end_s,20,'explicit manual replacement keeps both endpoints');
+  x=setup();const target={...old,strip_id:'target-strip',notes:'preserve my note',representative_role:'custom',print_enabled:false,referenced_in_report:true};
+  const oldSibling={...old,strip_id:'old-sibling',caption:'same episode second figure',range_start_s:30,range_end_s:39};
+  x.comp.selected_events.splice(0,1,structuredClone(target),structuredClone(oldSibling));await x.call('openRhythmReview("0")');
+  x.c.active={...event,event_id:'annotation:af:episode-1',basis_version:'v2'};x.c.reportData.items=[x.c.active];await x.call('replaceReturnedRhythm()');
+  assert.equal(x.comp.selected_events.length,2);assert.deepEqual(x.comp.selected_events[1],oldSibling,'same-episode sibling range and curation stay exact');
+  const replaced=x.comp.selected_events[0];assert.equal(replaced.range_start_s,undefined);assert.equal(replaced.range_end_s,undefined);
+  for(const k of ['strip_id','caption','notes','leads','representative_role','print_enabled','referenced_in_report'])assert.deepEqual(replaced[k],target[k],k);
+  assert.equal(replaced.duration_s,7);assert.equal(replaced.event_id,x.c.active.event_id);assert.equal(replaced.basis_version,'v2');
   // Concurrent entry clicks cannot initiate a second save or navigation.
   x=setup();let release;const pending=new Promise(resolve=>release=resolve);
   x.c.save=async()=>{await pending;x.c.state.reportDirty=false};
   const opening=x.call('openRhythmReview("0")');await assert.rejects(x.call('openRhythmReview("0")'),/等待/);
   release();await opening;assert.equal(x.counts().opens,1);
 
-  const overview=fs.readFileSync('static/js/overview-workbench.js','utf8');
+  const overview=fs.readFileSync(sourceRoot+'/static/js/overview-workbench.js','utf8');
   for(const mode of ['ok','case-before','case-during','page-during','unready','basis','missing','duplicate','selection-during']){
     const details={open:false},back={hidden:true},located=[];
     const c={state:{caseId:'one',caseRequestId:5,currentPage:'review'},ui:{identity:basis,rhythm:{document:{episodes:[{id:'exact'}]}},episode:null},

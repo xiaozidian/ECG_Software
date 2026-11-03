@@ -18,6 +18,21 @@ function rows(duration=120,offset=0,random=true){
 }
 const document={episodes:[],bookmarks:{}};
 const episode=(id,start,end,status='pending',source='rr-irregularity-v1')=>({id,start_s:start,end_s:end,kind:'AF',status,source,note:'retain'});
+function editorFixture(original){
+ const fs=require('node:fs'),vm=require('node:vm'),src=fs.readFileSync('./static/js/overview-workbench.js','utf8'),clock=require('./static/js/rhythm-range-editor.js');
+ const nodes=new Map(),node=key=>{if(!nodes.has(key))nodes.set(key,{innerHTML:'',textContent:'',dataset:{},focus(){},querySelector:s=>node(key+' '+s),querySelectorAll:()=>[]});return nodes.get(key);};
+ const form=node('#ovEpisodeForm');form.elements=Object.fromEntries(['start','end','kind','status','note','startClock','endClock'].map(k=>[k,{value:'',focus(){}}]));
+ const qs=key=>key==='#ovEpisodeForm [name="startClock"]'?form.elements.startClock:node(key);
+ const set=values=>{for(const [k,v] of Object.entries(values))form.elements[k].value=String(v);for(const k of ['start','end'])form.elements[k+'Clock'].value=form.elements[k].value===''?'':clock.boundaryClock(Number(form.elements[k].value));};
+ set({start:'',end:'',kind:'AF',status:'pending',note:''});let saved=null;
+ const ctx=vm.createContext({E,crypto,state:{caseId:'c'},ui:{revision:2,af:true,rhythm:{revision:3,document:original}},qs,overviewReady:true,ECGRhythmRangeEditor:clock,
+  duration:()=>90,esc:String,name:String,statusName:String,copy:x=>JSON.parse(JSON.stringify(x)),
+  button:label=>'<button>'+label+'</button>',FormData:function(f){return new Map(Object.entries(f.elements).map(([k,v])=>[k,v.value]));},
+  renderWaveform(){},draw(){},syncAFSaveState(){},afMode(){ctx.ui.af=true;},saveRhythm:async doc=>{saved=doc;}});
+ const basis=src.slice(src.indexOf('  const rhythmBasis='),src.indexOf('  function confirmRhythm(')),formCode=src.slice(src.indexOf('  async function episodeForm('),src.indexOf('  // The queue is read-only:')),queue=src.slice(src.indexOf('  // The queue is read-only:'),src.indexOf('  function afMode('));
+ vm.runInContext('let episodeFilter="all",episodePage=0,episodeNavigation=0,episodeEditor=null;const episodeDrafts=new Map();'+basis+formCode+queue,ctx);
+ return {ctx,set,form,render:()=>ctx.renderEpisodes(),saved:()=>saved,run:code=>vm.runInContext(code,ctx)};
+}
 """
 
 
@@ -138,37 +153,27 @@ console.log(JSON.stringify({calls,error,coverage}));
 def test_confirmation_counts_excluded_records_and_binds_original_revision(change):
     result=node("""
 const fs=require('fs'),vm=require('vm'),src=fs.readFileSync('./static/js/overview-workbench.js','utf8');
-const body=src.slice(src.indexOf('  const rhythmBasis='),src.indexOf('  function episodeForm('));
-let accept,copy,saved=0;const context={state:{caseId:'c'},ui:{revision:2,rhythm:{revision:3}},esc:String,dialog:(title,text,action)=>{copy=text;accept=action},saveRhythm:()=>saved++,doc:{episodes:[episode('one',0,30),episode('two',30,60,'excluded')]}};
+const body=src.slice(src.indexOf('  const rhythmBasis='),src.indexOf('  async function episodeForm('));
+let accept,copy,saved=0,savedDocument=null;const context={state:{caseId:'c'},ui:{revision:2,rhythm:{revision:3}},esc:String,dialog:(title,text,action)=>{copy=text;accept=action},saveRhythm:doc=>{saved++;savedDocument=doc;},doc:{episodes:[episode('one',0,30),episode('two',30,60,'excluded')]}};
 vm.createContext(context);vm.runInContext(body+";confirmRhythm('title',doc,'detail')",context);
 """+f"vm.runInContext({json.dumps(change)},context);"+"""
-let error='';try{accept()}catch(e){error=e.message}console.log(JSON.stringify({copy,saved,error}));
+let error='';try{accept()}catch(e){error=e.message}console.log(JSON.stringify({copy,saved,savedDocument,error}));
 """)
-    assert '2 条片段记录（含 1 条已排除记录）' in result['copy']
+    assert '此操作可撤销' in result['copy']
     assert result['saved']==(0 if change else 1)
     assert bool(result['error'])==bool(change)
+    if not change:
+        assert len(result['savedDocument']['episodes']) == 2
+        assert sum(e['status'] == 'excluded' for e in result['savedDocument']['episodes']) == 1
 
 
 def edit_form_result(change='', status='pending', source='rr-irregularity-v2'):
     """Execute the shipped form handler; do not duplicate edit semantics."""
     return node("""
-const fs=require('fs'),vm=require('vm'),src=fs.readFileSync('./static/js/overview-workbench.js','utf8');
-const helpers=src.slice(src.indexOf('  const rhythmBasis='),src.indexOf('  function confirmRhythm('));
-const renderer=src.slice(src.indexOf('  // The queue is read-only:'),src.indexOf('  function afMode('));
-const nodes=new Map(),qs=key=>{if(!nodes.has(key))nodes.set(key,{});return nodes.get(key)};
-let plan,error='',detail='';const original={episodes:[episode('edit',20,50,'pending',SOURCE)],bookmarks:{fastest:10}};
-const values=new Map(Object.entries({start:'22',end:'48',kind:'AFL',status:STATUS,note:'doctor boundary review'}));
-// The real editor now retains DOM input between queue renders; provide the
-// same named controls to the shipped handler instead of stubbing its helpers.
-qs('#ovEpisodeForm').elements=Object.fromEntries([...values].map(([k,value])=>[k,{value}]));
-const context={E,state:{caseId:'c'},ui:{episode:'edit',revision:2,rhythm:{revision:3,document:original}},qs,
-  duration:()=>90,innerWidth:1366,esc:String,formatElapsed:String,formatElapsedPrecise:String,name:String,statusName:String,
-  button:()=>'',copy:x=>JSON.parse(JSON.stringify(x)),FormData:function(){return values},
-  run:fn=>{try{fn()}catch(e){error=e.message}},confirmRhythm:(title,doc,text)=>{plan=doc;detail=text}};
-vm.createContext(context);vm.runInContext('let episodeFilter="all",episodePage=0,episodeNavigation=0,episodeEditor=null;const episodeDrafts=new Map();'+helpers+renderer+';renderEpisodes()',context);
-vm.runInContext(CHANGE,context);qs('#ovEpisodeForm').onsubmit({preventDefault(){},target:{}});
-const rescreen=plan?E.planAFRescreen(rows(90),90,plan).document:null;
-console.log(JSON.stringify({plan,error,detail,original,rescreen}));
+(async()=>{const original={episodes:[episode('edit',20,50,'pending',SOURCE)],bookmarks:{fastest:10}},fixture=editorFixture(original);fixture.ctx.ui.episode='edit';fixture.render();fixture.set({start:'22',end:'48',kind:'AFL',status:STATUS,note:'doctor boundary review'});
+fixture.run(CHANGE);let error='';try{await fixture.run('saveAFDraft('+JSON.stringify(STATUS)+')')}catch(e){error=e.message;}
+const plan=fixture.saved(),rescreen=plan?E.planAFRescreen(rows(90),90,plan).document:null;
+console.log(JSON.stringify({plan,error,detail:fixture.ctx.qs('#ovEpisodeEditor').innerHTML,original,rescreen}));})().catch(e=>{console.error(e);process.exitCode=1;});
 """.replace('SOURCE',json.dumps(source)).replace('STATUS',json.dumps(status)).replace('CHANGE',json.dumps(change)))
 
 
@@ -183,7 +188,7 @@ def test_explicit_doctor_edit_is_manual_and_retains_review_status(source,status)
     assert all(x['id']=='edit' or x['end_s']<=22 or x['start_s']>=48 for x in result['rescreen']['episodes'])
     assert result['original']['episodes'][0]['source']==source
     assert result['original']['episodes'][0]['start_s']==20
-    assert '自动重分析不会替换' in result['detail']
+    assert '保存候选' in result['detail']
     assert not result['error']
 
 
@@ -199,21 +204,14 @@ def test_stale_rendered_episode_form_cannot_prepare_a_new_confirmation(change):
 @pytest.mark.parametrize('change',["state.caseId='other'",'ui.revision++','ui.rhythm.revision++',''])
 def test_add_or_whole_record_dialog_binds_original_case_and_revision(change,whole):
     result=node("""
-const fs=require('fs'),vm=require('vm'),src=fs.readFileSync('./static/js/overview-workbench.js','utf8');
-const helpers=src.slice(src.indexOf('  const rhythmBasis='),src.indexOf('  function confirmRhythm('));
-const form=src.slice(src.indexOf('  function episodeForm('),src.indexOf('  function renderEpisodes('));
-let accept,saved=null;const original={episodes:[episode('keep',50,60)],bookmarks:{}};
-const context={E,crypto,state:{caseId:'c'},ui:{revision:2,rhythm:{revision:3,document:original}},
-  span:()=>[0,30],duration:()=>90,name:String,copy:x=>JSON.parse(JSON.stringify(x)),
-  dialog:(title,text,action)=>accept=action,saveRhythm:doc=>saved=doc};
-vm.createContext(context);vm.runInContext(helpers+form+';episodeForm("AF",WHOLE)',context);
-vm.runInContext(CHANGE,context);let error='';try{accept(new Map(Object.entries({start:'0',end:END,kind:'AF',status:'pending',note:''})))}catch(e){error=e.message}
-console.log(JSON.stringify({saved,error,original}));
+(async()=>{const original={episodes:[episode('keep',50,60)],bookmarks:{}},fixture=editorFixture(original);await fixture.ctx.episodeForm('AF',WHOLE);fixture.set({start:'0',end:END,kind:'AF',status:'pending',note:''});fixture.run(CHANGE);let error='';try{await fixture.ctx.saveAFDraft('pending')}catch(e){error=e.message;}
+console.log(JSON.stringify({saved:fixture.saved(),error,original}));})().catch(e=>{console.error(e);process.exitCode=1;});
 """.replace('WHOLE',json.dumps(whole)).replace('CHANGE',json.dumps(change)).replace('END',json.dumps('90' if whole else '30')))
     if change:
         assert result['saved'] is None and result['error']
     else:
-        assert len(result['saved']['episodes'])==(1 if whole else 2)
+        assert len(result['saved']['episodes']) == 2
+        assert result['saved']['episodes'][0] == result['original']['episodes'][0]
         assert result['saved']['episodes'][-1]['source']=='manual'
         assert not result['error']
     assert len(result['original']['episodes'])==1
