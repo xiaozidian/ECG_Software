@@ -52,8 +52,17 @@ def generate(output: Path, release_id: str) -> dict:
         analysis_revision='editor-0|overrides-none')
     case['stt_review_binding'] = {'case_id': case_id,
         'analysis_basis': 'public-math-4314-v2:' + case_id,
+        'rhythm_exclusions': [],
         'beat_revision': 0, 'python_precomputed': True,
         'patient_inputs_read': False, 'raw_waveform_sha256': hashlib.sha256(waveform.read_bytes()).hexdigest()}
+    from ecg_core.stt_range import analyze_stt_range
+    for candidate in case['stt_review']['automatic_candidates']['items']:
+        candidate['whole_statistics']=analyze_stt_range(waveform,
+            [{'sample_index':b.sample_index,'group':b.group,'rr_ms':b.rr_ms} for b in beats],
+            start_sample=round(candidate['start_s']*200),end_sample=round(candidate['end_s']*200),
+            leads=candidate['leads'],measurement_ms=60,basis=case['stt_review_binding'],
+            source_digest=case['stt_review_binding']['raw_waveform_sha256'])
+        candidate['whole_statistics'].pop('blocks',None)
     js = output / 'case-data.js'
     js.write_text('"use strict";\nwindow.__CARDIOINSIGHT_MATHEMATICAL_CASE__ = ' + json.dumps(case, ensure_ascii=False, separators=(',', ':')) + ';\n', encoding='utf-8', newline='\n')
     return {'release_id': release_id, 'kind': 'pure_mathematical', 'case_id': case_id, 'duration_seconds': duration,

@@ -51,6 +51,15 @@ def clock(meta, seconds=0):
         return f'D{s // 86400 + 1} {s % 86400 // 3600:02}:{s % 3600 // 60:02}:{s % 60:02}'
 
 
+def conclusion_text(report):
+    blocks=[b for b in report.get('composition',{}).get('diagnosis_blocks',[]) if b.get('text')]
+    st=[b['text'] for b in blocks if str(b.get('key','')).startswith('ST:review:')]
+    other=[b['text'] for b in blocks if not str(b.get('key','')).startswith('ST:review:')]
+    return '\n'.join([report.get('conclusion') or '（未填写）']+
+        (['图条说明（不替代诊断）：'+'；'.join(other)] if other else [])+
+        (['ST-T复核记录：'+'；'.join(st)] if st else []))
+
+
 def build_paper_pdf(case, report, font):
     output = BytesIO()
     c = Canvas(output, pagesize=A4, pageCompression=1)
@@ -145,8 +154,7 @@ def build_paper_pdf(case, report, font):
         text(78,261,f"{'已审核' if report.get('status')=='reviewed' else '草稿'} v{report.get('version',1)}",8)
         text(188,261,'报告日期：'+str(report.get('updated_at') or '未保存')[:10],8,'right')
 
-    blocks=[b.get('text','') for b in report.get('composition',{}).get('diagnosis_blocks',[]) if b.get('text')]
-    conclusion=wrap_text((report.get('conclusion') or '（未填写）')+ ('\n图条说明（不替代诊断）：'+'；'.join(blocks) if blocks else ''), 53, bool(alias))
+    conclusion=wrap_text(conclusion_text(report),53,bool(alias))
     # Signature space is reserved. Long text always continues; it is never clipped.
     first=conclusion[:15]
     pages.append(lambda first=first:summary_page(first))

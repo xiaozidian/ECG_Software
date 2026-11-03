@@ -4,7 +4,7 @@ globalThis.ECGReportEvidenceUI=(()=>{
   const fields=['case_id','analysis_basis','analysis_revision','beat_revision'];
   const scope=value=>Object.fromEntries(fields.map(k=>[k,value[k]]));
   const eligible=e=>!!e&&(e.evidence_only||e.category==='pause');
-  const used=(c,s,e)=>s.referenced_in_report===true||ECGReportSections.selectedPages(c).includes('event_strips')&&s.print_enabled!==false&&(!e||!['fastest','slowest'].includes(e.category)||c.fast_slow_mode==='both'||e.subtype===(c.fast_slow_mode||'rr').toUpperCase());
+  const used=(c,s,e)=>{const pages=ECGReportSections.selectedPages(c);if(e?.category==='ST'&&Array.isArray(c.stt_report_use)){const use=c.stt_report_use.find(row=>row.event_id===s.event_id);return !!use&&use.strip&&pages.includes('event_strips')&&s.print_enabled!==false;}return s.referenced_in_report===true||pages.includes('event_strips')&&s.print_enabled!==false&&(!e||!['fastest','slowest'].includes(e.category)||c.fast_slow_mode==='both'||e.subtype===(c.fast_slow_mode||'rr').toUpperCase());};
   const selection=(s,e)=>{const p=ECGReportEngine.settings(s);return {leads:p.leads,duration_s:p.duration_s,range_start_s:p.range_start_s??null,range_end_s:p.range_end_s??null,caption:s.caption||e.label||'',notes:s.notes||''};};
   function confirmed(s,e){
     const own=selection(s,e),review=e?.evidence_review;

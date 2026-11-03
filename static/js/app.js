@@ -109,7 +109,13 @@ const state = {
   waveform: null,
   waveformOwner: null,
   waveformRequestId: 0,
-  sttLeads: [...ALL_LEADS],
+  sttLeads: ["II","V1","V5"],
+  sttReviewLeads: ["II"],
+  sttTrendMode: "delta",
+  sttTrendRange: "full",
+  sttGainFactor: 1,
+  sttEditingRecord: null,
+  sttDraftDirty: false,
   sttReview: null,
   sttSelectedCandidate: null,
   sttLastSavedEvent: false,
@@ -661,13 +667,14 @@ function renderCaseLoading() {
 }
 
 function sttReviewHasUnsavedNote() {
-  return Boolean(state.caseId && $("#sttReviewNote")?.value.trim());
+  return Boolean(state.caseId && (state.sttDraftDirty || (state.sttDraftBase?JSON.stringify(sttDraftState())!==state.sttDraftBase:$('#sttReviewNote')?.value.trim())));
 }
 
 function sttSubmittedDraftIsUnchanged(draft) {
   return $('#sttReviewNote').value===draft.note && $('#sttFinding').value===draft.finding
     && $('#sttSignalChecked').checked===draft.qualityChecked && state.sttIsoFraction===draft.iso
-    && state.sttJFraction===draft.j && state.sttMeasurementMs===draft.measurementMs;
+    && state.sttJFraction===draft.j && state.sttMeasurementMs===draft.measurementMs
+    && (!draft.hospital||draft.hospital===JSON.stringify(sttDraftState()));
 }
 
 function allowSttCaseSelection(caseId) {
@@ -711,10 +718,10 @@ async function selectCase(caseId, destination = "review") {
   state.sttAbort?.abort();state.sttAbort=null;state.sttEvidence=null;state.sttWaveformSelection=null;
   state.sttSaving=null;if(typeof updateSttSaveState==='function')updateSttSaveState();
   if(sttCaseChanged){
-    state.sttSelectedCandidate=null;state.sttLastSavedEvent=false;
+    state.sttSelectedCandidate=null;state.sttLastSavedEvent=false;state.sttEditingRecord=null;state.sttDraftDirty=false;state.sttReviewLeads=["II"];
     state.sttIsoFraction=.34;state.sttJFraction=.52;state.sttMeasurementMs=60;
     const note=$('#sttReviewNote'),checked=$('#sttSignalChecked'),finding=$('#sttFinding'),point=$('#sttMeasurementPoint');
-    if(note)note.value='';if(checked)checked.checked=false;if(finding)finding.value='无法判读';if(point)point.value='60';
+    if(note)note.value='';if(checked)checked.checked=false;if(finding)finding.value='';if(point)point.value='60';
   }
   state.sttFullscreenReturn=null;state.editFullscreenReturn=null;globalThis.ecgSttReviewLayout?.clear("正在切换病例…");
   state.editRequestId += 1;
@@ -1780,7 +1787,7 @@ function sttReviewLayout() {
   if(!globalThis.ecgSttReviewLayout&&globalThis.ECGSttReviewLayout){
     globalThis.ecgSttReviewLayout=ECGSttReviewLayout.mount({root:$("#page-stt"),onLocate:({time_s,lead})=>{
       if(!Number.isFinite(time_s)||!ALL_LEADS.includes(lead))return;
-      if(!sttVisibleLeads().includes(lead))state.sttLeads=ALL_LEADS.filter(name=>sttVisibleLeads().includes(name)||name===lead);
+      state.sttActiveLead=lead;if(!sttVisibleLeads().includes(lead))state.sttLeads=sttVisibleLeads().length===1?[lead]:[lead,...sttVisibleLeads().filter(name=>name!==lead)].slice(0,sttVisibleLeads().length);
       setSttStart(time_s-state.sttDuration/2);
     }});
   }
@@ -1822,7 +1829,7 @@ function updateSttSaveState() {
   const button=$('#sttReviewForm button[type="submit"]');if(!button)return;
   const busy=Boolean(state.sttSaving);
   button.disabled=busy||!clinicalWorkflow.writable()||!sttWaveformIsCurrent();
-  button.textContent=busy?'正在保存…':'保存为人工复核标注';
+  button.textContent=busy?'正在保存…':'保存复核';
   button.setAttribute?.('aria-busy',String(busy));if(button.dataset)button.dataset.sttSaveState=busy?'saving':'idle';
 }
 
@@ -1876,15 +1883,62 @@ function sttMeasurementValues() {
   });
 }
 
+function sttDraftState() {return {finding:$('#sttFinding')?.value||'',note:$('#sttReviewNote')?.value||'',checked:!!$('#sttSignalChecked')?.checked,start:$('#sttEpisodeStart')?.value||'',end:$('#sttEpisodeEnd')?.value||'',leads:sttReviewLeadNames().join(','),iso:state.sttIsoFraction,j:state.sttJFraction,measurement:state.sttMeasurementMs};}
+function sttSavedRows() {return Array.isArray(state.sttReview?.review_records)?state.sttReview.review_records:state.sttReview?.review_records?.items||[];}
+function sttClock(seconds) {return globalThis.ECGRhythmRangeEditor?.boundaryClock(seconds,state.caseData?.metadata?.start_time)||'+'+Number(seconds).toFixed(3);}
+function sttParseClock(text) {
+  const total=Number(state.caseData?.technical?.duration_seconds_raw)||0;
+  if(globalThis.ECGRhythmRangeEditor)return ECGRhythmRangeEditor.parseBoundaryClock(text,state.caseData?.metadata?.start_time,total);
+  const seconds=Number(String(text).replace(/^\+/,''));if(!String(text).trim()||!Number.isFinite(seconds)||seconds<0||seconds>total)throw Error('时间超出记录范围');return Math.round(seconds*200)/200;
+}
+function sttReviewLeadNames() {return (state.sttReviewLeads||['II']).filter(lead=>ALL_LEADS.includes(lead));}
+function renderSttReviewLeads() {
+  const names=sttReviewLeadNames();$$('[data-stt-review-lead]').forEach(node=>{node.checked=names.includes(node.value);});
+  const summary=$('#sttReviewLeadsSummary');if(summary)summary.textContent='复核导联：'+(names.join(' / ')||'请选择');
+}
+function sttReadReviewRange() {
+  const item=state.sttSelectedCandidate?.item;
+  if(!item)return null;
+  const first=$('#sttEpisodeStart'),last=$('#sttEpisodeEnd');
+  const start=first?.value?sttParseClock(first.value):item.start_s,end=last?.value?sttParseClock(last.value):item.end_s;
+  if(!(end>start))throw Error('终点须晚于起点');return {start_s:start,end_s:end};
+}
+function sttSetReviewTarget(item,record=null) {
+  if(state.sttSaving)return;
+  if(sttReviewHasUnsavedNote()&&!window.confirm('当前复核修改尚未保存，放弃修改并查看另一条？'))return;
+  const receipt=record?.stt_review_receipt;
+  state.sttSelectedCandidate={item:JSON.parse(JSON.stringify(item)),scope:Object.fromEntries(['case_id','analysis_basis','analysis_revision','beat_revision'].map(k=>[k,state.sttReview[k]])),originalRange:{start_s:item.start_s,end_s:item.end_s},automatic:!record&&!!item.id};
+  state.sttEditingRecord=record;state.sttLastSavedEvent=null;state.sttDraftDirty=false;
+  state.sttReviewLeads=(receipt?.leads?.length?receipt.leads:item.leads?.length?item.leads:['II']).filter(lead=>ALL_LEADS.includes(lead));
+  const tools=globalThis.ECGSttReviewLayout,code=receipt?.result_code;
+  $('#sttFinding').value=record?(tools?.outcomes?.[code]||record.details?.finding||''):'';
+  $('#sttReviewNote').value=record?.details?.physician_note??record?.note??'';$('#sttSignalChecked').checked=false;
+  state.sttDraftDirty=false;renderSttCandidateSelection();state.sttDraftBase=JSON.stringify(sttDraftState());renderSttCapability();
+  const target=state.sttReviewLeads[0]||'II';state.sttLeads=[target,...['II','V1','V5'].filter(lead=>lead!==target)].slice(0,3);
+  setSttStart(Math.max(0,(item.peak_time_s??item.start_s)-state.sttDuration/2));
+}
 function renderSttCandidateSelection() {
   const form=$('#sttReviewForm');if(!form)return;
   let host=$('#sttSelectedEvent');if(!host){host=document.createElement('div');host.id='sttSelectedEvent';host.className='stt-selected-event';form.prepend(host);}
-  const selected=state.sttSelectedCandidate,item=selected?.item;
-  host.innerHTML=item?`<strong>完整事件：${escapeHtml(formatElapsed(item.start_s))}–${escapeHtml(formatElapsed(item.end_s))}</strong><p>${((item.end_s-item.start_s)/60).toFixed(2)} 分钟 · ${(item.leads||[]).map(escapeHtml).join(' / ')} · 图条另取代表短段</p><div>${[['start','起点',item.start_s],['peak','峰值',item.peak_time_s],['end','终点',item.end_s]].map(([key,label,time])=>`<button type="button" data-stt-episode-position="${time}">${label}</button>`).join('')}<button type="button" data-stt-clear-episode>取消整段</button></div>`:state.sttLastSavedEvent?'<p>整段已保存，至报告筛选决定入报。</p><button type="button" data-stt-report>报告筛选</button>':'<p>当前为点复核；选择左侧持续事件可保存完整起止。</p>';
-  host.querySelectorAll('[data-stt-episode-position]').forEach(button=>button.onclick=()=>setSttStart(Number(button.dataset.sttEpisodePosition)-state.sttDuration/2));
-  host.querySelector('[data-stt-clear-episode]')?.addEventListener('click',()=>{state.sttSelectedCandidate=null;renderSttCandidateSelection();});
-  host.querySelector('[data-stt-report]')?.addEventListener('click',()=>clinicalUI.showSTReport?.());
-  const save=$('#saveSttAnnotation');if(save)save.textContent=item?'保存整段复核':'保存人工复核';
+  const selected=state.sttSelectedCandidate,item=selected?.item,receipt=state.sttLastSavedEvent;
+  const machine=globalThis.ECGSttReviewLayout?.candidateKind(item),machineText=machine?globalThis.ECGSttReviewLayout.outcomes[machine]:'自选范围';
+  host.innerHTML=item?`<strong>${selected.automatic?'机器候选：':'复核对象：'}${escapeHtml(item.label||machineText)}</strong>`:receipt?`<span>${escapeHtml(globalThis.ECGSttReviewLayout?.receiptText(receipt)||'复核记录已保存。')}</span><button type="button" data-stt-report>报告筛选</button>`:'<span>点击事件查看，或自选区间复核。</span>';
+  host.querySelector('[data-stt-report]')?.addEventListener('click',()=>clinicalUI.showSTReport?.(receipt));
+  const first=$('#sttEpisodeStart'),last=$('#sttEpisodeEnd');if(first){first.value=item?sttClock(item.start_s):'';first.disabled=!item;}if(last){last.value=item?sttClock(item.end_s):'';last.disabled=!item;}
+  const duration=$('#sttEpisodeDuration');if(duration)duration.textContent=item?`${(item.end_s-item.start_s).toFixed(3)} 秒 · ${item.end_s-item.start_s>=60?'完整复核范围':'点 / 短段记录'}`:'';
+  const status=$('#sttReviewState');if(status)status.textContent=state.sttDraftDirty?'修改未保存':state.sttEditingRecord?'已保存记录 · 编辑后保存':receipt?'已保存复核':item?'尚未复核':'尚未选择';
+  renderSttReviewLeads();updateSttSaveState();
+}
+function renderSttRecordList() {
+  const review=state.sttReview;if(!review)return;
+  const filter=$('#sttRecordFilter')?.value||'all',records=sttSavedRows(),items=review.automatic_candidates?.items||[];
+  const saved=records.map(row=>({row,receipt:row.stt_review_receipt}));
+  let entries=filter==='candidates'?[]:saved.filter(({receipt})=>filter!=='notes'||receipt?.report_group==='ST_NOTE'||receipt?.review_state!=='reviewed').map(({row,receipt})=>({type:'record',id:row.id,start:receipt?.range?.start_s??row.sample_index/200,label:globalThis.ECGSttReviewLayout?.outcomes[receipt?.result_code]||row.details?.finding||row.label,status:receipt?.review_state==='stale'?'依据变化':receipt?.review_state==='reviewed'?'已复核':'历史待定',leads:receipt?.leads||[],duration:receipt?.range?.duration_s||((row.details?.end_sample??row.sample_index)+1-row.sample_index)/200}));
+  if(['all','candidates'].includes(filter))entries.push(...items.map(item=>({type:'candidate',id:item.id,start:item.start_s,label:item.label,status:'机器候选',leads:item.leads||[],duration:item.end_s-item.start_s})));
+  entries.sort((a,b)=>a.start-b.start||String(a.id).localeCompare(String(b.id)));
+  const host=$('#sttCandidateList');host.innerHTML=entries.length?`<table class="stt-event-table"><thead><tr><th>时间 / 导联</th><th>类型 / 结果</th><th>时长 / 状态</th></tr></thead><tbody>${entries.map(e=>`<tr tabindex="0" data-stt-row-kind="${e.type}" data-stt-row-id="${escapeHtml(e.id)}" aria-selected="${e.type==='record'?String(state.sttEditingRecord?.id)===String(e.id):state.sttSelectedCandidate?.item.id===e.id}"><td>${escapeHtml(ECGReviewTools.clockLabel(state.caseData?.metadata?.start_time,e.start))}<br>${escapeHtml(e.leads.join('/'))}</td><td>${escapeHtml(e.label)}</td><td>${(e.duration/60).toFixed(2)} 分<br>${e.status}</td></tr>`).join('')}</tbody></table>`:'<p class="stt-unavailable-state">当前无匹配记录。可从波形自选区间复核。</p>';
+  const activate=node=>{const id=node.dataset.sttRowId;if(node.dataset.sttRowKind==='candidate'){const item=items.find(x=>String(x.id)===id);if(item)sttSetReviewTarget(item);}else{const row=records.find(x=>String(x.id)===id);if(!row)return;const r=row.stt_review_receipt;sttSetReviewTarget({start_s:r?.range?.start_s??row.sample_index/200,end_s:r?.range?.end_s??((row.details?.end_sample??row.sample_index)+1)/200,leads:r?.leads||[],label:row.details?.finding||row.label,peak_time_s:row.details?.stt_event_evidence?.peak_time_s},row);}};
+  host.querySelectorAll('[data-stt-row-kind]').forEach(node=>{node.onclick=()=>activate(node);node.onkeydown=event=>{if(['Enter',' '].includes(event.key)){event.preventDefault();activate(node);}};});
 }
 
 function renderSttCapability() {
@@ -1906,51 +1960,53 @@ function renderSttCapability() {
     const coverage=evaluation.coverage_pct,message=evaluation.note+(coverage!==null?' 可分析覆盖 '+coverage.toFixed(1)+'%。':'');
     $("#sttCandidateList").innerHTML='<div class="stt-unavailable-state"><strong>'+escapeHtml(evaluation.label)+'</strong><p>'+escapeHtml(message)+'</p><button type="button" class="row-action" data-stt-current-window>从当前时间窗人工复核</button></div>';
   }
-  renderSttCandidateSelection();
+  renderSttCandidateSelection();renderSttRecordList();
   const fragments=review.source_report?.fragments||[];
   $("#sttSourceNotes").innerHTML=fragments.length
     ? fragments.map(text=>`<blockquote><span>源报告</span><p>${escapeHtml(text)}</p></blockquote>`).join("")
     : `<div class="stt-source-empty">源报告结论中没有可提取的 ST‑T 文字线索</div>`;
 }
 
+function sttTrendBounds() {
+  const total=Math.max(1,Number(state.caseData?.technical?.duration_seconds_raw)||1);
+  if(state.sttTrendRange==='hour'){const start=Math.floor(state.sttStart/3600)*3600;return {start,end:Math.min(total,start+3600),total};}
+  if(state.sttTrendRange==='selection'&&state.sttSelectedCandidate){const item=state.sttSelectedCandidate.item;return {start:Math.max(0,item.start_s),end:Math.min(total,item.end_s),total};}
+  return {start:0,end:total,total};
+}
 function renderSttTrendRows() {
   if(!state.caseData)return;
-  const total=Math.max(1,Number(state.caseData.technical.duration_seconds_raw)||1),left=Math.max(0,Math.min(100,state.sttStart/total*100)),width=Math.max(.35,Math.min(100-left,state.sttDuration/total*100));
-  const trends=state.sttReview?.analysis?.trends?.leads||{},enabled=Boolean(state.sttReview?.automatic_candidates?.enabled);
-  $('#sttTrendNote').textContent=enabled?'逐分钟完整证据 · 内部16秒测量 · 缺口不连线 · u':'自动趋势不可用';
-  $('#sttTrendBadge').textContent=enabled?'机器候选':'不可定量';
+  const bounds=sttTrendBounds();state.sttTrendRenderedBounds=JSON.stringify([bounds,state.sttTrendMode]);const length=Math.max(.005,bounds.end-bounds.start),left=Math.max(0,Math.min(100,(state.sttStart-bounds.start)/length*100)),width=Math.max(0,Math.min(100-left,state.sttDuration/length*100));
+  const mode=globalThis.ECGSttReviewLayout?.trendMetric(state.sttTrendMode)||{field:'deviation_units',label:'ΔST'},trends=state.sttReview?.analysis?.trends?.leads||{};
+  $('#sttTrendNote').textContent=`${mode.label} · u · ${ECGReviewTools.clockLabel(state.caseData?.metadata?.start_time,bounds.start)}–${ECGReviewTools.clockLabel(state.caseData?.metadata?.start_time,bounds.end)} · 缺口断线`;
+  const validPoint=point=>point.eligible!==false&&!point.axis_shift_suspected&&Number.isFinite(point[mode.field]);
+  let limit=1;for(const points of Object.values(trends))for(const point of points)if(validPoint(point)&&point.time_s>=bounds.start&&point.time_s<=bounds.end)limit=Math.max(limit,Math.abs(point[mode.field]));
   $('#sttTrendRows').innerHTML=ALL_LEADS.map(lead=>{
-    const points=trends[lead]||[],valid=points.filter(p=>p.eligible!==false&&!p.axis_shift_suspected&&Number.isFinite(p.deviation_units));
-    if(!valid.length)return `<div class="stt-trend-row"><strong>${lead}</strong><div class="stt-disabled-track" style="--window-left:${left}%;--window-width:${width}%"><span></span><i></i></div><small>无有效分钟</small></div>`;
-    const limit=Math.max(100,...valid.map(p=>Math.abs(p.deviation_units)));let d='',pen=false;
-    for(const point of points){if(point.eligible===false||point.axis_shift_suspected||!Number.isFinite(point.deviation_units)){pen=false;continue;}d+=`${pen?'L':'M'}${(point.time_s/total*100).toFixed(2)},${(8-point.deviation_units/limit*6).toFixed(2)} `;pen=true;}
-    const target=state.sttStart+state.sttDuration/2,current=points.find(p=>(p.start_s??p.time_s-30)<=target&&(p.end_s??p.time_s+30)>target),value=current?.eligible!==false&&!current?.axis_shift_suspected&&Number.isFinite(current?.deviation_units)?current.deviation_units:null;
-    return `<div class="stt-trend-row"><strong>${lead}</strong><div class="stt-trend-track" style="--window-left:${left}%;--window-width:${width}%"><svg viewBox="0 0 100 16" preserveAspectRatio="none" role="img" data-inspect-chart data-inspect-kind="st-trend" data-inspect-duration="${total}" data-inspect-limit="${limit}" data-inspect-title="${lead} ST 趋势 · 全程 · u" data-inspect-note="逐分钟完整证据；缺失或质量不合格处断线；设备单位u，非mV。" aria-label="${lead} ST趋势，设备单位"><line x1="0" y1="8" x2="100" y2="8"></line><path d="${d}" fill="none" stroke="currentColor" vector-effect="non-scaling-stroke" stroke-width="1"></path></svg><span></span><i></i></div><small>${value===null?'—':(value>=0?'+':'')+value.toFixed(0)}</small></div>`;
+    const points=trends[lead]||[];let d='',pen=false,used=0;
+    for(const point of points){if(!validPoint(point)||point.time_s<bounds.start||point.time_s>bounds.end){pen=false;continue;}d+=`${pen?'L':'M'}${((point.time_s-bounds.start)/length*100).toFixed(3)},${(8-point[mode.field]/limit*6).toFixed(3)} `;pen=true;used++;}
+    const target=state.sttStart+state.sttDuration/2,current=points.find(p=>(p.start_s??p.time_s-30)<=target&&(p.end_s??p.time_s+30)>target),value=current&&validPoint(current)?current[mode.field]:null;
+    const item=state.sttSelectedCandidate?.item,a=item?Math.max(0,Math.min(100,(item.start_s-bounds.start)/length*100)):0,b=item?Math.max(0,Math.min(100,(item.end_s-bounds.start)/length*100)):0;
+    return `<div class="stt-trend-row"><strong>${lead}</strong><div class="stt-trend-track" data-trend-start="${bounds.start}" data-trend-end="${bounds.end}" style="--window-left:${left}%;--window-width:${width}%"><svg viewBox="0 0 100 16" preserveAspectRatio="none" role="img" aria-label="${lead} ${mode.label}，u${used?'':'，无有效分钟'}"><line x1="0" y1="8" x2="100" y2="8"></line><path d="${d}" fill="none" stroke="currentColor" vector-effect="non-scaling-stroke" stroke-width="1"></path></svg>${item?`<em class="stt-episode-band" style="left:${a}%;width:${Math.max(0,b-a)}%" title="完整复核范围"></em>`:''}<span title="当前原始波形窗"></span><i></i></div><small>${value===null?'—':(value>=0?'+':'')+value.toFixed(0)}</small></div>`;
   }).join('');
+  $$('#sttTrendRows .stt-trend-track').forEach(track=>{track.setAttribute('role','button');track.tabIndex=0;track.setAttribute('aria-label',track.parentElement.querySelector('strong').textContent+' '+mode.label+' 趋势定位');});
 }
-
 function updateSttTrendWindow() {
   if(!state.caseData||!sttEvidenceMatches())return;
-  const total=Math.max(1,Number(state.caseData.technical.duration_seconds_raw)||1),left=Math.max(0,Math.min(100,state.sttStart/total*100)),width=Math.max(.35,Math.min(100-left,state.sttDuration/total*100)),target=state.sttStart+state.sttDuration/2;
-  $$('#sttTrendRows .stt-trend-row').forEach(row=>{
-    const track=$('.stt-trend-track, .stt-disabled-track',row);if(!track)return;
-    track.style.setProperty('--window-left',`${left}%`);track.style.setProperty('--window-width',`${width}%`);
-    const lead=$('strong',row)?.textContent,points=state.sttReview?.analysis?.trends?.leads?.[lead]||[],point=points.find(p=>(p.start_s??p.time_s-30)<=target&&(p.end_s??p.time_s+30)>target),value=point?.eligible!==false&&!point?.axis_shift_suspected&&Number.isFinite(point?.deviation_units)?point.deviation_units:null,label=$('small',row);
-    if(label)label.textContent=value===null?'—':`${value>=0?'+':''}${value.toFixed(0)}`;
-  });
+  const bounds=sttTrendBounds();if(state.sttTrendRenderedBounds!==JSON.stringify([bounds,state.sttTrendMode])){renderSttTrendRows();return;}
+  const length=Math.max(.005,bounds.end-bounds.start),left=Math.max(0,Math.min(100,(state.sttStart-bounds.start)/length*100)),width=Math.max(0,Math.min(100-left,state.sttDuration/length*100)),target=state.sttStart+state.sttDuration/2,field=globalThis.ECGSttReviewLayout?.trendMetric(state.sttTrendMode).field||'deviation_units';
+  $$('#sttTrendRows .stt-trend-row').forEach(row=>{const track=$('.stt-trend-track',row);if(!track)return;track.style.setProperty('--window-left',left+'%');track.style.setProperty('--window-width',width+'%');const lead=$('strong',row)?.textContent,points=state.sttReview?.analysis?.trends?.leads?.[lead]||[],point=points.find(p=>(p.start_s??p.time_s-30)<=target&&(p.end_s??p.time_s+30)>target),value=point?.eligible!==false&&!point?.axis_shift_suspected&&Number.isFinite(point?.[field])?point[field]:null,label=$('small',row);if(label)label.textContent=value===null?'—':(value>=0?'+':'')+value.toFixed(0);});
 }
 
 function renderSttOverview() {
   if(!state.caseData||!state.trend||!sttEvidenceMatches())return;
-  const canvas=$("#sttOverviewCanvas"),{ctx,width,height}=canvasContext(canvas,94),m={l:40,r:13,t:10,b:20};
+  const canvas=$("#sttOverviewCanvas"),{ctx,width,height}=canvasContext(canvas,30),m={l:0,r:46,t:2,b:12};
   ctx.clearRect(0,0,width,height);ctx.fillStyle="#fff";ctx.fillRect(0,0,width,height);
-  const plotW=width-m.l-m.r,plotH=height-m.t-m.b,total=Math.max(1,state.caseData.technical.duration_seconds_raw),points=state.trend.points||[];
+  const plotW=width-m.l-m.r,plotH=height-m.t-m.b,bounds=sttTrendBounds(),total=Math.max(.005,bounds.end-bounds.start),points=(state.trend.points||[]).filter(p=>p.time_s>=bounds.start&&p.time_s<=bounds.end);
   const values=points.map(point=>Number(point.hr)).filter(Number.isFinite),minHr=Math.max(20,Math.floor((Math.min(...values,50)-10)/10)*10),maxHr=Math.min(240,Math.ceil((Math.max(...values,120)+10)/10)*10),range=Math.max(20,maxHr-minHr);
   ctx.strokeStyle="#e4eaed";ctx.lineWidth=1;[0,.5,1].forEach(fraction=>{const y=m.t+plotH*fraction;ctx.beginPath();ctx.moveTo(m.l,y);ctx.lineTo(width-m.r,y);ctx.stroke();});
-  const startX=m.l+state.sttStart/total*plotW,endX=m.l+Math.min(total,state.sttStart+state.sttDuration)/total*plotW;
+  const startX=m.l+(state.sttStart-bounds.start)/total*plotW,endX=m.l+(Math.min(bounds.end,state.sttStart+state.sttDuration)-bounds.start)/total*plotW;
   ctx.fillStyle="rgba(11,146,144,.12)";ctx.fillRect(startX,m.t,Math.max(3,endX-startX),plotH);ctx.strokeStyle="#0b9290";ctx.strokeRect(startX+.5,m.t+.5,Math.max(2,endX-startX-1),plotH-1);
-  ctx.beginPath();points.forEach((point,index)=>{const x=m.l+point.time_s/total*plotW,y=m.t+plotH-(Math.max(minHr,Math.min(maxHr,Number(point.hr)))-minHr)/range*plotH;index?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.strokeStyle="#2678b9";ctx.lineWidth=1.35;ctx.stroke();
-  ctx.font=`12px ${UI_FONT}`;ctx.fillStyle="#71828c";ctx.fillText(`${maxHr}`,3,m.t+4);ctx.fillText(`${minHr}`,3,m.t+plotH);ctx.fillText("D1 00h",m.l,height-5);ctx.fillText(formatElapsed(total),Math.max(m.l,width-m.r-62),height-5);
+  ctx.beginPath();points.forEach((point,index)=>{const x=m.l+(point.time_s-bounds.start)/total*plotW,y=m.t+plotH-(Math.max(minHr,Math.min(maxHr,Number(point.hr)))-minHr)/range*plotH;index?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.strokeStyle="#2678b9";ctx.lineWidth=1.35;ctx.stroke();
+  ctx.font=`12px ${UI_FONT}`;ctx.fillStyle="#71828c";ctx.fillText(`${maxHr}`,3,m.t+4);ctx.fillText(`${minHr}`,3,m.t+plotH);ctx.fillText(ECGReviewTools.clockLabel(state.caseData?.metadata?.start_time,bounds.start),m.l,height-2);ctx.fillText(ECGReviewTools.clockLabel(state.caseData?.metadata?.start_time,bounds.end),Math.max(m.l,width-m.r-83),height-2);
   $("#sttWindowTime").textContent=`${formatElapsed(state.sttStart)}–${formatElapsed(state.sttStart+state.sttDuration)}`;
 }
 
@@ -1973,18 +2029,17 @@ function renderSttReviewContext() {
 function renderSttWaveform() {
   const waveform=state.sttWaveform;if(!waveform||!sttWaveformIsCurrent())return;
   const canvas=$("#sttWaveformCanvas"),leads=(globalThis.ECGChartInspection?.entries(waveform.leads||{})||Object.entries(waveform.leads||{}));
-  // Twelve channels need 64 CSS pixels each; the surrounding slot stays put.
   canvas.dataset.sttRenderLeads=String(leads.length);
-  canvas.style.height=leads.length===12?"814px":"438px";
-  // The desktop slot may differ from 438px. Paint its actual CSS geometry.
-  const cssHeight=Math.max(1,Math.round(canvas.getBoundingClientRect().height||(leads.length===12?814:438)));
+  const slot=$('#sttWaveCanvasWrap'),domain=ECGReviewTools.waveDomain(waveform,JSON.stringify([state.caseId,'stt-raw']));
+  let peak=1;for(const [,values] of leads)for(const value of values)if(Number.isFinite(Number(value)))peak=Math.max(peak,Math.abs(Number(value)));
+  const frame=globalThis.ECGSttReviewLayout.waveGeometry(slot.clientHeight||300,leads.length,domain,peak,state.sttGainFactor||1);
+  const cssHeight=Math.round(frame.height);canvas.style.height=cssHeight+'px';canvas.dataset.displayGain=String(frame.scale);
   const {ctx,width,height}=canvasContext(canvas,cssHeight),m={l:54,r:18,t:24,b:22},plotW=width-m.l-m.r,plotH=height-m.t-m.b,leadHeight=plotH/Math.max(1,leads.length);
   ctx.clearRect(0,0,width,height);ctx.fillStyle="#fff";ctx.fillRect(0,0,width,height);
   for(let x=m.l,i=0;x<=width-m.r;x+=plotW*.2/waveform.duration_s,i++){ctx.strokeStyle=i%5===0?"rgba(219,104,91,.24)":"rgba(219,104,91,.10)";ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x,m.t);ctx.lineTo(x,m.t+plotH);ctx.stroke();}
   for(let y=m.t;y<=m.t+plotH;y+=10){ctx.strokeStyle=(y-m.t)%50===0?"rgba(219,104,91,.24)":"rgba(219,104,91,.10)";ctx.beginPath();ctx.moveTo(m.l,y);ctx.lineTo(width-m.r,y);ctx.stroke();}
   leads.forEach(([lead,values],leadIndex)=>{
-    const shape=ECGReviewTools.waveRow(values,{top:m.t+leadIndex*leadHeight,bottom:m.t+(leadIndex+1)*leadHeight,sharedLabelY:3,domain:ECGReviewTools.waveDomain(waveform,JSON.stringify([state.caseId,'stt-raw']))}),{baseline,scale}=shape;
-    if(shape.overflow){ctx.fillStyle='#a52727';ctx.fillText(lead+' 幅度超范围，请适应幅度',m.l,baseline);return;}
+    const baseline=m.t+(leadIndex+.5)*leadHeight,scale=frame.scale;
     ctx.strokeStyle="#d9e2e6";ctx.beginPath();ctx.moveTo(m.l,baseline);ctx.lineTo(width-m.r,baseline);ctx.stroke();ctx.fillStyle="#087777";ctx.font=`700 12px ${UI_FONT}`;ctx.fillText(lead,14,baseline+4);
     ctx.strokeStyle="#243b46";ctx.lineWidth=1.05;ctx.beginPath();values.forEach((value,index)=>{const x=m.l+index*ECGReviewTools.sampleStride(waveform)/(waveform.sample_rate_hz||200)/waveform.duration_s*plotW,y=baseline-(Number(value)||0)*scale;index?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();
     if(leadIndex<leads.length-1){ctx.strokeStyle="#cad6db";ctx.beginPath();ctx.moveTo(0,m.t+leadHeight*(leadIndex+1));ctx.lineTo(width,m.t+leadHeight*(leadIndex+1));ctx.stroke();}
@@ -1995,6 +2050,7 @@ function renderSttWaveform() {
   $("#sttWaveMeta").textContent=ECGReviewTools.waveMeta(waveform,state.caseData?.metadata?.start_time,ECGReviewTools.waveDomain(waveform,JSON.stringify([state.caseId,'stt-raw'])));
   let fit=$("#sttWaveMeta").parentElement.querySelector('[data-stt-amplitude-fit]');if(!fit){fit=document.createElement('button');fit.type='button';fit.dataset.sttAmplitudeFit='';fit.textContent='适应幅度';$("#sttWaveMeta").after(fit);}fit.onclick=()=>{ECGReviewTools.waveDomain(waveform,JSON.stringify([state.caseId,'stt-raw']),true);renderSttWaveform();};
   $("#sttSelectedLeadLabel").textContent=leads.map(([lead])=>lead).join(" · ");
+  const gainLabel=$("#sttDisplayGain");if(gainLabel)gainLabel.textContent=Number(frame.scale.toPrecision(4))+" px/u · 电压未校准";
   renderSttMeasurements();renderSttReviewContext();
   const at=waveform.start_s+marks.j*waveform.duration_s,beat=(waveform.beats||[]).reduce((a,b)=>!a||Math.abs(b.time_s-at)<Math.abs(a.time_s-at)?b:a,null);
   if(beat){const x=m.l+(beat.time_s-waveform.start_s)/waveform.duration_s*plotW;ECGReviewTools.markCanvas(ctx,x,m.t,m.t+plotH,editEffectiveCode(beat));}
@@ -2074,6 +2130,7 @@ async function loadStt() {
   $("#sttTimeSlider").max=Math.max(0,Math.floor(total-state.sttDuration));$("#sttTimeSlider").value=Math.round(state.sttStart);
   if(!reused){renderSttCapability();renderSttTrendRows();}else updateSttTrendWindow();
   renderSttOverview();renderSttWaveform();state.sttRangeBridge?.sync();
+  if(state.sttRequestedRecordId){const wanted=String(state.sttRequestedRecordId).replace(/^annotation:/,''),record=sttSavedRows().find(row=>String(row.id)===wanted);if(record){state.sttRequestedRecordId=null;const receipt=record.stt_review_receipt;sttSetReviewTarget({start_s:receipt?.range?.start_s??record.sample_index/200,end_s:receipt?.range?.end_s??((record.details?.end_sample??record.sample_index)+1)/200,leads:receipt?.leads||[],label:record.details?.finding||record.label,peak_time_s:record.details?.stt_event_evidence?.peak_time_s},record);}}
   if(!usable){const failedSelection=sttSelectionSnapshot();setSttWindowState('error','未取得完整的当前波形，请重新读取。');analysisReadStatus('#sttAnalysisStatus','所选波形数据不完整，请重新读取。',()=>{if(requestId===state.sttRequestId&&sttSelectionMatches(failedSelection))return loadStt();});}
 }
 
@@ -2120,43 +2177,44 @@ function sttMeanOwnerMatches(submission) {
   return Boolean(owner)&&owner.caseId===state.caseId&&owner.caseToken===state.caseRequestId&&owner.workspaceEpoch===state.workspaceEpoch;
 }
 function sttMeanStoredMatches(item,submission) {
+  const contains=(a,b)=>Array.isArray(a)?Array.isArray(b)&&a.length===b.length&&a.every((x,i)=>contains(x,b[i])):a&&typeof a==='object'?b&&typeof b==='object'&&Object.keys(a).every(k=>contains(a[k],b[k])):a===b;
   const expected=submission.payload;
   return Boolean(item)&&item.case_id===submission.context.selection.caseId
     && ['sample_index','lead','category','label','note'].every(key=>item[key]===expected[key])
-    && JSON.stringify(sttMeanOrdered(item.details))===JSON.stringify(sttMeanOrdered(expected.details));
+    && Object.entries(expected.details).filter(([key])=>!['stt_candidate_id','stt_candidate_scope'].includes(key)).every(([key,value])=>contains(value,item.details?.[key]));
 }
 function sttMeanSubmission(payload,context) {
   const content={case_id:context.selection.caseId,case_token:context.selection.caseToken,
-    workspace_epoch:context.selection.workspaceEpoch,payload};
+    workspace_epoch:context.selection.workspaceEpoch,annotation_id:context.annotationId||null,payload};
   const key=JSON.stringify(sttMeanOrdered(content));
   let entry=sttMeanSubmissionIntents.get(key);
   if(!entry){
     if(!globalThis.crypto?.randomUUID)throw Error('当前环境无法生成范围统计提交标识，请重新载入后保存');
     const id=globalThis.crypto.randomUUID();
     payload.details.submission_id=id;
-    entry={key,id,payload:JSON.parse(JSON.stringify(payload)),context,uncertain:false,saved:false};
+    entry={key,id,payload:JSON.parse(JSON.stringify(payload)),context,operation:{method:context.annotationId?'PUT':'POST',path:`/api/cases/${context.selection.caseId}/annotations${context.annotationId?'/'+context.annotationId:''}`},uncertain:false,saved:false};
     sttMeanSubmissionIntents.set(key,entry);
   }else if(!entry.uncertain)entry.context=context;
   state.sttRangeSubmission=entry;
   return entry;
 }
 async function reconcileSttMeanSubmission(entry,ownsSave) {
-  const stored=entry.payload.details.range_statistics.scope;
+  const stored=entry.payload.details.range_statistics?.scope||entry.payload.details.review_scope;
   const expected={case_id:entry.context.selection.caseId,analysis_basis:stored.analysis_basis,beat_revision:stored.beat_revision};
   const active=()=>ownsSave()&&sttMeanOwnerMatches(entry);
   const check=value=>{
-    if(!active())throw Object.assign(Error('旧范围统计保存核对已取消'),{name:'AbortError'});
+    if(!active())throw Object.assign(Error('旧复核保存核对已取消'),{name:'AbortError'});
     if(value?.case_id!==expected.case_id||value.analysis_basis!==expected.analysis_basis||value.beat_revision!==expected.beat_revision
       ||!Number.isSafeInteger(value.analysis_revision)||value.analysis_revision<0)
-      throw Error('范围统计来源或心搏版本已变化，不能核实旧提交；草稿已保留');
+      throw Error('复核来源或心搏版本已变化，不能核实旧提交；草稿已保留');
     return value;
   };
-  if(!active())throw Object.assign(Error('旧范围统计保存核对已取消'),{name:'AbortError'});
+  if(!active())throw Object.assign(Error('旧复核保存核对已取消'),{name:'AbortError'});
   // The stored receipt has its original global revision. Read the latest
   // source/beat identity, then anchor the annotations read to that fresh value.
   const before=check(await api(ECGAnalysisConsistency.url(expected.case_id,'rhythm-review',{},expected),{readLane:'stt-mean-reconcile-before'}));
   const list=await api(ECGAnalysisConsistency.url(expected.case_id,'annotations',{},expected),{readLane:'stt-mean-reconcile-annotations'});
-  if(!active())throw Object.assign(Error('旧范围统计保存核对已取消'),{name:'AbortError'});
+  if(!active())throw Object.assign(Error('旧复核保存核对已取消'),{name:'AbortError'});
   if(!Array.isArray(list?.items))throw Error('保存标注核对结果不完整；提交标识已保留');
   const after=check(await api(ECGAnalysisConsistency.url(expected.case_id,'rhythm-review',{},
     {...expected,analysis_revision:before.analysis_revision}),{readLane:'stt-mean-reconcile-after'}));
@@ -2170,8 +2228,8 @@ async function reconcileSttMeanSubmission(entry,ownsSave) {
 }
 async function finishSttReviewSave(context,ownsSave,reconciled=false) {
   if(!ownsSave())return;
-  const {selection,draft,rangeStatistics,acceptedMean}=context;
-  if(state.sttSelectedCandidate){state.sttSelectedCandidate=null;state.sttLastSavedEvent=true;renderSttCandidateSelection();}
+  const {selection,draft,rangeStatistics,acceptedMean}=context,draftGeneration=state.sttDraftRevision||0,wasUnchanged=sttSubmittedDraftIsUnchanged(draft);
+  if(context.savedAnnotation?.stt_review_receipt){state.sttLastSavedEvent=JSON.parse(JSON.stringify(context.savedAnnotation.stt_review_receipt));if(state.sttSelectedCandidate===context.target&&wasUnchanged){state.sttSelectedCandidate=null;state.sttEditingRecord=null;}}
   let preserveMean=Boolean(rangeStatistics&&state.sttRangeReviewed&&state.sttRangeReviewed!==acceptedMean);
   if(rangeStatistics){
     const cleared=state.sttRangeBridge?.clearAfterSave(rangeStatistics);
@@ -2193,7 +2251,7 @@ async function finishSttReviewSave(context,ownsSave,reconciled=false) {
         &&selection.leads===state.leads.slice(0,3).join(',');
       if(state.currentPage!=='stt'&&sameWindow){
         const unchanged=sttSubmittedDraftIsUnchanged(draft);
-        if(unchanged)$('#sttReviewNote').value='';
+        if(unchanged){$('#sttReviewNote').value='';state.sttDraftDirty=false;state.sttDraftBase=JSON.stringify(sttDraftState());}
         toast(message(unchanged));
       }
     }
@@ -2205,9 +2263,9 @@ async function finishSttReviewSave(context,ownsSave,reconciled=false) {
   clearSttEvidence('复核已保存，正在核对当前修订依据。');setSttWindowState('loading','复核已保存，正在读取当前波形…');await loadStt();
   if(!ownsSave()||!sttSelectionMatches(selection))return;
   preserveMean=preserveMean||Boolean(rangeStatistics&&state.sttRangeReviewed&&state.sttRangeReviewed!==acceptedMean);
-  const unchanged=!preserveMean&&sttSubmittedDraftIsUnchanged(draft);
-  if(unchanged)$('#sttReviewNote').value='';
-  toast(message(unchanged));
+  const unchanged=!preserveMean&&wasUnchanged&&(state.sttDraftRevision||0)===draftGeneration&&sttSubmittedDraftIsUnchanged({...draft,hospital:null});
+  if(unchanged){$('#sttReviewNote').value='';state.sttDraftDirty=false;state.sttDraftBase=JSON.stringify(sttDraftState());}
+  renderSttCandidateSelection();renderSttRecordList();toast(state.sttLastSavedEvent?globalThis.ECGSttReviewLayout.receiptText(state.sttLastSavedEvent):message(unchanged));
 }
 async function resumeUncertainSttMean(entry) {
   const owner=entry.context.selection,saving={caseId:owner.caseId,caseToken:owner.caseToken,workspaceEpoch:owner.workspaceEpoch};
@@ -2217,7 +2275,7 @@ async function resumeUncertainSttMean(entry) {
     const checked=await reconcileSttMeanSubmission(entry,ownsSave);
     if(!ownsSave())return false;
     if(checked.item){
-      entry.uncertain=false;entry.saved=true;
+      entry.uncertain=false;entry.saved=true;entry.context.savedAnnotation=checked.item;
       await finishSttReviewSave(entry.context,ownsSave,true);return false;
     }
     // Only this next explicit save may proceed after a verified absent UUID.
@@ -2226,7 +2284,7 @@ async function resumeUncertainSttMean(entry) {
     if(!ownsSave())return false;
     entry.uncertain=false;return true;
   }catch(error){
-    if(ownsSave())throw Error('范围统计保存结果尚未核实，提交标识和备注已保留；未重复提交。'+error.message,{cause:error});
+    if(ownsSave())throw Error('复核保存结果尚未核实，提交标识和备注已保留；未重复提交。'+error.message,{cause:error});
     return false;
   }finally{if(state.sttSaving===saving){state.sttSaving=null;updateSttSaveState();}}
 }
@@ -2239,32 +2297,39 @@ async function saveSttReviewAnnotation() {
     if(!mayProceed)return;
   }
   if(!state.caseId||!sttWaveformIsCurrent()){toast('当前窗口与导联尚未读取完成，请重新读取后保存','error');return;}
-  const finding=$('#sttFinding').value,qualityChecked=$('#sttSignalChecked').checked;
+  const finding=$('#sttFinding').value,qualityChecked=$('#sttSignalChecked').checked,resultCode=globalThis.ECGSttReviewLayout?.resultCode(finding);
+  if(!resultCode){toast('请选择本次医生复核结果','error');$('#sttFinding').focus();return;}
   if(finding!=='无法判读'&&!qualityChecked){toast('形成复核描述前，请先核对信号质量与伪差','error',4200);$('#sttSignalChecked').focus();return;}
   const selection=sttSelectionSnapshot(),waveform=state.sttWaveform,basis=state.sttEvidence.basis,requestId=state.sttRequestId;
   const rangeStatistics=state.sttRangeBridge?.snapshotForSave()||null;
-  const draft={note:$('#sttReviewNote').value,finding,qualityChecked,iso:state.sttIsoFraction,j:state.sttJFraction,measurementMs:state.sttMeasurementMs};
+  const draft={note:$('#sttReviewNote').value,finding,qualityChecked,iso:state.sttIsoFraction,j:state.sttJFraction,measurementMs:state.sttMeasurementMs,hospital:JSON.stringify(sttDraftState())};
   const pointLabel=state.sttMeasurementMs===0?'J 点':`J+${state.sttMeasurementMs} ms`,values=sttMeasurementValues(),rawValues=values.map(item=>`${item.lead} ${item.delta===null?'—':`${item.delta>=0?'+':''}${item.delta.toFixed(0)}`}`).join('，'),freeNote=draft.note.trim();
   const sampleRate=Number(state.sttWaveform.sample_rate_hz)||200,sampleIndex=Math.round((state.sttStart+sttLandmarkFractions().j*state.sttDuration)*sampleRate),note=[`方法：手工 ISO → ${pointLabel}`,`显示导联：${sttVisibleLeads().join(' / ')}`,`相对差值（设备原始单位）：${rawValues}`,`信号质量核对：${qualityChecked?'已核对':'未核对'}`,freeNote].filter(Boolean).join('；').slice(0,2000);
-  const payload={sample_index:sampleIndex,lead:sttVisibleLeads().length===1?sttVisibleLeads()[0]:'全部',category:'note',label:`ST-T 人工复核：${finding}`,note,details:{kind:'ST',status:finding.includes('无法')?'pending':finding.includes('未见')||finding.includes('伪差')?'excluded':'confirmed',end_sample:Math.min(Math.round(state.caseData.technical.duration_seconds_raw*200)-1,Math.round((state.sttStart+state.sttDuration)*200)),finding}};
-  if(state.sttSelectedCandidate&&!rangeStatistics){
-    const chosen=state.sttSelectedCandidate;
-    ECGAnalysisConsistency.assertSame(chosen.scope,basis);
-    if(chosen.scope.case_id!==state.caseId||chosen.scope.beat_revision!==state.sttReview?.beat_revision)throw Error('所选整段事件来自旧病例或旧心搏依据，请重新选择候选');
-    const item=chosen.item;
-    payload.sample_index=Math.round(item.start_s*200);
-    payload.details.end_sample=Math.round(item.end_s*200)-1;
-    payload.details.stt_candidate_id=item.id;payload.details.stt_candidate_scope=chosen.scope;
+  const payload={sample_index:sampleIndex,lead:sttVisibleLeads().length===1?sttVisibleLeads()[0]:'全部',category:'note',label:`ST-T 人工复核：${finding}`,note,details:{kind:'ST',reviewed:true,result_code:resultCode,physician_note:freeNote,review_scope:{case_id:state.caseId,...ECGAnalysisConsistency.identity(state.sttReview||basis),beat_revision:state.sttReview?.beat_revision??rangeStatistics?.scope?.beat_revision},review_leads:sttReviewLeadNames(),review_extent:'point',measurement_protocol:{measurement_ms:state.sttMeasurementMs,extent:'point',baseline_method:'manual_iso_point',method_version:'stt-hospital-review-v1'},status:resultCode==='indeterminate'?'pending':['no_change','artifact'].includes(resultCode)?'excluded':'confirmed',end_sample:Math.min(Math.round(state.caseData.technical.duration_seconds_raw*200)-1,Math.round((state.sttStart+state.sttDuration)*200)),finding}};
+  if(!payload.details.review_leads.length)throw Error('请选择本次实际复核的导联');
+  payload.details.point_measurement_sample_index=sampleIndex;
+  const marks=sttLandmarkFractions();payload.details.point_measurement={window_start_s:state.sttStart,window_duration_s:state.sttDuration,iso_sample:Math.round((state.sttStart+marks.iso*state.sttDuration)*200),j_sample:sampleIndex,measurement_sample:Math.round((state.sttStart+marks.st*state.sttDuration)*200),measurement_ms:state.sttMeasurementMs,leads:sttVisibleLeads()};
+  if(state.sttEditingRecord&&!Object.hasOwn(state.sttEditingRecord.details||{},'physician_note'))payload.note=freeNote;
+  const target=state.sttSelectedCandidate;
+  if(target){
+    ECGAnalysisConsistency.assertSame(target.scope,basis);
+    if(target.scope.case_id!==state.caseId||target.scope.beat_revision!==state.sttReview?.beat_revision)throw Error('所选范围来自旧病例或心搏依据，请重新读取后复核');
+    const range=sttReadReviewRange();
+    payload.sample_index=Math.round(range.start_s*200);payload.details.end_sample=Math.round(range.end_s*200)-1;
+    payload.details.review_extent=range.end_s-range.start_s>=60||target.automatic?'whole':'point';
+    if(target.automatic&&range.start_s===target.originalRange.start_s&&range.end_s===target.originalRange.end_s){payload.details.stt_candidate_id=target.item.id;payload.details.stt_candidate_scope=target.scope;}
   }
   if(rangeStatistics){
+    if(target&&!(payload.sample_index<=rangeStatistics.range.start_sample&&rangeStatistics.range.end_sample<=payload.details.end_sample+1))throw Error('附加区间均值须位于本次完整复核范围内，请重选均值区间或复核范围');
     const compact=JSON.parse(JSON.stringify(rangeStatistics));delete compact.blocks;
-    payload.sample_index=rangeStatistics.range.start_sample;
-    payload.details.end_sample=rangeStatistics.range.end_sample-1;
+    if(!target){payload.sample_index=rangeStatistics.range.start_sample;payload.details.end_sample=rangeStatistics.range.end_sample-1;}
     payload.details.range_statistics=compact;
     payload.details.point_measurement_sample_index=sampleIndex;
+  const marks=sttLandmarkFractions();payload.details.point_measurement={window_start_s:state.sttStart,window_duration_s:state.sttDuration,iso_sample:Math.round((state.sttStart+marks.iso*state.sttDuration)*200),j_sample:sampleIndex,measurement_sample:Math.round((state.sttStart+marks.st*state.sttDuration)*200),measurement_ms:state.sttMeasurementMs,leads:sttVisibleLeads()};
   }
-  const context={selection,basis,rangeStatistics,draft,acceptedMean:state.sttRangeReviewed};
-  const entry=rangeStatistics?sttMeanSubmission(payload,context):null;
+  const annotationId=state.sttEditingRecord?.id;if(annotationId)payload.expected_record_version=state.sttEditingRecord.stt_review_receipt.record_version;
+  const context={selection,basis,rangeStatistics,draft,target,annotationId,acceptedMean:state.sttRangeReviewed};
+  const entry=sttMeanSubmission(payload,context);
   const saving={caseId:selection.caseId,caseToken:selection.caseToken,workspaceEpoch:selection.workspaceEpoch};
   state.sttSaving=saving;updateSttSaveState();
   const ownsSave=()=>state.sttSaving===saving&&saving.caseId===state.caseId&&saving.caseToken===state.caseRequestId&&saving.workspaceEpoch===state.workspaceEpoch;
@@ -2272,7 +2337,7 @@ async function saveSttReviewAnnotation() {
     if(entry?.saved){
       const checked=await reconcileSttMeanSubmission(entry,ownsSave);
       if(!checked.item)throw Error('已核实保存的统计标注现已不存在，请核对已有记录；未自动重新插入');
-      if(ownsSave())await finishSttReviewSave(context,ownsSave,true);
+      context.savedAnnotation=checked.item;if(ownsSave())await finishSttReviewSave(context,ownsSave,true);
       return;
     }
     try{ECGAnalysisConsistency.assertSame(basis,await api(ECGAnalysisConsistency.url(selection.caseId,'analysis-basis',{},basis),{readLane:'stt-save-basis'}));}
@@ -2286,16 +2351,17 @@ async function saveSttReviewAnnotation() {
     if(!ownsSave()||requestId!==state.sttRequestId||!sttSelectionMatches(selection)||state.sttWaveform!==waveform||!sttWaveformIsCurrent())return;
     if(entry)entry.uncertain=true;
     try{
-      const item=await api(`/api/cases/${selection.caseId}/annotations`,{method:'POST',body:JSON.stringify(entry?entry.payload:payload)});
-      if(entry&&!sttMeanStoredMatches(item,entry))throw Error('保存响应未能核实范围统计标注');
+      const item=await api(entry.operation.path,{method:entry.operation.method,body:JSON.stringify(entry.payload)});
+      if(!sttMeanStoredMatches(item,entry)||!item.stt_review_receipt)throw Error('保存响应未能核实本次复核记录');
+      context.savedAnnotation=item;
     }catch(error){
       if(!entry)throw error;
       if(!ownsSave())return;
       try{
         const checked=await reconcileSttMeanSubmission(entry,ownsSave);
-        if(!checked.item)throw Error('最新标注未找到该提交标识');
+        if(!checked.item)throw Error('最新标注未找到该提交标识');context.savedAnnotation=checked.item;
       }catch(readError){
-        if(ownsSave())throw Error('范围统计保存结果尚未核实，提交标识和备注已保留；未重复提交。'+readError.message,{cause:error});
+        if(ownsSave())throw Error('复核保存结果尚未核实，提交标识和备注已保留；未重复提交。'+readError.message,{cause:error});
         return;
       }
     }
@@ -2724,7 +2790,7 @@ function bindEditInteraction() {
   });
 
   // Dual-lead density gestures are owned by morphology-workbench.js.
-  $("#editTrendCanvas").addEventListener("click",event=>{if(!state.caseData)return;const rect=event.currentTarget.getBoundingClientRect(),time=(event.clientX-rect.left)/rect.width*state.caseData.technical.duration_seconds_raw;setEditStart(time-state.editDuration*.45);});
+  $("#editTrendCanvas").addEventListener("click",event=>{if(!state.caseData)return;const rect=event.currentTarget.getBoundingClientRect(),bounds=sttTrendBounds(),time=bounds.start+(event.clientX-rect.left)/Math.max(1,rect.width-46)*(bounds.end-bounds.start);setEditStart(time-state.editDuration*.45);});
   $("#editTrendCanvas").addEventListener("keydown",event=>{if(!state.caseData||event.ctrlKey||event.metaKey||event.altKey||!["ArrowLeft","ArrowRight"].includes(event.key))return;event.preventDefault();event.stopPropagation();setEditStart(state.editStart+(event.key==="ArrowLeft"?-state.editDuration:state.editDuration));});
   $("#editScatterCanvas").addEventListener("click",event=>{const data=state.editScatterData;if(!data)return;const rect=event.currentTarget.getBoundingClientRect(),m={l:31,r:9,t:10,b:22},w=rect.width-m.l-m.r,h=rect.height-m.t-m.b,b=data.bounds,bx=b.x_max-b.x_min,by=b.y_max-b.y_min,x=event.clientX-rect.left,y=event.clientY-rect.top;let nearest=null,distance=Infinity;for(const point of data.points||[]){const px=m.l+(point.x-b.x_min)/bx*w,py=m.t+h-(point.y-b.y_min)/by*h,d=Math.hypot(px-x,py-y);if(d<distance){distance=d;nearest=point;}}if(nearest&&distance<=14){state.editSelectedSample=nearest.sample_index;setEditStart(nearest.time_s-state.editDuration*.35);}});
 }
@@ -3142,8 +3208,8 @@ function bindCanvasInteraction() {
     clearTimeout(wheelTimer);
     wheelTimer=setTimeout(()=>{if(wheelIntent.gain)zoomWaveformGain(wheelIntent.zoomIn);else zoomWaveform(wheelIntent.zoomIn,wheelIntent.anchor);wheelIntent=null},80);
   },{passive:false});
-  $("#overviewCanvas").addEventListener("click",event=>{if(!state.caseData)return;const rect=event.currentTarget.getBoundingClientRect(),time=(event.clientX-rect.left)/rect.width*state.caseData.technical.duration_seconds_raw;jumpTo(time)});
-  $("#trendCanvas").addEventListener("click",event=>{if(!state.caseData)return;const rect=event.currentTarget.getBoundingClientRect(),time=(event.clientX-rect.left)/rect.width*state.caseData.technical.duration_seconds_raw;jumpTo(time)});
+  $("#overviewCanvas").addEventListener("click",event=>{if(!state.caseData)return;const rect=event.currentTarget.getBoundingClientRect(),bounds=sttTrendBounds(),time=bounds.start+(event.clientX-rect.left)/Math.max(1,rect.width-46)*(bounds.end-bounds.start);jumpTo(time)});
+  $("#trendCanvas").addEventListener("click",event=>{if(!state.caseData)return;const rect=event.currentTarget.getBoundingClientRect(),bounds=sttTrendBounds(),time=bounds.start+(event.clientX-rect.left)/Math.max(1,rect.width-46)*(bounds.end-bounds.start);jumpTo(time)});
 }
 
 function nudgeSttMarker(marker,direction) {
@@ -3172,6 +3238,22 @@ function bindSttInteraction() {
     });
     canvas._sttSlotObserver.observe(wrapper);
   }
+  const sttRoot=$('#page-stt');
+  $('#sttRecordFilter')?.addEventListener('change',renderSttRecordList);
+  $('#sttTrendRange')?.addEventListener('change',event=>{state.sttTrendRange=event.target.value;renderSttTrendRows();renderSttOverview();});
+  $('#sttReportLink')?.addEventListener('click',()=>clinicalUI.showSTReport?.(state.sttLastSavedEvent||state.sttEditingRecord?.stt_review_receipt));
+  $('#sttNewRange')?.addEventListener('click',()=>{const lead=state.sttActiveLead||sttVisibleLeads()[0]||'II';sttSetReviewTarget({start_s:state.sttStart,end_s:Math.min(Number(state.caseData.technical.duration_seconds_raw),state.sttStart+state.sttDuration),leads:[lead],label:'自选区间'});});
+  const markDraft=()=>{state.sttDraftDirty=true;state.sttDraftRevision=(state.sttDraftRevision||0)+1;const status=$('#sttReviewState');if(status)status.textContent='修改未保存';const receipt=state.sttEditingRecord?.stt_review_receipt,code=globalThis.ECGSttReviewLayout?.resultCode($('#sttFinding').value),impact=$('#sttSaveImpact');if(impact){const used=receipt&&Object.values(receipt.report_use||{}).some(Boolean);impact.hidden=!used;impact.textContent=used&&['no_change','artifact','indeterminate'].includes(code)?'保存后撤出本条异常事件用途；复核记录保留。':used?'保存后核对本条既有报告用途与图条范围。':'';}};
+  $('#sttReviewForm')?.addEventListener('input',markDraft);
+  for(const selector of ['#sttEpisodeStart','#sttEpisodeEnd'])$(selector)?.addEventListener('change',()=>{try{const range=sttReadReviewRange();if(range){Object.assign(state.sttSelectedCandidate.item,range);markDraft();renderSttTrendRows();const label=$('#sttEpisodeDuration');if(label)label.textContent=(range.end_s-range.start_s).toFixed(3)+' 秒';}}catch(error){toast(error.message,'error');}});
+  sttRoot?.addEventListener('click',event=>{
+    const mode=event.target.closest?.('[data-stt-trend-mode]');if(mode){state.sttTrendMode=mode.dataset.sttTrendMode;$$('[data-stt-trend-mode]').forEach(node=>node.setAttribute('aria-pressed',String(node===mode)));renderSttTrendRows();}
+    const display=event.target.closest?.('[data-stt-display-count]');if(display){const count=Number(display.dataset.sttDisplayCount),lead=state.sttActiveLead||sttReviewLeadNames()[0]||'II';state.sttLeads=count===12?[...ALL_LEADS]:count===1?[lead]:[lead,...['II','V1','V5'].filter(name=>name!==lead)].slice(0,3);$$('[data-stt-display-count]').forEach(node=>node.setAttribute('aria-pressed',String(node===display)));loadStt().catch(handleError);}
+    const gain=event.target.closest?.('[data-stt-gain]');if(gain){state.sttGainFactor=Math.max(.125,Math.min(8,(state.sttGainFactor||1)*Math.pow(2,Number(gain.dataset.sttGain))));renderSttWaveform();}
+    const edge=event.target.closest?.('[data-stt-boundary]');if(edge){if(!state.sttSelectedCandidate){toast('请先自选区间或选择事件','error');return;}const key=edge.dataset.sttBoundary==='start'?'start_s':'end_s',at=Math.round((state.sttStart+sttLandmarkFractions().j*state.sttDuration)*200)/200;state.sttSelectedCandidate.item[key]=at;renderSttCandidateSelection();markDraft();renderSttTrendRows();}
+    const position=event.target.closest?.('[data-stt-position]');if(position){const item=state.sttSelectedCandidate?.item;if(item){const at=position.dataset.sttPosition==='start'?item.start_s:position.dataset.sttPosition==='end'?item.end_s:item.peak_time_s??(item.start_s+item.end_s)/2;setSttStart(at-state.sttDuration/2);}}
+  });
+  sttRoot?.addEventListener('change',event=>{if(event.target.matches?.('[data-stt-review-lead]')){state.sttReviewLeads=$$('[data-stt-review-lead]:checked').map(node=>node.value);renderSttReviewLeads();markDraft();}});
   const geometry=()=>{const rect=canvas.getBoundingClientRect(),l=54,r=18,w=Math.max(1,rect.width-l-r),marks=sttLandmarkFractions();return {rect,l,w,marks,isoX:l+marks.iso*w,jX:l+marks.j*w};};
   const hideTooltip=()=>{tooltip.hidden=true;};
   canvas.addEventListener("pointerdown",event=>{
@@ -3197,7 +3279,7 @@ function bindSttInteraction() {
   canvas.addEventListener("contextmenu",event=>{event.preventDefault();hideTooltip();openSttWaveMenu(event);});
   canvas.addEventListener("dblclick",event=>{event.preventDefault();openSttTwelveLead().catch(handleError);});
   canvas.addEventListener("keydown",event=>{if(event.key.toLowerCase()==="f"){event.preventDefault();event.stopPropagation();openSttTwelveLead().catch(handleError);}else if(event.key==="ArrowLeft"||event.key==="ArrowRight"){event.preventDefault();nudgeSttMarker(event.shiftKey?"iso":"j",event.key==="ArrowLeft"?-1:1);}});
-  $("#sttOverviewCanvas").addEventListener("click",event=>{if(!state.caseData)return;const rect=event.currentTarget.getBoundingClientRect(),time=(event.clientX-rect.left)/rect.width*state.caseData.technical.duration_seconds_raw;setSttStart(time-state.sttDuration*.45);});
+  $("#sttOverviewCanvas").addEventListener("click",event=>{if(!state.caseData)return;const rect=event.currentTarget.getBoundingClientRect(),bounds=sttTrendBounds(),time=bounds.start+(event.clientX-rect.left)/Math.max(1,rect.width-46)*(bounds.end-bounds.start);setSttStart(time-state.sttDuration*.45);});
   $("#sttTimeSlider").addEventListener("input",event=>{clearTimeout(sliderTimer);state.sttStart=Number(event.target.value);invalidateSttWindow();renderSttOverview();updateSttTrendWindow();sliderTimer=setTimeout(()=>{if(state.currentPage==="stt")loadStt().catch(handleError);},120);});
 }
 
@@ -3255,7 +3337,7 @@ function bindEvents() {
     const editClass=event.target.closest("[data-edit-class]");if(editClass)selectEditClass(editClass.dataset.editClass);
     const editSample=event.target.closest("[data-edit-sample]");if(editSample){selectEditSample(editSample.dataset.editSample,editSample.dataset.editTime,event);}
     const libraryFilter=event.target.closest("[data-edit-library-filter]");if(libraryFilter){state.editLibraryFilter=libraryFilter.dataset.editLibraryFilter;renderEditLibrary();}
-    const sttCandidate=event.target.closest("[data-stt-candidate]");if(sttCandidate){const item=state.sttReview?.automatic_candidates?.items?.find(r=>r.id===sttCandidate.dataset.sttCandidateId);if(item){state.sttSelectedCandidate={item:JSON.parse(JSON.stringify(item)),scope:Object.fromEntries(['case_id','analysis_basis','analysis_revision','beat_revision'].map(k=>[k,state.sttReview[k]]))};state.sttLastSavedEvent=false;const finding=$("#sttFinding");if(finding&&[...finding.options].some(o=>o.value===item.label))finding.value=item.label;$("#sttSignalChecked").checked=false;renderSttCandidateSelection();}const leads=String(sttCandidate.dataset.sttLeads||"").split(",").filter(lead=>ALL_LEADS.includes(lead));if(leads.length)state.sttLeads=leads;setSttStart(Math.max(0,Number(sttCandidate.dataset.sttCandidate)||0));}
+    const sttCandidate=event.target.closest("[data-stt-candidate]");if(sttCandidate){const item=state.sttReview?.automatic_candidates?.items?.find(r=>r.id===sttCandidate.dataset.sttCandidateId);if(item)sttSetReviewTarget(item);}
     if(event.target.closest("[data-stt-current-window]")){$("#sttWaveformCanvas")?.focus();$("#sttWaveformCanvas")?.scrollIntoView({behavior:"smooth",block:"center"});}
   });
   $("#openFirstCase").addEventListener("click",()=>{const first=filteredCases()[0];if(first)openWorklistCase(first.case_id).catch(handleError)});
@@ -3283,7 +3365,6 @@ function bindEvents() {
   $("#sttOpenTwelveLead").hidden=false;
   $("#sttOpenTwelveLead").addEventListener("click",()=>openSttTwelveLead().catch(handleError));
   $("#openSttGuidance").addEventListener("click",()=>$("#sttGuidanceDialog").showModal());
-  $("#openSttLimitations").addEventListener("click",()=>$("#sttGuidanceDialog").showModal());
   $("#sttIsoEarlier").addEventListener("click",()=>nudgeSttMarker("iso",-1));$("#sttIsoLater").addEventListener("click",()=>nudgeSttMarker("iso",1));
   $("#sttJEarlier").addEventListener("click",()=>nudgeSttMarker("j",-1));$("#sttJLater").addEventListener("click",()=>nudgeSttMarker("j",1));
   $("#sttReviewForm").addEventListener("submit",event=>{event.preventDefault();saveSttReviewAnnotation().catch(handleError);});

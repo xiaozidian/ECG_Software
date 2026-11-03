@@ -36,6 +36,7 @@ CORE = {
     'case_review': 'case_id revision steps events',
 }
 OPTIONAL = {
+    'stt_review_submissions': 'case_id submission_id annotation_id operation request_sha256',
     'report_evidence_reviews': 'case_id evidence_key descriptor presentations status actor updated_at',
     'evidence_candidates': 'id case_id kind candidate_key scope payload status',
     'beat_edit_documents': 'case_id revision document undo redo',
@@ -132,6 +133,11 @@ def _check_database(path):
             if actual_fields != fields and actual_fields != LEGACY_FIELDS.get(table):
                 raise BackupError('数据库字段版本不受支持，请使用匹配的软件版本')
             counts[table] = db.execute(f'SELECT count(*) FROM "{table}"').fetchone()[0]
+            if table=='stt_review_submissions':
+                for case,identifier,annotation,operation,request_hash in db.execute('SELECT case_id,submission_id,annotation_id,operation,request_sha256 FROM stt_review_submissions'):
+                    try:valid=(isinstance(case,str) and bool(case) and str(uuid.UUID(identifier))==identifier and type(annotation) is int and annotation>0 and operation in ('create','update') and isinstance(request_hash,str) and bool(re.fullmatch('[0-9a-f]{64}',request_hash)))
+                    except (ValueError,TypeError,AttributeError):valid=False
+                    if not valid:raise BackupError('ST-T复核提交回执结构损坏，未恢复')
             for field, kind in JSON_FIELDS.get(table, {}).items():
                 if field not in actual_fields:
                     continue  # Only the explicitly recognized legacy schema.

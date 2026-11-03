@@ -55,5 +55,12 @@
   "tests/test_report_evidence_ranges.py",
   "tests/test_report_multistrip_ui.py",
   "tests/test_report_wave_menu.py",
-  "tests/test_demo_report_evidence.py"
+  "tests/test_demo_report_evidence.py",
+  "tests/test_stt_hospital_records.py",
+  "tests/test_stt_hospital_report_output.py",
+  "tests/test_stt_hospital_ui.py",
+  "tests/test_stt_record_mirror.py",
+  "tests/test_stt_report_adoption.py",
+  "tests/test_demo_stt_hospital.py",
+  "tests/test_startup_dom_bindings.py"
 ]

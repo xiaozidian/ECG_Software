@@ -7,7 +7,7 @@ const result={input:'mathematical waveform only',checks:[],errors:[],external_re
 let browser,page;
 const record=(name,data={})=>result.checks.push({name,...data});
 (async()=>{
-  browser=await chromium.launch({executablePath:process.env.ECG_CHROME_PATH||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true,chromiumSandbox:true});
+  browser=await chromium.launch({executablePath:process.env.ECG_CHROME_PATH||process.env.ECG_CHROME||process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true,chromiumSandbox:true});
   page=await browser.newPage({viewport:{width:1440,height:900}});
   page.on('pageerror',e=>result.errors.push(e.message));
   await page.route('**/*',r=>{result.external_requests.push(r.request().url());return r.abort();});
@@ -18,12 +18,13 @@ const record=(name,data={})=>result.checks.push({name,...data});
     globalThis.formatElapsed=s=>'D1 '+s.toFixed(3);globalThis.fixtureCurrent=true;
     const names=ECGChartInspection.order;
     globalThis.fixtureWave={start_s:0,duration_s:15,sample_rate_hz:200,stride:2,leads:Object.fromEntries(names.map((name,j)=>[name,Array.from({length:1500},(_,i)=>80*Math.sin(i/9+j/7)+25*Math.sin(i/31))])),beats:Array.from({length:20},(_,i)=>({sample_index:i*150,class_code:'N'}))};
-    globalThis.fixtureEntry={sample_index:1200,strip:{start_s:5,end_s:12},inReport:true};
+    globalThis.fixtureEntry={sample_index:1200,strip:{start_s:5,end_s:12,leads:['II','V1','V5']},inReport:true};
     const host=document.querySelector('#fixtureRange');
-    ECGReportRange.mount(host,fixtureEntry,fixtureWave,async()=>{},async()=>{},{context:'case-A',basis:'basis-A',event:{event_id:'event-A'}});
+    ECGReportRange.mount(host,fixtureEntry,fixtureWave,async()=>{},async()=>{},{context:'case-A',basis:'basis-A',event:{event_id:'event-A'},displayProfile:ECGReviewTools.reportAmplitude(fixtureWave)});
     ECGReportWorkspace.mountEventPreview(host,{event:{label:'工程交互验证',time_s:6},loadWave:()=>Promise.resolve(fixtureWave),renderWave:w=>ECGReportWorkspace.reviewWaveSvg(w),isCurrent:()=>fixtureCurrent});
   });
   const stage=page.locator('.report-range-stage'),bound=kind=>page.locator('[data-bound="'+kind+'"]');
+  assert.equal(await stage.locator('[data-wave-lead]').count(),3,'The actual retained card starts in three-lead review');
   assert.equal(await page.locator('.range-precision').getAttribute('open'),null);
   assert(await page.locator('[data-range-cancel]').isDisabled());
   const baseline=await page.evaluate(()=>JSON.stringify(fixtureEntry.strip));
@@ -40,11 +41,17 @@ const record=(name,data={})=>result.checks.push({name,...data});
   const dialog=page.locator('.rw-event-preview-dialog[open]');await dialog.waitFor();await dialog.locator('polyline[data-lead]').first().waitFor();
   const geometry=await dialog.boundingBox();assert.equal(geometry.x,0);assert.equal(geometry.y,0);assert.equal(geometry.width,1440);assert.equal(geometry.height,900);
   assert.deepEqual(await dialog.locator('polyline[data-lead]').evaluateAll(n=>n.map(p=>p.dataset.lead)),['I','II','III','aVR','aVL','aVF','V1','V2','V3','V4','V5','V6']);
-  const shape=await dialog.locator('.rw-twelve-wave').evaluate(svg=>({columns:svg.dataset.columns,width:svg.getBoundingClientRect().width,height:svg.viewBox.baseVal.height,
-    exact:ECGChartInspection.order.every(name=>{const row=svg.querySelector(`[data-wave-lead="${name}"]`),points=row.querySelector('polyline').getAttribute('points').split(' ').map(p=>p.split(',').map(Number)),values=fixtureWave.leads[name],scale=Number(row.dataset.waveScale),baseline=Number(row.dataset.waveBaseline),left=Number(svg.dataset.plotLeft),width=Number(svg.dataset.plotWidth);return points.length===values.length&&points.every(([x,y],i)=>Math.abs(x-left-i*fixtureWave.stride/fixtureWave.sample_rate_hz/fixtureWave.duration_s*width)<.0011&&Math.abs(y-(baseline-values[i]*scale))<.0011);})}));
-  assert.equal(shape.columns,'1');assert(shape.width>1300);assert(shape.height>=720);assert(shape.exact);
+  const clipped=await dialog.locator('.rw-twelve-wave').evaluate(svg=>{const b=svg.getBoundingClientRect();return b.top<0||b.bottom>innerHeight||b.left<0||b.right>innerWidth;});assert.equal(clipped,false);
+  const allPointsExact=await dialog.locator('.rw-twelve-wave').evaluate(svg=>{
+    const left=Number(svg.dataset.plotLeft),width=Number(svg.dataset.plotWidth),start=Number(svg.dataset.displayStart),duration=Number(svg.dataset.displayDuration);
+    return Number(svg.dataset.sampleRate)===fixtureWave.sample_rate_hz&&Number(svg.dataset.stride)===fixtureWave.stride&&Number(svg.dataset.sourceStart)===fixtureWave.start_s&&Number(svg.dataset.sourceDuration)===fixtureWave.duration_s&&ECGChartInspection.order.every(name=>{
+      const lane=svg.querySelector(`[data-wave-lead="${name}"]`),values=fixtureWave.leads[name],baseline=Number(lane.dataset.waveBaseline),scale=Number(lane.dataset.waveScale);
+      const expected=values.map((value,i)=>`${(left+(fixtureWave.start_s-start+i*fixtureWave.stride/fixtureWave.sample_rate_hz)/duration*width).toFixed(3)},${(baseline-value*scale).toFixed(3)}`).join(' ');
+      return scale>0&&lane.querySelector('polyline[data-lead]').getAttribute('points')===expected;
+    });
+  });assert(allPointsExact,'The actual card must retain every source point at the declared sample/lead geometry');
   await page.screenshot({path:path.join(out,'mathematical-twelve-fullscreen.png')});
-  await page.keyboard.press('Escape');assert.equal(await page.evaluate(()=>JSON.stringify(ECGReportRange.pending())),pending);assert.equal(await page.evaluate(()=>JSON.stringify(fixtureEntry.strip)),baseline);
+  await page.keyboard.press('Escape');assert.equal(await page.evaluate(()=>JSON.stringify(ECGReportRange.pending())),pending);assert.equal(await page.evaluate(()=>JSON.stringify(fixtureEntry.strip)),baseline);assert.equal(await stage.locator('[data-wave-lead]').count(),3,'Closing twelve-lead enlargement must preserve retained three-lead display');
   record('double-click-fills-viewport-with-twelve-exact-source-arrays-and-preserves-pending',{viewport:[1440,900],dialog:geometry});
   await page.locator('[data-range-cancel]').click();assert.equal(await page.evaluate(()=>ECGReportRange.pending().length),0);assert.equal(Number(await bound('start').inputValue()),5);assert.equal(Number(await bound('end').inputValue()),12);assert.equal(await page.locator('#fixtureRange').getAttribute('data-range-status'),'applied');
   assert.equal(await page.evaluate(()=>ECGReportConsistency.canApprove({report:{version:1}},'工程结论',true,true)),true);

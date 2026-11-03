@@ -115,6 +115,12 @@ def longest_event(index, identity, records):
 def used_in_output(composition, entry, event=None):
     """Nonprinting curation stays saved without becoming an approval gate."""
     from .report_sections import selected_pages
+    if event and event.get('category')=='ST' and 'stt_report_use' in composition:
+        from .stt_records import use_for
+        use=use_for(composition,event)
+        # Table/text adoption is validated independently against its own record
+        # basis; it must not print or gate an unused retained strip selection.
+        return use.get('strip',False) and entry.get('print_enabled',True) and 'event_strips' in selected_pages(composition)
     if entry.get('referenced_in_report') is True:
         return True
     if event and event.get('category')=='ST' and 'st_events' in selected_pages(composition):

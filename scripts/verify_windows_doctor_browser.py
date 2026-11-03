@@ -619,9 +619,10 @@ async def save_math_work(page, result):
     require(response.ok, "Native mathematical annotation save failed")
     saved_annotation = await response.json()
     require(type(saved_annotation.get("id")) is int, "Native annotation response lacks its saved identity")
+    require(saved_annotation.get("stt_review_receipt", {}).get("review_state")=="reviewed" and saved_annotation["stt_review_receipt"]["result_code"]=="indeterminate", "Completed indeterminate review must remain a reviewed note, not an automatic positive event")
     await page.wait_for_function("() => !state.sttSaving")
     annotations = await browser_json(page, "/api/cases/" + CASE_ID + "/annotations")
-    matching = [item for item in annotations["items"] if item.get("id") == saved_annotation["id"] and str(item.get("note", "")).endswith(ANNOTATION_NOTE)]
+    matching = [item for item in annotations["items"] if item.get("id") == saved_annotation["id"] and (item.get("details") or {}).get("physician_note")==ANNOTATION_NOTE]
     require(len(matching) == 1, "Saved mathematical annotation is missing or duplicated")
     await report_ready(page)
     version = await page.evaluate("() => state.report.version")
@@ -691,7 +692,7 @@ async def persistence_check(page, result, name, annotation_id):
     report = await browser_json(page, "/api/cases/" + CASE_ID + "/report")
     annotations = await browser_json(page, "/api/cases/" + CASE_ID + "/annotations")
     require(report["conclusion"] == REPORT_NOTE and report["status"] == "draft", "Preserved workspace lost its report draft")
-    require(sum(item.get("id") == annotation_id and str(item.get("note", "")).endswith(ANNOTATION_NOTE) for item in annotations["items"]) == 1, "Preserved workspace lost or duplicated its annotation")
+    require(sum(item.get("id") == annotation_id and (item.get("details") or {}).get("physician_note")==ANNOTATION_NOTE for item in annotations["items"]) == 1, "Preserved workspace lost or duplicated its annotation")
     require(await page.locator("#conclusionEditor").input_value() == REPORT_NOTE, "Reopened UI differs from preserved report")
     record(result, name, {"report_preserved": True, "annotation_preserved": True, "source_identity": "M01"})
 

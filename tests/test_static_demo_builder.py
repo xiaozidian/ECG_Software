@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-MANIFEST = ROOT / 'docs/releases/0.12.27-report-evidence.20261103/source-manifest.json'
+MANIFEST = ROOT / 'docs/releases/0.12.28-stt-hospital.20261103/source-manifest.json'
 
 
 def digest(path: Path) -> str:
@@ -27,7 +27,7 @@ def test_static_demo_builder(tmp_path: Path) -> None:
     receipt = json.loads((output / 'mathematical-source-manifest.json').read_text(encoding='utf-8'))
     assert receipt['release_id'] == source['release_id']
     assert receipt['production_source_sha256'] == source['source_sha256']
-    assert receipt['production_files_verified'] == source['production_file_count'] == 128
+    assert receipt['production_files_verified'] == source['production_file_count'] == 129
     assert receipt['production_files_modified'] is False
     assert receipt['legacy_demo_inputs_read'] is False
     assert receipt['storage_namespace'] == 'cardioinsight-public-math-4314-v2'
@@ -73,7 +73,8 @@ def test_static_demo_builder(tmp_path: Path) -> None:
     assert '纯数学合成' in html and '修改仅存本浏览器' in html and '不构成疾病金标准' in html
     assert '{{' not in html and '{%' not in html
     assert html.index('mathematical-4314/case-data.js') < html.index('js/demo-api.js') < html.index('js/app.js')
-    assert 'id="saveSttAnnotation" class="button primary" type="submit" hidden' not in html
+    st_save = re.findall(r'<button\b[^>]*\bid="saveSttAnnotation"[^>]*>', html)
+    assert len(st_save) == 1 and not re.search(r'\s(?:hidden|disabled)(?=\s|>)', st_save[0])
     for relative in re.findall(r'(?:src|href)="(static/[^"?]+)', html):
         assert (output / relative).is_file()
     for relative in ['static/js/app.js', 'static/js/clinical-workflow.js', 'static/js/demo-api.js']:
@@ -105,3 +106,26 @@ def test_math_payload_is_deterministic_and_output_is_never_overwritten(tmp_path:
     result = subprocess.run([sys.executable, str(ROOT / 'scripts/build_static_demo.py'), '--output', str(one)], capture_output=True, text=True)
     assert result.returncode != 0 and 'Output must be new' in result.stderr
     assert marker.read_text(encoding='utf-8') == 'existing output must survive'
+
+
+def test_mathematical_st_save_targets_actual_unique_control_and_preserves_boundaries():
+    from jinja2 import Environment, FileSystemLoader, StrictUndefined
+    import pytest
+    from scripts.build_static_demo import enable_mathematical_st_save
+    env = Environment(loader=FileSystemLoader(ROOT/'templates'), undefined=StrictUndefined)
+    env.globals['url_for'] = lambda endpoint, filename: 'static/' + filename
+    original = env.get_template('index.html').render(app_name='Math', app_version='math',
+        app_version_short='math', demo_readonly=True, allow_phi=False)
+    target = re.findall(r'<button\b[^>]*\bid="saveSttAnnotation"[^>]*>', original)
+    assert len(target) == 1 and re.search(r'\sdisabled(?=\s|>)', target[0])
+    generated = enable_mathematical_st_save(original)
+    enabled = re.findall(r'<button\b[^>]*\bid="saveSttAnnotation"[^>]*>', generated)
+    assert len(enabled) == 1 and not re.search(r'\s(?:hidden|disabled)(?=\s|>)', enabled[0])
+    assert original.replace(target[0], '<ST-SAVE>') == generated.replace(enabled[0], '<ST-SAVE>')
+    assert 'id="saveReport" class="button primary" hidden disabled' in generated
+    assert 'id="approveReport" class="button secondary" hidden disabled' in generated
+    assert 'id="conclusionEditor"' in generated and ' readonly' in generated
+    with pytest.raises(AssertionError):
+        enable_mathematical_st_save(original.replace(target[0], ''))
+    with pytest.raises(AssertionError):
+        enable_mathematical_st_save(original + target[0])

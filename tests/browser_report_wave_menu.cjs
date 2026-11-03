@@ -15,7 +15,7 @@ const frames=p=>p.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestA
 (async()=>{
  let browser;
  try{
-  browser=await chromium.launch({executablePath:process.env.ECG_CHROME||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true,chromiumSandbox:true});
+  browser=await chromium.launch({executablePath:process.env.ECG_CHROME||process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true,chromiumSandbox:true});
   const page=await browser.newPage({viewport:{width:1366,height:768}}),errors=[],blocked=[];page.on('pageerror',e=>errors.push(e.message));await page.route('**/*',r=>{blocked.push({method:r.request().method(),url:r.request().url()});return r.abort();});await page.setContent(html);await frames(page);
   async function point(fraction,lead=0,y=.5){return page.locator('#host>svg:first-child').evaluate((svg,{fraction,lead,y})=>{const r=svg.getBoundingClientRect(),v=svg.viewBox.baseVal,g=svg.querySelectorAll('[data-wave-lead]')[lead],top=Number(g.dataset.signalTop),bottom=Number(g.dataset.signalBottom);return {x:r.left+(Number(svg.dataset.plotLeft)+Number(svg.dataset.plotWidth)*fraction)/v.width*r.width,y:r.top+(top+(bottom-top)*y)/v.height*r.height};},{fraction,lead,y});}
   async function open(fraction=.4,lead=0){const p=await point(fraction,lead);await page.mouse.click(p.x,p.y,{button:'right'});await page.locator('#reportWaveMenu').waitFor({state:'visible'});return p;}

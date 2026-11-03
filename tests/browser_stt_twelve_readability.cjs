@@ -19,10 +19,10 @@ function actualFunction(name) {
   return app.slice(declarations[index].index, declarations[index + 1]?.index ?? app.length);
 }
 const functionNames = [
-  'escapeHtml', 'canvasContext', 'sttVisibleLeads', 'sttReviewLayout',
+  'escapeHtml', 'sttTrendBounds', 'renderSttTrendRows', 'canvasContext', 'sttVisibleLeads', 'sttReviewLayout',
   'sttLandmarkFractions', 'sttMeasurementValues', 'renderSttMeasurements',
   'renderSttReviewContext', 'renderSttWaveform', 'nudgeSttMarker',
-  'bindSttInteraction', 'openSttTwelveLead', 'finishWaveformFullscreenExit',
+  'bindSttInteraction', 'renderSttRecordList', 'openSttTwelveLead', 'finishWaveformFullscreenExit',
 ];
 const functions = functionNames.map(actualFunction).join('\n');
 const template = read('templates/index.html');
@@ -127,18 +127,22 @@ const html = '<!doctype html><html><head><meta charset="utf-8"><style>' + styles
         (0, eval)(tools); (0, eval)(chart); (0, eval)(layout); (0, eval)(functions);
         $('#sttReviewNote').value = 'unsaved mathematical note';
         $('#sttOpenTwelveLead').addEventListener('click', () => {globalThis.__transition = openSttTwelveLead();});
+        state.sttReview.analysis={trends:{leads:Object.fromEntries(ALL_LEADS.map((lead,i)=>[lead,Array.from({length:10},(_,j)=>({time_s:j*60+30,start_s:j*60,end_s:j*60+60,eligible:j!==2,st_level_units:(j-5)*(i+1),deviation_units:(5-j)*(i+1),t_amplitude_units:j*(i+1)}))]))}};state.sttTrendMode='st';renderSttTrendRows();
         renderSttWaveform(); bindSttInteraction();
       }, {chart, layout, functions,tools});
       await page.waitForFunction(() => {
         const canvas = document.querySelector('#sttWaveformCanvas');
         return Math.abs(canvas.height - canvas.getBoundingClientRect().height * devicePixelRatio) <= 1;
       });
+      const assertTrendLayout=async()=>{const rows=await page.evaluate(()=>[...document.querySelectorAll('#sttTrendRows .stt-trend-row')].map(row=>{const bounds=n=>{const b=n.getBoundingClientRect();return {left:b.left,right:b.right,top:b.top,bottom:b.bottom,width:b.width};};return {row:bounds(row),label:bounds(row.querySelector('strong')),track:bounds(row.querySelector('.stt-trend-track')),value:bounds(row.querySelector('small')),heart:bounds(document.querySelector('#sttOverviewCanvas'))};}));assert.equal(rows.length,12);for(const r of rows){assert(r.track.width>r.row.width*.7,'Trend must occupy the main column');assert(r.label.right<=r.track.left+.75);assert(r.track.right<=r.value.left+.75);assert(Math.abs(r.track.top-r.label.top)<27);assert(Math.abs(r.heart.left-r.track.left)<2,'HR start must align to the twelve trend starts');assert(Math.abs(r.heart.right-46-r.track.right)<2,'HR end must align to the twelve trend ends');}return rows;};
+      await assertTrendLayout();
       const threeBefore = await page.evaluate(() => {
         const canvas = $('#sttWaveformCanvas'), rect = canvas.getBoundingClientRect();
         return {width: rect.width, height: rect.height, note: $('#sttReviewNote').value};
       });
-      for (const width of [900, 1600, 2300]) {
-        await page.setViewportSize({width, height: 900});
+      for (const [width,height] of [[1366,768],[1502,1343],[1920,1080]]) {
+        await page.setViewportSize({width,height});
+        await assertTrendLayout();
         const item = await page.evaluate(() => {
           const source = JSON.stringify(__fullLeads), marks = JSON.stringify(sttLandmarkFractions()), note = $('#sttReviewNote').value;
           state.sttLeads = ALL_LEADS.slice(); state.sttWaveform = __wave(ALL_LEADS);
@@ -154,7 +158,7 @@ const html = '<!doctype html><html><head><meta charset="utf-8"><style>' + styles
           slot.scrollTop = 200;
           return {viewport: innerWidth, dpr: devicePixelRatio, css_width: rect.width, css_height: rect.height,
             backing_width: canvas.width, backing_height: canvas.height, row_height: (rect.height - 46) / 12,
-            scroll_top: slot.scrollTop, scroll_height: slot.scrollHeight, slot_height: slot.clientHeight,
+            scroll_top: slot.scrollTop, scroll_height: slot.scrollHeight, slot_height: slot.clientHeight, bottom:rect.bottom, viewport_height:innerHeight, gain:Number(canvas.dataset.displayGain),
             toolbar_outside_scroll: !slot.contains(document.querySelector('.stt-waveform-toolbar')),
             measuring_object_outside_scroll: !slot.contains($('#sttCurrentContext')),
             source_unchanged: source === JSON.stringify(__fullLeads), marks_unchanged: marks === JSON.stringify(sttLandmarkFractions()),
@@ -162,24 +166,24 @@ const html = '<!doctype html><html><head><meta charset="utf-8"><style>' + styles
             sample_count_per_path: paths[0].length, maximum_affine_error: maximumAffineError,
             image_copies: __paint.copies, outer_overflow: document.documentElement.scrollWidth > innerWidth};
         });
-        assert(Math.abs(item.css_height - 814) < .001);
-        assert(Math.abs(item.row_height - 64) < .001);
-        assert.equal(item.backing_height, 814 * dpr);
+        assert(item.css_height>=150 && item.css_height<=420,'Source wave must use the bounded frame');
+        assert(item.css_height<=item.slot_height+1 && item.bottom<=item.viewport_height+1,'All 12 source leads must fit the visible slot');
+        assert(Math.abs(item.backing_height-item.css_height*dpr)<=2);
         assert(Math.abs(item.backing_width - item.css_width * dpr) <= 2);
-        assert(item.scroll_top > 0);
+        assert.equal(item.scroll_top,0,'12L uses the same frame without a hidden vertical segment');
         for (const flag of ['toolbar_outside_scroll','measuring_object_outside_scroll','source_unchanged','marks_unchanged','measurements_unchanged','note_unchanged']) assert.equal(item[flag], true, flag);
         assert(item.maximum_affine_error < 1e-8); assert.equal(item.image_copies, 0); assert.equal(item.outer_overflow, false);
         results.push(item);
       }
-      // The scroll offset must not change which source lead/time the pointer reads.
+      // Real source hit-testing must match the fitted 12-lead geometry.
       const hover = await page.evaluate(() => {
         const slot = $('#sttWaveCanvasWrap'); slot.scrollTop = 400;
         const rect = $('#sttWaveformCanvas').getBoundingClientRect(), fraction = .4;
         return {x: rect.left + 54 + (rect.width - 72) * fraction,
-          y: rect.top + 24 + 64 * 10 + 32, scrollTop: slot.scrollTop,
+          y: rect.top+24+(rect.height-46)/12*10.5, scrollTop:slot.scrollTop,
           value: __fullLeads.V5[Math.round(fraction * 2000)]};
       });
-      assert(hover.scrollTop > 0);
+      assert.equal(hover.scrollTop,0);
       await page.mouse.move(hover.x, hover.y);
       await page.waitForFunction(() => !$('#sttWaveTooltip').hidden);
       const tooltip = await page.locator('#sttWaveTooltip').textContent();
@@ -215,7 +219,7 @@ const html = '<!doctype html><html><head><meta charset="utf-8"><style>' + styles
     }
     assert.deepEqual(pageErrors, []);
     const receipt = {passed: true, mathematical_only: true, network_aborted: true, network_requests: network.length,
-      chromium_sandbox: true, source_hashes: {'static/js/app.js': hash(app), 'static/css/desktop-workspace.css': hash(read('static/css/desktop-workspace.css')), 'templates/index.html': hash(template)},
+      chromium_sandbox: true, source_hashes: {'static/js/app.js': hash(app),...Object.fromEntries(styleNames.map(name=>['static/css/'+name,hash(read('static/css/'+name))])),'static/js/stt-review-layout.js':hash(layout),'templates/index.html': hash(template)},
       extracted_functions: functionNames, transport_fixture: true, native_fullscreen_request_claim: false,
       clinical_method_changed: false, preserved_boundary: 'Existing len-1 display/measurement/save indexing remains unchanged; this is not a clinical timing validation.', results};
     fs.writeFileSync(receiptPath, JSON.stringify(receipt, null, 2));

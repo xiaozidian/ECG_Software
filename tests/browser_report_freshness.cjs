@@ -23,6 +23,7 @@ async function refresh(scenario){
       return {items:[{event_id:'fresh',basis_version:'current'}],data_version:'current',analysis_basis:'source',analysis_revision:2};
     }});
   vm.runInContext(source.slice(source.indexOf('  const reportCategories='),source.indexOf('  const tabs=')),ctx);
+  require('./clinical_ui_report_helpers.cjs').prepare(ctx);
   vm.runInContext(source.match(/^  function reportSequence\(\).*$/m)[0],ctx);
   vm.runInContext(fs.readFileSync('static/js/report-consistency.js','utf8'),ctx);
   vm.runInContext(source.slice(source.indexOf('  function sameEvidence('),source.indexOf('  let reportCase=')),ctx);
@@ -70,6 +71,7 @@ async function stripCache(){
 async function remove(){
   const picks=[{event_id:'removed'}],forgot=[];let shell=0,body=0;
   const ctx=vm.createContext({state:{reportComposition:{selected_events:picks}},copy:x=>JSON.parse(JSON.stringify(x)),ECGReportRange:{forget:key=>forgot.push(key)},selected:()=>picks,selectedLookup:new Map(),syncText(){},dirty(){},renderReportShell(){shell++},renderReportBody(){body++},run:fn=>fn()});
+  require('./clinical_ui_report_helpers.cjs').prepare(ctx);
   vm.runInContext(source.slice(source.indexOf('  function removeReportSelection('),source.indexOf('  function enableReportDraftSelections(')),ctx);
   vm.runInContext(source.match(/^  const stripKey=.*$/m)[0],ctx);
   ctx.removeReportSelection(0);assert.deepEqual(forgot,['removed']);assert.equal(picks.length,0);assert.equal(shell,1);assert.equal(body,1);

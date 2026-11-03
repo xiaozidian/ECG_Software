@@ -136,6 +136,29 @@ def assert_normal_case_masked(review, client=None):
     assert "paths" not in value
 
 
+def assert_legacy_annotation_and_receipt(returned,saved):
+    """GET adds review metadata; every stored annotation field stays exact."""
+    annotation=deepcopy(returned);receipt=annotation.pop('stt_review_receipt')
+    assert annotation==saved
+    details=saved['details'];statistics=details['range_statistics'];profile=statistics['method_profile']
+    first=saved['sample_index'];end=details['end_sample']+1;event_id='annotation:'+str(saved['id'])
+    assert re.fullmatch(r'[0-9a-f]{8}-stt-record-v1-[0-9a-f]{24}',receipt['basis_version'])
+    assert receipt==dict(schema_version='stt-review-record-v1',record_id=event_id,event_id=event_id,
+        annotation_id=saved['id'],record_version=1,review_state='unreviewed',
+        result_code='nonspecific' if details['status']=='confirmed' else 'indeterminate',result_kind='NOTE',
+        report_group='pending',status=details['status'],review_extent='point',
+        range=dict(start_sample=first,end_sample=end,start_s=first/200,end_s=end/200,duration_s=(end-first)/200),
+        basis_version=receipt['basis_version'],measurement_protocol=dict(method_version=profile['id'],
+            measurement_ms=profile['measurement_ms'],extent='whole',baseline_method='pre_qrs_stable',
+            units=profile['units'],calibration_verified=False,range_profile=profile),point_measurement_protocol=None,
+        report_eligibility=dict(table=False,text=False,strip=False),
+        report_use=dict(event_id=event_id,basis_version=receipt['basis_version'],table=False,text=False,strip=False),
+        source_scope=None,finding=details['finding'],note=saved['note'],physician_note=None,leads=['II'],legacy=True)
+    assert receipt['measurement_protocol']['measurement_ms']==statistics['method_profile']['measurement_ms']
+    assert returned['details']['range_statistics']==saved['details']['range_statistics']
+    return receipt
+
+
 @pytest.mark.parametrize("status", ["pending", "confirmed", "excluded"])
 def test_masked_after_request_preserves_signed_compact_save_get_and_reopen(review_app, status):
     review = review_app
@@ -154,12 +177,16 @@ def test_masked_after_request_preserves_signed_compact_save_get_and_reopen(revie
     raw = next(value for path, code, value in reversed(review.observed)
                if path == review.base + "/annotations" and code == 201)
     assert raw["details"]["range_statistics"] == statistics
-    assert ok(review.client.get(review.base + "/annotations"))["items"] == [saved]
+    returned=ok(review.client.get(review.base + "/annotations"))["items"]
+    assert len(returned)==1
+    receipt=assert_legacy_annotation_and_receipt(returned[0],saved)
     store = review.app.extensions["storage"]
     after = rows(store)
     reopened = create_review_app(review.case[0], review.workspace, **review.arguments)
     reopened_client = reopened.test_client()
-    assert ok(reopened_client.get(review.base + "/annotations"))["items"] == [saved]
+    reopened_rows=ok(reopened_client.get(review.base + "/annotations"))["items"]
+    assert len(reopened_rows)==1
+    assert assert_legacy_annotation_and_receipt(reopened_rows[0],saved)==receipt
     retry = post(review, "/annotations", body, client=reopened_client)
     assert retry.status_code == 201 and retry.get_json() == saved
     assert_normal_case_masked(review, reopened_client)
@@ -285,11 +312,11 @@ def node_save(review, statistics):
     saved = response.get_json()
     assert saved["details"] == body["details"]
     assert saved["display_case_id"] == "C01"
-    assert ok(review.client.get(review.base + "/annotations"))["items"][-1] == saved
+    receipt=assert_legacy_annotation_and_receipt(ok(review.client.get(review.base + "/annotations"))["items"][-1],saved)
     after = rows(review.app.extensions["storage"])
     reopened = create_review_app(review.case[0], review.workspace, **review.arguments)
     returned = ok(reopened.test_client().get(review.base + "/annotations"))["items"]
-    assert returned[-1] == saved
+    assert assert_legacy_annotation_and_receipt(returned[-1],saved)==receipt
     assert returned[-1]["details"]["range_statistics"] == body["details"]["range_statistics"]
     assert rows(reopened.extensions["storage"]) == after
     return saved

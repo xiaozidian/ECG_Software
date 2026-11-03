@@ -24,11 +24,13 @@ from verify_report_evidence_ui import verify_report_evidence_ui
 from deidentify_patient_source import export_case
 from windows_deidentified_package import unpack
 from windows_doctor_build import verify_content_manifest
-from verify_windows_doctor_browser import launch,stop,live_state,manager_page,pe_is_x64,safe_error,worklist_ready
+from verify_windows_doctor_browser import launch,stop,live_state,manager_page,pe_is_x64,safe_error,worklist_ready,process_modules
 from ecg_core import doctor_source
 from ecg_core.repository import CaseRepository
 from ecg_core.ebi import load_records
 from ecg_core.stt import build_stt_review
+from ecg_core.stt_range import analyze_stt_range
+from ecg_core.stt_records import rhythm_exclusions
 
 
 def snapshot(root):return {p.relative_to(root).as_posix():sha256(p.read_bytes()).hexdigest() for p in root.rglob('*') if p.is_file()}
@@ -36,7 +38,7 @@ def snapshot(root):return {p.relative_to(root).as_posix():sha256(p.read_bytes())
 
 async def verify(args,result):
     assert os.name=='nt' and platform.machine().upper() in ('AMD64','X86_64'), 'Native Windows x64 required; local prechecks cannot satisfy this receipt'
-    with tempfile.TemporaryDirectory(prefix='report27-native-mathematics-') as tmp:
+    with tempfile.TemporaryDirectory(prefix='report28-native-mathematics-') as tmp:
         work=Path(tmp);origin=work/'new-mathematics';declaration=generate(origin)
         cases,issues=CaseRepository(origin).scan_cases();assert len(cases)==1 and not issues
         fixture=work/'sources/P01';export_case(cases[0],fixture,mathematical_fixture=True)
@@ -44,12 +46,21 @@ async def verify(args,result):
         assert manifest['kind']=='mathematical_deidentified_fixture' and manifest['patient_inputs_read'] is False
         before=snapshot(fixture)
         raw=fixture/doctor_source.PATHS['data'];ebi=fixture/doctor_source.PATHS['ebi']
-        expected=build_stt_review('',raw,load_records(str(ebi)),600,analysis_revision='independent-native-fixture')
-        assert any(c['kind']=='st_depression' and c['leads']==['II'] and c['duration_s']>60 for c in expected['automatic_candidates']['items'])
+        records=load_records(str(ebi))
+        expected=build_stt_review('',raw,records,600,analysis_revision='independent-native-fixture')
+        assert expected['analysis']['algorithm_version']=='stt-screening-0.3.1-hospital-records-rhythm-masks'
+        assert any(c['kind'] in ('st_depression','st_elevation') and len(c['leads'])==1 and c['duration_s']>=60 for c in expected['automatic_candidates']['items'])
+        def current_oracle(items):return build_stt_review('',raw,records,600,analysis_revision='independent-native-fixture',excluded_intervals=rhythm_exclusions(items))
+        def range_oracle(first,end,leads,items):return analyze_stt_range(raw,records,start_sample=first,end_sample=end,leads=leads,measurement_ms=60,exclusions=rhythm_exclusions(items))
         program=unpack(args.software_archive,work/'program');verify_content_manifest(program)
-        exe=program/'CardioInsightDoctorEval.exe';pe_is_x64(exe)
+        exe=program/'CardioInsightDoctorEval.exe';assert pe_is_x64(exe)
         release=json.loads((program/'RELEASE.json').read_text())
         shared=json.loads((program/'_internal/shared-source-build.json').read_text())
+        from scripts.verify_public_release import verify as verify_source
+        from scripts.shared_source import snapshot as software_snapshot
+        assert release['app_version']=='0.12.28-stt-hospital.20261103' and release['packaging_version']=='1.0.13'
+        assert release['production_source_identity']==verify_source(Path(__file__).resolve().parents[1])
+        assert shared==software_snapshot(Path(__file__).resolve().parents[1])[0]
         new_assets=['static/js/report-wave-menu.js','static/css/report-wave-menu.css']
         for name in new_assets:
             data=(program/'_internal'/name).read_bytes()
@@ -91,7 +102,10 @@ async def verify(args,result):
                     await page.locator('#continueExperience').click()
                 await worklist_ready(page)
                 catalog=json.loads((home/'catalog.json').read_text());workspace=catalog['selected_workspace']
-                await live_state(home,workspace,exe)
+                live=await live_state(home,workspace,exe)
+                modules=await asyncio.to_thread(process_modules,live['pid'],exe)
+                assert modules['python_dll_from_bundle']
+                result['bundled_python_proved']=True
                 await page.locator('#openFirstCase').click()
                 await page.wait_for_function('id=>state.caseId===id&&!state.caseLoading&&state.caseData.technical.duration_seconds_raw===600',arg=doctor_source.CASE_ID)
                 served_assets=await page.evaluate("""async names=>{const out={};for(const n of names){const r=await fetch('/'+n,{cache:'no-store'});if(!r.ok)throw Error(n+': '+r.status);out[n]=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await r.arrayBuffer()))).map(x=>x.toString(16).padStart(2,'0')).join('');}return out;}""",new_assets)
@@ -99,7 +113,7 @@ async def verify(args,result):
                 result['new_menu_packaged_and_served_assets']=served_assets
                 screenshots=args.output.parent/'report-evidence-screenshots';screenshots.mkdir(exist_ok=True)
                 result['ui']={'status':'running','checks':[]}
-                result['ui']=await verify_report_evidence_ui(page,doctor_source.CASE_ID,expected,screenshots,result['ui'])
+                result['ui']=await verify_report_evidence_ui(page,doctor_source.CASE_ID,expected,screenshots,result['ui'],expected_for_annotations=current_oracle,range_oracle=range_oracle)
                 await page.wait_for_timeout(250)
                 assert all(any(r['path']==g['path'] and r['status']==200 for r in responses[g['index']+1:]) for g in guards),'Stale overview guard did not recover'
                 assert errors==[] and blocked==[]

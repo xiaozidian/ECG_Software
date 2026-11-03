@@ -15,7 +15,7 @@ const frames=page=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(
 (async()=>{
  let browser;const errors=[];
  try{
-  browser=await chromium.launch({executablePath:process.env.ECG_CHROME||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true,chromiumSandbox:true});
+  browser=await chromium.launch({executablePath:process.env.ECG_CHROME||process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true,chromiumSandbox:true});
   const page=await browser.newPage();page.on('pageerror',e=>errors.push(e.message));await page.route('**/*',r=>r.abort());await page.setContent(html);
   const tallGains=new Map();
   for(const category of ['AF','V','rr_interval']){

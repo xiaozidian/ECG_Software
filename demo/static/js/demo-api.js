@@ -68,7 +68,7 @@
   const reviewSteps=["edit","stt"];
   function workflow(){
     const value=saved.reviews[caseId]||(saved.reviews[caseId]={case_id:caseId,revision:0,steps:{},events:{}});
-    const pending=reviewSteps.filter(step=>value.steps[step]?.status!=="done");
+    const pending=reviewSteps.filter(step=>step==="edit"&&value.steps[step]?.status!=="done");
     return {...copy(value),pending_steps:pending,next_step:pending[0]||"report",report_status:saved.reports[caseId]?.status||"draft",report_version:saved.reports[caseId]?.version||1};
   }
   function invalidateWorkflow(action){
@@ -128,9 +128,15 @@
     const [a,b]=pair,event={event_id:'report-longest-rr',category:'rr_candidate',subtype:'rr_measurement',label:`最长 RR ${(b.rr_ms/1000).toFixed(3)} s（当前可分析记录）`,sample_index:b.sample_index,start_sample:b.sample_index,end_sample:b.sample_index,time_s:b.sample_index/200,end_s:b.sample_index/200,rr_ms:b.rr_ms,hr:b.hr,target_samples:[b.sample_index],beat_count:1,templates:[],evidence_only:true,diagnosis_status:'pending',candidate_scope:reportIdentity(),candidate_context:{rr_start_sample:a.sample_index,rr_end_sample:b.sample_index,rr_start_id:a.id,rr_end_id:b.id,rr_ms:b.rr_ms,start_s:a.sample_index/200,end_s:b.sample_index/200}};
     event.basis_version='report-rr-v1:'+reportHash(reportDescriptor(index,event));return attachReportEvidence(index,event);
   }
+  function sttRhythmMasks(){return annotationList().filter(a=>['AF','AFL'].includes(a.details?.kind)&&a.details.status!=='excluded').map(a=>{const d=a.details,start=a.sample_index,end=d.end_sample;if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||end<start)sttFailure('节律排除区间须使用完整原始样本范围');const status=d.status===undefined?'unclassified':d.status===null?'None':d.status===true?'True':d.status===false?'False':String(d.status);return {start_sample:start,end_sample:end+1,reason:'rhythm_'+d.kind,origin:'stored_annotation',review_status:status};}).sort((a,b)=>a.start_sample-b.start_sample||a.end_sample-b.end_sample||a.reason.localeCompare(b.reason)||a.review_status.localeCompare(b.review_status));}
+  function sttMaskDigest(masks,first,end){const low=Math.floor(first/3200)*3200-40,high=Math.ceil(end/3200)*3200+120,rows=masks.filter(r=>r.start_sample<high&&r.end_sample>low).map(r=>Object.fromEntries(['start_sample','end_sample','reason','origin','review_status'].filter(k=>Object.hasOwn(r,k)).map(k=>[k,r[k]]))).sort((a,b)=>a.start_sample-b.start_sample||a.end_sample-b.end_sample||a.reason.localeCompare(b.reason)||String(a.review_status||'').localeCompare(String(b.review_status||'')));return ECGClinicalAnalysis.sttDigest(rows);}
   function clinicalBaseIndex(){
     const index={...ECGClinicalAnalysis.buildIndex({...editedFeed(),duration},templateList(),annotationList(),workflow()),start_time:sourceCase.metadata.start_iso||sourceCase.metadata.start_time},identity=reportIdentity();
-    for(const event of index.events){const proof=event.stt_event_evidence;if(proof&&(['case_id','analysis_basis','beat_revision'].some(k=>proof.scope?.[k]!==identity[k])||sourceCase.stt_review&&(editorValue().revision!==sourceCase.stt_review_binding?.beat_revision||overrideList().length))){event.diagnosis_status='pending';event.stt_evidence_stale=true;}}
+    for(const event of index.events){if(event.category!=='ST')continue;const scope=event.stt_source_scope||{},binding=saved.sttRecordBindings?.[caseId]?.[event.event_id],proof=event.stt_event_evidence;
+      const stale=Object.keys(scope).length>0&&['case_id','analysis_basis','beat_revision'].some(k=>scope[k]!==identity[k])||binding&&binding.beat_version!==index.beat_version||proof?.source==='reviewed_automatic_candidate'&&sourceCase.stt_review&&(editorValue().revision!==sourceCase.stt_review_binding?.beat_revision||overrideList().length);
+      const statistics=event.range_statistics,interval=statistics?.range,masks=sttRhythmMasks(),maskStale=proof?.rhythm_exclusions_digest&&proof.rhythm_exclusions_digest!==sttMaskDigest(masks,event.start_sample,event.end_sample+1)||interval&&sttMaskDigest(statistics.exclusions?.intervals||[],interval.start_sample,interval.end_sample)!==sttMaskDigest(masks,interval.start_sample,interval.end_sample);
+      if(stale||maskStale)ECGClinicalAnalysis.sttMarkStale(event);
+    }
     return index;
   }
   function clinicalIndex(){
@@ -184,6 +190,13 @@
     if(!record.presentations.some(x=>x.presentation_key===proofKey)){record.presentations.push({...proof,presentation_key:proofKey});record.updated_at=now();reviews[key]=record;demoReviewChanged('report_evidence.confirmed');persist();}
     return {item:record,report:report(present()),review:workflow(),...reportIdentity()};
   }
+  const nextAnnotationId=()=>Math.max(Date.now(),1+Math.max(0,...(saved.annotations[caseId]||[]).map(a=>Number(a.id)||0)));
+  function annotationItems(){
+    const items=copy(annotationList());if(!items.some(a=>['ST','ST_REVIEW_NOTE'].includes(a.details?.kind)))return items;
+    const index=clinicalBaseIndex(),events=new Map(index.events.filter(e=>e.category==='ST').map(e=>[e.event_id,e])),composition=report(present()).composition;
+    for(const item of items){const event=events.get('annotation:'+item.id);if(event)item.stt_review_receipt={...copy(event.stt_review_receipt),report_use:ECGClinicalAnalysis.sttUseFor(composition,event)};}
+    return items;
+  }
   function annotationList(){
     const initial=[];
     const items=initial.concat(saved.annotations[caseId]||[]),rhythm=saved.rhythms?.[caseId];
@@ -211,7 +224,7 @@
       beats.forEach(x=>groups[x.group]=(groups[x.group]||0)+1);
       const longest=valid.reduce((a,b)=>!a||b.rr_ms>a.rr_ms?b:a,null);
       item.calculated={record_count:beats.length,valid_beats:valid.length,first_beat_time_s:valid[0]?.time_s??null,group_counts:Object.fromEntries(Object.entries(groups).map(([key,value])=>[String(key),value])),avg_hr_from_duration:round(valid.length*60/duration),avg_hr_from_rr:rr.length?round(60000/(rr.reduce((a,b)=>a+b,0)/rr.length)):null,longest_rr_ms:longest?.rr_ms??null,longest_rr_time_s:longest?.time_s??null,min_rr_ms:rr.length?Math.min(...rr):null,format_verified:true};
-      item.report_workflow=report(item);item.annotations=annotationList();if(activeEdited){item.calculated=engine.metrics(editedFeed(),duration);item.analysis_revision=editorValue().revision;item.beat_editor_settings=editorValue().document.settings;item.manual_longest=editorSummary(editorValue()).manual_longest}
+      item.report_workflow=report(item);item.annotations=annotationItems();if(activeEdited){item.calculated=engine.metrics(editedFeed(),duration);item.analysis_revision=editorValue().revision;item.beat_editor_settings=editorValue().document.settings;item.manual_longest=editorSummary(editorValue()).manual_longest}
     }
     return item;
   }
@@ -235,14 +248,14 @@
   }
   function sttReview(){
     if(sourceCase.stt_review){
-      const binding=sourceCase.stt_review_binding||{},value=copy(sourceCase.stt_review),identity=reportIdentity(),valid=binding.case_id===caseId&&binding.analysis_basis===identity.analysis_basis&&binding.beat_revision===editorValue().revision&&!overrideList().length;
+      const binding=sourceCase.stt_review_binding||{},value=copy(sourceCase.stt_review),identity=reportIdentity(),rhythmCurrent=ECGClinicalAnalysis.sttDigest(binding.rhythm_exclusions||[])===ECGClinicalAnalysis.sttDigest(sttRhythmMasks()),valid=binding.case_id===caseId&&binding.analysis_basis===identity.analysis_basis&&binding.beat_revision===editorValue().revision&&!overrideList().length&&rhythmCurrent;
       value.simulation={python_precomputed:true,browser_recomputed:false,patient_inputs_read:false,precomputed_binding:copy(binding)};
-      if(valid)return {...value,...identity};
-      return {...value,case_id:binding.case_id,analysis_basis:binding.analysis_basis,beat_revision:binding.beat_revision,analysis_revision:0,current_scope:identity,stale:true,analysis:null,
-        automatic_candidates:{...value.automatic_candidates,enabled:false,items:[],summary:{candidate_count:0,st_depression_count:0,st_elevation_count:0,t_wave_count:0},reason_code:'beat_edits_invalidated_precomputed_evidence',reasons:['心搏已修订；此数学 Demo 的预计算 ST/T 证据已失效，未伪装为重新分析。']}};
+      if(valid)return {...value,...identity,review_records:annotationItems().filter(a=>['ST','ST_REVIEW_NOTE'].includes(a.details?.kind))};
+      return {...value,case_id:binding.case_id,analysis_basis:binding.analysis_basis,beat_revision:binding.beat_revision,analysis_revision:0,current_scope:identity,review_records:annotationItems().filter(a=>['ST','ST_REVIEW_NOTE'].includes(a.details?.kind)),stale:true,analysis:null,
+        automatic_candidates:{...value.automatic_candidates,enabled:false,items:[],summary:{candidate_count:0,st_depression_count:0,st_elevation_count:0,t_wave_count:0},reason_code:rhythmCurrent?'beat_edits_invalidated_precomputed_evidence':'rhythm_edits_invalidated_precomputed_evidence',reasons:[rhythmCurrent?'心搏已修订；此数学 Demo 的预计算 ST/T 证据已失效，未伪装为重新分析。':'节律排除区间已变化；此数学 Demo 的预计算 ST/T 证据已失效，未伪装为重新分析。']}};
     }
     const fragments=String(sourceCase.conclusion||"").split(/(?<=[。！？；!?;])\s*|\n+/).map(value=>value.trim()).filter(value=>/(?:ST段|ST[-‑–— ]?T|T波|T倒置|T低平)/i.test(value)).map(value=>value.replace(/(?:[+\-−＋－]?\s*\d+(?:\.\d+)?)\s*(?:mV|µV|μV)/gi,"【病例幅度已隐藏】"));
-    return {schema_version:"manual-stt-review-v1",review_mode:"manual_review_only",manual_review_only:true,calibration_unverified:true,measurement_protocol:{default_measurement:"J+60 ms",default_landmark:"ST60",baseline:{preferred:"PR_segment",fallback:"individual_stable_baseline",label:"PR 段/个体稳定基线",requires_manual_confirmation:true},landmarks:[{code:"J",offset_from_j_ms:0,label:"J 点"},{code:"ST60",offset_from_j_ms:60,label:"J+60 ms"},{code:"ST80",offset_from_j_ms:80,label:"J+80 ms"}],case_amplitude_output:{enabled:false,reason:"原始电压标定和分析链未独立验证，不输出病例 ST 幅度。"}},lead_system:{status:"unknown",mapping_verified:false,electrode_placement_verified:false,message:"导联体系及采集通道到标准导联的映射未经独立核验。"},calibration:{status:"unverified",voltage_gain_verified:false,filter_response_verified_for_st:false,message:"在增益、零线稳定性及 ST 分析滤波响应核验前，仅允许人工定性复核。"},automatic_candidates:{enabled:false,reason_code:"measurement_chain_not_validated",reasons:["电压增益与零线标定未独立验证","J 点、基线和 ST 复核点尚无经验证的自动定位算法","动态心电的体位变化、基线漂移与伪差需要人工排除"]},reference_thresholds:{enabled:false,reference_only:true,applied_to_case:false,title:"动态心电常用研究筛查参考（未启用）",st_depression_example:{magnitude_mV:.10,measurement_landmarks:["ST60","ST80"],minimum_duration_s:60},warning:"该参考不是病例判定规则，不得用于自动生成诊断。"},source_report:{origin:"source_report_conclusion",available:Boolean(fragments.length),fragments,is_source_excerpt:true,software_interpretation_added:false},clinical_safety:{diagnosis_generated:false,requires_physician_review:true,statement:"本界面仅用于医师人工复核，不生成缺血诊断或替代临床判断。"}};
+    return {...reportIdentity(),review_records:annotationItems().filter(a=>['ST','ST_REVIEW_NOTE'].includes(a.details?.kind)),schema_version:"manual-stt-review-v1",review_mode:"manual_review_only",manual_review_only:true,calibration_unverified:true,measurement_protocol:{default_measurement:"J+60 ms",default_landmark:"ST60",baseline:{preferred:"PR_segment",fallback:"individual_stable_baseline",label:"PR 段/个体稳定基线",requires_manual_confirmation:true},landmarks:[{code:"J",offset_from_j_ms:0,label:"J 点"},{code:"ST60",offset_from_j_ms:60,label:"J+60 ms"},{code:"ST80",offset_from_j_ms:80,label:"J+80 ms"}],case_amplitude_output:{enabled:false,reason:"原始电压标定和分析链未独立验证，不输出病例 ST 幅度。"}},lead_system:{status:"unknown",mapping_verified:false,electrode_placement_verified:false,message:"导联体系及采集通道到标准导联的映射未经独立核验。"},calibration:{status:"unverified",voltage_gain_verified:false,filter_response_verified_for_st:false,message:"在增益、零线稳定性及 ST 分析滤波响应核验前，仅允许人工定性复核。"},automatic_candidates:{enabled:false,reason_code:"measurement_chain_not_validated",reasons:["电压增益与零线标定未独立验证","J 点、基线和 ST 复核点尚无经验证的自动定位算法","动态心电的体位变化、基线漂移与伪差需要人工排除"]},reference_thresholds:{enabled:false,reference_only:true,applied_to_case:false,title:"动态心电常用研究筛查参考（未启用）",st_depression_example:{magnitude_mV:.10,measurement_landmarks:["ST60","ST80"],minimum_duration_s:60},warning:"该参考不是病例判定规则，不得用于自动生成诊断。"},source_report:{origin:"source_report_conclusion",available:Boolean(fragments.length),fragments,is_source_excerpt:true,software_interpretation_added:false},clinical_safety:{diagnosis_generated:false,requires_physician_review:true,statement:"本界面仅用于医师人工复核，不生成缺血诊断或替代临床判断。"}};
   }
   function rrVisuals(){
     const normal=beats.filter((x,i)=>x.group===1&&x.rr_ms>=300&&x.rr_ms<=2000&&(!activeEdited||(i>0&&beats[i-1].class_code==="N"))).map(x=>x.rr_ms),histogram=Array.from({length:35},(_,index)=>({start_ms:300+index*50,end_ms:350+index*50,count:0}));
@@ -307,6 +320,64 @@
     if(!globalThis.ECGDemoReviewAPI)throw Error('数学Demo复核模块未加载，请刷新');
     return reviewAdapter||(reviewAdapter=ECGDemoReviewAPI.create({saved:()=>saved,persist,scope:demoReviewScope,feed:editedFeed,annotations:annotationList,rawWaveform:waveformBuffer,startTime:sourceCase.metadata.start_iso||sourceCase.metadata.start_time,duration,caseId,sourceCase,nativeFetch,waveform,changed:demoReviewChanged}));
   }
+  function sttFailure(message,status=400){const error=Error(message);error.status=status;throw error;}
+  function sttBeatVersion(){return clinicalBaseIndex().beat_version;}
+  function sttReplay(payload,annotationId,requestHash){
+    const previous=saved.sttReviewSubmissions?.[caseId]?.[payload.details.submission_id];if(!previous)return null;
+    if(previous.request_sha256!==requestHash||previous.operation!==(annotationId===null?'create':'update')||annotationId!==null&&previous.annotation_id!==annotationId)sttFailure('此提交编号已用于另一份ST-T内容，未覆盖或重复保存',409);
+    reportScope(Object.fromEntries(['case_id','analysis_basis','beat_revision'].map(k=>[k,payload.details.review_scope?.[k]])));
+    if(previous.beat_version!==sttBeatVersion())sttFailure('此提交的原始来源或心搏已变化，未套用旧复核',409);
+    const row=annotationItems().find(a=>a.id===previous.annotation_id);if(!row)sttFailure('该ST-T提交曾已保存但记录已删除，未自动重建',409);return row;
+  }
+  async function saveSttRecord(raw,annotationId=null){
+    const A=ECGClinicalAnalysis,payload=copy(raw),d=payload.details,results=['st_depression','st_elevation','t_change','nonspecific','no_change','artifact','indeterminate'];
+    if(!d||d.kind!=='ST'||d.reviewed!==true||!results.includes(d.result_code))sttFailure('请选择并保存本条医生复核结果');
+    if(typeof d.submission_id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(d.submission_id))sttFailure('ST-T提交编号须为规范UUID');
+    if(!d.review_scope||['case_id','analysis_basis','analysis_revision','beat_revision'].some(k=>!Object.hasOwn(d.review_scope,k)))sttFailure('ST-T保存缺少当前完整依据');
+    const requestHash=A.sttDigest(payload),replayed=sttReplay(payload,annotationId,requestHash);if(replayed)return replayed;
+    const identity=reportScope(d.review_scope,true),storageBefore=localStorage.getItem(STORE_KEY),beatVersion=sttBeatVersion(),first=payload.sample_index,end=d.end_sample,total=Math.round(duration*RATE);
+    if(!Number.isSafeInteger(first)||!Number.isSafeInteger(end)||first<0||first>end||end>=total)sttFailure('ST-T复核完整范围超出记录');
+    if(!Array.isArray(d.review_leads)||!d.review_leads.length||new Set(d.review_leads).size!==d.review_leads.length||d.review_leads.some(l=>!TEMPLATE_LEADS.has(l)))sttFailure('请选择实际复核导联，查看导联不代表异常导联');
+    for(const [key,max]of [['label',120],['note',2000],['lead',16],['category',32]])if(typeof (payload[key]??'')!=='string'||Array.from(payload[key]??'').length>max)sttFailure('ST-T复核文字无效或过长');
+    if(!['','全部',...TEMPLATE_LEADS].includes(payload.lead??''))sttFailure('ST-T导联无效');
+    if(Object.hasOwn(d,'stt_event_evidence'))sttFailure('ST-T事件证据须由服务器核验');
+    const before=annotationId===null?null:(saved.annotations[caseId]||[]).find(a=>a.id===annotationId);
+    if(annotationId!==null&&(!before||!['ST','ST_REVIEW_NOTE'].includes(before.details?.kind)))sttFailure('原ST-T复核记录不存在，未创建另一条',409);
+    if(before&&(!Number.isSafeInteger(payload.expected_record_version)||payload.expected_record_version!==(before.details.record_version||1)))sttFailure('ST-T记录版本已变化，请载入本条后重新核对',409);
+    d.measurement_protocol=A.sttProtocol(d.measurement_protocol);if(d.measurement_protocol.extent==='whole'&&d.measurement_protocol.baseline_method==='manual_iso_point')sttFailure('整段统计不能把单搏手工ISO应用到全部心搏');d.status=['st_depression','st_elevation','t_change','nonspecific'].includes(d.result_code)?'confirmed':['no_change','artifact'].includes(d.result_code)?'excluded':'pending';
+    const point=d.point_measurement;if(point){if(typeof point!=='object'||['iso_sample','j_sample','measurement_sample'].some(k=>!Number.isSafeInteger(point[k])||point[k]<0||point[k]>=total)||!(point.iso_sample<point.j_sample&&point.j_sample<=point.measurement_sample)||point.measurement_ms!==d.measurement_protocol.measurement_ms||Math.abs(point.measurement_sample-point.j_sample-d.measurement_protocol.measurement_ms/5)>1)sttFailure('ST-T手工点测量位置或协议无效');}
+    const extent=d.review_extent??'point';if(!['point','whole'].includes(extent))sttFailure('ST-T复核作用范围无效');d.review_extent=extent;
+    let chosen=null,measured=null;
+    if(d.stt_candidate_id){reportScope(d.stt_candidate_scope||{},true);measured=sttReview();if(measured.stale)sttFailure('心搏或节律排除区间已变化，数学Demo预计算ST-T候选已失效',409);chosen=measured.automatic_candidates?.items?.find(c=>c.id===d.stt_candidate_id);if(!chosen)sttFailure('原ST-T候选已变化，请重选后核对',409);}
+    if(d.range_statistics)await demoReview().validateSttRangeSave(payload);
+    if(extent==='whole'){
+      const exact=chosen&&first===Math.round(chosen.start_s*RATE)&&end+1===Math.round(chosen.end_s*RATE)&&d.review_leads.every(l=>chosen.leads.includes(l)),machineProtocol=A.sttProtocol({measurement_ms:d.measurement_protocol.extent==='whole'?d.measurement_protocol.measurement_ms:60,extent:'whole'}),kind=({st_depression:'st_depression',st_elevation:'st_elevation',t_change:'t_wave_inversion'}[d.result_code])||chosen?.kind||'stt_review';
+      const proof={...(exact?Object.fromEntries(['continuous_target_s','peak_time_s','peak_deviation_units','quality_score'].filter(k=>Object.hasOwn(chosen,k)).map(k=>[k,chosen[k]])):{}),kind,start_s:first/RATE,end_s:(end+1)/RATE,duration_s:(end+1-first)/RATE,leads:d.review_leads.slice(),measurement_protocol:machineProtocol,scope:identity,units:'source_device_units',source:exact?'reviewed_automatic_candidate':'physician_selected_range',original_machine_range:chosen?{start_s:chosen.start_s,end_s:chosen.end_s}:null,boundary_resolution_s:exact?16:.005,continuous_target_s:exact?chosen.continuous_target_s??null:null};
+      if(chosen)proof.candidate_id=chosen.id;
+      if(end+1-first>=12000){
+        const cached=chosen?.whole_statistics,useCached=exact&&cached&&machineProtocol.measurement_ms===60&&sttMaskDigest(cached.exclusions?.intervals||[],first,end+1)===sttMaskDigest(sttRhythmMasks(),first,end+1);
+        const statistics=useCached?cached:await demoReview().route(new URL(`/api/cases/${caseId}/stt-range`,location.href),'POST',{scope:demoReviewScope(),start_sample:first,end_sample:end+1,leads:d.review_leads,measurement_ms:machineProtocol.measurement_ms});
+        proof.metrics=copy(statistics.leads.filter(r=>d.review_leads.includes(r.lead)));proof.coverage=copy(statistics.coverage);proof.counts=copy(statistics.counts);proof.measurement_protocol.range_profile=copy(statistics.method_profile);
+      }
+      proof.rhythm_exclusions_digest=sttMaskDigest(sttRhythmMasks(),first,end+1);d.stt_event_evidence=proof;
+    }
+    if(storageBefore!==localStorage.getItem(STORE_KEY)){
+      saved={...copy(savedDefault),...JSON.parse(localStorage.getItem(STORE_KEY)||'{}')};const concurrent=sttReplay(raw,annotationId,requestHash);if(concurrent)return concurrent;sttFailure('验证期间病例已变化，未保存；请重新读取后核对',409);
+    }
+    reportScope(identity,true);if(sttBeatVersion()!==beatVersion)sttFailure('保存期间心搏依据已变化，未保存',409);
+    const previous=copy(saved),reconciliation={removed_selections:[],removed_uses:[],reason:'ST-T记录修订后重新选择本次采用用途'},stamp=now();
+    try{
+      const list=(saved.annotations[caseId]||=[]),id=annotationId??Math.max(Date.now(),1+Math.max(0,...list.map(a=>Number(a.id)||0)));
+      d.record_version=before?(before.details.record_version||1)+1:1;
+      if(before){const report=saved.reports[caseId];if(report?.composition){const c=report.composition,eventId='annotation:'+id;reconciliation.removed_selections=(c.selected_events||[]).filter(s=>s.event_id===eventId);reconciliation.removed_uses=(c.stt_report_use||[]).filter(s=>s.event_id===eventId);c.selected_events=(c.selected_events||[]).filter(s=>s.event_id!==eventId);if('stt_report_use'in c)c.stt_report_use=c.stt_report_use.filter(s=>s.event_id!==eventId);if(reconciliation.removed_selections.length)d.withdrawn_report_settings=copy(reconciliation.removed_selections);}if(!reconciliation.removed_selections.length&&before.details.withdrawn_report_settings)d.withdrawn_report_settings=copy(before.details.withdrawn_report_settings);d.last_report_reconciliation=copy(reconciliation);}
+      const item={...payload,case_id:caseId,id,created_by:before?.created_by||'pages-demo',created_at:before?.created_at||stamp,updated_at:stamp};delete item.expected_record_version;
+      if(before)list.splice(list.indexOf(before),1,item);else list.push(item);
+      ((saved.sttReviewSubmissions||={})[caseId]||={})[d.submission_id]={request_sha256:requestHash,operation:annotationId===null?'create':'update',annotation_id:id,beat_version:beatVersion};
+      ((saved.sttRecordBindings||={})[caseId]||={})['annotation:'+id]={beat_version:beatVersion};
+      audit('annotation.stt.'+(before?'update':'create'),'仅数学浏览器保存一条医生复核；不生成全程阴性诊断');
+      const result=annotationItems().find(a=>a.id===id);result.stt_review_receipt.report_reconciliation=copy(reconciliation);return result;
+    }catch(error){saved=previous;throw error;}
+  }
   function meanAnnotationPayload(value){
     const details=value.details,allowed=['kind','status','end_sample','finding','range_statistics','submission_id','point_measurement_sample_index'];
     if(!details||typeof details!=='object'||Array.isArray(details)||Object.keys(details).some(key=>!allowed.includes(key)))throw Error('范围统计标注包含未支持的字段');
@@ -349,7 +420,7 @@
     if(path==="/api/settings")return response({app_name:"CardioInsight 纯数学交互演示",version:sourceCase.software_release_id,data_root:"全新公式生成的10分钟数学输入；无患者资料",case_count:1,integrity_manifest:{available:true,case_count:1,algorithm:"SHA-256"},platform:{name:"Web",release:"Cloudflare Pages / GitHub Pages",machine:"Browser",storage_root:"localStorage（仅演示修改）",config_path:"无本地配置"},clinical_use:false});
     if(path==="/api/audit")return response({items:saved.audit});
     if(path==="/api/privacy/view")return failure("在线演示不提供身份信息模式切换",403);
-    let match=path.match(/^\/api\/annotations\/(\d+)$/);if(match&&method==="DELETE"){saved.annotations[caseId]=(saved.annotations[caseId]||[]).filter(x=>String(x.id)!==match[1]);audit("annotation.delete","移除本地标注");return response({ok:true})}
+    let match=path.match(/^\/api\/annotations\/(\d+)$/);if(match&&method==="DELETE"){const list=saved.annotations[caseId]||[],row=list.find(x=>String(x.id)===match[1]);if(row&&['ST','ST_REVIEW_NOTE'].includes(row.details?.kind)){const c=saved.reports[caseId]?.composition,id='annotation:'+row.id;if(c){c.selected_events=(c.selected_events||[]).filter(s=>s.event_id!==id);if('stt_report_use'in c)c.stt_report_use=c.stt_report_use.filter(s=>s.event_id!==id);}}saved.annotations[caseId]=list.filter(x=>String(x.id)!==match[1]);audit("annotation.delete","移除本地标注");return response({ok:true})}
     match=path.match(/^\/api\/beat-templates\/(\d+)$/);if(match){const templates=saved.templates[caseId]||[],index=templates.findIndex(item=>String(item.id)===match[1]);if(index<0)return failure("模板类别不存在",404);if(method==="PATCH"){const payload=requestBody(options);if(Object.keys(payload).some(k=>!["name","rhythm_family","note"].includes(k)))return failure("只能修改模板名称、家族和备注");const item=templates[index],name=payload.name===undefined?item.name:String(payload.name||"").trim(),family=payload.rhythm_family===undefined?item.rhythm_family:String(payload.rhythm_family);if(!name)return failure("模板类别名称不能为空");if(!TEMPLATE_FAMILIES.has(family))return failure("不支持的节律家族");item.name=name.slice(0,80);item.rhythm_family=family;if(payload.note!==undefined)item.note=String(payload.note||"").slice(0,1200);item.updated_at=now();audit("beat_template.update",`#${item.id} ${item.name}`);persist();return response(copy(item))}if(method==="DELETE"){templates.splice(index,1);audit("beat_template.delete",`#${match[1]}`);persist();return response({ok:true})}}
     match=path.match(/^\/api\/cases\/([^/]+)(?:\/(.*))?$/);if(!match)return failure("接口不存在",404);
     const requestedId=decodeURIComponent(match[1]),action=match[2]||"";if(requestedId!==caseId)return failure("病例不存在",404);
@@ -466,14 +537,15 @@
       const items=await Promise.all(samples.map(async sample=>{const beat=bySample.get(sample),wave=await waveform(new URLSearchParams(),{start:sample/RATE-pre,duration:pre+post,leads,maxPoints,filter});return {...wave,...beat,sample_index:sample,time_s:sample/RATE,start_s:wave.start_s,duration_s:wave.duration_s,anchor_offset_s:sample/RATE-wave.start_s,display_sample_rate_hz:wave.display_sample_rate_hz,leads:wave.leads};}));return response({sample_rate_hz:RATE,...rawSignalMetadata(),items});
     }
     if(action==="events")return response(eventData(url.searchParams));
-    if(action==="annotations"&&method==="GET")return response({items:annotationList()});
+    if(action==="annotations"&&method==="GET")return response({items:annotationItems()});
+    if((action==='annotations'&&method==='POST'&&requestBody(options).details?.reviewed===true)||(/^annotations\/\d+$/.test(action)&&method==='PUT')){try{return response(await saveSttRecord(requestBody(options),action==='annotations'?null:Number(action.split('/')[1])),method==='POST'?201:200)}catch(error){return failure(error.message,error.status||400)}}
     if(action==="annotations"&&method==="POST"){
       let payload=requestBody(options);
       if(payload.details&&Object.hasOwn(payload.details,'stt_event_evidence'))return failure('ST-T 机器事件证据不能由客户端自行填入');
       if(payload.details&&Object.hasOwn(payload.details,'stt_candidate_id')){
         const d=payload.details;if(d.kind!=='ST'||Object.hasOwn(d,'range_statistics'))return failure('自动 ST-T 整段复核与范围均值分别保存');
         const identity=reportScope(d.stt_candidate_scope||{},true),measured=sttReview();
-        if(measured.stale)return failure('心搏已修订，数学 Demo 预计算 ST-T 候选已失效',409);
+        if(measured.stale)return failure('心搏或节律排除区间已变化，数学 Demo 预计算 ST-T 候选已失效',409);
         const candidate=measured.automatic_candidates?.items?.find(c=>c.id===d.stt_candidate_id);
         if(!candidate)return failure('ST-T 连续事件依据已变化，请重新读取候选',409);
         if(payload.sample_index!==Math.round(candidate.start_s*200)||d.end_sample!==Math.round(candidate.end_s*200)-1)return failure('整段 ST-T 复核范围须与所选候选完整起止一致');
@@ -492,11 +564,11 @@
         // No asynchronous work occurs between this final identity guard and
         // the single localStorage commit of annotation, audit and revisions.
         demoReview().assertSttRangeSaveCurrent(checked);
-        const previous=copy(saved),item={...payload,case_id:caseId,id:Date.now(),created_by:"pages-demo",created_at:now()};
+        const previous=copy(saved),item={...payload,case_id:caseId,id:nextAnnotationId(),created_by:"pages-demo",created_at:now()};
         try{(saved.annotations[caseId]||(saved.annotations[caseId]=[])).push(item);audit("annotation.create","仅保存于当前浏览器；纯数学范围统计摘要");return response(item,201)}
         catch(error){saved=previous;throw error}
       }
-      const item={...payload,id:Date.now(),created_by:"pages-demo",created_at:now()};(saved.annotations[caseId]||(saved.annotations[caseId]=[])).push(item);audit("annotation.create","仅保存于当前浏览器");return response(item,201);
+      const item={...payload,id:nextAnnotationId(),created_by:"pages-demo",created_at:now()};(saved.annotations[caseId]||(saved.annotations[caseId]=[])).push(item);audit("annotation.create","仅保存于当前浏览器");return response(item,201);
     }
     if(action==="patient"&&method==="PATCH"){saved.patients[caseId]={...(saved.patients[caseId]||{}),...requestBody(options)};audit("patient.update","仅保存于当前浏览器");return response(saved.patients[caseId])}
     if(action==="report"&&method==="GET"){const value=report(present());return response({...value,current_hrv_reference:await demoReview().reference(value.composition.hrv_window||0)});}
@@ -509,6 +581,8 @@
       if(!Number.isInteger(payload.expected_review_revision)||payload.expected_review_revision!==workflow().revision)return failure("报告复核依据已变更，请重新载入",409);
       const composition=copy(payload.composition||old.composition);let mergedRR=[];
       try{
+        if(Object.hasOwn(composition,'stt_trend_metric')&&!['st_level','delta'].includes(composition.stt_trend_metric))throw Error('ST趋势指标须为ST电平或ΔST');
+        if(Object.hasOwn(composition,'stt_report_use'))composition.stt_report_use=ECGClinicalAnalysis.sttNormalizedUses(composition.stt_report_use);
         composition.strip_defaults=ECGReportEngine.settings(composition.strip_defaults);
         const entries=(composition.selected_events||[]).map(s=>({...s,...ECGReportEngine.settings(s)})),index=clinicalIndex();
         composition.selected_events=ECGClinicalAnalysis.normalizeReportSelections(index,entries);

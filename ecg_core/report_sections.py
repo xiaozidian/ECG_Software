@@ -6,6 +6,7 @@ from .rr_quality import qrs_rows, interval_mask, finite, rhythm_summary, rhythm_
 PAGE_TITLES = dict(cover='封面',summary='首页报告',hourly='小时统计表格',scatter='散点图',st_trend='ST 趋势图',t_trend='T 波趋势图',event_strips='事件图条',st_events='ST 事件',pacing='起搏报告',af='房颤 / 房扑',hrv_time='HRV 时域报告',hrv_frequency='HRV 频域报告',hrv_overview='HRV 概述',hrt='心率震荡 (HRT)',qtd='QT 离散度 (QTd)',vcg='心电向量 (VCG)',dc='心率减速力 (DC)',twa='T 波电交替 (TWA)',vlp='心室晚电位 (VLP)',sap='睡眠窒息 (SAP)')
 UNAVAILABLE = dict(vlp='200 Hz 输入不能覆盖晚电位高频带宽；插值无法补足采集信息')
 PAGE_TITLES.update(qtd='QT 离散度（研究测量）',vcg='推导心电向量（研究）',twa='T 波电交替（研究测量）',sap='睡眠呼吸暂停相关 ECG 筛查（非诊断）')
+PAGE_TITLES.update(st_trend='ST 分析',st_events='ST-T 事件与复核')
 
 def selected_pages(composition):
     if composition.get('page_selection_version') == 1:
@@ -77,29 +78,66 @@ def rr_derivatives(rows, excluded=()):
 from .evaluation_status import stt_status
 from .stt import LEADS as ST_LEADS
 
-def st_report_events(index):
+def st_report_events(index, family='ST'):
     result=[]
     for event in index['events']:
-        if event.get('category')!='ST' or event.get('diagnosis_status')!='confirmed' or event.get('stt_evidence_stale'):continue
+        if event.get('category')!='ST' or event.get('stt_review_state','reviewed' if event.get('diagnosis_status')=='confirmed' else 'unreviewed')!='reviewed' or event.get('stt_evidence_stale'):continue
         proof=event.get('stt_event_evidence') or {}
         label=event.get('label','')
-        if proof.get('kind') not in ('st_depression','st_elevation'):continue
+        if proof.get('kind') not in (('t_wave_inversion',) if family=='T' else ('st_depression','st_elevation')):continue
         start,end=event['time_s'],event.get('end_s',event['time_s'])
         if end-start<60-1e-9:continue  # Point review is not a duration claim.
-        leads=proof.get('leads') or ([event['lead']] if event.get('lead') in ST_LEADS else [])
-        result.append(dict(event_id=event['event_id'],basis_version=event['basis_version'],label=label,
-            start_s=start,end_s=end,duration_s=round(end-start,3),leads=leads,
+        if event.get('stt_result_code') in ('no_change','artifact','indeterminate','nonspecific'):continue
+        leads=(event.get('stt_review_receipt') or {}).get('leads') or proof.get('leads') or ([event['lead']] if event.get('lead') in ST_LEADS else [])
+        for lead in leads:
+            m=next((row for row in proof.get('metrics',[]) if row['lead']==lead),{})
+            depressed=proof.get('kind')=='st_depression';extreme=m.get('minimum_st_level_units' if depressed else 'maximum_st_level_units')
+            anchor=m.get('minimum_st_sample' if depressed else 'maximum_st_sample')
+            result.append(dict(event_id=event['event_id'],record_id=event['event_id'],row_id=event['event_id']+':'+lead,basis_version=event['basis_version'],label=label,
+            lead=lead,kind=proof.get('kind'),result_code=event.get('stt_result_code'),review_state='reviewed',
+            start_s=start,end_s=end,duration_s=round(end-start,3),leads=[lead],
             peak_deviation_units=proof.get('peak_deviation_units'),peak_time_s=proof.get('peak_time_s'),
             source=proof.get('source','physician_selected_range'),review_status='confirmed',
-            continuous_target_s=proof.get('continuous_target_s')))
+            continuous_target_s=proof.get('continuous_target_s'),measurement_protocol=proof.get('measurement_protocol'),
+            units='source_device_units',slope=None,calibrated_mm=None,mean_st_level_units=m.get('mean_st_level_units'),
+            extreme_st_level_units=extreme,extreme_st_time_s=anchor/200 if anchor is not None else None,
+            extreme_st_sample=anchor,minimum_st_sample=m.get('minimum_st_sample'),maximum_st_sample=m.get('maximum_st_sample'),
+            minimum_st_level_units=m.get('minimum_st_level_units'),maximum_st_level_units=m.get('maximum_st_level_units'),
+            reference_sample=m.get('reference_sample'),reference_st_level_units=m.get('reference_st_level_units'),
+            mean_t_amplitude_units=m.get('mean_t_amplitude_units'),extreme_t_amplitude_units=m.get('extreme_t_amplitude_units'),
+            extreme_t_time_s=m['extreme_t_sample']/200 if m.get('extreme_t_sample') is not None else None,
+            t_reference_units=proof.get('t_reference_units'),used_beat_count=m.get('t_used_count' if family=='T' else 'used_count'),
+            coverage=proof.get('coverage'),boundary_resolution_s=proof.get('boundary_resolution_s',16)))
     return result
 
 def st_review_notes(index):
     return [dict(event_id=e['event_id'],basis_version=e['basis_version'],label=e.get('label','ST-T 复核'),
         start_s=e['time_s'],end_s=e.get('end_s',e['time_s']),
-        review_kind='range_mean' if e.get('range_statistics') else 'point_or_legacy_range',
-        review_status=e.get('diagnosis_status','pending')) for e in index['events']
-        if e.get('category')=='ST' and not e.get('stt_event_evidence')]
+        review_kind='whole_review' if (e.get('stt_review_receipt') or {}).get('review_extent')=='whole' else 'range_mean' if e.get('range_statistics') else 'point_or_legacy_range',
+        review_status=e.get('stt_review_state',e.get('diagnosis_status','pending')),review_state=e.get('stt_review_state'),
+        result_code=e.get('stt_result_code'),report_group=e.get('stt_report_group'),note=e.get('note',''),physician_note=e.get('stt_physician_note',e.get('note','')),
+        measurement_protocol=(e.get('stt_review_receipt') or {}).get('measurement_protocol')) for e in index['events']
+        if e.get('category')=='ST' and not e.get('stt_report_eligibility',{}).get('table')]
+
+
+def st_summary(rows):
+    from .stt_records import time_groups,interval_union
+    groups=time_groups(rows);union=interval_union([(r['start_s'],r['end_s']) for r in rows])
+    return dict(confirmed_lead_event_count=len(rows),confirmed_record_count=len({r['event_id'] for r in rows}),
+        confirmed_time_group_count=len(groups),confirmed_union_duration_s=sum(b-a for a,b in union),
+        groups=groups,denominator='full_record_confirmed_events_not_report_selection',clinical_episode_count=None)
+
+
+def report_heart_rate(rows,duration_s):
+    """Current detected non-artifact anchors; missing bins break the line."""
+    from math import ceil
+    duration=max(0,float(duration_s));counts=[0]*ceil(duration/60)
+    for row in rows:
+        if row.get('class_code')=='X':continue
+        time=row['sample_index']/200
+        if 0<=time<duration:counts[int(time//60)]+=1
+    return [dict(start_s=i*60,end_s=min(duration,(i+1)*60),time_s=(i*60+min(duration,(i+1)*60))/2,
+        detected_beat_count=n,hr=round(n*60/(min(duration,(i+1)*60)-i*60),2) if n else None) for i,n in enumerate(counts)]
 
 def evidence(index, st=None):
     rows=sorted(qrs_rows(index['rows']),key=lambda r:r['sample_index'])
@@ -114,8 +152,8 @@ def evidence(index, st=None):
     stride=max(1,(len(points)+7999)//8000)
     counts=Counter(r['class_code'] for r in rows if r['class_code'] in ('P','PA','PV','PD','PF'))
     st=st or {};raw_trends=(st.get('analysis') or {}).get('trends',{}).get('leads',{})
-    trends={lead:[{**p,**({key:None for key in ('deviation_units','t_amplitude_units')} if p.get('eligible') is False or p.get('axis_shift_suspected') else {})} for p in raw_trends.get(lead,[])] for lead in ST_LEADS}
-    return dict(st_evaluation=stt_status(st.get('automatic_candidates')),sections=[dict(key=k,title=v,available=k not in UNAVAILABLE,reason=UNAVAILABLE.get(k,'')) for k,v in PAGE_TITLES.items()],scatter=dict(points=points[::stride],total=len(points),stride=stride),pacing=dict(counts=dict(counts),total=sum(counts.values()),method='仅统计当前起搏类型标记；不检测夺获失败、感知异常或器械故障。'),af_summary=summary,af=[dict(time_s=e['time_s'],end_s=e['end_s'],label=e['label'],status=e.get('rhythm_status',e['diagnosis_status'])) for e in af],st_trends=trends,st_events=st_report_events(index),st_review_notes=st_review_notes(index),st_trend_resolution_s=60,**derivatives)
+    trends={lead:[{**p,**({key:None for key in ('st_level_units','reference_units','deviation_units','t_amplitude_units','t_reference_units')} if p.get('eligible') is False or p.get('axis_shift_suspected') else {})} for p in raw_trends.get(lead,[])] for lead in ST_LEADS}
+    return dict(st_evaluation=stt_status(st.get('automatic_candidates')),sections=[dict(key=k,title=v,available=k not in UNAVAILABLE,reason=UNAVAILABLE.get(k,'')) for k,v in PAGE_TITLES.items()],scatter=dict(points=points[::stride],total=len(points),stride=stride),pacing=dict(counts=dict(counts),total=sum(counts.values()),method='仅统计当前起搏类型标记；不检测夺获失败、感知异常或器械故障。'),af_summary=summary,af=[dict(time_s=e['time_s'],end_s=e['end_s'],label=e['label'],status=e.get('rhythm_status',e['diagnosis_status'])) for e in af],st_trends=trends,st_events=st_report_events(index),t_events=st_report_events(index,'T'),st_summary=st_summary(st_report_events(index)),t_summary=st_summary(st_report_events(index,'T')),st_representatives=[],st_review_notes=st_review_notes(index),st_measurement_protocol=dict(measurement_ms=60,extent='whole',method_version='stt-hospital-review-v1',units='source_device_units'),units='source_device_units',st_trend_resolution_s=60,heart_rate_trend=report_heart_rate(rows,index['duration_s']),heart_rate_method='current_detected_nonartifact_beats_per_actual_60s_bin_support',**derivatives)
 
 def validate_pages(composition):
     pages=selected_pages(composition)

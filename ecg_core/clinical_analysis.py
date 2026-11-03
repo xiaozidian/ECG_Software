@@ -62,7 +62,8 @@ def encode(value):
 def build_index(feed, templates=(), annotations=(), review=None):
     rows=feed.beats; markers=feed.markers; opts=feed.document['settings']; review=review or {}
     bv=fingerprint('|'.join(f"{r['id']}:{r['sample_index']}:{r['class_code']}" for r in rows+markers)+'|'+encode([[k,opts[k]] for k in sorted(opts)]))
-    findings=[a for a in annotations if a.get('details',{}).get('kind') in ('ST','AT','VT','AF','AFL','STRIP')]
+    from .stt_records import ST_KINDS, decorate_event
+    findings=[a for a in annotations if a.get('details',{}).get('kind') in (*ST_KINDS,'AT','VT','AF','AFL','STRIP')]
     av=fingerprint(encode([[a['id'],a['sample_index'],a.get('details')] for a in findings]))
     basis={key:bv for key,_ in CATEGORIES}
     excluded=list(getattr(feed,'excluded_rhythm_intervals',()))+annotation_exclusions(annotations)
@@ -152,14 +153,15 @@ def build_index(feed, templates=(), annotations=(), review=None):
     for a in findings:
         d=a['details']
         if not rhythm_authoritative and d['kind'] in ('AF','AFL') and d.get('status')=='pending' and any(b['details']['kind']==d['kind'] and b['details'].get('status')=='confirmed' and b['sample_index']==a['sample_index'] and b['details'].get('end_sample')==d.get('end_sample') for b in findings):continue
-        if d.get('status')!='confirmed' and kind_not_rhythm(d):continue
-        if d.get('status')=='excluded':continue
-        kind=d['kind'];cat='AF' if kind in ('AF','AFL') else 'ST' if kind=='ST' else 'S' if kind=='AT' else 'other' if kind=='STRIP' else 'V'
+        st_record=d['kind'] in ST_KINDS
+        if not st_record and d.get('status')!='confirmed' and kind_not_rhythm(d):continue
+        if not st_record and d.get('status')=='excluded':continue
+        kind=d['kind'];cat='AF' if kind in ('AF','AFL') else 'ST' if st_record else 'S' if kind=='AT' else 'other' if kind=='STRIP' else 'V'
         start=a['sample_index'];end=d.get('end_sample',start)
-        target=[r for r in rows if start<=r['sample_index']<=end and (kind in ('ST','AF','AFL','STRIP') or r['class_code']==cat)]
+        target=[r for r in rows if start<=r['sample_index']<=end and (st_record or kind in ('AF','AFL','STRIP') or r['class_code']==cat)]
         segment=[dict(id=f"a:{a['id']}:start",sample_index=start),dict(id=f"a:{a['id']}:end",sample_index=end)]
-        default_label={'ST':'ST 改变','AF':'房颤','AFL':'房扑','AT':'房速','VT':'室速','STRIP':'人工图条'}[kind]
-        item=make(cat,kind if kind in ('ST','AF','AFL','STRIP') else 'tachycardia',d.get('finding') or default_label,target,segment,kind not in ('ST','AF','AFL','STRIP'),f"annotation:{a['id']}")
+        default_label={'ST':'ST 改变','ST_REVIEW_NOTE':'ST-T 复核记录','AF':'房颤','AFL':'房扑','AT':'房速','VT':'室速','STRIP':'人工图条'}[kind]
+        item=make(cat,'ST' if st_record else kind if kind in ('AF','AFL','STRIP') else 'tachycardia',d.get('finding') or default_label,target,segment,not st_record and kind not in ('AF','AFL','STRIP'),f"annotation:{a['id']}")
         if cat == 'AF':
             item['end_s'] = (end+1)/200  # Stored end_sample remains inclusive.
             item['rhythm_status'] = d.get('status', 'pending')
@@ -167,11 +169,12 @@ def build_index(feed, templates=(), annotations=(), review=None):
             item['rhythm_episode_id'] = annotation_id[3:] if annotation_id.startswith('af:') else 'source-' + annotation_id
         if d.get('status')!='confirmed':item['diagnosis_status']='pending'
         item['lead']=a.get('lead','全部');item['note']=a.get('note','')
-        if kind == 'ST':
+        if st_record:
             item['diagnosis_status']='confirmed' if d.get('status')=='confirmed' else 'pending'
             item['end_s']=(end+1)/200
             if isinstance(d.get('stt_event_evidence'),dict):item['stt_event_evidence']=copy.deepcopy(d['stt_event_evidence'])
-        if kind == 'ST' and isinstance(d.get('range_statistics'), dict):
+            decorate_event(item,a,bv)
+        if st_record and isinstance(d.get('range_statistics'), dict):
             # Saved measurement evidence, separate from the physician's label.
             item['range_statistics'] = copy.deepcopy(d['range_statistics'])
             item['end_s'] = (end + 1) / 200  # New range statistics use [start, end+1).
@@ -254,6 +257,10 @@ def query_index(index,params,occurrences=False):
         items = [e for e in rr_groups if rr_source == 'all' or rr_source in e['rr_sources']]
     elif not occurrences:
         items = [{**e, **{k: rr_aliases[e['event_id']][k] for k in ('rr_semantic_key', 'rr_alias_event_ids', 'rr_aliases', 'rr_sources')}} if e['event_id'] in rr_aliases else e for e in items]
+    stt_group=params.get('stt_group','all')
+    if stt_group not in ('all','ST','T','ST_NOTE','pending'):raise ValueError('ST-T 复核分组无效')
+    stt_counts={key:sum(e.get('category')=='ST' and e.get('stt_report_group')==key for e in events) for key in ('ST','T','ST_NOTE','pending')}
+    if category=='ST' and selected_ids is None and stt_group!='all':items=[e for e in items if e.get('stt_report_group')==stt_group]
     pause_band=params.get('pause_band','all')
     if pause_band not in ('all','over3','2.5to3','b0','b1','b2'):raise ValueError('无效的长 RR 筛选范围')
     pauses=[e for e in events if e['category']=='pause']
@@ -333,7 +340,7 @@ def query_index(index,params,occurrences=False):
         focus = dict(focus_index=target)
     page=items[offset:offset+limit]
     if raw_occurrences:page=[occurrence_item(r,index,code,template) for r in page]
-    return dict(**focus,rr_source=rr_source,rr_source_counts=rr_source_counts,candidate_spacing_s=spacing,candidate_unspaced_total=unspaced_total,candidate_hidden_count=unspaced_total-len(items),time_bins=time_bins,time_filter=bounds,unfiltered_total=unfiltered_total,pause_counts=pause_counts,pause_distribution=pause_distribution,pause_band=pause_band,sort_order=sort_order,candidate_limit=EXTREME_CANDIDATE_LIMIT if rate_candidates else None,confirmed_category_counts=confirmed_counts,confirmed_beat_counts=confirmed_beats,time_counts=dict(time_counts),items=page,total=len(items),offset=offset,limit=limit,category_counts=counts,subtype_counts=dict(subtypes),beat_counts=dict(beats),basis_versions=index['basis_versions'],data_version=index['data_version'])
+    return dict(**focus,stt_group=stt_group,stt_counts=stt_counts,rr_source=rr_source,rr_source_counts=rr_source_counts,candidate_spacing_s=spacing,candidate_unspaced_total=unspaced_total,candidate_hidden_count=unspaced_total-len(items),time_bins=time_bins,time_filter=bounds,unfiltered_total=unfiltered_total,pause_counts=pause_counts,pause_distribution=pause_distribution,pause_band=pause_band,sort_order=sort_order,candidate_limit=EXTREME_CANDIDATE_LIMIT if rate_candidates else None,confirmed_category_counts=confirmed_counts,confirmed_beat_counts=confirmed_beats,time_counts=dict(time_counts),items=page,total=len(items),offset=offset,limit=limit,category_counts=counts,subtype_counts=dict(subtypes),beat_counts=dict(beats),basis_versions=index['basis_versions'],data_version=index['data_version'])
 
 def hrv_windows(feed,start_time,window=0):
     """NN intervals must lie wholly inside a statistical window; gaps break differences."""
@@ -410,6 +417,18 @@ def validate_report(index,composition,review,approving=False):
     from .rr_report import deduplicate_rr_selections
     entries, _ = deduplicate_rr_selections(index, composition.get('selected_events', []))
     lookup={e['event_id']:e for e in index['events']};selected=[]
+    from .stt_records import normalized_uses
+    from .report_sections import selected_pages
+    pages=selected_pages(composition)
+    for use in normalized_uses(composition.get('stt_report_use',[])):
+        pick=next((s for s in composition.get('selected_events',[]) if s['event_id']==use['event_id']),None)
+        active=dict(table=use['table'] and 'st_events' in pages,text=use['text'],strip=use['strip'] and 'event_strips' in pages and (pick is None or pick.get('print_enabled',True)))
+        if not approving or not any(active.values()):continue
+        if active['strip'] and pick is None:raise ValueError('采用的ST-T代表图条不存在，请重新选择图条')
+        event=lookup.get(use['event_id'])
+        if event is None or event['basis_version']!=use['basis_version']:raise ValueError('采用的ST-T复核依据已变化，请重新核对本条')
+        if event.get('category')!='ST' or event.get('stt_review_state')!='reviewed':raise ValueError('采用的ST-T记录尚未完成本条复核或已失效')
+        if any(active[k] and not event.get('stt_report_eligibility',{}).get(k) for k in ('table','text','strip')):raise ValueError('该ST-T复核结果不支持所选报告用途')
     for number, entry in enumerate(entries, 1):
         e=lookup.get(entry['event_id'])
         used=used_in_output(composition, entry, e)
@@ -427,6 +446,8 @@ def validate_report(index,composition,review,approving=False):
             if e.get('evidence_only'):
                 if not evidence_confirmed(index,e,entry):
                     raise ValueError(f'第 {number} 条人工图条待核对，请在报告中“确认本条”或移出本次报告')
+            elif e.get('category')=='ST':
+                if e.get('stt_review_state')!='reviewed':raise ValueError('请先完成本条ST-T复核，或移出本次报告')
             elif e['diagnosis_status']!='confirmed':raise ValueError('请先完成编辑／ST-T诊断确认')
             assert_caption(index,e,entry)
         spec=strip_settings(entry)

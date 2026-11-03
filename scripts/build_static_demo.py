@@ -15,10 +15,23 @@ else:
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUTPUT = PROJECT_ROOT / 'build/pages'
-MANIFEST = PROJECT_ROOT / 'docs/releases/0.12.27-report-evidence.20261103/source-manifest.json'
+MANIFEST = PROJECT_ROOT / 'docs/releases/0.12.28-stt-hospital.20261103/source-manifest.json'
 ASSET = 'static/demo-data/mathematical-4314'
 NAMESPACE = 'cardioinsight-public-math-4314-v2'
 sha = lambda b: hashlib.sha256(b).hexdigest()
+
+
+def enable_mathematical_st_save(html: str) -> str:
+    """Enable exactly the ST save control in generated browser-only mathematics."""
+    buttons = re.findall(r'<button\b[^>]*\bid="saveSttAnnotation"[^>]*>', html)
+    assert len(buttons) == 1 and html.count('id="saveSttAnnotation"') == 1
+    original = buttons[0]
+    classes = re.search(r'\bclass="([^"]*)"', original)
+    assert classes and {'button', 'primary'} <= set(classes.group(1).split())
+    assert re.search(r'\btype="submit"', original)
+    assert re.search(r'\sdisabled(?=\s|>)', original)
+    enabled = re.sub(r'\s+(?:hidden|disabled)(?=\s|>)', '', original)
+    return html.replace(original, enabled, 1)
 
 
 def build(output: Path) -> Path:
@@ -71,9 +84,7 @@ def build(output: Path) -> Path:
     html = html.replace('演示分析医生', '数学演示操作者').replace('本地工作站', '浏览器独立数学演示')
     html = html.replace('10 例仅用于功能回归', '纯数学输入仅演示交互')
     html = html.replace('在线 Demo 可体验测量交互，但不会保存复核意见。', '数学 Demo 的人工复核意见仅保存到当前浏览器，不上传。')
-    old_st_save = 'id="saveSttAnnotation" class="button primary" type="submit" hidden disabled'
-    assert html.count(old_st_save) == 1
-    html = html.replace(old_st_save, 'id="saveSttAnnotation" class="button primary" type="submit"')
+    html = enable_mathematical_st_save(html)
     anchor = '<script src="static/js/app.js"></script>'
     assert html.count(anchor) == 1
     html = html.replace(anchor, '<script src="' + ASSET + '/case-data.js"></script>\n<script src="static/js/stt-range-math.js"></script>\n<script src="static/js/demo-review-api.js"></script>\n<script src="static/js/demo-api.js"></script>\n' + anchor)

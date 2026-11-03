@@ -9,6 +9,23 @@
     return `D${Math.floor(seconds / 86400) + 1} ${String(Math.floor(seconds / 3600) % 24).padStart(2, '0')}:${String(Math.floor(seconds / 60) % 60).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}.${String(milliseconds % 1000).padStart(3, '0')}`;
   };
   const pointLabel = value => value === 0 ? 'J 点' : number(value) !== null ? `J+${value} ms` : '测量点未提供';
+  const outcomes = Object.freeze({st_depression:'ST 段压低',st_elevation:'ST 段抬高',t_change:'T 波改变',nonspecific:'非特异性 ST-T 改变',no_change:'未见明确动态 ST-T 改变',artifact:'伪差或体位改变',indeterminate:'无法判读'});
+  const resultCode = finding => Object.keys(outcomes).find(key=>outcomes[key]===finding)||({'ST 段压低候选':'st_depression','ST 段抬高候选':'st_elevation','T 波形态异常候选':'t_change','T 波极性反转候选':'t_change'}[finding])||null;
+  const candidateKind = item => ({st_depression:'st_depression',st_elevation:'st_elevation',t_wave_inversion:'t_change'}[item?.kind])||null;
+  function receiptText(receipt) {
+    if(!receipt)return '';
+    if(receipt.review_state==='stale')return '已保存历史复核，当前依据需重核。';
+    const result=outcomes[receipt.result_code]||'人工复核',whole=receipt.range?.duration_s>=60;
+    if(receipt.result_code==='artifact'||receipt.result_code==='no_change')return `${result}已保存 · 复核记录 · 未计入异常事件。`;
+    if(receipt.result_code==='indeterminate')return '无法判读意见已保存 · 复核记录 · 未计入异常事件。';
+    return `${result}${whole?'整段':'复核'}已保存 · 尚未选入报告。`;
+  }
+  function trendMetric(mode) {return mode==='st'?{field:'st_level_units',label:'ST 电平'}:mode==='t'?{field:'t_amplitude_units',label:'T 幅度'}:{field:'deviation_units',label:'ΔST'};}
+  function waveGeometry(frameHeight,count,domain,peak,gain=1) {
+    const height=Math.max(150,Math.min(420,Number(frameHeight)||300)),rowHeight=(height-46)/Math.max(1,count);
+    const reference=count<=3?80:26,requested=Math.max(1,reference-12)/(2*Math.max(1,domain))*gain;
+    return {height,rowHeight,scale:Math.max(.000001,Math.min(requested,Math.max(1,rowHeight-8)/(2*Math.max(1,peak))))};
+  }
   function context(snapshot) {
     const source = snapshot || {}, start = number(source.start_s), duration = number(source.duration_s);
     const ready = source.status === 'ready' && Boolean(source.caseId) && start !== null && start >= 0 && duration !== null && duration > 0;
@@ -62,7 +79,7 @@
       const track = trackFrom(event);
       if (!track || !model.canNavigate || model.total === null) return;
       const rect = track.getBoundingClientRect();
-      if (rect.width > 0) navigate(track, (event.clientX - rect.left) / rect.width * model.total);
+      if (rect.width > 0) navigate(track, (Number(track.dataset?.trendStart)||0)+(event.clientX-rect.left)/rect.width*((Number(track.dataset?.trendEnd)||model.total)-(Number(track.dataset?.trendStart)||0)));
     };
     const keydown = event => {
       const track = trackFrom(event);
@@ -103,5 +120,5 @@
       destroy() {root?.removeEventListener('click', click); root?.removeEventListener('keydown', keydown); render(null); root?.classList.remove('stt-review-layout');},
     };
   }
-  global.ECGSttReviewLayout = Object.freeze({mount, context});
+  global.ECGSttReviewLayout = Object.freeze({mount, context, outcomes, resultCode, candidateKind, receiptText, trendMetric, waveGeometry});
 })(globalThis);

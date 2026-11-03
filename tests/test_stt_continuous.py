@@ -17,6 +17,7 @@ from test_analysis_provenance import synthetic_case
 
 def point(start,end,value=130,**extra):
     return dict(start_s=start,end_s=end,time_s=(start+end)/2,deviation_units=value,
+        st_level_units=value+20,reference_units=20,t_reference_units=100,
         t_amplitude_units=100,eligible=True,quality_score=.9,axis_shift_suspected=False,**extra)
 
 
@@ -121,6 +122,6 @@ def test_legacy_point_and_range_means_remain_notes_not_continuous_events():
     result=evidence(index)
     assert result['st_events']==[] and len(result['st_review_notes'])==2
     assert [p['review_kind'] for p in result['st_review_notes']]==['point_or_legacy_range','range_mean']
-    report={'composition':{'selected_events':[{'event_id':'legacy-point','basis_version':'old'},{'event_id':'legacy-mean','basis_version':'old'}]},'section_evidence':result}
+    report={'composition':{'selected_events':[{'event_id':'legacy-point','basis_version':'old','referenced_in_report':True},{'event_id':'legacy-mean','basis_version':'old','referenced_in_report':True}]},'section_evidence':result}
     docs=documents({'metadata':{}},report,['st_events'])
     assert any('不证明连续' in row for doc in docs for row in doc['rows'])

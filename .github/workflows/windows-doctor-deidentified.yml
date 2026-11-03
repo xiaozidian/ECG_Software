@@ -1,4 +1,4 @@
-name: Windows UI-only repack 1.0.12 (same27 binary; math CI only)
+name: Windows deidentified-profile software 1.0.13 (math CI only)
 
 on:
   push:
@@ -15,16 +15,16 @@ concurrency:
 
 jobs:
   build:
-    name: Native Windows x64 UI repack and unchanged-evidence acceptance
+    name: Native Windows x64 package and current workstation acceptance
     runs-on: windows-latest
     timeout-minutes: 60
     env:
       PYTHONUTF8: "1"
       PYTHONIOENCODING: "utf-8"
       ECG_ALLOW_PHI: "0"
-      DOCTOR_PACKAGING_VERSION: "1.0.12"
+      DOCTOR_PACKAGING_VERSION: "1.0.13"
       DOCTOR_SOURCE_VERSION: "M01-24h-v1"
-      DOCTOR_RELEASE_NOTES: "逐导联ST/T分钟证据与连续事件，房颤多代表图条，医院式波形菜单与任意位置留图。"
+      DOCTOR_RELEASE_NOTES: "医院式ST-T复核记录、逐导联统计及分用途入报；新算法与依据保护。"
     defaults:
       run:
         shell: pwsh
@@ -76,46 +76,33 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           "ECG_DATA_ROOT=$env:RUNNER_TEMP\doctor-math-M01" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "ECG_APP_DATA_ROOT=$env:RUNNER_TEMP\doctor-regression-work" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      - name: Download exact code-verified27 binary and original failed runtime evidence
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Current workstation and Windows protection scope without PDF operations
+        run: python scripts/run_windows_release_tests.py --output "$env:RUNNER_TEMP\doctor-core"
+      - name: Fresh complete Windows UI wrappers including hospital ST-T and retained report protections
+        run: python scripts/run_windows_ui_tests.py --output "$env:RUNNER_TEMP\doctor-ui"
+      - name: Original-source Windows request latency and full-output equivalence
         run: |
-          $base = gh api repos/${{ github.repository }}/actions/runs/41598666103 | ConvertFrom-Json
-          if ($base.conclusion -ne 'failure' -or $base.head_sha -ne 'cfb5d732eae7fbf938bd8fab6a31ca4cd2b9bc3b') { throw 'Code-verified27 candidate baseline mismatch' }
-          gh run download 41598666103 --repo "${{ github.repository }}" --pattern '*1.0.11*' --dir "$env:RUNNER_TEMP\code-verified27"
+          python scripts/verify_windows_request_source_perf.py --output "$env:RUNNER_TEMP\doctor-core\windows-request-source-perf.json" --rounds 3
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Repack only existing80 UI assets; reuse exact EXE and non-UI runtime
+      - name: Native directory build, generated 24h source and final ZIP smoke
         id: nativebuild
         run: |
-          python scripts/repack_windows_ui.py `
-            --base-root "$env:RUNNER_TEMP\code-verified27" `
+          python scripts/windows_doctor_build.py `
             --output "$env:RUNNER_TEMP\doctor-eval" `
             --source-commit "${{ github.sha }}" `
-            --base-commit "cfb5d732eae7fbf938bd8fab6a31ca4cd2b9bc3b" `
-            --base-run "41598666103" `
-            --base-exe-sha256 "6f6de01b7935c9da8a63cfb5f140289335e8636590b4aa04ce0f1c6729b79a7d" `
+            --version "$env:DOCTOR_PACKAGING_VERSION" `
+            --source-root "$env:RUNNER_TEMP\doctor-math-M01" `
+            --source-version "$env:DOCTOR_SOURCE_VERSION" `
+            --release-notes "$env:DOCTOR_RELEASE_NOTES" `
+            --verification-upgrade-version "auto" `
             --ci-run-url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Verify immutable27 backend and performance reuse with actual EXE and PYZ equality
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Create source-free P01 native software template
+        id: p01template
         run: |
-          python scripts/verify_ui_repack_baseline.py `
-            --base-root "$env:RUNNER_TEMP\code-verified27" `
-            --software-archive "$env:RUNNER_TEMP\doctor-p01\CardioInsight-DoctorEval-Windows-x64-1.0.12-P01-software.zip" `
-            --base-exe-sha256 "6f6de01b7935c9da8a63cfb5f140289335e8636590b4aa04ce0f1c6729b79a7d" `
-            --repository "${{ github.repository }}" `
-            --output "$env:RUNNER_TEMP\doctor-core\composed-backend-proof.json"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          New-Item -ItemType Directory -Path "$env:RUNNER_TEMP\doctor-core\baseline27" -Force | Out-Null
-          foreach ($name in @('test-summary.json','test-scope.json','scoped-tests.xml','historical-af.xml','windows-request-source-perf.json')) {
-            $files = @(Get-ChildItem "$env:RUNNER_TEMP\code-verified27" -Recurse -File -Filter $name)
-            if ($files.Count -ne 1) { throw "Ambiguous baseline receipt $name" }
-            Copy-Item $files[0].FullName "$env:RUNNER_TEMP\doctor-core\baseline27\$name"
-          }
-      - name: Fresh UI2 Windows JS CSS HTML wrappers including navigation pending curation and height
-        run: |
-          python scripts/run_ui_repack_tests.py --output "$env:RUNNER_TEMP\doctor-core"
+          python scripts/windows_deidentified_package.py template `
+            --software-archive "$env:RUNNER_TEMP\doctor-eval\CardioInsight-DoctorEval-Windows-x64-1.0.13-software.zip" `
+            --output "$env:RUNNER_TEMP\doctor-p01"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: System Edge full software interaction and retained-source update validation
         run: |
@@ -129,30 +116,40 @@ jobs:
       - name: Actual frozen P01 source save reopen and update using mathematical fixture only
         run: |
           python scripts/verify_windows_p01.py `
-            --software-archive "$env:RUNNER_TEMP\doctor-p01\CardioInsight-DoctorEval-Windows-x64-1.0.12-P01-software.zip" `
+            --software-archive "$env:RUNNER_TEMP\doctor-p01\CardioInsight-DoctorEval-Windows-x64-1.0.13-P01-software.zip" `
             --math-source-root "$env:RUNNER_TEMP\doctor-math-M01" `
             --output "$env:RUNNER_TEMP\doctor-p01\evidence\p01-native.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Independent mathematical ST and multi-AF report evidence on the actual EXE
         run: |
-          python scripts/verify_windows_report_evidence_native.py --software-archive "$env:RUNNER_TEMP\doctor-p01\CardioInsight-DoctorEval-Windows-x64-1.0.12-P01-software.zip" --output "$env:RUNNER_TEMP\doctor-p01\evidence\report-evidence-native.json"
+          python scripts/verify_windows_report_evidence_native.py --software-archive "$env:RUNNER_TEMP\doctor-p01\CardioInsight-DoctorEval-Windows-x64-1.0.13-P01-software.zip" --output "$env:RUNNER_TEMP\doctor-p01\evidence\report-evidence-native.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Actual27 to UI2 upgrade keeps reviewed evidence in the same P01 workspace
+      - name: Fetch exact previous1.0.12 source-free software only for migration acceptance
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          $baseP01 = @(Get-ChildItem "$env:RUNNER_TEMP\code-verified27" -Recurse -File -Filter '*1.0.11-P01-software.zip')[0].FullName
-          python scripts/verify_windows_ui_upgrade_native.py `
-            --base-software-archive "$baseP01" `
-            --software-archive "$env:RUNNER_TEMP\doctor-p01\CardioInsight-DoctorEval-Windows-x64-1.0.12-P01-software.zip" `
-            --output "$env:RUNNER_TEMP\doctor-p01\evidence\ui-upgrade-native.json"
+          $baseRun = gh api repos/${{ github.repository }}/actions/runs/41614325648 | ConvertFrom-Json
+          if ($baseRun.conclusion -ne 'success' -or $baseRun.head_sha -ne 'b681f6a52c9746ebfd9502deab5a5a38cac10a8e') { throw 'Old migration fixture run mismatch' }
+          $old = "$env:RUNNER_TEMP\doctor-previous"
+          gh run download 41614325648 --repo "${{ github.repository }}" --name CardioInsight-Windows-x64-1.0.12-P01-software-only --dir "$old"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $archive = Join-Path $old 'CardioInsight-DoctorEval-Windows-x64-1.0.12-P01-software.zip'
+          $digest = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($digest -ne '5628021c052a035103a4999e2b41d7c5969a3da4a1e8fd5aad6802fe443f213b') { throw 'Old migration fixture immutable SHA mismatch' }
+          "DOCTOR_BASE_P01=$archive" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          @{ status='passed'; purpose='old reviewed-record migration fixture only, never new backend acceptance reuse'; run=41614325648; validation_commit=$baseRun.head_sha; archive_sha256=$digest } | ConvertTo-Json | Set-Content "$old\fetch-receipt.json" -Encoding utf8
+      - name: Actual1.0.12 to1.0.13 preserves old evidence and requires real new-basis review
+        run: |
+          python scripts/verify_windows_stt_hospital_upgrade.py --base-software-archive "$env:DOCTOR_BASE_P01" --software-archive "$env:RUNNER_TEMP\doctor-p01\CardioInsight-DoctorEval-Windows-x64-1.0.13-P01-software.zip" --output "$env:RUNNER_TEMP\doctor-p01\evidence\stt-hospital-upgrade-native.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Retain built source-free P01 binary; native verdict is separate
-        if: always() && steps.nativebuild.outcome == 'success'
+        if: always() && steps.p01template.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: CardioInsight-Windows-x64-1.0.12-P01-software-only
+          name: CardioInsight-Windows-x64-1.0.13-P01-software-only
           path: |
-            ${{ runner.temp }}/doctor-p01/CardioInsight-DoctorEval-Windows-x64-1.0.12-P01-software.zip
-            ${{ runner.temp }}/doctor-p01/CardioInsight-DoctorEval-Windows-x64-1.0.12-P01-software.zip.sha256
+            ${{ runner.temp }}/doctor-p01/CardioInsight-DoctorEval-Windows-x64-1.0.13-P01-software.zip
+            ${{ runner.temp }}/doctor-p01/CardioInsight-DoctorEval-Windows-x64-1.0.13-P01-software.zip.sha256
             ${{ runner.temp }}/doctor-p01/p01-software-build-report.json
           if-no-files-found: error
           retention-days: 14
@@ -161,10 +158,10 @@ jobs:
         if: always() && steps.nativebuild.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: CardioInsight-Windows-x64-1.0.12-M01-full
+          name: CardioInsight-Windows-x64-1.0.13-M01-full
           path: |
-            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-1.0.12-full.zip
-            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-1.0.12-full.zip.sha256
+            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-1.0.13-full.zip
+            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-1.0.13-full.zip.sha256
             ${{ runner.temp }}/doctor-eval/build-report.json
           if-no-files-found: error
           retention-days: 14
@@ -173,10 +170,10 @@ jobs:
         if: always() && steps.nativebuild.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: CardioInsight-Windows-x64-1.0.12-software-update
+          name: CardioInsight-Windows-x64-1.0.13-software-update
           path: |
-            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-1.0.12-software.zip
-            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-1.0.12-software.zip.sha256
+            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-1.0.13-software.zip
+            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-1.0.13-software.zip.sha256
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
@@ -184,7 +181,7 @@ jobs:
         if: always() && steps.nativebuild.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: CardioInsight-Synthetic-M01-24h-v1-for-1.0.12
+          name: CardioInsight-Synthetic-M01-24h-v1-for-1.0.13
           path: |
             ${{ runner.temp }}/doctor-eval/CardioInsight-Synthetic-M01-24h-v1.zip
             ${{ runner.temp }}/doctor-eval/CardioInsight-Synthetic-M01-24h-v1.zip.sha256
@@ -202,12 +199,12 @@ jobs:
             ${{ runner.temp }}/doctor-core/**/*.json
             ${{ runner.temp }}/doctor-core/**/*.png
             ${{ runner.temp }}/doctor-core/*.xml
+            ${{ runner.temp }}/doctor-ui/*.json
+            ${{ runner.temp }}/doctor-ui/*.xml
             ${{ runner.temp }}/doctor-previous/fetch-receipt.json
             ${{ runner.temp }}/doctor-baseline*.xml
             ${{ runner.temp }}/doctor-current*.xml
             ${{ runner.temp }}/doctor-eval/evidence/*.json
-            ${{ runner.temp }}/doctor-eval/ui-repack-verification.json
-            ${{ runner.temp }}/doctor-core/**/*.xml
             ${{ runner.temp }}/doctor-eval/evidence/browser-screenshots/*.png
           if-no-files-found: ignore
           retention-days: 14

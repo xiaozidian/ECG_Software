@@ -88,7 +88,7 @@ globalThis.ECGSTTRangeMath = (() => {
   }
   function blockMeasurement(view,beats,population,total,ms,normalCount){
     const [j,confidence]=estimateJ(view,beats,total),stOffset=j+roundEven(ms*RATE/1000);
-    const columns=LEADS.map(()=>({baseline:[],st:[],t:[],qrs:[],span:[]}));
+    const columns=LEADS.map(()=>({baseline:[],st:[],t:[],qrs:[],span:[],clipped:false}));
     for(const row of beats){
       const base=frameValues(view,row,BASELINE,total),st=frameValues(view,row,spanOffsets(stOffset-2,stOffset+2),total);
       const qrs=frameValues(view,row,spanOffsets(-8,j,2),total);
@@ -99,7 +99,7 @@ globalThis.ECGSTTRangeMath = (() => {
         const baseline=median(base.map(r=>r[k])),q=qrs.map(r=>r[k]),tv=t.map(r=>r[k]-baseline);
         let tValue=tv[0];for(const v of tv)if(Math.abs(v)>Math.abs(tValue))tValue=v;
         columns[k].baseline.push(baseline);columns[k].st.push(median(st.map(r=>r[k]))-baseline);
-        columns[k].t.push(tValue);columns[k].qrs.push(Math.max(...q)-Math.min(...q));
+        columns[k].t.push(tValue);columns[k].qrs.push(Math.max(...q)-Math.min(...q));columns[k].clipped=columns[k].clipped||q.some(v=>v>=32767||v<=-32768);
         columns[k].span.push(Math.max(...base.map(r=>r[k]))-Math.min(...base.map(r=>r[k])));
       }
     }
@@ -108,8 +108,9 @@ globalThis.ECGSTTRangeMath = (() => {
       const col=columns[k],qrs=median(col.qrs),baseVariation=mad(col.baseline)+median(col.span);
       const qrsVariation=mad(col.qrs)/Math.max(qrs,1),noiseRatio=baseVariation/Math.max(qrs,40);
       const score=Math.max(0,Math.min(1,1-Math.min(.65,noiseRatio)-Math.min(.35,qrsVariation)));
-      scores.push(score);leadValues[lead]={st_level_units:roundDecimal(median(col.st),2),t_amplitude_units:roundDecimal(median(col.t),2),qrs_amplitude_units:roundDecimal(qrs,2),quality_score:roundDecimal(score,3)};
+      scores.push(score);leadValues[lead]={st_level_units:roundDecimal(median(col.st),2),t_amplitude_units:roundDecimal(median(col.t),2),qrs_amplitude_units:roundDecimal(qrs,2),quality_score:roundDecimal(score,3),eligible:qrs>0&&score>=.42&&(!['I','II','V1','V2','V3','V4','V5','V6'].includes(lead)||!col.clipped),availability_reasons:[...(qrs<=0?['flatline']:[]),...(score<.42?['lead_engineering_quality']:[]),...(['I','II','V1','V2','V3','V4','V5','V6'].includes(lead)&&col.clipped?['source_clipping']:[])]};
     });
+    const limbAvailable=leadValues.I.eligible&&leadValues.II.eligible;for(const lead of ['III','aVR','aVL','aVF']){leadValues[lead].eligible=limbAvailable&&leadValues[lead].quality_score>=.42;leadValues[lead].availability_reasons=leadValues[lead].eligible?[]:['source_limb_unavailable'];}
     const ratio=normalCount/Math.max(population,1),overall=Math.max(0,Math.min(1,median(scores)*Math.min(1,ratio/.6)));
     return {j_offset_ms:j*5,landmark_confidence:roundDecimal(confidence,3),normal_beat_count:normalCount,measurement_beat_count:beats.length,normal_beat_ratio:roundDecimal(ratio,3),quality_score:roundDecimal(overall,3),eligible:ratio>=.35&&overall>=.42,leads:leadValues};
   }
@@ -154,7 +155,7 @@ globalThis.ECGSTTRangeMath = (() => {
     canonical(suppliedScope);const scope=copy(suppliedScope),normalized=strictRecords(records);
     const masks=await normalizeMasks(options.exclusions,total),publicMasks=masks.map(m=>m.row);
     const byBlock=new Map();for(const row of normalized)if(0<=row[0]&&row[0]<total){const id=Math.floor(row[0]/BLOCK);if(!byBlock.has(id))byBlock.set(id,[]);byBlock.get(id).push(row);}
-    const values=Object.fromEntries(chosen.map(l=>[l,[]])),statuses={},reasons={},maskFlags={},flagDefinitions={};
+    const values=Object.fromEntries(chosen.map(l=>[l,[]])),anchors=Object.fromEntries(chosen.map(l=>[l,[]])),tValues=Object.fromEntries(chosen.map(l=>[l,[]])),tAnchors=Object.fromEntries(chosen.map(l=>[l,[]])),statuses={},reasons={},maskFlags={},flagDefinitions={};
     const blocks=[],usedAnchors=[];let eligibleSamples=0;
     for(let grid=Math.floor(start/BLOCK);grid<=Math.floor((end-1)/BLOCK);grid++){
       const rows=byBlock.get(grid)||[],classifications=new Map(),observations=new Map(),candidates=[];
@@ -172,7 +173,7 @@ globalThis.ECGSTTRangeMath = (() => {
       const representatives=evenly(candidates.filter(r=>!hits(masks,r[0]-40,r[0]+47).length),7);
       const blockStart=grid*BLOCK,blockEnd=Math.min(total,(grid+1)*BLOCK),selected=rows.filter(r=>start<=r[0]&&r[0]<end);
       const block={block_index:grid,start_sample:blockStart,end_sample:blockEnd,range_start_sample:Math.max(start,blockStart),range_end_sample:Math.min(end,blockEnd),j_representative_samples:representatives.map(r=>r[0]),candidate_count:candidates.length,j_offset_samples:null,landmark_confidence:null,quality_score:null,eligible:false};
-      const actual=[];let stOffset=null;
+      const actual=[];let stOffset=null,blockMeasure=null;
       if(representatives.length<3){block.reason='insufficient_uncontaminated_j_representatives';for(const row of candidates)classifications.set(row[0],['missing','j_unavailable']);}
       else{
         const [j]=estimateJ(view,representatives,total);stOffset=j+Math.trunc(method.measurement_ms*RATE/1000);
@@ -180,7 +181,7 @@ globalThis.ECGSTTRangeMath = (() => {
           if(support.length){const status=maskStatus(support);classifications.set(r,[status,status==='missing'?'explicit_missing_support':'measurement_support_exclusion']);}else actual.push(row);
         }
         const population=rows.filter(r=>r[1]!==34&&!hits(masks,r[0],r[0]+1).length).length;
-        const measurement=blockMeasurement(view,representatives,population,total,method.measurement_ms,actual.length);
+        const measurement=blockMeasure=blockMeasurement(view,representatives,population,total,method.measurement_ms,actual.length);
         Object.assign(block,{j_offset_samples:j,j_offset_ms:j*5,landmark_confidence:measurement.landmark_confidence,quality_score:measurement.quality_score,normal_beat_ratio:measurement.normal_beat_ratio,eligible:measurement.eligible});
         block.reason=measurement.eligible?null:'engineering_quality_gate';
         for(const row of actual)classifications.set(row[0],measurement.eligible?['used','used']:['excluded','engineering_quality_gate']);
@@ -189,7 +190,9 @@ globalThis.ECGSTTRangeMath = (() => {
       const used=actual.filter(r=>start<=r[0]&&r[0]<end&&classifications.get(r[0])[0]==='used');
       const blockValues=Object.fromEntries(chosen.map(l=>[l,[]]));
       for(const row of used){const base=frameValues(view,row,BASELINE,total),st=frameValues(view,row,ST.map(x=>x+stOffset),total);
-        for(const lead of chosen){const k=LEADS.indexOf(lead),difference=median(st.map(r=>r[k]))-median(base.map(r=>r[k]));blockValues[lead].push(difference);values[lead].push(difference);}
+        for(const lead of chosen){if(!blockMeasure?.leads[lead].eligible)continue;const k=LEADS.indexOf(lead),difference=median(st.map(r=>r[k]))-median(base.map(r=>r[k]));blockValues[lead].push(difference);values[lead].push(difference);anchors[lead].push(row[0]);}
+        const j=block.j_offset_samples,rrSamples=Math.max(roundEven(row[2]*RATE/1000),roundEven(.45*RATE)),last=Math.min(j+72,Math.max(j+30,roundEven(rrSamples*.62)));
+        if(!hits(masks,row[0]+j+24,row[0]+last+1).length){const frames=frameValues(view,row,spanOffsets(j+24,last,2),total);for(const lead of chosen){if(!blockMeasure?.leads[lead].eligible)continue;const k=LEADS.indexOf(lead),baseline=median(base.map(r=>r[k])),samples=frames.map(r=>r[k]-baseline);let extreme=samples[0];for(const value of samples)if(Math.abs(value)>Math.abs(extreme))extreme=value;tValues[lead].push(extreme);tAnchors[lead].push(row[0]);}}
         usedAnchors.push(row[0]);
       }
       const blockStatus={},blockReasons={},blockFlags={};
@@ -206,7 +209,7 @@ globalThis.ECGSTTRangeMath = (() => {
     const result={schema_version:'stt-range-mean-v1',scope,method_profile:method,range:{start_sample:start,end_sample:end,start_s:start/RATE,end_s:end/RATE,duration_s:duration,half_open:true},exclusions:{intervals:publicMasks,digest:await digest(publicMasks)},counts,
       coverage:{requested_duration_s:duration,source_coverage_s:duration-missing/RATE,explicit_excluded_s:(allMask-missing)/RATE,explicit_missing_s:missing/RATE,engineering_eligible_block_coverage_s:eligibleSamples/RATE,engineering_eligible_block_coverage_pct:eligibleSamples*100/(end-start),used_anchor_span_s:usedAnchors.length?(usedAnchors.at(-1)-usedAnchors[0])/RATE:null,max_used_anchor_gap_s:usedAnchors.length>1?Math.max(...usedAnchors.slice(1).map((x,i)=>(x-usedAnchors[i])/RATE)):null,coverage_is_signal_quality:false,definition:'intersection of eligible fixed 16s blocks with selected range, less union of explicit masks; does not certify each second or infer undetected beats'},
       mask_reason_counts:Object.keys(maskFlags).sort().map(k=>({...flagDefinitions[k],beat_count:maskFlags[k]})),count_definition:'used/excluded/missing and primary reason counts are mutually exclusive per detected R; mask reason flags may overlap and never invent undetected beats',
-      leads:chosen.map(lead=>({lead,mean_units:mean(values[lead]),used_count:values[lead].length,excluded_count:counts.excluded_count,missing_count:counts.missing_count,reason_counts:{...counts.reason_counts}})),blocks,
+      leads:chosen.map(lead=>{const v=values[lead],t=tValues[lead],average=mean(v);let reference=0,extreme=0;for(let i=1;i<v.length;i++)if(Math.abs(v[i]-average)<Math.abs(v[reference]-average))reference=i;for(let i=1;i<t.length;i++)if(Math.abs(t[i])>Math.abs(t[extreme]))extreme=i;const minimum=v.length?v.reduce((m,x)=>Math.min(m,x),Infinity):null,maximum=v.length?v.reduce((m,x)=>Math.max(m,x),-Infinity):null;return {lead,mean_units:average,mean_st_level_units:average,minimum_st_level_units:minimum,maximum_st_level_units:maximum,minimum_st_sample:v.length?anchors[lead][v.indexOf(minimum)]:null,maximum_st_sample:v.length?anchors[lead][v.indexOf(maximum)]:null,reference_sample:v.length?anchors[lead][reference]:null,reference_st_level_units:v.length?v[reference]:null,mean_t_amplitude_units:mean(t),extreme_t_amplitude_units:t.length?t[extreme]:null,extreme_t_sample:t.length?tAnchors[lead][extreme]:null,t_used_count:t.length,slope:null,calibrated_mm:null,availability:v.length?'available':'unavailable',used_count:v.length,excluded_count:counts.excluded_count,missing_count:counts.missing_count,reason_counts:{...counts.reason_counts}};}),blocks,
       binding:{source_digest:await shaBytes(bytes),source_sample_count:total,beats_digest:await digest(normalized),scope_digest:await digest(scope),method_digest:await digest(method),exclusions_digest:await digest(publicMasks),range_digest:await digest([start,end,chosen]),status:'mathematical_raw_source_and_basis_bound',source_kind:'pure_mathematical',runtime_canonicalization:'sorted-js-json-v1',implementation_digest:await digest(implementationSources())},
       review_status:'statistics_pending_physician_review',interpretation:{diagnosis_generated:false,sustained_depression_inferred:false,signal_quality_verified:false,sinus_origin_verified:false},
       simulation:{browser_computed:true,real_patient_inputs_read:false,clinical_validation:false,full_source_sample_zero_is_caller_contract:true}};

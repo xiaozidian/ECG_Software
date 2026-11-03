@@ -115,6 +115,7 @@ globalThis.ECGReportWorkspace=(()=>{
   const reviewLabels={all:'全部状态',stale:'依据失效',pending:'待核对',confirmed:'已核对'};
   function stripReviewState(selection,event){
     if(!event||event.event_id!==selection.event_id||!selection.basis_version||event.basis_version!==selection.basis_version)return 'stale';
+    if(event.category==='ST')return event.stt_review_state==='reviewed'?'confirmed':'pending';
     if(event.evidence_only)return globalThis.ECGReportEvidenceUI?.confirmed(selection,event)?'confirmed':'pending';
     return event.diagnosis_status==='confirmed'&&(event.category!=='AF'||event.rhythm_status==='confirmed')?'confirmed':'pending';
   }
@@ -122,6 +123,7 @@ globalThis.ECGReportWorkspace=(()=>{
     if(status==='stale')return '须重新核对，不能导出';
     if(status==='confirmed')return '不代表报告已审核';
     if(event?.evidence_only)return '请核对原始波形、RR 测量和图注，并在报告中确认本条';
+    if(event?.category==='ST')return '本条ST-T复核尚未完成或依据已变化，请在ST-T工作台核对';
     if(event?.category==='AF')return event.rhythm_status==='confirmed'?'片段已确认，编辑环节仍待确认；报告未审核':'节律片段仍待复核，不能视为确诊';
     return `${event?.category==='ST'?'ST-T':'编辑'}环节仍待确认，入草稿不代表确诊`;
   }
@@ -174,7 +176,7 @@ globalThis.ECGReportWorkspace=(()=>{
     return '<details class="rw-strip-tools" data-rw-tools="'+i+'"><summary>图条操作</summary><div class="rw-strip-options" aria-label="本条图条操作">'+
       [['three','3L · II / V1 / V5'],['all','12L'],['one','1L · II'],['preview','查看图条'],['edit','编辑图条'],['rename','重命名'],['print','取消 / 恢复打印'],['remove','删除图条（可撤销）']].map(([key,label])=>'<button type="button" data-rw-strip-action="'+key+'" data-rw-strip="'+i+'"'+(stale&&key!=='remove'?' disabled':'')+'>'+label+'</button>').join('')+'</div></details>';
   }
-  function compose(host,{id,composition,selected,lookup,sections,onPages,onMode,onPreview,onStripLeads,onStripEdit,onStripPrint,onStripRemove,onStripReference,onReviewEvidence,onReviewLongest,loadLongestRR,onSort,onTemplates,loadTrend,renderWave,loadWave,renderAdvanced,terms=[],overview=null,isCurrent=()=>true,termContext=null,onUsages=null,showTerminology=false,showAdvanced=false,recordStart=null,inspection=false}){
+  function compose(host,{id,composition,selected,lookup,sections,onPages,onMode,onSTTrendMetric,onPreview,onStripLeads,onStripEdit,onStripPrint,onStripRemove,onStripReference,onReviewEvidence,onReviewLongest,loadLongestRR,onSort,onTemplates,loadTrend,renderWave,loadWave,renderAdvanced,terms=[],overview=null,isCurrent=()=>true,termContext=null,onUsages=null,showTerminology=false,showAdvanced=false,recordStart=null,inspection=false}){
     releaseTerminology(host);
     // Hiding the assistant does not discard versioned text already saved in a report.
     host._rwTerminologyUsages=composition.terminology_usages??null;
@@ -230,7 +232,7 @@ globalThis.ECGReportWorkspace=(()=>{
     visible.forEach(({i,e})=>{if(e?.category==='AF'&&e.rhythm_episode_id)host.querySelector(`[data-back-event="${i}"]`).insertAdjacentHTML('afterend',`<button type="button" data-review-rhythm="${i}">保存草稿并复核片段</button>`);});
     if(showAdvanced&&renderAdvanced){const panel=document.createElement('div');panel.className='rw-research';host.querySelector('.rw-workspace').append(panel);renderAdvanced(panel);}
     function redraw(selector){
-      compose(host,{id,composition,selected,lookup,sections,onPages,onMode,onPreview,onStripLeads,onStripEdit,onStripPrint,onStripRemove,onStripReference,onReviewEvidence,onReviewLongest,loadLongestRR,onSort,onTemplates,loadTrend,renderWave,loadWave,renderAdvanced,terms,overview,isCurrent,termContext,onUsages,showTerminology,showAdvanced,inspection});
+      compose(host,{id,composition,selected,lookup,sections,onPages,onMode,onSTTrendMetric,onPreview,onStripLeads,onStripEdit,onStripPrint,onStripRemove,onStripReference,onReviewEvidence,onReviewLongest,loadLongestRR,onSort,onTemplates,loadTrend,renderWave,loadWave,renderAdvanced,terms,overview,isCurrent,termContext,onUsages,showTerminology,showAdvanced,inspection});
       host.querySelector(selector)?.focus({preventScroll:true});
     }
     host.querySelectorAll('[data-strip-filter]').forEach(b=>b.onclick=()=>{filter=b.dataset.stripFilter;redraw('[data-strip-filter][aria-pressed="true"]')});
@@ -261,6 +263,7 @@ globalThis.ECGReportWorkspace=(()=>{
       host.querySelectorAll('[data-rw-page-group]').forEach(group=>{group.querySelector('summary').textContent=`${group.dataset.rwPageGroup} · ${group.querySelectorAll('input:checked').length} / ${group.querySelectorAll('input').length}`;});
       onPages(composition.included_pages);
     });
+    const trendMode=document.createElement('label');trendMode.className='rw-stt-trend-mode';trendMode.innerHTML='<span>ST趋势指标</span><select aria-label="报告ST趋势指标"><option value="st_level">ST水平（相对等电位线）</option><option value="delta">ΔST（相对参考）</option></select>';trendMode.querySelector('select').value=composition.stt_trend_metric||'st_level';trendMode.querySelector('select').onchange=event=>{if(isCurrent())onSTTrendMetric?.(event.target.value);};host.querySelector('.rw-output-options').append(trendMode);
     host.querySelectorAll('[name=rwRateMode]').forEach(el=>el.onchange=()=>onMode(el.value));
     host.querySelector('[data-paper-preview]').onclick=onPreview;
     const templateButton=document.createElement('button');templateButton.type='button';templateButton.textContent='综述模板';templateButton.onclick=()=>{if(isCurrent())onTemplates?.();};host.querySelector('.rw-sort-controls').append(templateButton);

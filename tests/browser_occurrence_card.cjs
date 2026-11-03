@@ -39,5 +39,23 @@ if(scenario==='source-points'){
  card.syncSelection(node,item,state);assert.equal(node.dataset.selected,'mixed');assert.equal(node.dataset.current,'true');assert.equal(attrs['aria-pressed'],'mixed');assert.equal(input.indeterminate,true);assert.equal(input.checked,false);
  state.editSelectedSamples=new Set([100,200,300]);card.syncSelection(node,item,state);assert.equal(node.dataset.selected,'true');assert.equal(input.indeterminate,false);
  state.editSelectedSamples.clear();state.editSelectedSample=400;card.syncSelection(node,item,state);assert.equal(node.dataset.selected,'false');assert.equal(node.dataset.current,'false');assert.equal(attrs['aria-current'],undefined);
+}else if(scenario==='rr-eligibility'){
+ const A=require('../static/js/clinical-analysis.js'),R=require('../static/js/report-engine.js');
+ const beats=Array.from({length:8},(_,i)=>({id:'math-'+i,sample_index:i*200,class_code:i===2?'X':i===6?'V':'N',rr_ms:i===0?null:i===5?500:1000,hr:i===7?0:60}));
+ const feed={beats,markers:[],duration:8,document:{settings:{nn_min:300,nn_max:2000,pause:2.5,tachy:120,brady:50}}};
+ // A legacy status string without a source-bound review receipt cannot make
+ // a saved ST note a confirmed finding, even when the global step is done.
+ const legacy={id:11,sample_index:400,lead:'II',label:'Legacy ST review',note:'Original note remains visible',details:{kind:'ST',status:'confirmed',finding:'ST 段压低',end_sample:800}};
+ const index=A.buildIndex(feed,[],[legacy],{steps:{edit:{status:'done'},stt:{status:'done'}}});
+ const fastest=index.events.filter(e=>e.category==='fastest'),rr=fastest.filter(e=>e.subtype==='RR'),nn=fastest.filter(e=>e.subtype==='NN');
+ assert.deepEqual(rr.map(e=>e.sample_index).sort((a,b)=>a-b),[200,800,1200],'RR candidates exclude artifact boundaries, inconsistent R spacing and absent rate');
+ assert.deepEqual(nn.map(e=>e.sample_index).sort((a,b)=>a-b),[200,800],'NN candidates additionally require two adjacent N labels');
+ assert(rr.every(e=>e.rr_ms===1000&&e.hr===60));
+ assert.equal(R.intervalPairs(beats,feed.duration).length,4,'The raw interval population keeps a real RR even when its reported heart rate is unavailable');
+ const pending=A.queryIndex(index,{category:'ST',stt_group:'pending'}).items;
+ assert.equal(pending.length,1);assert.equal(pending[0].event_id,'annotation:11');assert.equal(pending[0].note,legacy.note);
+ assert.equal(pending[0].stt_review_state,'unreviewed');assert.equal(pending[0].diagnosis_status,'pending');assert.equal(pending[0].stt_review_receipt.source_scope,null);
+ assert.deepEqual(pending[0].stt_report_eligibility,{table:false,text:false,strip:false});
+ assert.throws(()=>A.validateReport(index,{selected_events:[],stt_report_use:[{event_id:pending[0].event_id,basis_version:pending[0].basis_version,table:false,text:true,strip:false}]},{},true),/复核.*尚未完成/);
 }else throw Error('unknown scenario '+scenario);
 console.log(scenario+' passed');

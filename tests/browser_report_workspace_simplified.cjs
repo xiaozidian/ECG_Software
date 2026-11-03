@@ -66,7 +66,7 @@ renderReportShell();mount();
  let browser,context;
  fs.mkdirSync(out,{recursive:true});
  try{
-  browser=await chromium.launch({executablePath:process.env.ECG_CHROME||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true,chromiumSandbox:true});result.browser=await browser.version();
+  browser=await chromium.launch({executablePath:process.env.ECG_CHROME||process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true,chromiumSandbox:true});result.browser=await browser.version();
   context=await browser.newContext({viewport:{width:1600,height:1000}});await context.route('**/*',r=>{result.network.push(r.request().url());return r.abort();});
   const page=await context.newPage();page.setDefaultTimeout(10000);page.on('pageerror',e=>result.page_errors.push(e.message));await page.setContent(fixture());
   assert.deepEqual(result.page_errors,[],'the complete shipped fixture must initialize before any visual assertions');

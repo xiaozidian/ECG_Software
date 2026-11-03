@@ -16,7 +16,7 @@ function node(){
     querySelector(){return null;},querySelectorAll(){return [];},focus(){},contains(){return false;},prepend(child){child.parentElement=this;}};
 }
 function harness(){
-  const h={basis:{analysis_basis:'synthetic-source-v1',analysis_revision:1},requests:[],waves:[],posts:[],basisReads:[],renders:{capability:0,trend:0,overview:0,wave:0},toasts:[],errors:[],timers:[]};
+  const h={basis:{analysis_basis:'synthetic-source-v1',analysis_revision:1,beat_revision:0},requests:[],waves:[],posts:[],basisReads:[],renders:{capability:0,trend:0,overview:0,wave:0},toasts:[],errors:[],timers:[]};
   const nodes=new Map(),$=selector=>{if(!nodes.has(selector))nodes.set(selector,node());return nodes.get(selector);},$$=()=>[];
   const root=$('#page-stt');root.querySelector=selector=>['#sttCurrentContext','#sttAnalysisStatus','.stt-waveform-card','#sttWaveCanvasWrap'].includes(selector)?$(selector):null;
   $('#sttFinding').value='无法判读';
@@ -26,7 +26,7 @@ function harness(){
     start:0,duration:10,filter:'display',caseData:{case_id:'synthetic-a',clinical_identity:{...h.basis},technical:{duration_seconds_raw:300}},sttReview:null,sttWaveform:null};
   const body=kind=>kind===''?{case_id:state.caseId,clinical_identity:{...h.basis},technical:{duration_seconds_raw:300},review_workflow:{revision:h.basis.analysis_revision}}:
     kind==='trend'?{...h.basis,points:[{time_s:0,hr:70},{time_s:300,hr:75}]}:
-    {...h.basis,automatic_candidates:{enabled:true,items:[{label:'合成候选',start_s:30,end_s:90,leads:['II'],peak_deviation_units:-120}]},
+    {case_id:state.caseId,...h.basis,automatic_candidates:{enabled:true,items:[{label:'合成候选',start_s:30,end_s:90,leads:['II'],peak_deviation_units:-120}]},
       analysis:{trends:{leads:Object.fromEntries(leads.map(lead=>[lead,[{time_s:0,deviation_units:12},{time_s:300,deviation_units:-18}]]))}},
       source_report:{fragments:['合成 ST-T 文字']},calibration:{message:'合成未校准单位'},lead_system:{message:'合成导联'},measurement_protocol:{baseline:{label:'手工 ISO'}}};
   const response=(payload,status=200)=>({ok:status<400,status,headers:{get:()=> 'application/json'},json:async()=>payload});
@@ -40,7 +40,7 @@ function harness(){
     const request={url,kind,options,basis:{...h.basis}};h.requests.push(request);
     if(kind==='waveform'||kind==='health'||kind==='annotations'&&options.method==='POST'||kind==='analysis-basis'&&h.holdNextBasis){
       const deferred=gate();Object.assign(request,{resolve:(payload,status=200)=>{
-        if(payload===undefined)payload=kind==='waveform'?h.waveBody(request):kind==='analysis-basis'?request.basis:{saved:true};
+        if(payload===undefined)payload=kind==='waveform'?h.waveBody(request):kind==='analysis-basis'?request.basis:kind==='annotations'?{id:h.posts.length,case_id:state.caseId,...JSON.parse(options.body),stt_review_receipt:{event_id:'annotation:'+h.posts.length,annotation_id:h.posts.length,review_state:'reviewed',result_code:JSON.parse(options.body).details.result_code,range:{duration_s:10}}}:{saved:true};
         if(kind==='annotations'&&status<400)h.basis.analysis_revision++;
         deferred.resolve(response(payload,status));
       },reject:deferred.reject});
@@ -50,9 +50,9 @@ function harness(){
     }
     const q=url.searchParams,conflict=['analysis_basis','analysis_revision'].some(key=>q.has(key)&&q.get(key)!==String(h.basis[key]));
     if(conflict)return Promise.resolve(response({error:'波形或事件依据已变化，请重新加载后复核'},409));
-    return Promise.resolve(response(kind==='analysis-basis'?{...h.basis}:body(kind)));
+    return Promise.resolve(response(kind==='analysis-basis'?{...h.basis}:kind==='annotations'?{items:[]}:body(kind)));
   };
-  const context=h.ctx=vm.createContext({state,$,$$,fetch,ECGReadRequests:Reads.create(),ECGAnalysisConsistency:C,ECGReportSections:require('../static/js/report-sections.js'),AbortController,URLSearchParams,
+  const context=h.ctx=vm.createContext({state,$,$$,fetch,crypto:require('node:crypto').webcrypto,ECGReadRequests:Reads.create(),ECGAnalysisConsistency:C,ECGReportSections:require('../static/js/report-sections.js'),AbortController,URLSearchParams,
     ALL_LEADS:leads,withPhi:x=>x,escapeHtml:String,formatElapsed:v=>`D1 ${Number(v).toFixed(0)}s`,fmtNumber:String,
     document:{body:{classList:classes()}},window:{scrollTo(){}},ECGReviewTools:{...require('../static/js/clinical-review-tools.js'),shouldConfirmNavigation:()=>false},
     markWorkflowVisited(){},renderCaseWorkflow(){},updateWaveformModeUI(){},updateZoomControls(){},closeBeatRelabelMenu(){},
@@ -212,7 +212,7 @@ async function savedDraftAfterSameCasePageChange(){
 }
 async function saveFailureAndCaseSwitch(){
   const h=harness();await h.load();h.$('#sttReviewNote').value='retry draft';
-  const failed=h.ctx.saveSttReviewAnnotation();await tick();h.posts[0].reject(Error('synthetic POST offline'));await assert.rejects(failed,/POST offline/);
+  const failed=h.ctx.saveSttReviewAnnotation();await tick();h.posts[0].reject(Error('synthetic POST offline'));await assert.rejects(failed,/未重复提交/);assert.equal(h.state.sttRangeSubmission.uncertain,true);
   assert.equal(h.state.sttSaving,null);assert.equal(h.$('#sttReviewNote').value,'retry draft');assert.equal(h.$('#sttReviewForm button[type="submit"]').disabled,false);
   const retry=h.ctx.saveSttReviewAnnotation();await tick();assert.equal(h.posts.length,2);h.posts[1].resolve();await tick();h.waves.at(-1).resolve();await retry;
   assert.equal(h.$('#sttReviewNote').value,'');
