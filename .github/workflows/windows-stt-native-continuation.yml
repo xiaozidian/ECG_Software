@@ -1,0 +1,124 @@
+name: Windows ST-T immutable fresh-PE native continuation 1.0.13
+
+on:
+  push:
+    branches: ["codex/windows-doctor-deidentified-x64-20261028"]
+    paths:
+      - '.github/workflows/windows-stt-native-continuation.yml'
+      - 'scripts/prepare_stt_native_continuation.py'
+      - 'scripts/stt-native-continuation-contract.json'
+      - 'scripts/verify_windows_doctor_browser.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: windows-stt-native-continuation-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  native:
+    name: Verify exact fresh ST-T binary and execute every native gate
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+      ECG_ALLOW_PHI: "0"
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: project
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: project
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12.10"
+          architecture: x64
+          cache: pip
+          cache-dependency-path: project/requirements-doctor-build.txt
+      - name: Isolated native verification tools
+        run: |
+          python -m venv "$env:RUNNER_TEMP\stt-native-tools"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "$env:RUNNER_TEMP\stt-native-tools\Scripts" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Install pinned inspectors and system Edge control
+        run: |
+          python -m pip install -r requirements-doctor-build.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify original fresh producer sole hidden-control failure and exact artifacts40 modules80 UI129 production
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/prepare_stt_native_continuation.py --output "$env:RUNNER_TEMP\stt-continuation"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Actual original41 native checks including retained ST60s per-lead means and UI18 AF22 RR10
+        run: |
+          $input = Get-Content "$env:RUNNER_TEMP\stt-continuation\continuation-input.json" -Raw | ConvertFrom-Json
+          python scripts/verify_windows_doctor_browser.py --package-root "$($input.paths.full_root)" --software-archive "$($input.paths.upgrade_fixture)" --output "$env:RUNNER_TEMP\stt-continuation\evidence\browser-validation.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Actual P01 save reopen same-core upgrade8 checks
+        run: |
+          $input = Get-Content "$env:RUNNER_TEMP\stt-continuation\continuation-input.json" -Raw | ConvertFrom-Json
+          python scripts/verify_windows_p01.py --software-archive "$($input.paths.p01)" --math-source-root "$($input.paths.math_root)" --output "$env:RUNNER_TEMP\stt-continuation\evidence\p01-native.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Actual hospital ST600s full12lead records and AF4 twelve checks
+        run: |
+          $input = Get-Content "$env:RUNNER_TEMP\stt-continuation\continuation-input.json" -Raw | ConvertFrom-Json
+          python scripts/verify_windows_report_evidence_native.py --software-archive "$($input.paths.p01)" --output "$env:RUNNER_TEMP\stt-continuation\evidence\report-evidence-native.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Actual old12 to fresh13 preserves old6 evidence and enforces new-basis recheck nine checks
+        run: |
+          $input = Get-Content "$env:RUNNER_TEMP\stt-continuation\continuation-input.json" -Raw | ConvertFrom-Json
+          python scripts/verify_windows_stt_hospital_upgrade.py --base-software-archive "$($input.paths.base12)" --software-archive "$($input.paths.p01)" --output "$env:RUNNER_TEMP\stt-continuation\evidence\stt-hospital-upgrade-native.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Retain unchanged original P01 software
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CardioInsight-Windows-x64-1.0.13-P01-software-only
+          path: ${{ runner.temp }}/stt-continuation/original-artifacts/p01/*
+          if-no-files-found: warn
+          retention-days: 14
+          compression-level: 0
+      - name: Retain unchanged original M01 full
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CardioInsight-Windows-x64-1.0.13-M01-full
+          path: ${{ runner.temp }}/stt-continuation/original-artifacts/full/*
+          if-no-files-found: warn
+          retention-days: 14
+          compression-level: 0
+      - name: Retain unchanged original M01 update
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CardioInsight-Windows-x64-1.0.13-software-update
+          path: ${{ runner.temp }}/stt-continuation/original-artifacts/update/*
+          if-no-files-found: warn
+          retention-days: 14
+          compression-level: 0
+      - name: Retain unchanged original mathematical input
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CardioInsight-Synthetic-M01-24h-v1-for-1.0.13
+          path: ${{ runner.temp }}/stt-continuation/original-artifacts/math/*
+          if-no-files-found: warn
+          retention-days: 14
+          compression-level: 0
+      - name: Original passed scopes plus fresh complete native evidence with explicit provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-doctor-eval-mathematical-validation-1.0.13
+          path: ${{ runner.temp }}/stt-continuation/evidence
+          if-no-files-found: warn
+          retention-days: 14

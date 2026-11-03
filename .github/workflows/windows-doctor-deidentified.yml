@@ -3,6 +3,12 @@ name: Windows deidentified-profile software 1.0.13 (math CI only)
 on:
   push:
     branches: ["codex/windows-doctor-deidentified-x64-20261028"]
+    paths-ignore:
+      - '.github/workflows/windows-doctor-deidentified.yml'
+      - '.github/workflows/windows-stt-native-continuation.yml'
+      - 'scripts/prepare_stt_native_continuation.py'
+      - 'scripts/stt-native-continuation-contract.json'
+      - 'scripts/verify_windows_doctor_browser.py'
   workflow_dispatch:
 
 permissions:

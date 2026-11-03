@@ -1,0 +1,83 @@
+{
+  "producing_run": 41668322230,
+  "producing_commit": "8f275e793134ce9f51992609d90bbdefe4eccf2c",
+  "EXE_sha256": "881e82ef8d9490a54e2642e0a0d94178cef0c6f1e27385e5a98e18154a2a1737",
+  "runtime_python_sha256": {
+    "app.py": "19c4a32383d5c82abd4b9c818adbb30405ca1a0c0fd48f46319012da59a38964",
+    "win_doctor_eval.py": "755cfef85ebe20851c7a04e6a95521865daf47472d72a57776b6f68e42c4fe6e",
+    "ecg_core/__init__.py": "81dd81fdaba67c0690fb1a78be18508a66c9033db4307fb235f72b842c11ccdf",
+    "ecg_core/advanced_analysis.py": "df2ba3ca3e9020149133299c2255aad466f4f2e1d505ba2f981b25bf7ab16c3f",
+    "ecg_core/analysis_provenance.py": "e2c157d5fdb9ef75a5b0b7a24f13a89e855ef7abddd9b6f952719cab7299135c",
+    "ecg_core/beat_editor.py": "e3a7e351a95ac4f78c8dceedda5a21c135737d4aebb0485d1c4af442bb7b5ff1",
+    "ecg_core/clinical_analysis.py": "f5cc1ff303190ed1fdfad9c92077936f38ee80769f0e7373921808a40517bb74",
+    "ecg_core/clinical_query_cache.py": "b0ca1934769f72dc372bb79a5d6f3308fc658553356169ce08f03279261d1a16",
+    "ecg_core/config.py": "bbf8adfd354819fcea9e4abbc7d707e9361db0c6c5cf955dae8b6fabecb85a32",
+    "ecg_core/core_contract.py": "d701dc3f4e31dde1955072e3d0521e9f3282bfc7fb60888b18cdcd40662c747a",
+    "ecg_core/doctor_source.py": "037a07a91510210207dc2fd6d0af0b2630593ed302daf3852151deb7c1c8801d",
+    "ecg_core/ebi.py": "80dd8f1b4a59063fb96a0f848107cacbfee9b61264432964edbf97edccabdc80",
+    "ecg_core/evaluation_status.py": "a0f5c23bcb1de66f72b31bbd4b0c1005f708c56664cc199eeace8346b0a1757f",
+    "ecg_core/hrv_analysis.py": "b651ea7f92b19e94dcc7e8a405e402ee16201b2948c3736e5baa84d5d3bf55cf",
+    "ecg_core/hrv_report_pdf.py": "638d51c26e5316b663c97fabbe3b6045b28f6956ad8a1c5f74d408ce41c6fa70",
+    "ecg_core/hrv_review.py": "b8d28e6f852728546e87f3f2480af7c68332f354f732782cb4e97c232c2e2983",
+    "ecg_core/lps_parser.py": "9b2688e2668492f5e2b987b5a64798d4bcbd5062583a2c318b6637b2aa2e4c81",
+    "ecg_core/overview.py": "6715f00c5816ff531b2b8126c6438fd6f89c259115cb4ba83328ad15d2dee1c1",
+    "ecg_core/report_curation.py": "4ea19df99d2986cd2d35dc3df307066844b793a43c080fbf13e809fcc2aa6ca6",
+    "ecg_core/report_evidence.py": "702a7b36eef61ea8d4109780d312d2961293d88c536596ec86b4cd6e156287f8",
+    "ecg_core/report_layout.py": "e9273eaa17c0db979cf2ecc7943712b5bd530ee75be1e7ab6530041b5107a35a",
+    "ecg_core/report_paper_pdf.py": "fab1c02939146164b6a79aaf40dfbbb6678cf0c14ae2c3f323329d9efe537107",
+    "ecg_core/report_pdf.py": "e3f3bffe904da896e81fd94fb17f9da495c38003af9e093cd289bce7b5caf5ea",
+    "ecg_core/report_sections.py": "30801143b448f0e76b08c480c708a12fe89c2a9a5ecce996a51a339e8b4116f0",
+    "ecg_core/report_sections_pdf.py": "d30dd593cab5dce2e41f1c0304e27eb244086130adefd140358dd05316bc25a7",
+    "ecg_core/repository.py": "e17f3bd5c8fdba4891eb082b9d383124283650d1f4641a15702c04b4585b1b81",
+    "ecg_core/review_candidates.py": "f43b50ac39ec2bdba573dcb88c96d11900df8e1e722e39e155e8fad924536f26",
+    "ecg_core/review_workflow.py": "eebccbce351719e38b143ed5e67172ab3af0b07cb6f3d990992ee2fbb4981e2d",
+    "ecg_core/rr_quality.py": "fa9d5dafc3d851e411886ac6ea789a5958153c523e13575b912ba9f9cc29361c",
+    "ecg_core/rr_report.py": "619b8544f59fe1a99582a94d54423d4980f1bc6bb31c25455e74d06d306567ed",
+    "ecg_core/rr_review.py": "609acd9c66e256ce5a42767532d6195970defb1564f2b0e216b7ca0037e884bd",
+    "ecg_core/signal_profile.py": "6a33721d4e3b38d09228d8ce4604675b89a1a92bdb98c6e675824db164ec88c6",
+    "ecg_core/source_identity.py": "1e01f431ad78966b11b12729bb644521a23aee286e9cdb9d9f139d99bc94a418",
+    "ecg_core/storage.py": "ba19fe44095575ca01f7c7b8c6f64c65d37dc5b054334e6ca0ad7aca6aae6c66",
+    "ecg_core/stt.py": "e326d252c6875acc89d44bcba4294b03a8e0ae951b93a43f6d6203ea162a2e39",
+    "ecg_core/stt_range.py": "de50cbc5273533afae4c6a6929ec25823a7ce0dd1afd2e935e484e0f108153f4",
+    "ecg_core/stt_records.py": "08d004ad730ee08a227d520c3173db67f0505d24eb8f5bf9906caffe27120c8b",
+    "ecg_core/terminology.py": "70f0b680b4b96a85d9e7d9044ba071a06841965f229324c32789b04de6b607e0",
+    "ecg_core/waveform.py": "52d0c3dfc40ea0e8129bbd997974dfff54974782eb0b953561f81e1f16a4fbf7",
+    "ecg_core/workspace_backup.py": "594886d94868defe404eaeb5ad4ed7a638b886085bbb0dc9c7b3fe2caddedd53"
+  },
+  "outer_artifacts": {
+    "CardioInsight-Windows-x64-1.0.13-P01-software-only": {
+      "id": 13250315083,
+      "digest": "sha256:3ed0d49cd49c25e645345c2e5be2d94435b08ea6bda9d8da0d29b4c2d3728ed1",
+      "bytes": 38350856
+    },
+    "CardioInsight-Synthetic-M01-24h-v1-for-1.0.13": {
+      "id": 13250040394,
+      "digest": "sha256:8debef39dd432e32dfdd42a4c9de8bae63f7cae8d4012abc7ea06d778a9b979e",
+      "bytes": 163882723
+    },
+    "CardioInsight-Windows-x64-1.0.13-software-update": {
+      "id": 13249985346,
+      "digest": "sha256:be852d682224de8b25e6b88177d489a2f68aa69992aeaf5b4e6ce079b853dcc3",
+      "bytes": 38342420
+    },
+    "CardioInsight-Windows-x64-1.0.13-M01-full": {
+      "id": 13249885558,
+      "digest": "sha256:671fad276b4560f1a665404ceac0a8b1b8df4e792b4f39ea16e0de8b65dd581d",
+      "bytes": 202229686
+    },
+    "Windows-doctor-eval-mathematical-validation-1.0.13": {
+      "id": 13249760808,
+      "digest": "sha256:b3884b14e8e93c0ee1f61be767fe863a18c9354ce266cc837122096131686d27",
+      "bytes": 360762
+    }
+  },
+  "package_bytes": {
+    "p01": {
+      "sha256": "9189488b0c953381011568a598b75330e2113561ed6755b1c2affb5661c671e5",
+      "bytes": 38349352
+    }
+  },
+  "other_package_hash_contract": "exact SHA-pinned original full outer artifact authentic build-report and sidecars; all inner SHA recomputed after download; never metadata rewrite",
+  "fresh_EXE_not_old12": true,
+  "clinical_acceptance": false
+}

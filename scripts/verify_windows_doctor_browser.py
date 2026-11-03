@@ -559,6 +559,14 @@ async def stt_range(page):
     started = time.perf_counter()
     await navigate(page, "stt")
     await page.wait_for_function("() => state.sttEvidence && document.querySelector('#sttWaveCanvasWrap').dataset.sttWaveState==='ready'")
+    # Hospital layout keeps the existing additional mean controls in an actual
+    # folded tool group. Open its public summary before using the same inputs.
+    tools = page.locator("#page-stt details.stt-measurement-tools")
+    require(await tools.count() == 1, "ST additional measurement tool group is missing or duplicated")
+    if not await tools.evaluate("node => node.open"):
+        await tools.locator(":scope > summary").click()
+    await page.locator("[data-sttr-start]").wait_for(state="visible")
+    await page.locator("[data-sttr-start]").scroll_into_view_if_needed()
     await page.locator("[data-sttr-start]").fill("0")
     await page.locator("[data-sttr-end]").fill("60")
     async with page.expect_response(lambda response: urlsplit(response.url).path.endswith("/stt-range") and response.request.method == "POST") as pending:
@@ -567,8 +575,15 @@ async def stt_range(page):
     require(response.ok, "Native one-minute ST range request failed")
     native = await response.json()
     await page.wait_for_function("() => document.querySelector('#sttRangeReview')._sttRangeController?.state().result")
+    request = response.request.post_data_json
+    require(request["start_sample"] == 0 and request["end_sample"] == 12000, "ST request substituted the displayed waveform for the complete source minute")
     require(native["schema_version"] == "stt-range-mean-v1", "ST mean must come from the native full-input algorithm")
     require(native["range"]["end_sample"] - native["range"]["start_sample"] == 12000, "ST range must cover a complete minute")
+    require(native["range"]["start_sample"] == 0 and native["range"]["end_sample"] == 12000, "Native ST result substituted a different source range")
+    profile = native["method_profile"]
+    require(profile["id"] == "raw-200hz-fixed16s-st-perbeat-mean-v1" and profile["sample_rate_hz"] == 200, "Native ST method profile changed")
+    require(profile["measurement_ms"] == request["measurement_ms"] == 60 and profile["block_seconds"] == 16, "Native ST landmark protocol differs from the actual request")
+    require(profile["filter"] == "raw source; no display high-pass" and profile["mean_beat_limit"] is None, "Display filtering or beat sampling replaced the raw complete-range ST mean")
     counts = native["counts"]
     require(counts["detected_count"] == counts["used_count"] + counts["excluded_count"] + counts["missing_count"], "ST count accounting failed")
     require(counts["used_count"] > 0, "Mathematical minute has no usable native ST measurements")
