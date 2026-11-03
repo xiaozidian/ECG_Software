@@ -28,7 +28,7 @@ async function settle(page){await page.evaluate(()=>new Promise(resolve=>request
  browser=await chromium.launch({executablePath:process.env.ECG_CHROME||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true,chromiumSandbox:true});result.browser=await browser.version();
  for(const viewport of [{width:900,height:900,dpr:1},{width:1600,height:1000,dpr:1},{width:2048,height:1152,dpr:2}]){
   const context=await browser.newContext({viewport:{width:viewport.width,height:viewport.height},deviceScaleFactor:viewport.dpr});try{
-   const page=await context.newPage();page.setDefaultTimeout(10000);page.on('pageerror',e=>result.page_errors.push(e.message));await page.route('**/*',r=>{result.network.push(r.request().url());return r.abort();});await page.setContent(html);await page.evaluate(()=>initial);await settle(page);assert.equal(await page.locator('#v2EventWave .report-range-stage [data-wave-lead]').count(),3);await page.locator('#v2EventWave [data-display-leads="12"]').click();await settle(page);
+   const page=await context.newPage();page.setDefaultTimeout(10000);page.on('pageerror',e=>result.page_errors.push(e.message));await page.route('**/*',r=>{result.network.push(r.request().url());return r.abort();});await page.setContent(html);await page.evaluate(()=>initial);await settle(page);assert.equal(await page.locator('#v2EventWave .report-range-stage [data-wave-lead]').count(),3);await page.locator('#v2EventWave button[data-display-leads="12"]').click();await settle(page);
    const metadata=await page.evaluate(()=>fixture.metadata()),baseline=await geometry(page);assert.equal(baseline.lead_count,12);
    if(viewport.width>=1100){
     // The current report also contains a location strip; verify actual pointer access below.
