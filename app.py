@@ -604,14 +604,17 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         feed = edited_feed(case, editor_value["document"])
         overrides = storage.list_beat_overrides(case_id)
         override_signature = ",".join(f"{item['sample_index']}:{item['class_code']}" for item in overrides)
+        from ecg_core.stt_records import rhythm_exclusions
         result = build_stt_review(
             case.get("conclusion", ""),
             case["paths"]["data"],
             feed.records,
             case["technical"]["duration_seconds_raw"],
             analysis_revision=f"editor-{editor_value['revision']}|overrides-{override_signature or 'none'}",
+            excluded_intervals=rhythm_exclusions(storage.list_annotations(case_id)),
         )
         linked_read_identity(case, basis)
+        result['review_records']=[a for a in stt_annotation_items(case) if a.get('details',{}).get('kind') in ('ST','ST_REVIEW_NOTE')]
         return jsonify({**result, **basis})
 
     @app.patch("/api/cases/<case_id>/patient")
@@ -682,13 +685,25 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
             refs={r["template_id"]:json.loads(r["beat_ids"]) for r in db.execute("SELECT * FROM beat_edit_template_refs WHERE case_id=?",(case["case_id"],))}
         for t in templates:
             t["sample_indices"]=[by_id[k]["sample_index"] for k in refs.get(t["id"],[f"s:{s}" for s in t["sample_indices"]]) if k in by_id]
-        index=build_index(feed,templates,storage.list_annotations(case["case_id"]),storage.get_review(case["case_id"]))
+        annotations=storage.list_annotations(case["case_id"])
+        index=build_index(feed,templates,annotations,storage.get_review(case["case_id"]))
         index['start_time']=case['metadata'].get('start_iso') or case['metadata'].get('start_time')
         identity=linked_read_identity(case)
         for event in index['events']:
             proof=event.get('stt_event_evidence')
-            if proof and any(proof.get('scope',{}).get(k)!=identity[k] for k in ('case_id','analysis_basis','beat_revision')):
-                event['diagnosis_status']='pending';event['stt_evidence_stale']=True
+            stt_scope=event.get('stt_source_scope') or (proof or {}).get('scope')
+            if event.get('category')=='ST' and stt_scope and any(stt_scope.get(k)!=identity[k] for k in ('case_id','analysis_basis','beat_revision')):
+                from ecg_core.stt_records import mark_stale
+                mark_stale(event)
+            if event.get('category')=='ST' and (proof or {}).get('rhythm_exclusions_digest'):
+                from ecg_core.stt_records import mark_stale,rhythm_scope_digest
+                if proof['rhythm_exclusions_digest']!=rhythm_scope_digest(annotations,event['start_sample'],event['end_sample']+1):mark_stale(event)
+            if event.get('category')=='ST' and event.get('range_statistics'):
+                from ecg_core.stt_records import mark_stale,rhythm_scope_digest,mask_scope_digest
+                statistics=event['range_statistics'];interval=statistics.get('range',{})
+                if 'start_sample' in interval and 'end_sample' in interval:
+                    saved=mask_scope_digest(statistics.get('exclusions',{}).get('intervals',[]),interval['start_sample'],interval['end_sample'])
+                    if saved!=rhythm_scope_digest(annotations,interval['start_sample'],interval['end_sample']):mark_stale(event)
         index=augment_index(index, storage.list_candidates(case['case_id']), identity)
         return attach_reviews(index, identity, storage.list_report_evidence(case['case_id']))
 
@@ -977,11 +992,27 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         clinical_read_basis(case, basis)
         return jsonify({**result, **basis})
 
+    def report_section_evidence(case,index=None):
+        from ecg_core.report_sections import evidence
+        value=evidence(index if index is not None else clinical_index(case),stt_review(case['case_id']).get_json())
+        rows=value['st_events'];roles=[]
+        for role,field,anchor in [('st_min','minimum_st_level_units','minimum_st_sample'),('st_max','maximum_st_level_units','maximum_st_sample'),('reference','reference_st_level_units','reference_sample')]:
+            usable=[r for r in rows if r.get(field) is not None and r.get(anchor) is not None]
+            if not usable:continue
+            row=min(usable,key=lambda r:r[field]) if role=='st_min' else max(usable,key=lambda r:r[field]) if role=='st_max' else usable[0]
+            at=row[anchor]/200;start=max(0,at-.25);end=min(case['technical']['duration_seconds_raw'],at+.65)
+            wave=read_event_waveform(case['paths']['data'],start,end,[row['lead']],600)
+            roles.append(dict(role=role,label={'st_min':'最深ST电平实际搏','st_max':'最高ST电平实际搏','reference':'范围均值附近实际参考搏'}[role],
+                lead=row['lead'],sample_index=row[anchor],time_s=at,event_id=row['event_id'],basis_version=row['basis_version'],
+                value=row[field],units='source_device_units',metric='st_level',measurement_protocol=row['measurement_protocol'],
+                reference_method='nearest_valid_beat_to_event_mean_st_level' if role=='reference' else None,waveform=wave))
+        value['st_representatives']=roles
+        return value
+
     @app.get("/api/cases/<case_id>/report-sections")
     def report_sections_endpoint(case_id):
-        from ecg_core.report_sections import evidence
         case=case_or_404(case_id)
-        return clinical_response(case, lambda: evidence(clinical_index(case),stt_review(case_id).get_json()))
+        return clinical_response(case,lambda:report_section_evidence(case))
 
     def advanced_evidence(case, index, options=None):
         from ecg_core.advanced_analysis import analyze, report_documents
@@ -1006,8 +1037,9 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         rows = feed.beats + feed.markers
         bv = fingerprint('|'.join(f"{r['id']}:{r['sample_index']}:{r['class_code']}" for r in rows)
                          + '|' + encode([[k, opts[k]] for k in sorted(opts)]))
+        from ecg_core.stt_records import ST_KINDS
         findings = [a for a in storage.list_annotations(case['case_id'])
-                    if a.get('details', {}).get('kind') in ('ST', 'AT', 'VT', 'AF', 'AFL', 'STRIP')]
+                    if a.get('details', {}).get('kind') in (*ST_KINDS, 'AT', 'VT', 'AF', 'AFL', 'STRIP')]
         av = fingerprint(encode([[a['id'], a['sample_index'], a.get('details')] for a in findings]))
         return bv + '-' + av + DATA_VERSION_SUFFIX
 
@@ -1056,21 +1088,11 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         for name, value in (('source_digest', source_digest), ('data_version', data_version)):
             if name in scope and scope[name] != value:
                 raise ReportConflict('范围统计来源或复核依据已变化，请重新读取')
-        exclusions = []
         # Use the same authoritative AF/AFL annotations as RR eligibility.
         # Their end_sample is inclusive; the statistic accepts half-open masks.
         # Pending episodes also withhold beats and must retain their actual status.
-        for row in storage.list_annotations(case_id):
-            details = row.get('details') or {}
-            if details.get('kind') not in ('AF', 'AFL') or details.get('status') == 'excluded':
-                continue
-            start, end = row.get('sample_index'), details.get('end_sample')
-            if type(start) is not int or type(end) is not int:
-                raise ValueError('节律排除区间须使用完整原始样本范围')
-            exclusions.append(dict(start_sample=start, end_sample=end + 1,
-                                   reason='rhythm_' + details['kind'],
-                                   origin='stored_annotation',
-                                   review_status=str(details.get('status', 'unclassified'))))
+        from ecg_core.stt_records import rhythm_exclusions
+        exclusions=rhythm_exclusions(storage.list_annotations(case_id))
         result = analyze_stt_range(case['paths']['data'], feed.records,
             start_sample=payload.get('start_sample'), end_sample=payload.get('end_sample'),
             leads=payload.get('leads'), measurement_ms=payload.get('measurement_ms', 60),
@@ -1764,13 +1786,104 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
 
     @app.get("/api/cases/<case_id>/annotations")
     def annotations(case_id: str):
-        case_or_404(case_id)
-        return jsonify({"items": storage.list_annotations(case_id)})
+        case=case_or_404(case_id)
+        return jsonify({"items": stt_annotation_items(case)})
+
+    def stt_annotation_items(case):
+        items=storage.list_annotations(case['case_id'])
+        if not any(a.get('details',{}).get('kind') in ('ST','ST_REVIEW_NOTE') for a in items):return items
+        index=clinical_index(case);events={e['event_id']:e for e in index['events'] if e.get('category')=='ST'}
+        report=storage.get_report(case['case_id'],'')
+        from ecg_core.stt_records import use_for
+        for item in items:
+            event=events.get('annotation:'+str(item['id']))
+            if event:
+                item['stt_review_receipt']={**event['stt_review_receipt'],'report_use':use_for(report['composition'],event)}
+        return items
+
+    def save_stt_annotation(case,payload,annotation_id=None):
+        from ecg_core.stt_records import digest,protocol,RESULTS
+        from ecg_core.stt import LEADS
+        from uuid import UUID
+        details=payload.get('details')
+        if not isinstance(details,dict) or details.get('reviewed') is not True or details.get('result_code') not in RESULTS:raise ValueError('请选择并保存本条医生复核结果')
+        identifier=details.get('submission_id')
+        if not isinstance(identifier,str) or str(UUID(identifier))!=identifier:raise ValueError('ST-T提交编号须为规范UUID')
+        request_hash=digest(payload)
+        scope=details.get('review_scope')
+        if not isinstance(scope,dict) or any(k not in scope for k in ('case_id','analysis_basis','analysis_revision','beat_revision')):raise ValueError('ST-T保存缺少当前完整依据')
+        def source_guard(db=None):linked_read_identity(case,{k:scope[k] for k in ('case_id','analysis_basis','beat_revision')})
+        previous=storage.stt_replay(case['case_id'],identifier,request_hash,'create' if annotation_id is None else 'update',annotation_id)
+        if previous:
+            source_guard()
+            return next(a for a in stt_annotation_items(case) if a['id']==previous['id'])
+        identity=linked_read_identity(case,scope)
+        first=payload.get('sample_index');end=details.get('end_sample')
+        if type(first) is not int or type(end) is not int or not 0<=first<=end<round(case['technical']['duration_seconds_raw']*200):raise ValueError('ST-T复核完整范围超出记录')
+        leads=details.get('review_leads')
+        if not isinstance(leads,list) or not leads or len(set(leads))!=len(leads) or any(x not in LEADS for x in leads):raise ValueError('请选择实际复核导联，查看导联不代表异常导联')
+        if 'stt_event_evidence' in details:raise ValueError('ST-T事件证据须由服务器核验')
+        chosen=None
+        if details.get('stt_candidate_id'):
+            candidate_scope=details.get('stt_candidate_scope')
+            if not isinstance(candidate_scope,dict) or any(k not in candidate_scope for k in ('case_id','analysis_basis','analysis_revision','beat_revision')):raise ValueError('ST-T候选须提供当前完整筛查依据')
+            linked_read_identity(case,candidate_scope)
+            measured=stt_review(case['case_id']).get_json()
+            chosen=next((c for c in measured['automatic_candidates']['items'] if c['id']==details['stt_candidate_id']),None)
+            if chosen is None:raise ReportConflict('原ST-T候选已变化，请重选后核对')
+        attached=details.get('range_statistics')
+        if attached is not None:
+            validate_stt_range_snapshot(case,attached)
+            if not first<=attached['range']['start_sample']<attached['range']['end_sample']<=end+1:raise ValueError('附加均值统计须位于本次完整复核范围内')
+        details['measurement_protocol']=protocol(details.get('measurement_protocol'))
+        if details['measurement_protocol']['extent']=='whole' and details['measurement_protocol']['baseline_method']!='pre_qrs_stable':raise ValueError('整段逐搏统计仅支持既定逐搏基线；手工ISO仅用于本点测量')
+        point_measurement=details.get('point_measurement')
+        if point_measurement is not None:
+            if not isinstance(point_measurement,dict) or any(type(point_measurement.get(k)) is not int or not 0<=point_measurement[k]<round(case['technical']['duration_seconds_raw']*200) for k in ('iso_sample','j_sample','measurement_sample')):raise ValueError('ST-T手工点测量位置无效')
+            if not point_measurement['iso_sample']<point_measurement['j_sample']<=point_measurement['measurement_sample']:raise ValueError('ST-T手工ISO/J次序无效')
+            if point_measurement.get('measurement_ms')!=details['measurement_protocol']['measurement_ms'] or abs(point_measurement['measurement_sample']-point_measurement['j_sample']-details['measurement_protocol']['measurement_ms']/5)>1:raise ValueError('手工测量位置与STJ/ST60/ST80协议不一致')
+            point_leads=point_measurement.get('leads')
+            if not isinstance(point_leads,list) or not point_leads or len(set(point_leads))!=len(point_leads) or any(x not in LEADS for x in point_leads):raise ValueError('ST-T点测量导联无效')
+            window_start=point_measurement.get('window_start_s');window_duration=point_measurement.get('window_duration_s')
+            if any(type(x) not in (int,float) or not math.isfinite(x) for x in (window_start,window_duration)) or not 0<=window_start<window_start+window_duration<=case['technical']['duration_seconds_raw']+1e-8:raise ValueError('ST-T点测量窗口无效')
+            if not window_start*200-1<=point_measurement['iso_sample']<point_measurement['measurement_sample']<=(window_start+window_duration)*200+1:raise ValueError('ST-T点测量位置不在显示窗口内')
+        extent=details.get('review_extent','point')
+        if extent not in ('point','whole'):raise ValueError('ST-T复核作用范围无效')
+        if extent=='whole':
+            machine_protocol=protocol(dict(measurement_ms=details['measurement_protocol']['measurement_ms'] if details['measurement_protocol']['extent']=='whole' else 60,extent='whole'))
+            kind={'st_depression':'st_depression','st_elevation':'st_elevation','t_change':'t_wave_inversion'}.get(details['result_code'],(chosen or {}).get('kind','stt_review'))
+            exact=chosen is not None and first==round(chosen['start_s']*200) and end+1==round(chosen['end_s']*200) and set(leads)<=set(chosen['leads'])
+            proof={k:chosen[k] for k in ('continuous_target_s','peak_time_s','peak_deviation_units','quality_score') if exact and k in chosen} if chosen else {}
+            proof.update(kind=kind,start_s=first/200,end_s=(end+1)/200,duration_s=(end+1-first)/200,leads=leads,
+                measurement_protocol=machine_protocol,scope=identity,units='source_device_units',
+                source='reviewed_automatic_candidate' if exact else 'physician_selected_range',
+                original_machine_range={k:chosen[k] for k in ('start_s','end_s')} if chosen else None)
+            from ecg_core.stt_records import rhythm_scope_digest
+            proof['rhythm_exclusions_digest']=rhythm_scope_digest(storage.list_annotations(case['case_id']),first,end+1)
+            if chosen:proof['candidate_id']=chosen['id']
+            if end+1-first>=12000:
+                statistics=stt_range_result(case,dict(scope=identity,start_sample=first,end_sample=end+1,leads=leads,measurement_ms=machine_protocol['measurement_ms']))
+                proof['metrics']=statistics['leads'];proof['coverage']=statistics['coverage'];proof['counts']=statistics['counts']
+                proof['measurement_protocol']['range_profile']=statistics['method_profile']
+            proof['boundary_resolution_s']=16 if exact else .005
+            proof['continuous_target_s']=proof.get('continuous_target_s')
+            details['stt_event_evidence']=proof
+        item=storage.save_stt_record(case['case_id'],payload,ACTOR,guard=candidate_guard(case,identity),replay_guard=source_guard,
+            request_sha256=request_hash,annotation_id=annotation_id,expected_record_version=payload.get('expected_record_version'))
+        updated=next(a for a in stt_annotation_items(case) if a['id']==item['id'])
+        if 'stt_report_reconciliation' in item:updated['stt_review_receipt']['report_reconciliation']=item['stt_report_reconciliation']
+        return updated
+
+    @app.put('/api/cases/<case_id>/annotations/<int:annotation_id>')
+    def stt_annotation_update(case_id,annotation_id):
+        return jsonify(save_stt_annotation(case_or_404(case_id),_json_object(),annotation_id))
 
     @app.post("/api/cases/<case_id>/annotations")
     def annotation_create(case_id: str):
         case = case_or_404(case_id)
         payload = _json_object()
+        if isinstance(payload.get('details'),dict) and payload['details'].get('reviewed') is True:
+            return jsonify(save_stt_annotation(case,payload)),201
         sample_index = payload.get("sample_index", 0)
         if isinstance(sample_index, bool) or not isinstance(sample_index, (int, float)) or int(sample_index) != sample_index:
             raise ValueError("sample_index 必须为整数")
@@ -1938,7 +2051,7 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         report['hrv_windows']=hrv_windows(edited_feed(case),case['metadata'].get('start_iso') or case['metadata'].get('start_time'),report['composition'].get('hrv_window',0))
         from ecg_core.report_sections import evidence, validate_pages
         page_keys=validate_pages(report['composition'])
-        report['section_evidence']=evidence(index,stt_review(case_id).get_json())
+        report['section_evidence']=report_section_evidence(case,index)
         if any(k in page_keys for k in ('qtd','vcg','twa','sap')):
             report['section_evidence']['advanced']=advanced_evidence(case,index,report['composition'].get('advanced_options'))
         if any(k.startswith('hrv_') for k in page_keys):

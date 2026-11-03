@@ -12,7 +12,7 @@ function harness() {
   $('#worklistFilter').value = 'all';
   const state = {search:'',cases:[],dashboard:null,dashboardStatus:'loading',dashboardRequestId:0,dashboardError:'',workspaceReady:false,workspaceEpoch:'',includePhi:false,allowPhi:true};
   const noop = () => {};
-  const ctx = vm.createContext({state,$,AbortController,navigator:{platform:''},
+  const ctx = vm.createContext({ECGReviewTools:require('../static/js/clinical-review-tools.js'),state,$,AbortController,navigator:{platform:''},
     setTimeout(fn,ms){const id=++timerId;timers.set(id,{fn,ms});return id;},clearTimeout:id=>timers.delete(id),
     handleError:e=>errors.push(e),selectCase:async(id,destination)=>{opened.push({id,destination});state.caseLoading={};},
     sourceHint:String,applyPlatformIdentity:noop,bindEvents:noop,updateWaveformModeUI:noop,setLeadPickerSelection:noop,

@@ -55,6 +55,11 @@ def _digest(value):
     return sha256(payload.encode("utf-8")).hexdigest()
 
 
+def _nearest_mean_index(values):
+    mean=math.fsum(values)/len(values)
+    return min(range(len(values)),key=lambda i:abs(values[i]-mean))
+
+
 def method_profile(measurement_ms=60):
     if type(measurement_ms) is not int or measurement_ms not in (0, 60, 80):
         raise STTRangeError("measurement_ms must be 0, 60 or 80")
@@ -195,6 +200,7 @@ def _calculate(buffer, total_samples, records, *, start_sample, end_sample,
             blocks_by_index.setdefault(row[0] // BLOCK_SAMPLES, []).append(row)
     lead_indices = [LEADS.index(x) for x in chosen]
     values = {lead: [] for lead in chosen}
+    anchors={lead:[] for lead in chosen};t_values={lead:[] for lead in chosen};t_anchors={lead:[] for lead in chosen}
     reasons, statuses, mask_flags = Counter(), Counter(), Counter()
     flag_definitions = {}
     detail_blocks, used_anchors, eligible_samples = [], [], 0
@@ -283,8 +289,19 @@ def _calculate(buffer, total_samples, records, *, start_sample, end_sample,
             st = np.median(_sample_frames(buffer, used, range(st_offset-2, st_offset+3), total_samples), axis=1)
             differences = st - baseline
             for column, lead in zip(lead_indices, chosen):
+                if not measurement['leads'][lead].get('eligible',False):continue
                 block_values[lead] = differences[:, column].tolist()
                 values[lead].extend(block_values[lead])
+                anchors[lead].extend(r[0] for r in used)
+            for i,beat in enumerate(used):
+                rr_samples=max(round(beat[2]*SAMPLE_RATE/1000),round(.45*SAMPLE_RATE))
+                last=min(j+72,max(j+30,round(rr_samples*.62)))
+                if mask_index.hits(beat[0]+j+24,beat[0]+last+1):continue
+                frames=_sample_frames(buffer,[beat],range(j+24,last+1,2),total_samples)[0]-baseline[i]
+                for column,lead in zip(lead_indices,chosen):
+                    if not measurement['leads'][lead].get('eligible',False):continue
+                    samples=frames[:,column];value=float(samples[np.argmax(np.abs(samples))])
+                    t_values[lead].append(value);t_anchors[lead].append(beat[0])
             used_anchors.extend(r[0] for r in used)
         block_status, block_reasons, block_flags = Counter(), Counter(), Counter()
         for row in selected_rows:
@@ -337,6 +354,17 @@ def _calculate(buffer, total_samples, records, *, start_sample, end_sample,
                                for key, value in sorted(mask_flags.items())],
         "count_definition": "used/excluded/missing and primary reason counts are mutually exclusive per detected R; mask reason flags may overlap and never invent undetected beats",
         "leads": [{"lead": lead, "mean_units": math.fsum(v)/len(v) if v else None,
+                   "mean_st_level_units":math.fsum(v)/len(v) if v else None,
+                   "minimum_st_level_units":min(v) if v else None,"maximum_st_level_units":max(v) if v else None,
+                   "minimum_st_sample":anchors[lead][v.index(min(v))] if v else None,
+                   "maximum_st_sample":anchors[lead][v.index(max(v))] if v else None,
+                   "reference_sample":anchors[lead][_nearest_mean_index(v)] if v else None,
+                   "reference_st_level_units":v[_nearest_mean_index(v)] if v else None,
+                   "mean_t_amplitude_units":math.fsum(t_values[lead])/len(t_values[lead]) if t_values[lead] else None,
+                   "extreme_t_amplitude_units":max(t_values[lead],key=abs) if t_values[lead] else None,
+                   "extreme_t_sample":t_anchors[lead][max(range(len(t_values[lead])),key=lambda i:abs(t_values[lead][i]))] if t_values[lead] else None,
+                   "t_used_count":len(t_values[lead]),"slope":None,"calibrated_mm":None,
+                   "availability":"available" if v else "unavailable",
                    "used_count": len(v), "excluded_count": counts["excluded_count"],
                    "missing_count": counts["missing_count"], "reason_counts": counts["reason_counts"].copy()}
                   for lead, v in values.items()],

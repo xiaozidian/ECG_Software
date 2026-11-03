@@ -31,6 +31,7 @@ vm.runInContext(workflow.slice(workflow.indexOf('  function renderPreflight('), 
 ctx.clinicalWorkflow = {readiness: () => !pendingSteps.length, writable: () => isWritable, renderPreflight: ctx.renderPreflight};
 const ui = fs.readFileSync('static/js/clinical-ui.js', 'utf8');
 vm.runInContext(ui.slice(ui.indexOf('  const reportCategories='), ui.indexOf('  const tabs=')), ctx);
+require('./clinical_ui_report_helpers.cjs').prepare(ctx);
 vm.runInContext(ui.slice(ui.indexOf('  function renderReportShell('), ui.indexOf('  async function reloadReport(')), ctx);
 
 element('#conclusionEditor').value = 'unsaved local input';

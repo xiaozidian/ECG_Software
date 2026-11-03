@@ -94,6 +94,9 @@ def normalize_report_composition(value: dict | None) -> dict:
         raise ValueError("preview_mode 不受支持")
     if fast_slow_mode not in REPORT_FAST_SLOW_MODES:
         raise ValueError("fast_slow_mode 不受支持")
+    from .stt_records import normalized_uses
+    if 'stt_trend_metric' in value and value['stt_trend_metric'] not in ('st_level','delta'):
+        raise ValueError('ST 趋势指标无效')
     raw_paper = value.get("paper", {})
     if not isinstance(raw_paper, dict):
         raise ValueError("paper 必须为 JSON 对象")
@@ -113,6 +116,8 @@ def normalize_report_composition(value: dict | None) -> dict:
         raise ValueError("paper 图条设置不受支持")
     return {
         **normalize_selection(value),
+        **({'stt_report_use':normalized_uses(value['stt_report_use'])} if 'stt_report_use' in value else {}),
+        **({'stt_trend_metric':value['stt_trend_metric']} if 'stt_trend_metric' in value else {}),
         **({"narrative_templates": narrative_templates(value["narrative_templates"])} if "narrative_templates" in value else {}),
         **({"terminology_usages": normalize_terminology_usages(value["terminology_usages"])} if "terminology_usages" in value else {}),
         **({"hrv_review_reference": normalize_hrv_reference(value["hrv_review_reference"])} if "hrv_review_reference" in value else {}),
@@ -179,6 +184,12 @@ class Storage(ReviewWorkflowMixin, EvidenceCandidateMixin, ReportEvidenceMixin):
                     created_by TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS stt_review_submissions (
+                    case_id TEXT NOT NULL, submission_id TEXT NOT NULL,
+                    annotation_id INTEGER NOT NULL, operation TEXT NOT NULL,
+                    request_sha256 TEXT NOT NULL,
+                    PRIMARY KEY(case_id,submission_id)
                 );
                 CREATE INDEX IF NOT EXISTS idx_annotation_case_sample
                     ON annotations(case_id, sample_index);
@@ -576,11 +587,108 @@ class Storage(ReviewWorkflowMixin, EvidenceCandidateMixin, ReportEvidenceMixin):
             elif source_guard is not None: source_guard()
         return {**dict(row),"details":details}
 
+    def stt_replay(self,case_id,identifier,request_sha256,operation,annotation_id=None):
+        with self.connect() as db:
+            prior=db.execute('SELECT * FROM stt_review_submissions WHERE case_id=? AND submission_id=?',(case_id,identifier)).fetchone()
+            if prior is None:return None
+            if prior['request_sha256']!=request_sha256 or prior['operation']!=operation or annotation_id is not None and prior['annotation_id']!=annotation_id:raise ReportConflict('此ST-T提交编号已用于另一份内容')
+            row=db.execute('SELECT * FROM annotations WHERE case_id=? AND id=?',(case_id,prior['annotation_id'])).fetchone()
+        if row is None:raise ReportConflict('已保存的ST-T记录已删除，未自动重复创建')
+        item=dict(row);item['details']=json.loads(item['details']);item['stt_replayed']=True
+        return item
+
+    @staticmethod
+    def _withdraw_stt_generated_text(composition,event_id):
+        key='ST:review:'+event_id;removed=[];kept=[]
+        for block in composition.get('diagnosis_blocks',[]):
+            if block.get('key')!=key:kept.append(block)
+            elif block.get('manual') is False:removed.append(block)
+            else:kept.append({**block,'needs_review':True,'acknowledged':False})
+        if 'diagnosis_blocks' in composition:composition['diagnosis_blocks']=kept
+        return removed
+
+    def save_stt_record(self, case_id, payload, actor, *, guard, replay_guard,
+                        request_sha256, annotation_id=None, expected_record_version=None):
+        """One UUID intent, record mutation, report withdrawal and audit transaction."""
+        from uuid import UUID
+        from .stt_records import RESULTS, protocol, status_for
+        from .report_layout import LEADS
+        d=dict(payload.get('details') or {})
+        identifier=d.get('submission_id')
+        if not isinstance(identifier,str) or str(UUID(identifier))!=identifier:raise ValueError('ST-T 保存须提供规范 UUID 提交编号')
+        if d.get('reviewed') is not True or d.get('result_code') not in RESULTS:raise ValueError('请选择本次医生复核结果并保存')
+        if d.get('kind')!='ST':raise ValueError('ST-T 复核记录类型无效')
+        first=payload.get('sample_index');end=d.get('end_sample',first)
+        if type(first) is not int or type(end) is not int or first<0 or end<first:raise ValueError('ST-T 复核范围无效')
+        leads=d.get('review_leads')
+        if not isinstance(leads,list) or not leads or len(set(leads))!=len(leads) or any(x not in LEADS for x in leads):raise ValueError('请选择实际复核的有效导联')
+        d['measurement_protocol']=protocol(d.get('measurement_protocol'))
+        if d.get('review_extent','point') not in ('point','whole'):raise ValueError('复核范围类型无效')
+        d['status']=status_for(d['result_code']);d['finding']=str(d.get('finding',payload.get('label','')))[:120]
+        for name,limit in (('label',120),('note',2000),('lead',16),('category',32)):
+            if not isinstance(payload.get(name,''),str) or len(payload.get(name,''))>limit:raise ValueError('ST-T 复核文字无效或过长')
+        if payload.get('lead','') not in ('','全部',*LEADS):raise ValueError('ST-T 导联无效')
+        now=utc_now();operation='create' if annotation_id is None else 'update'
+        with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            prior=db.execute('SELECT * FROM stt_review_submissions WHERE case_id=? AND submission_id=?',(case_id,identifier)).fetchone()
+            if prior:
+                if prior['request_sha256']!=request_sha256 or prior['operation']!=operation or annotation_id is not None and prior['annotation_id']!=annotation_id:raise ReportConflict('此提交编号已用于另一份ST-T内容，未覆盖或重复保存')
+                replay_guard(db)
+                row=db.execute('SELECT * FROM annotations WHERE case_id=? AND id=?',(case_id,prior['annotation_id'])).fetchone()
+                if row is None:raise ReportConflict('该ST-T提交曾已保存但记录已删除，未自动重建')
+                item=dict(row);item['details']=json.loads(item['details']);item['stt_replayed']=True;return item
+            guard(db)
+            previous=None
+            if annotation_id is not None:
+                previous=db.execute('SELECT * FROM annotations WHERE case_id=? AND id=?',(case_id,annotation_id)).fetchone()
+                if not previous:raise ReportConflict('原ST-T复核记录不存在，未创建另一条')
+                old=json.loads(previous['details'] or '{}')
+                if old.get('kind') not in ('ST','ST_REVIEW_NOTE'):raise ValueError('仅可修订同一ST-T记录')
+                if type(expected_record_version) is not int or expected_record_version!=old.get('record_version',1):raise ReportConflict('ST-T记录版本已变化，请载入本条后重新核对')
+                d['record_version']=old.get('record_version',1)+1
+                if old.get('withdrawn_report_settings'):d['withdrawn_report_settings']=old['withdrawn_report_settings']
+            else:d['record_version']=1
+            reconciliation=dict(removed_selections=[],removed_uses=[],removed_diagnosis_blocks=[],reason='ST-T记录修订后重新选择本次采用用途')
+            if previous:
+                report=db.execute('SELECT composition FROM report_drafts WHERE case_id=?',(case_id,)).fetchone()
+                if report:
+                    comp=json.loads(report['composition'] or '{}');event_id='annotation:'+str(annotation_id)
+                    reconciliation['removed_selections']=[s for s in comp.get('selected_events',[]) if s['event_id']==event_id]
+                    reconciliation['removed_uses']=[s for s in comp.get('stt_report_use',[]) if s['event_id']==event_id]
+                    comp['selected_events']=[s for s in comp.get('selected_events',[]) if s['event_id']!=event_id]
+                    if 'stt_report_use' in comp:comp['stt_report_use']=[s for s in comp['stt_report_use'] if s['event_id']!=event_id]
+                    reconciliation['removed_diagnosis_blocks']=self._withdraw_stt_generated_text(comp,event_id)
+                    db.execute('UPDATE report_drafts SET composition=? WHERE case_id=?',(json.dumps(comp,ensure_ascii=False),case_id))
+                    if reconciliation['removed_selections']:d['withdrawn_report_settings']=reconciliation['removed_selections']
+                d['last_report_reconciliation']=reconciliation
+            encoded=json.dumps(d,ensure_ascii=False,allow_nan=False)
+            if len(encoded.encode())>300000:raise ValueError('ST-T复核证据超过保存上限')
+            values=(first,payload.get('lead','全部'),payload.get('category','note'),payload.get('label') or 'ST-T 人工复核',payload.get('note',''),encoded,now)
+            if previous:
+                db.execute('UPDATE annotations SET sample_index=?,lead=?,category=?,label=?,note=?,details=?,updated_at=? WHERE id=? AND case_id=?',(*values,annotation_id,case_id))
+            else:
+                cursor=db.execute('INSERT INTO annotations(sample_index,lead,category,label,note,details,updated_at,case_id,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',(*values,case_id,actor,now));annotation_id=cursor.lastrowid
+            db.execute('INSERT INTO stt_review_submissions(case_id,submission_id,annotation_id,operation,request_sha256) VALUES(?,?,?,?,?)',(case_id,identifier,annotation_id,operation,request_sha256))
+            self._audit(db,actor,'annotation.stt.'+operation,case_id,'#'+str(annotation_id))
+            row=db.execute('SELECT * FROM annotations WHERE id=?',(annotation_id,)).fetchone();item=dict(row);item['details']=json.loads(item['details'])
+        item['stt_report_reconciliation']=reconciliation
+        return item
+
     def delete_annotation(self, annotation_id: int, actor: str) -> bool:
         with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
             row = db.execute("SELECT * FROM annotations WHERE id=?", (annotation_id,)).fetchone()
             if not row:
                 return False
+            if json.loads(row['details'] or '{}').get('kind') in ('ST','ST_REVIEW_NOTE'):
+                report=db.execute('SELECT composition FROM report_drafts WHERE case_id=?',(row['case_id'],)).fetchone()
+                if report:
+                    composition=json.loads(report['composition'] or '{}');event_id='annotation:'+str(annotation_id)
+                    composition['selected_events']=[s for s in composition.get('selected_events',[]) if s['event_id']!=event_id]
+                    if 'stt_report_use' in composition:composition['stt_report_use']=[s for s in composition['stt_report_use'] if s['event_id']!=event_id]
+                    self._withdraw_stt_generated_text(composition,event_id)
+                    db.execute('UPDATE report_drafts SET composition=? WHERE case_id=?',(json.dumps(composition,ensure_ascii=False),row['case_id']))
             db.execute("DELETE FROM annotations WHERE id=?", (annotation_id,))
             self._audit(db, actor, "annotation.delete", row["case_id"], f"#{annotation_id} {row['label']}")
         return True

@@ -109,9 +109,9 @@ def test_global_edit_approval_cannot_confirm_unreviewed_source_episode(code):
     assert browser('ECGClinicalAnalysis.buildIndex(x.f,[],[],x.review)', dict(f=vars(f),review=review)) == index
     selection = dict(selected_events=[dict(event_id=af[0]['event_id'],basis_version=af[0]['basis_version'])],
                      category_reviews=index['basis_versions'])
-    with pytest.raises(ValueError, match='房颤／房扑页完成片段诊断确认'):
+    with pytest.raises(ValueError, match='所选房颤／房扑片段尚未确认；请在报告候选区确认本段'):
         validate_report(index, selection, review, approving=True)
-    assert browser('(()=>{try{ECGClinicalAnalysis.validateReport(x.index,x.selection,x.review,true);return false}catch(e){return e.message.includes("房颤／房扑页完成片段诊断确认")}})()',
+    assert browser('(()=>{try{ECGClinicalAnalysis.validateReport(x.index,x.selection,x.review,true);return false}catch(e){return e.message.includes("所选房颤／房扑片段尚未确认；请在报告候选区确认本段")}})()',
                    dict(index=index,selection=selection,review=review))
 
 

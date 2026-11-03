@@ -3,6 +3,8 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const C=require('../static/js/analysis-consistency.js');
 const source=fs.readFileSync('static/js/app.js','utf8');
+const declarations=[...source.matchAll(/^(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/gm)];
+const actual=name=>{const i=declarations.findIndex(x=>x[1]===name);assert(i>=0,name);return source.slice(declarations[i].index,declarations[i+1]?.index??source.length);};
 const section=source.slice(source.indexOf('const sttMeanSubmissionIntents ='),source.indexOf('function setEditMode('));
 const copy=x=>JSON.parse(JSON.stringify(x)),tick=()=>new Promise(r=>setImmediate(r));
 const gate=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {resolve,promise};};
@@ -29,7 +31,7 @@ function fixture(config={}){
   const server={case_id:'math-a',analysis_basis:'source-math',analysis_revision:4,beat_revision:2};
   let sourceFault=false,readFault=false,current=true,basisFault=false;
   const api=async(path,options={})=>{
-    const u=new URL(path,'http://math'),kind=u.pathname.split('/').at(-1),call={path,kind,...options};calls.push(call);
+    const u=new URL(path,'http://math'),kind=u.pathname.includes('/annotations/')?'annotations':u.pathname.split('/').at(-1),call={path,kind,...options};calls.push(call);
     if(config.intercept)await config.intercept(call,state,server);
     if(kind==='analysis-basis'){
       if(basisFault)throw Error('basis read offline');
@@ -42,10 +44,10 @@ function fixture(config={}){
       if(u.searchParams.has('analysis_revision')&&Number(u.searchParams.get('analysis_revision'))!==server.analysis_revision)throw Error('读取期间依据已变化 409');
       return {...server,revision:0,document:{episodes:[],bookmarks:{}}};
     }
-    if(kind==='annotations'&&options.method==='POST'){
+    if(kind==='annotations'&&['POST','PUT'].includes(options.method)){
       postAttempts++;const payload=JSON.parse(options.body);
       if(config.neverCommitted&&postFailure){postFailure=false;throw Error('POST connection lost');}
-      const row={id:rows.length+1,case_id:state.caseId,...payload};rows.push(copy(row));server.analysis_revision++;
+      const row={id:config.editId||rows.length+1,case_id:state.caseId,...payload};row.stt_review_receipt={annotation_id:row.id,event_id:'annotation:'+row.id,record_id:'annotation:'+row.id,record_version:(payload.expected_record_version||0)+1,review_state:'reviewed',result_code:payload.details.result_code,result_kind:payload.details.result_code==='t_change'?'T':'NOTE',report_group:['no_change','artifact','indeterminate'].includes(payload.details.result_code)?'ST_NOTE':'ST',range:{start_sample:payload.sample_index,end_sample:payload.details.end_sample+1,duration_s:(payload.details.end_sample+1-payload.sample_index)/200}};row.details.measurement_protocol={...row.details.measurement_protocol,units:'source_device_units',calibration_verified:false};rows.push(copy(row));server.analysis_revision++;
       if(config.mutateStored)config.mutateStored(rows[0]);
       if(config.postGate)await config.postGate.promise;
       if(config.afterCommit)config.afterCommit(state,server);
@@ -68,8 +70,12 @@ function fixture(config={}){
     sttWaveformIsCurrent:()=>current,sttSelectionSnapshot:()=>({caseId:state.caseId,caseToken:state.caseRequestId,workspaceEpoch:state.workspaceEpoch,start:state.sttStart,duration:state.sttDuration,leads:'II'}),
     sttSelectionMatches:s=>s.caseId===state.caseId&&s.caseToken===state.caseRequestId&&s.workspaceEpoch===state.workspaceEpoch&&s.start===state.sttStart&&s.duration===state.sttDuration&&state.currentPage==='stt',
     sttSubmittedDraftIsUnchanged:d=>d.note===$('#sttReviewNote').value&&d.finding===$('#sttFinding').value&&d.qualityChecked===$('#sttSignalChecked').checked,
-    sttMeasurementValues:()=>[{lead:'II',delta:-10}],sttVisibleLeads:()=>['II'],sttLandmarkFractions:()=>({j:.52}),
+    sttMeasurementValues:()=>[{lead:'II',delta:-10}],sttVisibleLeads:()=>['II'],sttLandmarkFractions:()=>({iso:state.sttIsoFraction,j:state.sttJFraction,st:state.sttJFraction+state.sttMeasurementMs/1000/state.sttDuration}),
+    renderSttCandidateSelection:()=>{},renderSttRecordList:()=>{},
+    ALL_LEADS:['I','II','III','aVR','aVL','aVF','V1','V2','V3','V4','V5','V6'],
     clearSttEvidence:()=>{},setSttWindowState:()=>{},analysisReadStatus:()=>{},loadStt:async()=>{current=true;}});
+  vm.runInContext(fs.readFileSync('static/js/stt-review-layout.js','utf8'),ctx);
+  vm.runInContext(['sttDraftState','sttReviewLeadNames','sttReadReviewRange','sttParseClock'].map(actual).join('\n'),ctx);
   vm.runInContext(section,ctx);
   return {ctx,state,$,calls,cleared,notices,rows,server,result,
     save:()=>ctx.saveSttReviewAnnotation(),posts:()=>postAttempts,snapshots:()=>snapshots,uuids:()=>uuids,
@@ -78,6 +84,33 @@ function fixture(config={}){
     currentSnapshot:()=>snapshot};
 }
 const cases={
+  'blank-result-never-creates-a-review':async()=>{const f=fixture({pointOnly:true});f.$('#sttFinding').value='';await f.save();assert.equal(f.posts(),0);assert.match(f.notices.at(-1),/请选择/);},
+  'whole-T-plus-mean-keeps-whole-bounds-and-clinical-leads':async()=>{
+    const f=fixture();f.$('#sttFinding').value='T 波改变';f.$('#sttSignalChecked').checked=true;
+    f.state.sttReview={...f.server};f.state.sttReviewLeads=['V5'];f.state.sttLeads=['I','II','III','aVR','aVL','aVF','V1','V2','V3','V4','V5','V6'];
+    f.state.sttSelectedCandidate={scope:{...f.server},automatic:true,item:{id:'T-by-kind',start_s:0,end_s:180,kind:'t_wave_inversion',leads:['V5']},originalRange:{start_s:0,end_s:180}};
+    f.$('#sttEpisodeStart').value='+0';f.$('#sttEpisodeEnd').value='+180';await f.save();
+    const p=JSON.parse(f.calls.find(x=>x.method==='POST').body);assert.equal(p.sample_index,0);assert.equal(p.details.end_sample,35999);
+    assert.equal(p.details.range_statistics.range.start_sample,1200);assert.equal(p.details.range_statistics.range.end_sample,25200);
+    assert.deepEqual(p.details.review_leads,['V5']);assert.equal(p.details.result_code,'t_change');assert.equal(p.details.stt_candidate_id,'T-by-kind');
+    assert.equal(p.details.review_extent,'whole');assert.equal(p.details.measurement_protocol.extent,'point');assert.equal(f.state.sttLastSavedEvent.event_id,'annotation:1');
+  },
+  'every-outcome-has-one-actual-receipt-and-own-submission':async()=>{
+    for(const [finding,code] of Object.entries({'ST 段压低':'st_depression','ST 段抬高':'st_elevation','T 波改变':'t_change','非特异性 ST-T 改变':'nonspecific','未见明确动态 ST-T 改变':'no_change','伪差或体位改变':'artifact','无法判读':'indeterminate'})){
+      const f=fixture({pointOnly:true,responseLost:true});f.state.sttReview={...f.server};f.$('#sttFinding').value=finding;f.$('#sttSignalChecked').checked=true;await f.save();
+      assert.equal(f.posts(),1);assert.equal(f.state.sttLastSavedEvent.result_code,code);assert.equal(f.state.sttLastSavedEvent.review_state,'reviewed');
+      assert.equal(f.rows[0].details.reviewed,true);if(['no_change','artifact','indeterminate'].includes(code))assert.equal(f.state.sttLastSavedEvent.report_group,'ST_NOTE');
+    }
+  },
+  'edit-is-versioned-PUT-and-does-not-create-another-record':async()=>{
+    const f=fixture({pointOnly:true,editId:42});f.state.sttReview={...f.server};f.state.sttEditingRecord={id:42,details:{physician_note:'old'},stt_review_receipt:{record_version:3}};
+    await f.save();const call=f.calls.find(x=>x.method==='PUT');assert(call);assert(call.path.endsWith('/annotations/42'));
+    assert.equal(JSON.parse(call.body).expected_record_version,3);assert.equal(f.rows.length,1);assert.equal(f.state.sttLastSavedEvent.event_id,'annotation:42');assert.equal(f.state.sttLastSavedEvent.record_version,4);
+  },
+  'manual-59-and-60-second-extents-are-distinct':async()=>{
+    for(const seconds of [59,60,180]){const f=fixture({pointOnly:true});f.state.sttReview={...f.server};f.state.sttSelectedCandidate={scope:{...f.server},automatic:false,item:{start_s:10,end_s:10+seconds}};f.$('#sttEpisodeStart').value='+10';f.$('#sttEpisodeEnd').value='+'+(10+seconds);await f.save();const p=JSON.parse(f.calls.find(x=>x.method==='POST').body);assert.equal(p.details.end_sample,200*(10+seconds)-1);assert.equal(p.details.review_extent,seconds<60?'point':'whole');}
+  },
+
   'complete-compact-grid-and-receipt':async()=>{
     for(const receipt of ['compiled-native','static-math']){
       const f=fixture({receipt});await f.save();const p=JSON.parse(f.calls.find(x=>x.method==='POST').body);
@@ -201,9 +234,9 @@ const cases={
     assert.equal(f.state.sttRangeSubmission.saved,true);assert.equal(f.state.sttRangeSubmission.uncertain,false);
     await assert.rejects(f.save(),/refresh failed/);assert.equal(f.posts(),1);
   },
-  'plain-point-has-no-uuid-or-mean-fields':async()=>{
+  'plain-point-has-own-uuid-and-no-mean-fields':async()=>{
     const f=fixture({pointOnly:true});await f.save();const p=JSON.parse(f.calls.find(x=>x.method==='POST').body);
-    assert.equal(p.details.submission_id,undefined);assert.equal(p.details.range_statistics,undefined);
+    assert.match(p.details.submission_id,/^00000000-/);assert.equal(p.details.range_statistics,undefined);
     assert.equal(f.calls.filter(x=>x.kind==='rhythm-review').length,0);assert.equal(f.cleared.length,0);
   },
 };

@@ -15,7 +15,7 @@ const clinicalWorkflow = (() => {
   const navigationSteps = CASE_WORKFLOW_STEPS.filter(step=>step.page!=="events");
   let data = null, request = 0, context = null, dialogContext = null, eventOffset = 0;
   const writable = () => !state.demoReadonly || Boolean(window.__CARDIOINSIGHT_UPLOADED_CASE__ || window.__CARDIOINSIGHT_MATHEMATICAL_CASE__?.integrity?.mathematical_fixture);
-  const pending = () => CASE_WORKFLOW_STEPS.filter(step => ["edit","stt"].includes(step.page) && data?.steps?.[step.page]?.status !== "done");
+  const pending = () => CASE_WORKFLOW_STEPS.filter(step => step.page==="edit" && data?.steps?.[step.page]?.status !== "done");
   const receive = value => {data=value||null;render();};
   async function refresh(caseId=state.caseId) {
     if(!caseId)return;
@@ -46,7 +46,7 @@ const clinicalWorkflow = (() => {
     });
     if(!visible)return;
     const next=$("#workflowNext"),isReport=state.currentPage==="report";
-    next.hidden=isReport?data?.report_status==="reviewed":!["edit","stt"].includes(state.currentPage)||data?.steps?.[state.currentPage]?.status==="done";
+    next.hidden=isReport?data?.report_status==="reviewed":state.currentPage!=="edit"||data?.steps?.[state.currentPage]?.status==="done";
     next.textContent=isReport?"报告编排":"确认本步";
     next.title=isReport?"前往报告编排、结论和导出":"打开复核确认窗口；确认并保存后进入下一阶段";
     next.disabled=!data||(!writable()&&!isReport);
@@ -65,7 +65,7 @@ const clinicalWorkflow = (() => {
     goPage(state.currentPage==="events"?"report":navigationSteps[i+1]?.page||"dashboard");
   }
   function confirmStep() {
-    if(!["edit","stt","report"].includes(state.currentPage)){browse();return;}
+    if(!["edit","report"].includes(state.currentPage)){browse();return;}
     if(state.currentPage==="report"){if(data?.report_status==="reviewed"){goPage("dashboard");return;}$('#reportV2Nav [data-category="final"]')?.click();$("#conclusionEditor")?.scrollIntoView({block:"nearest"});$("#conclusionEditor")?.focus({preventScroll:true});return;}
     if(data?.steps?.[state.currentPage]?.status==="done"){browse();return;}
     if(!data)return;
@@ -95,8 +95,8 @@ const clinicalWorkflow = (() => {
     // preflight DOM exists, including the transition from saved to dirty.
     const approve=$("#approveReport");
     if(approve){
-      approve.disabled=Boolean(state.reportEvidencePending?.length||state.reportRhythmPending?.length)||!ECGReportConsistency.canApprove(state,$("#conclusionEditor")?.value,pending().length===0,writable());
-      approve.title=!writable()?"当前版本只读":state.reportSaving?"正在保存当前报告，请等待":!state.report?"请先载入当前报告":state.reportStale?"报告依据或版本已变化，请先核对最新版本":(state.reportRhythmPending?.length?`${state.reportRhythmPending.length} 条入报房颤 / 房扑片段待确认`:state.reportEvidencePending?.length?`${state.reportEvidencePending.length} 条报告证据待核对，请在入报图条中处理`:evidenceNotice)||(pending().length?"请先完成模板编辑与 ST‑T 复核":state.reportDirty?"请先保存草稿":!String($("#conclusionEditor")?.value||'').trim()?"请填写复核结论并保存草稿":"审核当前已保存版本");
+      approve.disabled=Boolean(state.reportEvidencePending?.length||state.reportRhythmPending?.length||state.reportSTTPending?.length)||!ECGReportConsistency.canApprove(state,$("#conclusionEditor")?.value,pending().length===0,writable());
+      approve.title=!writable()?"当前版本只读":state.reportSaving?"正在保存当前报告，请等待":!state.report?"请先载入当前报告":state.reportStale?"报告依据或版本已变化，请先核对最新版本":(state.reportSTTPending?.length?`${state.reportSTTPending.length} 条已采用ST-T复核依据待核对`:state.reportRhythmPending?.length?`${state.reportRhythmPending.length} 条入报房颤 / 房扑片段待确认`:state.reportEvidencePending?.length?`${state.reportEvidencePending.length} 条报告证据待核对，请在入报图条中处理`:evidenceNotice)||(pending().length?"请先完成模板编辑":state.reportDirty?"请先保存草稿":!String($("#conclusionEditor")?.value||'').trim()?"请填写复核结论并保存草稿":"审核当前已保存版本");
     }
     const stats=$("#reportProvenance");
     if(stats)stats.dataset.overrideCount=String(state.editBeatOverrides.size);

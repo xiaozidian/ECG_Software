@@ -15,12 +15,14 @@ def test_math_payload_contains_native_minute_st_evidence(tmp_path):
     generate(output, 'math-test-only')
     case = json.loads((output / 'case-data.js').read_text().split(' = ', 1)[1].rstrip(';\n'))
     review = case['stt_review']
-    assert review['analysis']['algorithm_version'] == 'stt-screening-0.2.0-continuous'
+    assert review['analysis']['algorithm_version'] == 'stt-screening-0.3.1-hospital-records-rhythm-masks'
     assert review['analysis']['trends']['block_seconds'] == 60
     assert set(review['analysis']['trends']['leads']) == {'I','II','III','aVR','aVL','aVF','V1','V2','V3','V4','V5','V6'}
     assert all(len(rows) == 10 for rows in review['analysis']['trends']['leads'].values())
+    assert all('whole_statistics' in item for item in review['automatic_candidates']['items'])
     assert case['stt_review_binding']['python_precomputed'] is True
     assert case['stt_review_binding']['beat_revision'] == 0
+    assert case['stt_review_binding']['rhythm_exclusions'] == []
     assert case['stt_review_binding']['patient_inputs_read'] is False
 
 

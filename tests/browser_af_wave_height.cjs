@@ -19,7 +19,7 @@ window.mathState=state;
 const frames=page=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
 const fitted=page=>page.waitForFunction(()=>{const canvas=document.querySelector('#waveformCanvas'),slot=document.querySelector('#waveformScroller'),height=canvas.getBoundingClientRect().height,dpr=Math.min(devicePixelRatio||1,2);return Math.abs(height-slot.clientHeight)<1&&Math.abs(canvas.height-height*dpr)<=1;},null,{timeout:3000});
 (async()=>{let browser;const errors=[];try{
- browser=await chromium.launch({executablePath:process.env.ECG_CHROME||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true,chromiumSandbox:true});const page=await browser.newPage();page.on('pageerror',e=>errors.push(e.message));await page.route('**/*',r=>r.abort());await page.setContent(html);
+ browser=await chromium.launch({executablePath:process.env.ECG_CHROME||process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true,chromiumSandbox:true});const page=await browser.newPage();page.on('pageerror',e=>errors.push(e.message));await page.route('**/*',r=>r.abort());await page.setContent(html);
  const tallScales=new Map();await page.evaluate(()=>renderMath(3));await fitted(page);
  for(const [width,height]of [[1366,768],[1920,1080],[1500,1343],[1920,1440],[1920,1800]]){
   // Resize must repaint through the shipped slot observer. Do not manually

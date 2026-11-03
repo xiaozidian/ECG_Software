@@ -79,7 +79,7 @@
       <button class="nav-item" data-page="settings"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/></svg><em>设置</em></button>
       {% endif %}
     </nav>
-    <div class="sidebar-version">v{{ app_version_short }} · UI2<br><span id="platformEdition">桌面研究版</span></div>
+    <div class="sidebar-version">v{{ app_version_short }}<br><span id="platformEdition">桌面研究版</span></div>
   </aside>
 
   <main class="main-shell" id="mainContent" tabindex="-1">
@@ -376,71 +376,49 @@
       </div>
     </section>
 
-    <section class="page" id="page-stt">
+    <section class="page" id="page-stt" data-stt-hospital="true">
       <div id="sttAnalysisStatus" role="status" hidden></div>
       <div class="page-heading compact stt-page-heading">
-        <div><p class="eyebrow">复极候选筛查</p><h1>ST‑T 医生复核工作台</h1><p id="sttCaseLabel">请选择病例</p></div>
-        <div class="stt-heading-actions"><span id="sttCapabilityBadge" class="status-pill warning">读取筛查能力…</span><button id="openSttGuidance" class="button secondary" type="button">判读边界与依据</button></div>
+        <div><h1>ST‑T 医生复核工作台</h1><span id="sttCaseLabel">请选择病例</span></div>
+        <div class="stt-heading-actions"><span id="sttCapabilityBadge" class="status-pill neutral">读取中</span><button id="openSttGuidance" class="button secondary" type="button">帮助</button><button type="button" id="sttReportLink" class="button dark">报告筛选</button></div>
       </div>
-
-      <div class="stt-safety-strip" role="note" aria-labelledby="sttSafetyTitle">
-        <span class="stt-safety-icon" aria-hidden="true">!</span>
-        <div><strong id="sttSafetyTitle">自动筛查结果必须由医生复核</strong><p id="sttSafetyText">机器结果只排列复核优先级；医生需回看原始波形并确认、修正或排除，不生成缺血或心肌梗死诊断。</p></div>
-        <button id="openSttLimitations" class="text-button" type="button">查看原因</button>
-      </div>
-
+      <div class="stt-safety-strip" role="note"><strong id="sttSafetyTitle">自动候选待医生复核</strong><span id="sttSafetyText">设备单位 u · 电压未校准</span></div>
       <div class="stt-workbench">
         <aside class="card stt-queue-panel" aria-labelledby="sttQueueTitle">
-          <div class="stt-panel-header"><div><h2 id="sttQueueTitle">复核队列</h2><p>算法候选与源报告线索分开呈现</p></div><output id="sttCandidateCount" class="status-pill neutral">0 条</output></div>
+          <div class="stt-panel-header"><h2 id="sttQueueTitle">事件 / 复核记录</h2><output id="sttCandidateCount">—</output></div>
+          <div class="stt-list-filters"><label>显示<select id="sttRecordFilter"><option value="all">全部</option><option value="candidates">机器候选</option><option value="reviewed">已保存复核</option><option value="notes">排除 / 待定 / 短段</option></select></label><button type="button" id="sttNewRange">自选区间</button></div>
           <div id="sttCandidateList" class="stt-candidate-list" aria-live="polite"></div>
-          <div class="stt-source-section"><div class="stt-section-label"><span>源报告线索</span><small>仅供回看，不等同于本软件判定</small></div><div id="sttSourceNotes" class="stt-source-notes"></div></div>
+          <details class="stt-source-section"><summary>源报告线索</summary><div id="sttSourceNotes" class="stt-source-notes"></div></details>
         </aside>
-
-        <section class="stt-analysis-column" aria-label="ST-T 总览区">
-          <article class="card stt-overview-card">
-            <div class="stt-panel-header"><div><h2>全天定位</h2><p>心率趋势仅用于快速定位原始波形</p></div><strong id="sttWindowTime" class="stt-window-time">D1 00:00:00</strong></div>
-            <canvas id="sttOverviewCanvas" height="94" aria-label="全天心率趋势，点击可定位 ST-T 复核窗口"></canvas>
-            <input id="sttTimeSlider" class="time-slider" type="range" min="0" max="1" value="0" step="1" aria-label="选择 ST-T 复核时间">
-          </article>
-
+        <section class="stt-analysis-column" aria-label="ST-T 趋势与原始波形">
           <article class="card stt-trend-card">
-            <div class="stt-panel-header"><div><h2>十二导联 ST 趋势</h2><p id="sttTrendNote">正在读取自动筛查结果</p></div><span id="sttTrendBadge" class="status-pill neutral">读取中</span></div>
-            <div id="sttTrendRows" class="stt-trend-rows" aria-label="十二导联 ST 趋势能力状态"></div>
+            <div class="stt-panel-header"><div class="stt-mode-controls" role="group" aria-label="趋势指标"><button type="button" data-stt-trend-mode="st">ST 电平</button><button type="button" data-stt-trend-mode="delta" aria-pressed="true">ΔST</button><button type="button" data-stt-trend-mode="t">T 幅度</button></div><label>范围<select id="sttTrendRange"><option value="full">全程</option><option value="hour">当前小时</option><option value="selection">所选区间</option></select></label><strong id="sttWindowTime">—</strong><span id="sttTrendBadge" hidden></span></div>
+            <div id="sttTrendRows" class="stt-trend-rows" aria-label="十二导联共用时间轴趋势"></div>
+            <div class="stt-overview-card"><span>HR</span><canvas id="sttOverviewCanvas" height="32" aria-label="同轴心率趋势，点击定位波形"></canvas></div>
+            <input id="sttTimeSlider" class="time-slider" type="range" min="0" max="1" value="0" step="1" aria-label="选择 ST-T 复核时间">
+            <small id="sttTrendNote">逐分钟完整证据 · u</small>
           </article>
-
           <article class="card stt-waveform-card">
-            <div class="stt-waveform-toolbar">
-              <div><span class="live-dot"></span><div><strong>当前窗口 · 手工测量</strong><small id="sttWaveMeta">等待读取原始波形</small></div></div>
-              <div class="stt-waveform-actions">
-                <button id="sttLeadPickerButton" class="lead-picker-trigger" type="button" title="选择1–12条复核导联"><span id="sttSelectedLeadLabel">12 导联</span><small>选择导联</small></button>
-                <label for="sttMeasurementPoint">测量点</label><select id="sttMeasurementPoint"><option value="60" selected>ST60（J+60 ms）</option><option value="80">ST80（J+80 ms）</option><option value="0">J 点</option></select>
-                <div class="window-nav-controls"><button id="sttPrevWindow" class="icon-button" type="button" aria-label="前一复核窗口">←</button><button id="sttNextWindow" class="icon-button" type="button" aria-label="后一复核窗口">→</button></div>
-                <button id="sttOpenTwelveLead" class="button dark" type="button">全屏 12 导联</button>
-              </div>
-            </div>
-            <div id="sttCurrentContext" class="stt-current-context" aria-label="当前ST-T测量上下文" role="status"></div>
-            <div id="sttWaveCanvasWrap" class="stt-wave-canvas-wrap"><canvas id="sttWaveformCanvas" height="438" tabindex="0" aria-label="一至十二导联 ST-T 手工复核波形；拖动 ISO 与 J 游标调整测量位置，右键选择导联，双击进入全屏十二导联"></canvas><div id="sttWaveTooltip" class="wave-tooltip" hidden></div></div>
-            <div class="stt-waveform-foot"><span>拖动 <b>ISO</b> 与 <b>J</b> 游标 · ST 测量点按 J+60/80 ms 自动联动 · 右键选择导联 · 双击全屏</span><span>原始设备单位 · 不换算 mV</span></div>
+            <div class="stt-waveform-toolbar"><div><strong>原始波形</strong><small id="sttWaveMeta">等待读取</small></div><div class="stt-waveform-actions"><button type="button" data-stt-display-count="1">1L</button><button type="button" data-stt-display-count="3" aria-pressed="true">3L</button><button type="button" data-stt-display-count="12">12L</button><button id="sttLeadPickerButton" class="lead-picker-trigger" type="button"><span id="sttSelectedLeadLabel">II · V1 · V5</span></button><label for="sttMeasurementPoint">测量</label><select id="sttMeasurementPoint"><option value="60">ST60</option><option value="80">ST80</option><option value="0">J</option></select><button id="sttPrevWindow" type="button" aria-label="前一屏">←</button><button id="sttNextWindow" type="button" aria-label="后一屏">→</button><button type="button" data-stt-gain="-1" aria-label="缩小振幅">−</button><button type="button" data-stt-gain="1" aria-label="放大振幅">＋</button><button id="sttOpenTwelveLead" type="button">全屏</button></div></div>
+            <div id="sttCurrentContext" class="stt-current-context" role="status"></div>
+            <div id="sttWaveCanvasWrap" class="stt-wave-canvas-wrap"><canvas id="sttWaveformCanvas" height="300" tabindex="0" aria-label="原始波形，拖动ISO/J修正本次点测量"></canvas><div id="sttWaveTooltip" class="wave-tooltip" hidden></div></div>
+            <div class="stt-waveform-foot"><span>ISO / J 仅修订本次点测量</span><span id="sttDisplayGain">u · 电压未校准</span></div>
           </article>
         </section>
-
         <aside class="card stt-review-panel" aria-labelledby="sttReviewTitle">
-          <div class="stt-panel-header"><div><h2 id="sttReviewTitle">测量与复核意见</h2><p>自动值与医生修正必须可区分</p></div><span class="status-pill warning">需医生确认</span></div>
-          <dl class="stt-method-summary">
-            <div><dt>基线</dt><dd id="sttBaselineMethod">手工 ISO / 个体稳定基线</dd></div><div><dt>测量点</dt><dd id="sttPointMethod">J+60 ms</dd></div><div><dt>导联体系</dt><dd id="sttLeadSystem">电极位置未知</dd></div><div><dt>显示滤波</dt><dd>原始波形</dd></div>
-          </dl>
-          <div class="stt-measurement-heading"><span>当前导联相对差值</span><small>仅显示设备原始单位</small></div>
-          <div id="sttMeasurementList" class="stt-measurement-list"></div>
-          <div id="sttRangeReview" aria-label="至少一分钟的 ST 区间逐搏均值"></div>
-          <div class="stt-nudge-controls" aria-label="手工微调测量游标"><span>游标微调（5 ms）</span><div><button id="sttIsoEarlier" type="button">ISO ←</button><button id="sttIsoLater" type="button">ISO →</button><button id="sttJEarlier" type="button">J ←</button><button id="sttJLater" type="button">J →</button></div></div>
           <form id="sttReviewForm" class="stt-review-form">
-            <label for="sttFinding">医生复核描述<select id="sttFinding"><option value="无法判读">无法判读</option><option value="未见明确动态 ST-T 改变">未见明确动态 ST‑T 改变</option><option value="ST 段压低候选">ST 段压低候选</option><option value="ST 段抬高候选">ST 段抬高候选</option><option value="T 波形态异常候选">T 波形态异常候选</option><option value="非特异性 ST-T 改变">非特异性 ST‑T 改变</option><option value="伪差或体位改变">伪差或体位改变</option></select></label>
-            <label for="sttReviewNote">复核备注<textarea id="sttReviewNote" rows="5" maxlength="1200" placeholder="记录症状时间、体位/活动、信号质量、相邻导联表现及排除依据…"></textarea></label>
-            <label class="stt-check-line"><input id="sttSignalChecked" type="checkbox"><span>已核对信号质量、基线漂移与 R 波幅度变化</span></label>
-            <button id="saveSttAnnotation" class="button primary" type="submit"{% if demo_readonly %} hidden disabled{% endif %}>保存为人工复核标注</button>
-            {% if demo_readonly %}<p class="stt-readonly-note">在线 Demo 可体验测量交互，但不会保存复核意见。</p>{% endif %}
+            <div class="stt-panel-header"><h2 id="sttReviewTitle">医生复核</h2><span id="sttReviewState">尚未保存</span></div>
+            <div id="sttSelectedEvent" class="stt-selected-event"></div>
+            <div class="stt-boundaries"><label>起点<input id="sttEpisodeStart" placeholder="记录时钟 / +秒" autocomplete="off"></label><label>终点<input id="sttEpisodeEnd" placeholder="记录时钟 / +秒" autocomplete="off"></label><span id="sttEpisodeDuration"></span></div>
+            <div class="stt-boundary-actions"><button type="button" data-stt-boundary="start">设为起点</button><button type="button" data-stt-boundary="end">设为终点</button><button type="button" data-stt-position="start">回起点</button><button type="button" data-stt-position="peak">峰值</button><button type="button" data-stt-position="end">回末尾</button></div>
+            <details class="stt-review-lead-picker"><summary id="sttReviewLeadsSummary">复核导联：II</summary><div><label><input type="checkbox" data-stt-review-lead value="I">I</label><label><input type="checkbox" data-stt-review-lead value="II">II</label><label><input type="checkbox" data-stt-review-lead value="III">III</label><label><input type="checkbox" data-stt-review-lead value="aVR">aVR</label><label><input type="checkbox" data-stt-review-lead value="aVL">aVL</label><label><input type="checkbox" data-stt-review-lead value="aVF">aVF</label><label><input type="checkbox" data-stt-review-lead value="V1">V1</label><label><input type="checkbox" data-stt-review-lead value="V2">V2</label><label><input type="checkbox" data-stt-review-lead value="V3">V3</label><label><input type="checkbox" data-stt-review-lead value="V4">V4</label><label><input type="checkbox" data-stt-review-lead value="V5">V5</label><label><input type="checkbox" data-stt-review-lead value="V6">V6</label></div></details>
+            <label for="sttFinding">医生结果<select id="sttFinding" required><option value="">请选择复核结果</option><option value="ST 段压低">ST 段压低</option><option value="ST 段抬高">ST 段抬高</option><option value="T 波改变">T 波改变</option><option value="非特异性 ST-T 改变">非特异性 ST‑T 改变</option><option value="未见明确动态 ST-T 改变">未见明确动态 ST‑T 改变</option><option value="伪差或体位改变">伪差或体位改变</option><option value="无法判读">无法判读</option></select></label>
+            <label for="sttReviewNote">备注<textarea id="sttReviewNote" rows="2" maxlength="1200" placeholder="复核依据、排除或无法判读原因"></textarea></label>
+            <label class="stt-check-line"><input id="sttSignalChecked" type="checkbox"><span>已核对信号、基线与伪差</span></label>
+            <p id="sttSaveImpact" role="status" hidden></p>
+            <button id="saveSttAnnotation" type="submit" class="button primary" {% if demo_readonly %}disabled{% endif %}>保存复核</button>
           </form>
-          <details class="stt-review-checklist"><summary>复核时需要排除什么？</summary><ul><li>运动、呼吸、体位变化与电极松脱</li><li>基线漂移、肌电噪声和 R 波幅度突变</li><li>LBBB、起搏、预激、LVH 等继发性复极改变</li><li>心率过快导致 ST60 / ST80 接近 T 波</li></ul></details>
+          <details class="stt-measurement-tools"><summary>点测量 / 附加区间均值</summary><dl class="stt-method-summary"><div><dt>基线</dt><dd id="sttBaselineMethod">—</dd></div><div><dt>测量点</dt><dd id="sttPointMethod">J+60 ms</dd></div><div><dt>导联</dt><dd id="sttLeadSystem">—</dd></div></dl><div id="sttMeasurementList" class="stt-measurement-list"></div><div class="stt-nudge-controls"><div><button id="sttIsoEarlier" type="button">ISO ←</button><button id="sttIsoLater" type="button">ISO →</button><button id="sttJEarlier" type="button">J ←</button><button id="sttJLater" type="button">J →</button></div></div><div id="sttRangeReview"></div></details>
         </aside>
       </div>
 

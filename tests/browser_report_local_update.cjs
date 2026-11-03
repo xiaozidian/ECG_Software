@@ -3,7 +3,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const source=fs.readFileSync('static/js/clinical-ui.js','utf8');
 const preparedReportHelpers=new WeakSet();
-function prepareReportHelpers(ctx){if(preparedReportHelpers.has(ctx))return;ctx.A||={categories:[]};vm.runInContext(source.slice(source.indexOf('  const reportCategories='),source.indexOf('  const tabs=')),ctx);preparedReportHelpers.add(ctx);}
+function prepareReportHelpers(ctx){if(preparedReportHelpers.has(ctx))return;ctx.A||={categories:[]};vm.runInContext(source.slice(source.indexOf('  const reportCategories='),source.indexOf('  const tabs=')),ctx);require('./clinical_ui_report_helpers.cjs').prepare(ctx);preparedReportHelpers.add(ctx);}
 
 const gate=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b});return {promise,resolve,reject};};
 const tick=()=>new Promise(r=>setImmediate(r));

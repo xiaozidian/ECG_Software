@@ -41,7 +41,7 @@ def paper(gain=10):
 
 def js(program, payload):
     return subprocess.check_output(['node', '-e',
-        "require('./static/js/voltage-estimate.js');require('./static/js/report-paper.js');"
+        "require('./static/js/clinical-review-tools.js');require('./static/js/voltage-estimate.js');require('./static/js/report-paper.js');"
         "const input=JSON.parse(require('fs').readFileSync(0,'utf8'));" + program],
         input=json.dumps(payload), text=True, cwd=ROOT)
 

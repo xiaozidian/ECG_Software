@@ -150,7 +150,9 @@ class ReviewWorkflowMixin:
 
     def assert_report_ready(self, db, case_id, conclusion):
         value = self._review(db, case_id)
-        pending = [LABELS[step] for step in STEPS if value["steps"].get(step, {}).get("status") != "done"]
+        # ST/T report use is checked per adopted current review record by
+        # validate_report. Unused candidates and trend-only pages are not gates.
+        pending = [LABELS[step] for step in ('edit',) if value["steps"].get(step, {}).get("status") != "done"]
         if pending:
             raise ValueError("报告审核前请确认：" + "、".join(pending))
         if not conclusion.strip():

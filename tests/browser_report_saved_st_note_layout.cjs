@@ -25,7 +25,7 @@ async function geometry(page){return page.evaluate(()=>{const rectangle=n=>{cons
 async function hitOwn(page,selector){return page.locator(selector).evaluate(node=>{const r=node.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return hit===node||node.contains(hit);});}
 async function settle(page){await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));}
 (async()=>{let browser;fs.mkdirSync(out,{recursive:true});try{
- browser=await chromium.launch({executablePath:process.env.ECG_CHROME||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true,chromiumSandbox:true});result.browser=await browser.version();
+ browser=await chromium.launch({executablePath:process.env.ECG_CHROME||process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true,chromiumSandbox:true});result.browser=await browser.version();
  for(const viewport of [{width:900,height:900,dpr:1},{width:1600,height:1000,dpr:1},{width:2048,height:1152,dpr:2}]){
   const context=await browser.newContext({viewport:{width:viewport.width,height:viewport.height},deviceScaleFactor:viewport.dpr});try{
    const page=await context.newPage();page.setDefaultTimeout(10000);page.on('pageerror',e=>result.page_errors.push(e.message));await page.route('**/*',r=>{result.network.push(r.request().url());return r.abort();});await page.setContent(html);await page.evaluate(()=>initial);await settle(page);assert.equal(await page.locator('#v2EventWave .report-range-stage [data-wave-lead]').count(),3);await page.locator('#v2EventWave button[data-display-leads="12"]').click();await settle(page);

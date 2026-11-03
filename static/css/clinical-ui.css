@@ -155,3 +155,10 @@ body:has(#page-edit.active){overflow-y:auto;overflow-x:hidden}
 .full-record-retain .range-error:empty{display:none}
 .full-record-retain .range-actions{display:flex;gap:6px;margin:4px 0}
 .full-record-retain .range-actions button{min-height:28px;font-size:12px;padding:4px 8px}
+
+/* ST-T review records: browsing and the three report uses are independent. */
+#reportV2Content .v2-event-list [data-stt-use]{width:17px;height:17px;margin:0}
+#reportV2Content .v2-event-list:has([data-stt-use]) th:not(:first-child),#reportV2Content .v2-event-list:has([data-stt-use]) td:not(:first-child){padding-inline:4px;text-align:center;width:25px}
+#reportV2Content .v2-event-list:has([data-stt-use]) td:first-child strong{display:block;font-size:12px;margin-top:4px}
+#v2EventNavigation [data-stt-active-use]{accent-color:#0b8884;margin-right:4px}
+.rw-stt-trend-mode{display:grid!important;gap:5px!important;padding:10px!important;font-size:12px!important}.rw-stt-trend-mode select{width:100%;max-width:100%;min-height:30px;color:#24424c;border:1px solid #cbdadd;background:#fff}

@@ -23,7 +23,7 @@ import numpy as np
 from .config import CHANNEL_COUNT, SAMPLE_RATE
 from .source_identity import require_waveform_file, source_read
 
-ALGORITHM_VERSION = "stt-screening-0.2.0-continuous"
+ALGORITHM_VERSION = "stt-screening-0.3.1-hospital-records-rhythm-masks"
 LEADS = ("I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6")
 _FRAME = struct.Struct("<8h")
 _CACHE: OrderedDict[tuple, dict] = OrderedDict()
@@ -182,11 +182,21 @@ def _block_measurement(buffer, beats, all_count, total_samples, config, *, norma
         noise_ratio = baseline_variation / max(qrs, 40.0)
         score = max(0.0, min(1.0, 1.0 - min(0.65, noise_ratio) - min(0.35, qrs_variation)))
         lead_scores.append(score)
+        column=LEADS.index(lead)
+        raw_clipped=lead in ('I','II','V1','V2','V3','V4','V5','V6') and bool(beats) and (bool(np.any(qrs_frames[:,:,column]>=32767)) or bool(np.any(qrs_frames[:,:,column]<=-32768)))
         lead_values[lead] = {
             "st_level_units": round(_median(lead_data["st"]), 2),
             "t_amplitude_units": round(_median(lead_data["t"]), 2),
             "qrs_amplitude_units": round(qrs, 2), "quality_score": round(score, 3),
+            "eligible": qrs>0 and score>=0.42 and not raw_clipped,
+            "availability_reasons": (['flatline'] if qrs<=0 else [])+(['lead_engineering_quality'] if score<0.42 else [])+(['source_clipping'] if raw_clipped else []),
         }
+    # A derived limb lead can be a genuine zero projection. Its zero is not a
+    # disconnected source channel; availability follows its two measured inputs.
+    limb_available=lead_values['I']['eligible'] and lead_values['II']['eligible']
+    for lead in ('III','aVR','aVL','aVF'):
+        lead_values[lead]['eligible']=limb_available and lead_values[lead]['quality_score']>=.42
+        lead_values[lead]['availability_reasons']=[] if lead_values[lead]['eligible'] else ['source_limb_unavailable']
     # Sampling limits measurement work; it must not reduce the actual normal
     # beat density used by the existing quality gates.
     has_population_count = normal_count is not None
@@ -299,7 +309,8 @@ def _merge_episodes(items: list[dict]) -> list[dict]:
     # Never flatten support from another lead or across an unavailable interval.
     result=sorted(copy.deepcopy(items),key=lambda row:(row['start_s'],row['kind'],LEADS.index(row['leads'][0])))
     for index,item in enumerate(result,1):
-        item['id'],item['lead_count']=f'auto-stt-{index}',1
+        material=[ALGORITHM_VERSION,item['kind'],item['leads'],item['start_s'],item['end_s']]
+        item['id'],item['lead_count']='auto-stt-'+sha256(repr(material).encode()).hexdigest()[:24],1
     return result
 
 
@@ -311,7 +322,7 @@ def minute_trends(points, duration_s, config):
     """
     result=[];cursor=0
     for start in range(0,math.ceil(duration_s),60):
-        end=min(duration_s,start+60);covered=0.;sums={'deviation_units':0.,'t_amplitude_units':0.};reasons=set();quality=[]
+        end=min(duration_s,start+60);covered=0.;sums={key:0. for key in ('st_level_units','reference_units','deviation_units','t_amplitude_units','t_reference_units')};reasons=set();quality=[]
         while cursor<len(points) and _support(points[cursor],config)[1]<=start:cursor+=1
         j=cursor
         while j<len(points) and _support(points[j],config)[0]<end:
@@ -323,12 +334,14 @@ def minute_trends(points, duration_s, config):
                 quality.append(point.get('quality_score',0))
             elif overlap:
                 reasons.add('axis_shift' if point.get('axis_shift_suspected') else 'quality_or_missing')
+                reasons.update(point.get('availability_reasons',[]))
             j+=1
         if covered+1e-7<end-start:reasons.add('incomplete_support')
         complete=covered+1e-7>=end-start and not reasons
         row=dict(start_s=float(start),end_s=end,time_s=(start+end)/2,duration_s=end-start,
             eligible=complete,valid_duration_s=round(covered,3),coverage_pct=round(covered/(end-start)*100,2),
-            quality_score=round(_median(quality),3),quality_reasons=sorted(reasons),axis_shift_suspected='axis_shift' in reasons)
+            quality_score=round(_median(quality),3),quality_reasons=sorted(reasons),axis_shift_suspected='axis_shift' in reasons,
+            lead_availability='available' if complete else 'unavailable',quality_verified_by_physician=False)
         for key,value in sums.items():
             mean=round(value/covered,2) if covered else None
             row[key]=mean if complete else None;row['partial_'+key]=mean
@@ -336,21 +349,37 @@ def minute_trends(points, duration_s, config):
     return result
 
 
+def _screening_masks(intervals,total_samples):
+    result=set()
+    for row in intervals:
+        if not isinstance(row,dict) or any(type(row.get(k)) is not int for k in ('start_sample','end_sample')):raise ValueError('ST-T节律排除须使用原始整数样本范围')
+        start,end=row['start_sample'],row['end_sample'];reason=row.get('reason','stored_rhythm_exclusion')
+        if not 0<=start<end<=total_samples or not isinstance(reason,str) or not reason or len(reason)>200:raise ValueError('ST-T节律排除范围无效')
+        result.add((start,end,reason))
+    return tuple(sorted(result))
+
+
 @source_read
-def analyze_stt(waveform_path: str | Path, records, duration_s: float | None = None, *, analysis_revision=None, config=None) -> dict:
+def analyze_stt(waveform_path: str | Path, records, duration_s: float | None = None, *, analysis_revision=None, config=None,excluded_intervals=()) -> dict:
     """Analyze a recording and return automatic review candidates and trends."""
     path, settings = Path(waveform_path), {**DEFAULT_CONFIG, **(config or {})}
     stat, normalized = require_waveform_file(path), _normalize_records(records)
     total_samples = stat.st_size // (CHANNEL_COUNT * 2)
     duration = min(float(duration_s or total_samples / SAMPLE_RATE), total_samples / SAMPLE_RATE)
+    masks=_screening_masks(excluded_intervals,total_samples)
     # Revisions can be equal in separate workspaces. Bind every normalized
     # record, including middle edits, rather than only the count and endpoints.
     signature = (sha256(repr(normalized).encode("ascii")).hexdigest(), analysis_revision)
     from .source_identity import file_signature
-    cache_key = (str(path.resolve()), file_signature(path), signature, duration, tuple(sorted(settings.items())))
+    cache_key = (str(path.resolve()), file_signature(path), signature, duration, tuple(sorted(settings.items())),masks)
     if cache_key in _CACHE:
         _CACHE.move_to_end(cache_key); return copy.deepcopy(_CACHE[cache_key])
     block_samples = int(settings["block_seconds"] * SAMPLE_RATE)
+    block_count=math.ceil(duration/settings['block_seconds']);masked_blocks=set()
+    # The same source supports used for baseline/J/ST/T must be outside a saved
+    # rhythm exclusion. A conservative full-block break prevents gap bridging.
+    for start,end,_ in masks:
+        masked_blocks.update(range(max(0,(start-120)//block_samples),min(block_count-1,(end+40-1)//block_samples)+1))
     by_block: dict[int, list[tuple[int, int, int]]] = {}
     for row in normalized:
         if 0 <= row[0] < total_samples:
@@ -371,6 +400,11 @@ def analyze_stt(waveform_path: str | Path, records, duration_s: float | None = N
             block_start=block_index*settings["block_seconds"]
             block_end=min(duration,block_start+settings["block_seconds"])
             time_s = (block_start+block_end)/2
+            if block_index in masked_blocks:
+                blocks.append(dict(time_s=time_s,start_s=block_start,end_s=block_end,eligible=False,quality_score=0.,
+                    normal_beat_count=len(usable),measurement_beat_count=0,normal_beat_ratio=round(len(usable)/max(1,all_count),3),
+                    j_offset_ms=None,landmark_confidence=0.,leads={},availability_reasons=['rhythm_exclusion']))
+                continue
             if len(selected) < settings["minimum_normal_beats"]:
                 blocks.append({"time_s": time_s, "start_s":block_start,"end_s":block_end,"eligible": False, "quality_score": 0.0,
                                "normal_beat_count": len(usable), "measurement_beat_count": len(selected),
@@ -387,7 +421,8 @@ def analyze_stt(waveform_path: str | Path, records, duration_s: float | None = N
         for block in blocks:
             measure = block["leads"].get(lead, {})
             points.append({
-                "time_s": block["time_s"], "start_s":block["start_s"],"end_s":block["end_s"], "eligible": block["eligible"], "quality_score": block["quality_score"],
+                "time_s": block["time_s"], "start_s":block["start_s"],"end_s":block["end_s"], "eligible": block["eligible"] and measure.get('eligible',False), "quality_score": measure.get('quality_score',0),
+                "availability_reasons":block.get('availability_reasons',measure.get('availability_reasons',['lead_missing'])),
                 "j_offset_ms": block["j_offset_ms"], "landmark_confidence": block["landmark_confidence"],
                 "st_level_units": measure.get("st_level_units"), "t_amplitude_units": measure.get("t_amplitude_units"),
                 "qrs_amplitude_units": measure.get("qrs_amplitude_units"),
@@ -414,7 +449,9 @@ def analyze_stt(waveform_path: str | Path, records, duration_s: float | None = N
                     "coverage_pct": round(eligible_blocks * 100 / max(1, len(blocks)), 1),
                     "analyzed_duration_s": round(min(duration, len(blocks) * settings["block_seconds"]), 1),
                     "excluded_blocks": len(blocks) - eligible_blocks,
-                    "gate": "normal-beat density + baseline stability + QRS stability; machine J confidence is reported, not a gate"},
+                    "gate": "normal-beat density + baseline stability + QRS stability; saved AF/AFL support exclusions break blocks; machine J confidence is reported, not a gate"},
+        "exclusions":dict(intervals=[dict(start_sample=a,end_sample=b,reason=r) for a,b,r in masks],support_halo_samples=[-40,120],
+            rule='any_intersection_breaks_fixed_measurement_block_and_continuity'),
         "summary": {"candidate_count": len(candidates),
                     "st_depression_count": sum(item["kind"] == "st_depression" for item in candidates),
                     "st_elevation_count": sum(item["kind"] == "st_elevation" for item in candidates),
@@ -427,11 +464,11 @@ def analyze_stt(waveform_path: str | Path, records, duration_s: float | None = N
     return result
 
 
-def build_stt_review(conclusion: str, waveform_path=None, records=None, duration_s=None, *, analysis_revision=None, config=None) -> dict:
+def build_stt_review(conclusion: str, waveform_path=None, records=None, duration_s=None, *, analysis_revision=None, config=None,excluded_intervals=()) -> dict:
     """Build the ST-T workbench contract with optional automatic analysis."""
     analysis = None
     if waveform_path is not None and records is not None:
-        analysis = analyze_stt(waveform_path, records, duration_s, analysis_revision=analysis_revision, config=config)
+        analysis = analyze_stt(waveform_path, records, duration_s, analysis_revision=analysis_revision, config=config,excluded_intervals=excluded_intervals)
     automatic = {
         "enabled": analysis is not None, "algorithm_version": ALGORITHM_VERSION,
         "role": "screening_candidates_only", "review_status": "pending_physician_review",

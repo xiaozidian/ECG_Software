@@ -19,6 +19,8 @@ const LEAD_WEIGHTS = [1, 2, 1, -1.5, 0, 1.5, 3, 4, 5, 6, 7, 8];
 const SCOPE_FIELDS = ['case_id', 'analysis_basis', 'analysis_revision', 'beat_revision'];
 const SCOPE6_FIELDS = ['case_id', 'source_digest', 'data_version', 'analysis_basis', 'beat_revision', 'analysis_revision'];
 const clone = value => JSON.parse(JSON.stringify(value));
+// Read-only ST receipt projection is additional API metadata; stored clinical fields stay exact.
+const storedAnnotation = row => Object.fromEntries(Object.entries(row).filter(([key])=>key!=='stt_review_receipt'));
 const sha = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 const record = (sample, group = 1, rr = 1000) => ({sample_index: sample, group, rr_ms: rr});
 const mask = (start, end, reason, extra = {}) => ({start_sample: start, end_sample: end, reason, ...extra});
@@ -44,7 +46,9 @@ function exactNumericTree(actual, expected, label = 'result', metrics = null) {
       if (/\.(quality_score|normal_beat_ratio)$/.test(label)) metrics.maximumAbsoluteQualityError = Math.max(metrics.maximumAbsoluteQualityError, error);
       if (/\.coverage\./.test(label)) metrics.maximumAbsoluteCoverageError = Math.max(metrics.maximumAbsoluteCoverageError, error);
     }
-    if (Number.isInteger(expected)) assert.equal(actual, expected, label);
+    // JSON.stringify canonicalizes -0 to 0; both represent the same measured zero.
+    if (expected === 0) assert(actual === 0, label);
+    else if (Number.isInteger(expected)) assert.equal(actual, expected, label);
     else near(actual, expected, label);
   } else if (Array.isArray(expected)) {
     assert(Array.isArray(actual), label + ' is not an array');
@@ -177,9 +181,9 @@ function fixtures() {
     make('full-explicit-mask-null-is-not-zero', hand, {exclusions: [mask(0, 6400, 'mathematical AF mask')]}, value => {
       assert.equal(value.counts.used_count, 0); assert(value.leads.every(lead => lead.mean_units === null));
     }),
-    make('zero-signal-low-J-confidence-still-eligible', zero, {}, value => {
+    make('flatline-lead-is-unavailable-even-when-shared-block-gate-passes', zero, {}, value => {
       assert.equal(value.blocks[0].landmark_confidence, 0); assert.equal(value.blocks[0].eligible, true);
-      assert.equal(value.blocks[0].j_offset_samples, 8); assert.equal(value.leads[1].mean_units, 0);
+      assert.equal(value.blocks[0].j_offset_samples,8);assert.equal(value.leads[1].mean_units,null);assert.equal(value.leads[1].availability,'unavailable');assert.equal(value.leads[1].used_count,0);
     }),
     make('empty-detected-population-remains-null', {...zero, rows: []}, {}, value => {
       assert.equal(value.counts.detected_count, 0); assert(value.leads.every(lead => lead.mean_units === null));
@@ -282,7 +286,7 @@ function harness(source = handFixture(), values) {
       return crypto.webcrypto.subtle.digest(...args);
     }}};
   const context = vm.createContext({console, Response, Request, Headers, URL, URLSearchParams, AbortController, DOMException,
-    TextEncoder, TextDecoder, ArrayBuffer, DataView, Uint8Array, Int16Array, Float64Array, crypto: actualCrypto,
+    TextEncoder, TextDecoder, structuredClone, ArrayBuffer, DataView, Uint8Array, Int16Array, Float64Array, crypto: actualCrypto,
     localStorage, location: {href: 'http://original-math.invalid/'}, setTimeout, clearTimeout,
     navigator: {locks: {request: (_key, _options, run) => {const value = lockTail.then(run, run); lockTail = value.catch(() => {}); return value;}}}});
   context.window = context; context.self = context; context.fetch = nativeFetch;
@@ -642,7 +646,7 @@ async function run() {
     assert.deepEqual(created.details.range_statistics, statistics);
     const reopened = harness(h.source, h.localStorage.values), found = (await reopened.call('annotations')).items.find(item => item.details?.submission_id === payload.details.submission_id);
     assert.equal(found.case_id, CASE_ID);
-    assert.deepEqual(found, created); verifyReceipt(found.details.range_statistics);
+    assert.deepEqual(storedAnnotation(found),created);assert.equal(found.stt_review_receipt.legacy,true);assert.equal(found.stt_review_receipt.review_state,'unreviewed');verifyReceipt(found.details.range_statistics);
   });
   await check('mean-UUID:lost response acknowledgement reuses saved identity despite old scope without another write', async () => {
     const h = harness(), statistics = await rangeForSave(h), payload = meanPayload(statistics);
@@ -685,7 +689,7 @@ async function run() {
     assert.deepEqual(responses[0], responses[1]);
     assert.equal(responses[0].case_id, CASE_ID);
     assert.equal(concurrent.localStorage.writes, beforeWrites + 1, 'concurrent exact intent must commit once');
-    assert.deepEqual((await concurrent.call('annotations')).items, [responses[0]]);
+    assert.deepEqual((await concurrent.call('annotations')).items.map(storedAnnotation),[responses[0]]);
     assert.equal((await concurrent.call('/api/audit')).items.length, beforeAudit.items.length + 1);
     assert.equal((await concurrent.call('analysis-basis')).analysis_revision, beforeBasis.analysis_revision + 1);
     await concurrent.call('beat-editor', 'PUT', {operation: 'relabel', revision: 0, confirmed: true,
@@ -694,7 +698,7 @@ async function run() {
     assert.equal(afterBeat.beat_revision, concurrentStatistics.scope.beat_revision + 1);
     await concurrent.call('annotations', 'POST', clone(concurrentPayload), 409);
     assert.equal(concurrent.localStorage.getItem(STORE_KEY), persistedAfterBeat); assert.equal(concurrent.localStorage.writes, writesAfterBeat);
-    assert.deepEqual((await concurrent.call('annotations')).items, [responses[0]]);
+    assert.deepEqual((await concurrent.call('annotations')).items.map(storedAnnotation),[responses[0]]);
     return {concurrentRealPosts: 2, concurrentAcknowledgements: 2, committedAnnotations: 1,
       storageCommitCount: 1, auditIncrement: 1, globalRevisionIncrement: 1, changedBeatAcknowledgementRejected: true,
       lostResponseCoordinationOnlyGET: true, lostResponseAnnotationPOSTs: 1, lostResponseSavedCaseId: CASE_ID};
@@ -714,7 +718,7 @@ async function run() {
       const changed = clone(payload); change(changed); await h.call('annotations', 'POST', changed, 409);
       assert.equal(h.localStorage.getItem(STORE_KEY), persisted, name + ' conflict cannot write'); assert.equal(h.localStorage.writes, writes);
     }
-    assert.deepEqual((await h.call('annotations')).items, [created]);
+    assert.deepEqual((await h.call('annotations')).items.map(storedAnnotation),[created]);
   });
   await check('mean-UUID:quota failure leaves submission identity uncommitted and exact same intent retries once', async () => {
     const h = harness(); await seedDraft(h);
@@ -745,7 +749,7 @@ async function run() {
     const persisted = h.localStorage.getItem(STORE_KEY), writes = h.localStorage.writes, audit = await h.call('/api/audit'), oldReport = await h.call('report');
     await h.call('annotations', 'POST', clone(payload), 409);
     assert.equal(h.localStorage.getItem(STORE_KEY), persisted); assert.equal(h.localStorage.writes, writes);
-    assert.deepEqual((await h.call('annotations')).items, [created]); assert.deepEqual(await h.call('/api/audit'), audit);
+    assert.deepEqual((await h.call('annotations')).items.map(storedAnnotation),[created]); assert.deepEqual(await h.call('/api/audit'), audit);
     assert.deepEqual(await h.call('review-workflow'), reviewed); assert.deepEqual(await h.call('report'), oldReport);
 
     // A previously uncommitted request starts receipt validation. Another real
@@ -761,7 +765,7 @@ async function run() {
     const asyncPersisted = other.localStorage.getItem(STORE_KEY), asyncAudit = await other.call('/api/audit');
     asynchronous.releaseDigest(); await pending;
     assert.equal(asynchronous.localStorage.getItem(STORE_KEY), asyncPersisted); assert.equal(asynchronous.localStorage.writes, 0);
-    assert.deepEqual((await asynchronous.call('annotations')).items, [asynchronouslyCreated]);
+    assert.deepEqual((await asynchronous.call('annotations')).items.map(storedAnnotation),[asynchronouslyCreated]);
     assert.deepEqual(await asynchronous.call('/api/audit'), asyncAudit); assert.deepEqual(await asynchronous.call('review-workflow'), asyncWorkflow);
 
     return {ownSaveRevisionAdvance: 1, unrelatedReviewTotalAdvance: 2, earlyExistingStatus: 409,

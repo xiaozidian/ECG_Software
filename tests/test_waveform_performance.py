@@ -117,21 +117,23 @@ const fs=require('fs'),vm=require('vm'),source=fs.readFileSync('static/js/clinic
 // Exercise the actual cache declarations and report reader without mounting DOM.
 const setup=source.slice(source.indexOf('  const reportWaveCache='),source.indexOf('  let reportCase='));
 const reader=source.slice(source.indexOf('  async function reportStrip('),source.indexOf('  async function selectedReportWaves('));
+const strip=fs.readFileSync('static/js/report-strip-editor.js','utf8');
 let reads=0;
-vm.runInNewContext(setup+reader+`(async()=>{
+vm.runInNewContext(strip+setup+reader+`(async()=>{
  const event={event_id:'e1',basis_version:'v1',label:'candidate'},selection={leads:['II'],duration_s:7};
  const [first,second]=await Promise.all([reportStrip(event,selection),reportStrip(event,selection)]);
  const revised=await reportStrip({...event,basis_version:'v2'},selection);
  console.log(JSON.stringify({first,second,revised,reads:reads()}));
 })().catch(e=>{console.error(e);process.exit(1)})`,{
- ECGWaveformLoader:require('./static/js/waveform-loader.js'),ECGReportEngine:{settings:x=>x},state:{caseId:'test'},
+ ECGWaveformLoader:require('./static/js/waveform-loader.js'),ECGReportEngine:require('./static/js/report-engine.js'),state:{caseId:'test'},
  endpoint:async()=>({sequence:++reads}),reads:()=>reads,console,process,setTimeout,Map
 });
 """
     result=json.loads(subprocess.check_output(['node','-e',script],cwd=ROOT,text=True))
     assert result['reads']==2
-    assert result['first']==result['second']==dict(sequence=1,caption='candidate')
-    assert result['revised']==dict(sequence=2,caption='candidate')
+    defaults=dict(caption='candidate',print_enabled=True,notes='',preview_lead='II')
+    assert result['first']==result['second']==dict(sequence=1,**defaults)
+    assert result['revised']==dict(sequence=2,**defaults)
 
 
 def test_readonly_allows_new_computations_but_keeps_write_guard(data_root,tmp_path,monkeypatch):

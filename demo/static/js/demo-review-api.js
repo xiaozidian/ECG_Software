@@ -376,7 +376,7 @@ globalThis.ECGDemoReviewAPI = (() => {
       const range=statistics.range;
       if(!range||!Number.isSafeInteger(range.start_sample)||!Number.isSafeInteger(range.end_sample)
           ||range.start_sample<0||range.end_sample>total||range.end_sample-range.start_sample<12000
-          ||payload.sample_index!==range.start_sample||details.end_sample!==range.end_sample-1)error('标注范围与已计算的半开样本范围不一致');
+          ||(details.reviewed===true?!(payload.sample_index<=range.start_sample&&range.end_sample<=details.end_sample+1):payload.sample_index!==range.start_sample||details.end_sample!==range.end_sample-1))error('标注范围与已计算的半开样本范围不一致');
       if(Object.hasOwn(details,'point_measurement_sample_index'))integer(details.point_measurement_sample_index,'手工点测量位置',0,total-1);
       if(statistics.physician_document_written!==false||statistics.binding?.status!=='mathematical_raw_source_and_basis_bound'
           ||statistics.binding.source_kind!=='pure_mathematical'||statistics.simulation?.browser_computed!==true

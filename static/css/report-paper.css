@@ -97,3 +97,14 @@
   .rp-sheet.rp-waveforms{outline:0}
 }
 .rp-vector-chart svg{width:55mm!important;height:55mm!important;display:block;margin-inline:auto}.rp-vector-chart{break-inside:avoid}
+/* ST/T paper uses a single shared-time twelve-lead page, never flex-scaled ECG strips. */
+.rp-sheet.rp-stt{border:0;outline:1px solid #b8c1c5}.rp-stt>.rp-body{display:block;min-height:0;padding-top:1mm}.rp-stt h2{margin:1mm 0 2mm;font-size:12pt}
+.rp-stt-method{font-size:7pt;line-height:1.3;margin-bottom:2mm}.rp-stt-method p{margin:.6mm 0}
+.rp-stt-trend-figure{margin:0;break-inside:avoid}.rp-stt-trend-figure>svg{display:block;width:190mm;height:auto;font-family:"Songti SC",SimSun,"Noto Serif CJK SC",serif}
+.rp-stt-summary{font-size:7.5pt;line-height:1.4;padding:2mm 0;border-bottom:.2mm solid #555}.rp-stt-summary p{margin:.7mm 0}
+.rp-stt-representatives{display:grid;grid-template-columns:repeat(var(--stt-representative-count),minmax(0,1fr));margin-top:2mm;border:.2mm solid #555;break-inside:avoid}
+.rp-stt-representative{min-width:0;padding:1.5mm}.rp-stt-representative+.rp-stt-representative{border-left:.2mm solid #777}.rp-stt-representative h3{font-size:8pt;margin:0;text-align:center}.rp-stt-representative p{font-size:6.5pt;margin:.8mm 0;text-align:center;overflow-wrap:anywhere}.rp-stt-representative svg{width:100%;height:23mm;display:block}.rp-stt-representative-empty{height:23mm;display:flex;align-items:center;justify-content:center}
+.rp-stt-event-table{width:190mm;table-layout:fixed;border-collapse:collapse;font-size:7pt;font-variant-numeric:tabular-nums;line-height:1.3;margin:2mm 0}
+.rp-stt-event-table th,.rp-stt-event-table td{color:#111;background:none;border:.2mm solid #777;padding:1.3mm .7mm;text-align:center;overflow-wrap:anywhere}
+.rp-stt-event-table th{font-size:7pt;min-height:8mm;font-weight:700}.rp-stt-event-table th:first-child{width:10mm}.rp-stt-event-table th:nth-child(2){width:16mm}.rp-stt-event-table th:nth-child(3){width:39mm}.rp-stt-event-table th:nth-child(4){width:27mm}.rp-stt-event-table td:nth-child(3){font-size:6.5pt;white-space:nowrap}.rp-stt-event-table tr{break-inside:avoid}
+@media print{.rp-sheet.rp-stt{outline:0}}
