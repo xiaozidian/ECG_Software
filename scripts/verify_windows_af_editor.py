@@ -1,5 +1,7 @@
 """AF/AFL single-save candidate and report confirmation checks against the actual frozen native M01 workspace."""
 import time
+import json
+import traceback
 
 
 async def verify_af_editor(page, screenshots):
@@ -39,6 +41,37 @@ async def verify_af_editor(page, screenshots):
     base = await read()
     base_ids = [e['id'] for e in base['document']['episodes']]
     successful_commits = 0
+    primary_failure = None
+    async def cleanup():
+        decision = page.locator('#unsavedChangesDialog')
+        if await decision.is_visible() and await decision.locator('[data-unsaved-stay]').is_enabled():
+            await decision.locator('[data-unsaved-stay]').click()
+        cancel_range = page.locator('#v2EventWave [data-range-cancel]')
+        if await cancel_range.is_visible() and await cancel_range.is_enabled():
+            await cancel_range.click()
+        # Navigation protection is a real physician action. A stale/offscreen
+        # draft may not expose a cancel button; use its actual discard dialog.
+        if await page.evaluate("()=>state.currentPage==='report'&&ECGReportRange.pending().length>0"):
+            await page.locator('.nav-item[data-page="review"]').click()
+            await decision.wait_for(state='visible')
+            await decision.locator('[data-unsaved-discard]').click()
+            await decision.wait_for(state='hidden')
+            await page.wait_for_function("()=>state.currentPage==='review'")
+        else:
+            await navigate(page, 'review')
+        if not await page.locator('#ovAF').is_visible():
+            await page.locator('[data-ov="af-open"]').click()
+        await page.wait_for_function("()=>!!state.waveform&&document.querySelector('#ovAFCoverage [data-ov=\"af-coverage\"]')&&!document.querySelector('#ovAFCoverage [data-ov=\"af-coverage\"]').disabled")
+        for _ in range(successful_commits):
+            async with page.expect_response(lambda response: '/rhythm-review' in response.url and response.request.method == 'PUT') as pending:
+                await page.locator('[data-ov="af-undo"]').click()
+            response = await pending.value
+            assert response.ok
+            await page.wait_for_function("()=>!!state.waveform&&document.querySelector('#ovAFCoverage [data-ov=\"af-coverage\"]')&&!document.querySelector('#ovAFCoverage [data-ov=\"af-coverage\"]').disabled")
+        assert [e['id'] for e in (await read())['document']['episodes']] == base_ids
+        if original_viewport:
+            await page.set_viewport_size(original_viewport)
+
     try:
         for kind, start, end in [('AF', 3598, 3720), ('AFL', 7200, 7210)]:
             await page.locator('[data-ov="af-add:' + kind + '"]').first.click()
@@ -92,15 +125,20 @@ async def verify_af_editor(page, screenshots):
                 assert not any(e['event_id'] == event_id for e in viewed_report['composition']['selected_events'])
                 checks.append('AF-viewing-row-does-not-confirm-or-include')
                 await page.locator('#v2EventWave [data-af-browse="middle"]').click()
-                await page.wait_for_function("lo=>Number(document.querySelector('#v2EventWave')?.dataset.afBrowseStart)>lo+30", arg=start)
-                await page.locator('#v2EventWave [data-af-strip-duration]').select_option('7')
+                await page.wait_for_function("lo=>{const t=document.querySelector('#v2EventWave'),c=t?._afCurrentStrip?.();return Number(t?.dataset.afBrowseStart)>lo+30&&c?.role==='middle'&&t.dataset.afStripKey===c.draftKey&&!!t.querySelector('.report-range-stage');}", arg=start)
+                if await page.locator('#v2EventWave [data-af-strip-duration]').input_value() != '7':
+                    await page.locator('#v2EventWave [data-af-strip-duration]').select_option('7')
+                    await page.wait_for_function("()=>{const t=document.querySelector('#v2EventWave'),c=t?._afCurrentStrip?.();return c?.role==='middle'&&Math.abs(c.settings.duration_s-7)<.001&&t.dataset.afStripKey===c.draftKey&&!!t.querySelector('.report-range-stage');}")
                 await page.locator('#v2EventWave [data-af-use-view]').click()
+                # Both duration and custom browsing replace the editor after
+                # real report-strip/waveform reads. Do not edit the old DOM.
+                await page.wait_for_function("()=>{const t=document.querySelector('#v2EventWave'),c=t?._afCurrentStrip?.();return c?.role==='custom'&&t.dataset.afStripKey===c.draftKey&&!!t.querySelector('.report-range-stage');}")
                 # Custom browsing alone is read-only in27. Move both actual
                 # range handles by one200Hz sample to create a7s pending edit.
                 await page.locator('#v2EventWave [data-range-drag=start]').press('ArrowRight')
                 await page.locator('#v2EventWave [data-range-drag=end]').press('ArrowRight')
-                await page.wait_for_function("id=>ECGReportRange.pending().some(d=>d.event?.event_id===id)", arg=event_id)
-                chosen = await page.evaluate("id=>{const d=ECGReportRange.pending().find(d=>d.event?.event_id===id);return {start:d.a,end:d.b};}", event_id)
+                await page.wait_for_function("id=>{const t=document.querySelector('#v2EventWave');return ECGReportRange.pending().some(d=>d.event?.event_id===id&&d.stripKey===t.dataset.afStripKey&&d.isCurrent?.());}", arg=event_id)
+                chosen = await page.evaluate("id=>{const t=document.querySelector('#v2EventWave'),d=ECGReportRange.pending().find(d=>d.event?.event_id===id&&d.stripKey===t.dataset.afStripKey&&d.isCurrent?.()),c=t._afCurrentStrip();if(Math.abs(c.settings.range_start_s-d.a)>.001||Math.abs(c.settings.range_end_s-d.b)>.001)throw Error('Current AF choice does not match pending range');return {start:d.a,end:d.b};}", event_id)
                 assert chosen['start'] > start + 20 and chosen['end'] < end - 20
                 assert abs(chosen['end'] - chosen['start'] - 7) < .001
                 assert next(e for e in (await read())['document']['episodes'] if e['id'] == items[0]['id'])['status'] == 'pending'
@@ -124,7 +162,7 @@ async def verify_af_editor(page, screenshots):
                 report = await browser_json(page, '/api/cases/' + CASE_ID + '/report?analysis=edited')
                 chosen_entries = [e for e in report['composition']['selected_events'] if e['event_id'] == event_id]
                 assert len(chosen_entries) == 1
-                assert abs(chosen_entries[0]['range_start_s'] - chosen['start']) < .001
+                assert abs(chosen_entries[0]['range_start_s'] - chosen['start']) < .001, {'chosen':chosen,'entries':chosen_entries}
                 assert abs(chosen_entries[0]['range_end_s'] - chosen['end']) < .001
                 checks.append('AF-confirmation-and-inclusion-stay-in-native-report')
                 checks.append('explicit-AF-confirmation-keeps-whole-boundaries-and-middle-strip')
@@ -154,26 +192,25 @@ async def verify_af_editor(page, screenshots):
                 checks.append('native-single-screen-' + str(width) + 'x' + str(height) + '-' + side)
             await page.locator('[data-ov="af-side:episodes"]').click()
             await page.screenshot(path=str(screenshots / ('mathematical-af-' + str(width) + 'x' + str(height) + '.png')))
+    except Exception as error:
+        primary_failure = error
+        (screenshots / 'af-editor-primary-failure.json').write_text(json.dumps({
+            'error': type(error).__name__ + ': ' + str(error),
+            'traceback': traceback.format_exc(), 'checks': checks,
+            'pending': await page.evaluate("()=>ECGReportRange.pending().map(d=>({id:d.event?.event_id,a:d.a,b:d.b,current:d.isCurrent?.()}))")
+        }, ensure_ascii=False, indent=2), encoding='utf-8')
+        await page.screenshot(path=str(screenshots / 'af-editor-primary-failure.png'))
+        raise
     finally:
-        decision = page.locator('#unsavedChangesDialog')
-        if await decision.is_visible() and await decision.locator('[data-unsaved-stay]').is_enabled():
-            await decision.locator('[data-unsaved-stay]').click()
-        cancel_range = page.locator('#v2EventWave [data-range-cancel]')
-        if await cancel_range.is_visible() and await cancel_range.is_enabled():
-            await cancel_range.click()
-        await navigate(page, 'review')
-        if not await page.locator('#ovAF').is_visible():
-            await page.locator('[data-ov="af-open"]').click()
-        await page.wait_for_function("()=>!!state.waveform&&document.querySelector('#ovAFCoverage [data-ov=\"af-coverage\"]')&&!document.querySelector('#ovAFCoverage [data-ov=\"af-coverage\"]').disabled")
-        for _ in range(successful_commits):
-            async with page.expect_response(lambda response: '/rhythm-review' in response.url and response.request.method == 'PUT') as pending:
-                await page.locator('[data-ov="af-undo"]').click()
-            response = await pending.value
-            assert response.ok
-            await page.wait_for_function("()=>!!state.waveform&&document.querySelector('#ovAFCoverage [data-ov=\"af-coverage\"]')&&!document.querySelector('#ovAFCoverage [data-ov=\"af-coverage\"]').disabled")
-        assert [e['id'] for e in (await read())['document']['episodes']] == base_ids
-        if original_viewport:
-            await page.set_viewport_size(original_viewport)
+        try:
+            await cleanup()
+        except Exception as cleanup_error:
+            if primary_failure is None:
+                raise
+            (screenshots / 'af-editor-cleanup-failure.json').write_text(json.dumps({
+                'error': type(cleanup_error).__name__ + ': ' + str(cleanup_error),
+                'primary_failure_retained': True
+            }, ensure_ascii=False, indent=2), encoding='utf-8')
     checks.append('native-AF-undo-restores-original-rhythm-document')
     return {'passed': len(checks), 'checks': checks, 'measurements': measurements,
             'scope': 'actual frozen executable and installed system Edge; generated mathematical M01 only',
