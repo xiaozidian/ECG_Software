@@ -171,7 +171,11 @@ def assert_reviewed(report,basis,events):
 
 
 async def get(page,case_id,kind):
-    return await page.evaluate("""async p=>{const r=await fetch(p,{cache:'no-store'});if(!r.ok)throw Error('Native GET '+r.status);return r.json()}""",'/api/cases/'+case_id+'/'+kind)
+    # Preserve the server's JSON numeric representation (20.0 versus 20).
+    # Passing a parsed JS object through Playwright loses integral floats and
+    # changes the exact Python composition digest signed by the application.
+    payload=await page.evaluate("""async p=>{const r=await fetch(p,{cache:'no-store'});if(!r.ok)throw Error('Native GET '+r.status);return r.text()}""",'/api/cases/'+case_id+'/'+kind)
+    return json.loads(payload)
 
 
 async def settled(page):
