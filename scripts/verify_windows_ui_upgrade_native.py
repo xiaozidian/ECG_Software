@@ -7,6 +7,7 @@ producer, executable, provenance guard or clinical database is patched.
 from __future__ import annotations
 import argparse
 import asyncio
+from contextlib import closing
 from datetime import datetime,timedelta,timezone
 from hashlib import sha256
 import json
@@ -106,7 +107,7 @@ def program_identity(base,new):
 
 def database_state(path):
     """No row contents/control credentials are emitted into public receipts."""
-    with sqlite3.connect(path.resolve().as_uri()+'?mode=ro',uri=True) as db:
+    with closing(sqlite3.connect(path.resolve().as_uri()+'?mode=ro',uri=True)) as db:
         db.execute('BEGIN');require(db.execute('PRAGMA integrity_check').fetchone()[0]=='ok','Database integrity check failed')
         names=[r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")]
         result={}
