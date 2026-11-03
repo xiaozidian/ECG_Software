@@ -124,7 +124,7 @@ def embedded_modules(exe, root):
                 module = module[:-9]
             require(module in pyz.toc, 'Runtime module missing from actual PE: ' + module)
             actual = pyz.extract(module)
-        expected = compile(path.read_bytes(), name, 'exec', optimize=0)
+        expected = compile(path.read_bytes(), name, 'exec', optimize=0, dont_inherit=True)
         require(normalized_code(actual) == normalized_code(expected),
                 'Actual embedded code differs from frozen release source: ' + name)
         hashes[name] = sha256(path.read_bytes()).hexdigest()
@@ -602,6 +602,27 @@ def probe_comparators():
         require(database_state(path)['tables']['math']['rows']==[], 'Read-only snapshot mismatch')
         path.unlink()
     checks.append('read-only-SQLite-snapshot-explicitly-closes-owned-connection')
+    import __future__
+    sample = b'value: MissingType = 1\n'
+    inherited = compile(sample, 'math.py', 'exec', optimize=0)
+    independent = compile(sample, 'math.py', 'exec', optimize=0, dont_inherit=True)
+    require(inherited.co_flags & __future__.annotations.compiler_flag,
+            'Compiler-context negative probe no longer inherits this helper future flag')
+    require(not independent.co_flags & __future__.annotations.compiler_flag,
+            'Standalone source compilation inherited the helper future flag')
+    require(normalized_code(inherited) != normalized_code(independent),
+            'Embedded comparison must still reject a future-flag difference')
+    checks.append('standalone-compile-rejects-inherited-caller-future-flags')
+    explicit = compile(b'from __future__ import annotations\n' + sample, 'math.py',
+                       'exec', optimize=0, dont_inherit=True)
+    require(explicit.co_flags & __future__.annotations.compiler_flag,
+            'Independent compilation lost a future flag explicitly declared by the source')
+    checks.append('standalone-compile-retains-source-declared-future-flags')
+    tampered = compile(b'value: MissingType = 2\n', 'math.py', 'exec',
+                       optimize=0, dont_inherit=True)
+    require(normalized_code(independent) != normalized_code(tampered),
+            'Embedded comparison accepted modified source constants')
+    checks.append('standalone-compile-still-rejects-source-code-tampering')
     if os.name!='nt':
         try:asyncio.run(verify(argparse.Namespace(),{}))
         except AssertionError as error:require('Actual Windows x64 PE' in str(error),'Platform gate changed')

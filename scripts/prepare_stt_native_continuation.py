@@ -148,6 +148,37 @@ def main():
     assert failed['network']['external_requests']==0
     evidence=args.output/'evidence';shutil.copytree(original,evidence)
     prior=one(evidence,'browser-validation.json');prior.rename(prior.with_name('prior-browser-validation-failure.json'))
+    completed=contract['native61_success']
+    completed_run=api(f'/actions/runs/{completed["run"]}')
+    assert completed_run['head_sha']==completed['head'] and completed_run['status']=='completed' and completed_run['conclusion']=='failure'
+    completed_jobs=api(f'/actions/runs/{completed["run"]}/jobs')['jobs'];assert len(completed_jobs)==1
+    completed_steps={s['number']:s for s in completed_jobs[0]['steps']}
+    assert {n for n,s in completed_steps.items() if s['conclusion']=='failure'}=={10}
+    assert all(completed_steps[n]['conclusion']=='success' for n in [6,7,8,9])
+    completed_row=next(r for r in api(f'/actions/runs/{completed["run"]}/artifacts')['artifacts'] if r['name']==completed['artifact']['name'])
+    assert completed_row['id']==completed['artifact']['id'] and completed_row['digest']==completed['artifact']['digest']
+    assert completed_row['size_in_bytes']==completed['artifact']['bytes'] and not completed_row['expired']
+    assert completed_row['workflow_run']['id']==completed['run'] and completed_row['workflow_run']['head_sha']==completed['head']
+    completed_outer=download(completed_row,artifacts,'native61')
+    for name,expected in completed['helper_source_sha256'].items():assert digest(ROOT/name)==expected,name
+    for name,expected in completed['receipt_sha256'].items():
+        saved=one(artifacts/'native61',name);assert digest(saved)==expected,name
+        shutil.copy2(saved,evidence/name)
+    saved_native=read(evidence/'browser-validation.json');saved_P01=read(evidence/'p01-native.json');saved_ST=read(evidence/'report-evidence-native.json')
+    assert saved_native['status']==saved_P01['status']==saved_ST['status']=='passed'
+    assert len(saved_native['checks'])==41 and all(c['status']=='passed' for c in saved_native['checks'])
+    assert len(saved_P01['checks'])==8 and all(c['status']=='passed' for c in saved_P01['checks'])
+    assert saved_ST['source_commit']==HEAD and saved_ST['exe_sha256']==EXE
+    assert saved_ST['archive_sha256']==contract['package_bytes']['p01']['sha256']
+    assert saved_ST['ui']['status']=='passed' and len(saved_ST['ui']['checks'])==12
+    assert all(digest(paths[k])==expected for k,expected in completed['input_package_SHA'].items())
+    failed_upgrade=read(one(artifacts/'native61','stt-hospital-upgrade-native.json'))
+    assert failed_upgrade['status']=='failed' and failed_upgrade['checks']==[]
+    assert completed['prior_error'] in failed_upgrade['error']
+    assert all(failed_upgrade.get(k) is None for k in ['before_reviewed','api_upgrade','database_upgrade'])
+    shutil.copy2(one(artifacts/'native61','stt-hospital-upgrade-native.json'),evidence/'prior-stt-hospital-upgrade-failure.json')
+    native61_proof={**completed,'outer_download':completed_outer,'passed_steps':[7,8,9],
+        'all_raw_receipt_hashes_verified':True,'all_61_helper_sources_and_package_inputs_unchanged':True}
     oldrun=api('/actions/runs/41614325648');assert oldrun['conclusion']=='success' and oldrun['head_sha']=='b681f6a52c9746ebfd9502deab5a5a38cac10a8e'
     old=next(r for r in api('/actions/runs/41614325648/artifacts')['artifacts'] if r['name']=='CardioInsight-Windows-x64-1.0.12-P01-software-only')
     assert not old['expired'] and old['workflow_run']['id']==41614325648
@@ -164,19 +195,20 @@ def main():
     original_files=read(programs['update']/'CONTENTS.json')['files'];fixture_files=read(fixture/'CONTENTS.json')['files']
     assert set(original_files)==set(fixture_files)
     assert {n for n in original_files if original_files[n]!=fixture_files[n]}=={'RELEASE.json','版本说明.txt'}
-    report={'status':'fresh_producer_identity_and_passed_scopes_verified_all_native_pending','producing_run':PRODUCER,'producing_commit':HEAD,
+    report={'status':'fresh_producer_and_completed61_verified_upgrade9_pending','producing_run':PRODUCER,'producing_commit':HEAD,
         'original_sole_failure':'step15 obsolete hidden ST range selector; no native completion claim',
         'source_identity':verify(ROOT),'common_source_fingerprint':COMMON,'core_version':shared['core_version'],'ui_version':shared['ui_version'],
         'EXE_sha256':EXE,'compiled_modules_verified':modules,'UI_assets_verified':80,
         'original_gates_reused':{'fresh_backend':scope['current'],'fresh_UI':ui['current'],'request_performance_repeats':3},
-        'actual_native_gates_reused':False,'all_original_outer_artifact_hashes_verified':proofs,'base12_fixture_proof':oldproof,
+        'actual_native_gates_reused':True,'native61_reused_proof':native61_proof,
+        'all_original_outer_artifact_hashes_verified':proofs,'base12_fixture_proof':oldproof,
         'package_bytes':{k:{'path':str(v),'sha256':digest(v),'bytes':v.stat().st_size} for k,v in paths.items()},
         'no_original_package_repack_or_metadata_rewrite':True,'wrapper_upgrade_fixture':{'sha256':fixture_sha,'user_deliverable':False,'allowed_changed_payloads':['RELEASE.json','版本说明.txt']},
-        'remaining_required':['native41','P01_8','ST_AF12','old12_to_new13_9'],'clinical_validation':False}
+        'remaining_required':['old12_to_new13_9'],'clinical_validation':False}
     dump(evidence/'continuation-prerequisites.json',report)
     dump(args.output/'continuation-input.json',{'paths':{**{k:str(v) for k,v in paths.items()},'base12':str(base),'evidence':str(evidence),
         'full_root':str(programs['full']),'math_root':str(programs['full']/'Sources/M01'),'upgrade_fixture':str(fixture_zip)},'producing_commit':HEAD,'producing_run':PRODUCER})
-    print(json.dumps({'status':'strict_fresh_producer_prerequisites_passed','source_commit':HEAD,'compiled40':True,'all_native_gates_pending':True}))
+    print(json.dumps({'status':'strict_fresh_producer_and_completed61_prerequisites_passed','source_commit':HEAD,'compiled40':True,'completed_native61_raw_bytes_verified':True,'actual_upgrade9_pending':True}))
 
 
 if __name__=='__main__':main()

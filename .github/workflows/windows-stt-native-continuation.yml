@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   native:
-    name: Verify exact fresh ST-T binary and execute every native gate
+    name: Verify exact fresh ST-T binary and passed61 then execute upgrade9
     runs-on: windows-latest
     timeout-minutes: 40
     env:
@@ -52,26 +52,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m pip check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Verify original fresh producer sole hidden-control failure and exact artifacts40 modules80 UI129 production
+      - name: Verify exact fresh producer40 modules80 UI129 and pinned successful61 raw native receipts
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           python scripts/prepare_stt_native_continuation.py --output "$env:RUNNER_TEMP\stt-continuation"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Actual original41 native checks including retained ST60s per-lead means and UI18 AF22 RR10
-        run: |
-          $input = Get-Content "$env:RUNNER_TEMP\stt-continuation\continuation-input.json" -Raw | ConvertFrom-Json
-          python scripts/verify_windows_doctor_browser.py --package-root "$($input.paths.full_root)" --software-archive "$($input.paths.upgrade_fixture)" --output "$env:RUNNER_TEMP\stt-continuation\evidence\browser-validation.json"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Actual P01 save reopen same-core upgrade8 checks
-        run: |
-          $input = Get-Content "$env:RUNNER_TEMP\stt-continuation\continuation-input.json" -Raw | ConvertFrom-Json
-          python scripts/verify_windows_p01.py --software-archive "$($input.paths.p01)" --math-source-root "$($input.paths.math_root)" --output "$env:RUNNER_TEMP\stt-continuation\evidence\p01-native.json"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Actual hospital ST600s full12lead records and AF4 twelve checks
-        run: |
-          $input = Get-Content "$env:RUNNER_TEMP\stt-continuation\continuation-input.json" -Raw | ConvertFrom-Json
-          python scripts/verify_windows_report_evidence_native.py --software-archive "$($input.paths.p01)" --output "$env:RUNNER_TEMP\stt-continuation\evidence\report-evidence-native.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Actual old12 to fresh13 preserves old6 evidence and enforces new-basis recheck nine checks
         run: |
