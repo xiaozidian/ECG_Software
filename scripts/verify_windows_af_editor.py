@@ -95,6 +95,10 @@ async def verify_af_editor(page, screenshots):
                 await page.wait_for_function("lo=>Number(document.querySelector('#v2EventWave')?.dataset.afBrowseStart)>lo+30", arg=start)
                 await page.locator('#v2EventWave [data-af-strip-duration]').select_option('7')
                 await page.locator('#v2EventWave [data-af-use-view]').click()
+                # Custom browsing alone is read-only in27. Move both actual
+                # range handles by one200Hz sample to create a7s pending edit.
+                await page.locator('#v2EventWave [data-range-drag=start]').press('ArrowRight')
+                await page.locator('#v2EventWave [data-range-drag=end]').press('ArrowRight')
                 await page.wait_for_function("id=>ECGReportRange.pending().some(d=>d.event?.event_id===id)", arg=event_id)
                 chosen = await page.evaluate("id=>{const d=ECGReportRange.pending().find(d=>d.event?.event_id===id);return {start:d.a,end:d.b};}", event_id)
                 assert chosen['start'] > start + 20 and chosen['end'] < end - 20

@@ -50,5 +50,10 @@
   "tests/test_report_candidate_workflow.py",
   "tests/test_demo_rr_candidate_flow.py",
   "tests/test_report_af_fit.py",
-  "tests/test_report_range_drafts.py"
+  "tests/test_report_range_drafts.py",
+  "tests/test_stt_continuous.py",
+  "tests/test_report_evidence_ranges.py",
+  "tests/test_report_multistrip_ui.py",
+  "tests/test_report_wave_menu.py",
+  "tests/test_demo_report_evidence.py"
 ]

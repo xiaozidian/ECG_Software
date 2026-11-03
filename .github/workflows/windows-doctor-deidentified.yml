@@ -1,4 +1,4 @@
-name: Windows deidentified-profile software 1.0.10 (math CI only)
+name: Windows deidentified-profile software 1.0.11 (math CI only)
 
 on:
   push:
@@ -22,9 +22,9 @@ jobs:
       PYTHONUTF8: "1"
       PYTHONIOENCODING: "utf-8"
       ECG_ALLOW_PHI: "0"
-      DOCTOR_PACKAGING_VERSION: "1.0.10"
+      DOCTOR_PACKAGING_VERSION: "1.0.11"
       DOCTOR_SOURCE_VERSION: "M01-24h-v1"
-      DOCTOR_RELEASE_NOTES: "统一RR候选与来源，房颤整段与代表图条独立核对，保留来源与旧稿设置。"
+      DOCTOR_RELEASE_NOTES: "逐导联ST/T分钟证据与连续事件，房颤多代表图条，医院式波形菜单与任意位置留图。"
     defaults:
       run:
         shell: pwsh
@@ -106,24 +106,59 @@ jobs:
       - name: Create source-free P01 native software template
         run: |
           python scripts/windows_deidentified_package.py template `
-            --software-archive "$env:RUNNER_TEMP\doctor-eval\CardioInsight-DoctorEval-Windows-x64-1.0.10-software.zip" `
+            --software-archive "$env:RUNNER_TEMP\doctor-eval\CardioInsight-DoctorEval-Windows-x64-1.0.11-software.zip" `
             --output "$env:RUNNER_TEMP\doctor-p01"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Actual frozen P01 source save reopen and update using mathematical fixture only
         run: |
           python scripts/verify_windows_p01.py `
-            --software-archive "$env:RUNNER_TEMP\doctor-p01\CardioInsight-DoctorEval-Windows-x64-1.0.10-P01-software.zip" `
+            --software-archive "$env:RUNNER_TEMP\doctor-p01\CardioInsight-DoctorEval-Windows-x64-1.0.11-P01-software.zip" `
             --math-source-root "$env:RUNNER_TEMP\doctor-math-M01" `
             --output "$env:RUNNER_TEMP\doctor-p01\evidence\p01-native.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Independent mathematical ST and multi-AF report evidence on the actual EXE
+        run: |
+          python scripts/verify_windows_report_evidence_native.py --software-archive "$env:RUNNER_TEMP\doctor-p01\CardioInsight-DoctorEval-Windows-x64-1.0.11-P01-software.zip" --output "$env:RUNNER_TEMP\doctor-p01\evidence\report-evidence-native.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Upload verified source-free P01 software only
         uses: actions/upload-artifact@v4
         with:
-          name: CardioInsight-Windows-x64-1.0.10-P01-software-only
+          name: CardioInsight-Windows-x64-1.0.11-P01-software-only
           path: |
-            ${{ runner.temp }}/doctor-p01/CardioInsight-DoctorEval-Windows-x64-1.0.10-P01-software.zip
-            ${{ runner.temp }}/doctor-p01/CardioInsight-DoctorEval-Windows-x64-1.0.10-P01-software.zip.sha256
+            ${{ runner.temp }}/doctor-p01/CardioInsight-DoctorEval-Windows-x64-1.0.11-P01-software.zip
+            ${{ runner.temp }}/doctor-p01/CardioInsight-DoctorEval-Windows-x64-1.0.11-P01-software.zip.sha256
             ${{ runner.temp }}/doctor-p01/p01-software-build-report.json
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+      - name: Upload full M01 mathematical portable package
+        uses: actions/upload-artifact@v4
+        with:
+          name: CardioInsight-Windows-x64-1.0.11-M01-full
+          path: |
+            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-1.0.11-full.zip
+            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-1.0.11-full.zip.sha256
+            ${{ runner.temp }}/doctor-eval/build-report.json
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+      - name: Upload M01 software-only update package
+        uses: actions/upload-artifact@v4
+        with:
+          name: CardioInsight-Windows-x64-1.0.11-software-update
+          path: |
+            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-1.0.11-software.zip
+            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-1.0.11-software.zip.sha256
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+      - name: Upload separate unchanged synthetic M01 input
+        uses: actions/upload-artifact@v4
+        with:
+          name: CardioInsight-Synthetic-M01-24h-v1-for-1.0.11
+          path: |
+            ${{ runner.temp }}/doctor-eval/CardioInsight-Synthetic-M01-24h-v1.zip
+            ${{ runner.temp }}/doctor-eval/CardioInsight-Synthetic-M01-24h-v1.zip.sha256
           if-no-files-found: error
           retention-days: 14
           compression-level: 0

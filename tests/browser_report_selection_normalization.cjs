@@ -1,0 +1,10 @@
+'use strict';
+// Shared production normalizer: AF multi-range only; other events stay single.
+const assert=require('node:assert/strict'),R=require('../static/js/report-engine.js'),A=require('../static/js/clinical-analysis.js');
+const af={event_id:'AF:math',category:'AF',basis_version:'current',start_sample:20000,end_s:400},v={event_id:'V:math',category:'V',basis_version:'current'};
+const index={duration_s:1000,rows:Array.from({length:1000},(_,i)=>({id:'r'+i,sample_index:i*200,class_code:'N'})),events:[af,v]};
+const first={event_id:af.event_id,basis_version:'current',strip_id:'start',range_start_s:100,range_end_s:107,caption:'first',leads:['V1']},middle={...first,strip_id:'middle',range_start_s:200,range_end_s:207},duplicate={...first,strip_id:'duplicate',caption:'must not overwrite',leads:R.leads},stale={...first,strip_id:'old-af',basis_version:'old'},vf={event_id:v.event_id,basis_version:'old',strip_id:'v-old',caption:'old first preserved'},vd={...vf,strip_id:'v-new',basis_version:'current',caption:'new cannot silently replace old'};
+const normalized=A.normalizeReportSelections(index,[first,middle,duplicate,stale,vf,vd]);assert.deepEqual(normalized,[first,middle,stale,vf]);assert.equal(normalized[0],first);assert.equal(normalized[3],vf);assert.throws(()=>A.normalizeReportSelections(index,[first,{...vf,strip_id:first.strip_id}]),/不同事件/);
+const legacy={...first};delete legacy.strip_id;assert.deepEqual(A.normalizeReportSelections(index,[legacy,{...legacy,caption:'retry'}]),[legacy]);
+for(const category of ['AF','S','V','ST','other'])assert.equal(R.settingsForEvent({category}).leads.length,12);for(const category of ['fastest','slowest','pause','rr_candidate','rr_interval'])assert.deepEqual(R.settingsForEvent({category}).leads,['II','V1','V5']);assert.deepEqual(R.settings({}).leads,['II','V1','V5']);assert.deepEqual(R.settingsForEvent({category:'AF'},{leads:['V1']}).leads,['V1']);
+console.log('Report selection normalization: AF ranges/current duplicates/stale retention, nonAF single event, global strip identity, legacy retry and category default leads passed');

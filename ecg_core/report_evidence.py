@@ -117,6 +117,8 @@ def used_in_output(composition, entry, event=None):
     from .report_sections import selected_pages
     if entry.get('referenced_in_report') is True:
         return True
+    if event and event.get('category')=='ST' and 'st_events' in selected_pages(composition):
+        return True
     if 'event_strips' not in selected_pages(composition) or entry.get('print_enabled') is False:
         return False
     mode = composition.get('fast_slow_mode', 'rr')

@@ -3,6 +3,7 @@
 globalThis.ECGReportWorkspace=(()=>{
   const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   let filter='all',reviewFilter='all',caseId=null;
+  const stripKey=s=>s?.strip_id||s?.event_id,stripTime=(s,e)=>Number.isFinite(s?.range_start_s)?s.range_start_s:e?.time_s;
   let view={expanded:new Set(),active:null,position:null,pageOpen:new Map(),waveHeights:new Map(),termState:{}},previewToken=0;
   const boundHosts=new WeakSet();
   const positionSelectors=['.v2-event-detail','.rw-selected-strips','.rw-strip-index nav','.rw-rail nav','.rw-page-options','.rw-wave-scroll','.v2-event-list'];
@@ -165,7 +166,7 @@ globalThis.ECGReportWorkspace=(()=>{
     return selected.map((s,i)=>({s,i,e:lookup.get(s.event_id)})).sort((a,b)=>{
       if(!a.e||!b.e)return Number(!a.e)-Number(!b.e)||a.i-b.i;
       const type=order==='type'?(rank(a.e)-rank(b.e)||String(a.e.subtype).localeCompare(String(b.e.subtype))):0;
-      return type||a.e.time_s-b.e.time_s||a.i-b.i;
+      return type||stripTime(a.s,a.e)-stripTime(b.s,b.e)||a.i-b.i;
     }).map(r=>r.s);
   }
   function stripActions(i,status){
@@ -186,12 +187,12 @@ globalThis.ECGReportWorkspace=(()=>{
       host.querySelectorAll('.rw-strip').forEach(n=>{const wave=n.querySelector('[data-rw-wave]');if(wave?.dataset.loaded==='ready'&&wave.getBoundingClientRect().height>0)view.waveHeights.set(n.dataset.rwKey,wave.getBoundingClientRect().height);});
     }
     const oldDock=document.querySelector('.report-conclusion-dock');if(oldDock&&host.contains(oldDock))host.before(oldDock);
-    if(caseId!==id){view.saveObserver?.disconnect();caseId=id;filter='all';reviewFilter='all';view={expanded:new Set(),active:selected[0]?.event_id||null,position:null,pageOpen:new Map(),waveHeights:new Map(),termState:{open:globalThis.matchMedia?.('(min-width:1100px)').matches===true},indexOpen:false,outputOpen:false}}
+    if(caseId!==id){view.saveObserver?.disconnect();caseId=id;filter='all';reviewFilter='all';view={expanded:new Set(),active:stripKey(selected[0])||null,position:null,pageOpen:new Map(),waveHeights:new Map(),termState:{open:globalThis.matchMedia?.('(min-width:1100px)').matches===true},indexOpen:false,outputOpen:false}}
     const groups=new Map();selected.forEach(s=>{const e=lookup.get(s.event_id),key=e?e.category+':'+e.subtype:'stale';const g=groups.get(key)||{name:e?.category==='AF'?(e.subtype==='AFL'?'房扑':'房颤'):e?.label||'原事件不可用',count:0};g.count++;groups.set(key,g)});
     if(filter!=='all'&&!groups.has(filter))filter='all';
     const queue=reviewQueue(selected,lookup,filter,reviewFilter),counts=queue.counts;
     const visible=queue.visible.filter(r=>!view.timeRange||r.e&&r.e.time_s>=view.timeRange[0]&&r.e.time_s<view.timeRange[1]);
-    if(!view.active&&selected.length)view.active=selected[0].event_id;
+    if(!view.active&&selected.length)view.active=stripKey(selected[0]);
     host.innerHTML=`<div class="rw-workspace">
       <aside class="rw-rail">
         <section><h3>图条类型</h3><nav aria-label="已入报图条筛选"><button data-strip-filter="all" aria-pressed="${filter==='all'}">全部 <b>${selected.length}</b></button>${[...groups].map(([k,g])=>`<button data-strip-filter="${esc(k)}" aria-pressed="${filter===k}">${esc(g.name)} <b>${g.count}</b></button>`).join('')}</nav></section>
@@ -204,7 +205,7 @@ globalThis.ECGReportWorkspace=(()=>{
         <header class="rw-heading"><div><h2>报告编排</h2><p><span data-rw-visible-count>${visible.length}</span> 条图条 · <span data-rw-page-count>${composition.included_pages.length}</span> 类报告页</p></div><div class="rw-sort-controls" aria-label="全部已选图条排序"><span>全部图条排序</span><button type="button" data-rw-sort="type">按类型</button><button type="button" data-rw-sort="time">按时间</button><button type="button" data-paper-preview>预览 A4</button></div></header>
         <div class="rw-columns">
           <section class="rw-evidence" aria-label="已入报证据"><header class="rw-evidence-heading"><h3>入报图条</h3><span>共 ${selected.length} 条</span></header>
-            <div class="rw-selected-strips">${visible.map(({s,i,e,status})=>`<article class="rw-strip" data-rw-key="${esc(s.event_id)}"><header><strong>${i+1}. ${esc(s.caption||e?.label||'已失效图条')}</strong><span>${e?formatElapsed(e.time_s):'需重新选择'}</span>${stripActions(i,status)}</header><div class="rw-mini-wave" data-rw-mini="${i}" aria-label="图条 ${i+1} 的已选导联">${status==='stale'?'依据已失效，须重新核对':'可见时读取本条真实波形…'}</div><small class="rw-mini-range" data-rw-mini-range="${i}">本条显示与入报 ${esc((s.leads||composition.strip_defaults?.leads||['II','V1','V5']).join(' / '))}</small><small class="rw-mini-scale" data-rw-mini-scale="${i}">缩略预览 · 双击查看完整导联</small><div class="rw-strip-actions"><button type="button" data-rw-toggle="${i}" aria-expanded="${view.expanded.has(s.event_id)}" aria-controls="rwStripBody${i}">${view.expanded.has(s.event_id)?'折叠波形':'展开波形'}</button><button type="button" data-back-event="${i}">回看事件</button></div><div id="rwStripBody${i}" class="rw-strip-body" ${!inspection&&view.expanded.has(s.event_id)?'':'hidden'}><div data-rw-wave="${i}">${e?'读取波形…':'依据已变化，请移除后重新选择'}</div><label>图注<input data-caption="${i}" maxlength="500" value="${esc(s.caption)}"></label></div></article>`).join('')||'<div class="rw-empty"><strong>尚无入报图条</strong><p>在事件选图中核对波形，再加入报告草稿。</p><button type="button" data-category="fastest">前往事件选图</button></div>'}</div>
+            <div class="rw-selected-strips">${visible.map(({s,i,e,status})=>`<article class="rw-strip" data-rw-key="${esc(stripKey(s))}"><header><strong>${i+1}. ${esc(s.caption||e?.label||'已失效图条')}</strong><span>${e?formatElapsed(stripTime(s,e)):'需重新选择'}</span>${stripActions(i,status)}</header><div class="rw-mini-wave" data-rw-mini="${i}" aria-label="图条 ${i+1} 的已选导联">${status==='stale'?'依据已失效，须重新核对':'可见时读取本条真实波形…'}</div><small class="rw-mini-range" data-rw-mini-range="${i}">本条显示与入报 ${esc((s.leads||composition.strip_defaults?.leads||['II','V1','V5']).join(' / '))}</small><small class="rw-mini-scale" data-rw-mini-scale="${i}">缩略预览 · 双击查看完整导联</small><div class="rw-strip-actions"><button type="button" data-rw-toggle="${i}" aria-expanded="${view.expanded.has(stripKey(s))}" aria-controls="rwStripBody${i}">${view.expanded.has(stripKey(s))?'折叠波形':'展开波形'}</button><button type="button" data-back-event="${i}">回看事件</button></div><div id="rwStripBody${i}" class="rw-strip-body" ${!inspection&&view.expanded.has(stripKey(s))?'':'hidden'}><div data-rw-wave="${i}">${e?'读取波形…':'依据已变化，请移除后重新选择'}</div><label>图注<input data-caption="${i}" maxlength="500" value="${esc(s.caption)}"></label></div></article>`).join('')||'<div class="rw-empty"><strong>尚无入报图条</strong><p>在事件选图中核对波形，再加入报告草稿。</p><button type="button" data-category="fastest">前往事件选图</button></div>'}</div>
           </section>
           <section id="rwConclusionSlot" class="rw-conclusion-pane" aria-label="报告结论编辑"></section>
         </div>
@@ -241,11 +242,11 @@ globalThis.ECGReportWorkspace=(()=>{
         if(!timeline.isConnected||!isCurrent())return;
         const total=data.duration_s;if(!Number.isFinite(total)||total<=0)throw Error('记录时长无效');
         const bins=Array.from({length:24},(_,i)=>({start:i*total/24,end:(i+1)*total/24,count:0}));
-        selected.forEach(s=>{const e=lookup.get(s.event_id);if(e&&e.time_s>=0&&e.time_s<total)bins[Math.min(23,Math.floor(e.time_s/total*24))].count++;});const max=Math.max(1,...bins.map(b=>b.count));
+        selected.forEach(s=>{const e=lookup.get(s.event_id),t=stripTime(s,e);if(e&&t>=0&&t<total)bins[Math.min(23,Math.floor(t/total*24))].count++;});const max=Math.max(1,...bins.map(b=>b.count));
         const rows=ECGOverviewEngine.decode(data),valid=rows.filter(ECGOverviewEngine.valid),maxHR=valid.reduce((m,r)=>Math.max(m,Math.ceil(r.hr/50)*50),100);
         const buckets=Array.from({length:800},()=>null);valid.forEach(r=>{if(r.time_s<0||r.time_s>=total)return;const i=Math.min(799,Math.floor(r.time_s/total*800)),b=buckets[i]||(buckets[i]={lo:r.hr,hi:r.hr});b.lo=Math.min(b.lo,r.hr);b.hi=Math.max(b.hi,r.hr);});
         const x=t=>44+t/total*940,y=hr=>40-hr/maxHR*30;
-        timeline.innerHTML=`<header><strong>已选图条时间分布</strong><span>${view.timeRange?esc(formatElapsed(view.timeRange[0]))+'–'+esc(formatElapsed(view.timeRange[1])):'全记录'} · 仅筛选显示，保留所有入报选择</span><button type="button" data-curation-clear ${view.timeRange?'':'disabled'}>全程</button></header><div class="rw-curation-bins">${bins.map((b,i)=>`<button type="button" data-curation-timebin="${i}" aria-pressed="${view.timeRange?.[0]===b.start}" aria-label="${esc(formatElapsed(b.start))} 至 ${esc(formatElapsed(b.end))}，已选 ${b.count} 条" ${b.count?'':'disabled'}><span>${b.count||''}</span><i style="height:${Math.max(1,b.count/max*8)}px"></i></button>`).join('')}</div><svg viewBox="0 0 1000 56" preserveAspectRatio="none" role="img" aria-label="全记录有效 RR 导出的心率，纵轴 bpm；每列保留该时段最小最大值，空白表示无有效间期"><rect x="44" y="10" width="940" height="30" fill="#fff"/>${[0,maxHR/2,maxHR].map(hr=>`<path d="M44 ${y(hr)}H984" stroke="#d8e1e6"/><text x="39" y="${y(hr)+3}" text-anchor="end" font-size="10">${Math.round(hr)}</text>`).join('')}${buckets.map((b,i)=>b?`<path d="M${44+(i+.5)/800*940} ${y(b.lo)}V${y(b.hi)+.5}" stroke="#245f7d" stroke-width="1.1"/>`:'').join('')}${selected.map(s=>lookup.get(s.event_id)).filter(Boolean).map(e=>`<path d="M${x(e.time_s)} 8v5" stroke="#af5d17"/>`).join('')}${Array.from({length:5},(_,i)=>`<text x="${44+i*940/4}" y="54" font-size="10" text-anchor="${i===0?'start':i===4?'end':'middle'}">${esc(formatElapsed(total*i/4))}</text>`).join('')}<text x="5" y="54" font-size="9">bpm</text></svg>`;
+        timeline.innerHTML=`<header><strong>已选图条时间分布</strong><span>${view.timeRange?esc(formatElapsed(view.timeRange[0]))+'–'+esc(formatElapsed(view.timeRange[1])):'全记录'} · 仅筛选显示，保留所有入报选择</span><button type="button" data-curation-clear ${view.timeRange?'':'disabled'}>全程</button></header><div class="rw-curation-bins">${bins.map((b,i)=>`<button type="button" data-curation-timebin="${i}" aria-pressed="${view.timeRange?.[0]===b.start}" aria-label="${esc(formatElapsed(b.start))} 至 ${esc(formatElapsed(b.end))}，已选 ${b.count} 条" ${b.count?'':'disabled'}><span>${b.count||''}</span><i style="height:${Math.max(1,b.count/max*8)}px"></i></button>`).join('')}</div><svg viewBox="0 0 1000 56" preserveAspectRatio="none" role="img" aria-label="全记录有效 RR 导出的心率，纵轴 bpm；每列保留该时段最小最大值，空白表示无有效间期"><rect x="44" y="10" width="940" height="30" fill="#fff"/>${[0,maxHR/2,maxHR].map(hr=>`<path d="M44 ${y(hr)}H984" stroke="#d8e1e6"/><text x="39" y="${y(hr)+3}" text-anchor="end" font-size="10">${Math.round(hr)}</text>`).join('')}${buckets.map((b,i)=>b?`<path d="M${44+(i+.5)/800*940} ${y(b.lo)}V${y(b.hi)+.5}" stroke="#245f7d" stroke-width="1.1"/>`:'').join('')}${selected.map(s=>({s,e:lookup.get(s.event_id)})).filter(r=>r.e).map(({s,e})=>`<path d="M${x(stripTime(s,e))} 8v5" stroke="#af5d17"/>`).join('')}${Array.from({length:5},(_,i)=>`<text x="${44+i*940/4}" y="54" font-size="10" text-anchor="${i===0?'start':i===4?'end':'middle'}">${esc(formatElapsed(total*i/4))}</text>`).join('')}<text x="5" y="54" font-size="9">bpm</text></svg>`;
         const summary=document.createElement('summary');summary.textContent='已选图条时间分布与全程心率';timeline.prepend(summary);
         timeline.querySelector('[data-curation-clear]').onclick=()=>{view.timeRange=null;redraw('[data-review-filter="all"]');};timeline.querySelectorAll('[data-curation-timebin]').forEach(b=>b.onclick=()=>{const bin=bins[Number(b.dataset.curationTimebin)];view.timeRange=[bin.start,bin.end];redraw('[data-review-filter][aria-pressed="true"]');});
       }).catch(error=>{if(timeline.isConnected&&isCurrent()){
@@ -274,26 +275,26 @@ globalThis.ECGReportWorkspace=(()=>{
       host.querySelector('#rwConclusionSlot').append(disclosure);disclosure.append(dock);dock.hidden=false;
     }
     const index=document.createElement('details');index.className='rw-strip-index';index.open=!!view.indexOpen;
-    index.innerHTML=`<summary>按编号定位 · ${visible.length} / ${selected.length} 条</summary><nav aria-label="按原编号定位图条">${visible.map(({s,i,e,status})=>`<button type="button" data-rw-index="${i}" aria-current="${s.event_id===view.active}"><strong>原图条 ${i+1}</strong><span>${esc(s.caption||e?.label||'已失效图条')} · ${e?esc(formatElapsed(e.time_s)):'原事件不可用'} · ${reviewLabels[status]}</span></button>`).join('')}</nav>`;
+    index.innerHTML=`<summary>按编号定位 · ${visible.length} / ${selected.length} 条</summary><nav aria-label="按原编号定位图条">${visible.map(({s,i,e,status})=>`<button type="button" data-rw-index="${i}" aria-current="${stripKey(s)===view.active}"><strong>原图条 ${i+1}</strong><span>${esc(s.caption||e?.label||'已失效图条')} · ${e?esc(formatElapsed(stripTime(s,e))):'原事件不可用'} · ${reviewLabels[status]}</span></button>`).join('')}</nav>`;
     host.querySelector('.rw-selected-strips').before(index);
     const jump=document.createElement('nav');jump.className='rw-locations';jump.setAttribute('aria-label','证据与结论定位');
     jump.innerHTML='<button type="button" data-rw-evidence>定位当前证据</button><button type="button" data-rw-conclusion>编辑报告结论</button><span data-rw-save-state></span>';
     host.querySelector('.rw-heading').after(jump);
     function focusStrip(row){
-      view.active=row.s.event_id;expand(row,true);
+      view.active=stripKey(row.s);expand(row,true);
     host.querySelectorAll('[data-rw-index]').forEach(b=>b.setAttribute('aria-current',String(Number(b.dataset.rwIndex)===row.i)));
       const button=host.querySelector(`[data-rw-toggle="${row.i}"]`);button.scrollIntoView({block:'nearest'});button.focus({preventScroll:true});
     }
     const rowWaves=new Map();
-    function readRow(row){if(!rowWaves.has(row.s.event_id))rowWaves.set(row.s.event_id,Promise.resolve().then(()=>{if(!isCurrent())throw Error('报告视图已变化');return loadWave(row.e,row.s);}).catch(error=>{rowWaves.delete(row.s.event_id);throw error;}));return rowWaves.get(row.s.event_id);}
-    let inspectionToken=0,inspectionRow=visible.find(r=>r.s.event_id===view.active)||visible[0];
+    function readRow(row){if(!rowWaves.has(stripKey(row.s)))rowWaves.set(stripKey(row.s),Promise.resolve().then(()=>{if(!isCurrent())throw Error('报告视图已变化');return loadWave(row.e,row.s);}).catch(error=>{rowWaves.delete(stripKey(row.s));throw error;}));return rowWaves.get(stripKey(row.s));}
+    let inspectionToken=0,inspectionRow=visible.find(r=>stripKey(r.s)===view.active)||visible[0];
     async function inspectStrip(row){
       if(!inspection||!row||row.status==='stale')return;
-      const target=host.querySelector('#rwInspectionWave'),token=++inspectionToken;inspectionRow=row;view.active=row.s.event_id;target.textContent='正在读取本条波形…';
+      const target=host.querySelector('#rwInspectionWave'),token=++inspectionToken;inspectionRow=row;view.active=stripKey(row.s);target.textContent='正在读取本条波形…';
       host.querySelectorAll('.rw-strip').forEach(card=>card.dataset.current=String(card.dataset.rwKey===view.active));
       try{
         const entry=await readRow(row);if(!target.isConnected||!isCurrent()||token!==inspectionToken)return;
-        const mode=view.inspectionEvent===row.s.event_id?view.inspectionLeads:null;
+        const mode=view.inspectionEvent===stripKey(row.s)?view.inspectionLeads:null;
         const names=mode===12?Object.keys(entry.waveform.leads):mode===3?['II','V1','V5']:mode===1?['II']:entry.strip.leads;
         const wave=globalThis.ECGReportStripEditor.project(entry,names).waveform,displayProfile=ECGReviewTools.reportAmplitude(entry.waveform);
         host.querySelector('[data-inspection-title]').textContent=row.s.caption||row.e.label;
@@ -309,7 +310,7 @@ globalThis.ECGReportWorkspace=(()=>{
       }
       catch(error){if(target.isConnected&&token===inspectionToken){target.textContent='本条读取失败：'+error.message;const retry=document.createElement('button');retry.type='button';retry.textContent='重试本条';retry.onclick=()=>inspectStrip(row);target.append(retry);}}
     }
-    if(inspection){host.querySelectorAll('[data-inspection-leads]').forEach(b=>b.onclick=()=>{view.inspectionEvent=inspectionRow?.s.event_id;view.inspectionLeads=Number(b.dataset.inspectionLeads);inspectStrip(inspectionRow);});inspectStrip(inspectionRow);if(typeof ResizeObserver!=='undefined'){let width=0,height=0;view.inspectionObserver=new ResizeObserver(([entry])=>{const next=entry.contentRect;if(Math.abs(width-next.width)<1&&Math.abs(height-next.height)<1)return;width=next.width;height=next.height;if(host.querySelector('#rwInspectionWave')?.dataset.loaded==='ready')inspectStrip(inspectionRow);});view.inspectionObserver.observe(host.querySelector('.rw-strip-inspection'));}}
+    if(inspection){host.querySelectorAll('[data-inspection-leads]').forEach(b=>b.onclick=()=>{view.inspectionEvent=stripKey(inspectionRow?.s);view.inspectionLeads=Number(b.dataset.inspectionLeads);inspectStrip(inspectionRow);});inspectStrip(inspectionRow);if(typeof ResizeObserver!=='undefined'){let width=0,height=0;view.inspectionObserver=new ResizeObserver(([entry])=>{const next=entry.contentRect;if(Math.abs(width-next.width)<1&&Math.abs(height-next.height)<1)return;width=next.width;height=next.height;if(host.querySelector('#rwInspectionWave')?.dataset.loaded==='ready')inspectStrip(inspectionRow);});view.inspectionObserver.observe(host.querySelector('.rw-strip-inspection'));}}
     function updateMiniSize(node){node._rwRenderMini?.();}
     if(typeof ResizeObserver!=='undefined')view.miniResizeObserver=new ResizeObserver(entries=>entries.forEach(({target})=>updateMiniSize(target)));
     function loadMini(row){
@@ -349,7 +350,7 @@ globalThis.ECGReportWorkspace=(()=>{
       const {s,i,e,status}=row,node=host.querySelector(`[data-rw-wave="${i}"]`);
       if(node.dataset.loaded)return;
       if(status==='stale'){node.dataset.loaded='stale';node.textContent=e?.category==='AF'&&e.rhythm_episode_id?'图条依据已失效。请保存草稿并复核片段，返回后核对并替换原图条；导联和图注保留。':'原事件已不存在或依据已失效。请重新筛选事件；移除前可保留人工图注。';return;}
-      if(view.waveHeights.has(s.event_id))node.style.minHeight=view.waveHeights.get(s.event_id)+'px';
+      if(view.waveHeights.has(stripKey(s)))node.style.minHeight=view.waveHeights.get(stripKey(s))+'px';
       node.dataset.loaded='loading';node.textContent='读取波形…';
       return readRow(row).then(entry=>{if(node.isConnected&&caseId===id&&isCurrent()){const projected=globalThis.ECGReportStripEditor.project(entry),displayProfile=ECGReviewTools.reportAmplitude(entry.waveform);node.innerHTML=waveContext(entry,reviewWaveSvg(projected.waveform,e,{recordStart,displayProfile,width:node.clientWidth||1000}));bindTwelveWave(node,{wave:projected.waveform,readWave:()=>Promise.resolve(entry.waveform),recordStart,displayProfile,isCurrent:()=>node.isConnected&&caseId===id&&isCurrent(),event:e});node.dataset.loaded='ready';node.style.minHeight='';}}).catch(error=>{
         if(!node.isConnected||caseId!==id||!isCurrent())return;delete node.dataset.loaded;node.style.minHeight='';node.textContent='读取失败：'+error.message;
@@ -358,20 +359,19 @@ globalThis.ECGReportWorkspace=(()=>{
     }
     function expand(row,open){
       const {s,i}=row,button=host.querySelector(`[data-rw-toggle="${i}"]`);host.querySelector(`#rwStripBody${i}`).hidden=!open;
-      if(open){view.expanded.add(s.event_id);view.active=s.event_id;loadRow(row);}else view.expanded.delete(s.event_id);
+      if(open){view.expanded.add(stripKey(s));view.active=stripKey(s);loadRow(row);}else view.expanded.delete(stripKey(s));
       button.setAttribute('aria-expanded',String(open));button.textContent=open?'折叠波形':'展开波形';
     }
-    visible.forEach(row=>{const button=host.querySelector(`[data-rw-toggle="${row.i}"]`);button.onclick=()=>inspection?inspectStrip(row):expand(row,!view.expanded.has(row.s.event_id));if(inspection){button.textContent='查看波形';button.removeAttribute('aria-expanded');button.setAttribute('aria-controls','rwInspectionWave');}else if(view.expanded.has(row.s.event_id))loadRow(row);});
+    visible.forEach(row=>{const button=host.querySelector(`[data-rw-toggle="${row.i}"]`);button.onclick=()=>inspection?inspectStrip(row):expand(row,!view.expanded.has(stripKey(row.s)));if(inspection){button.textContent='查看波形';button.removeAttribute('aria-expanded');button.setAttribute('aria-controls','rwInspectionWave');}else if(view.expanded.has(stripKey(row.s)))loadRow(row);});
       host.querySelectorAll('[data-rw-sort]').forEach(button=>button.onclick=()=>{if(isCurrent())onSort?.(button.dataset.rwSort);});
     visible.forEach(row=>{
-      const card=host.querySelector('[data-rw-key="'+CSS.escape(row.s.event_id)+'"]'),tools=card.querySelector('[data-rw-tools]');
+      const card=host.querySelector('[data-rw-key="'+CSS.escape(stripKey(row.s))+'"]'),tools=card.querySelector('[data-rw-tools]');
       card.tabIndex=0;card.setAttribute('aria-description','右键或 Shift+F10 打开图条操作；也可使用图条操作按钮。');
       const open=event=>{globalThis.ECGReportStripEditor.menu({card,event,isCurrent,actions:[...tools.querySelectorAll('[data-rw-strip-action]')].map(b=>({label:b.textContent,disabled:b.disabled,run:()=>b.click()}))});};
       tools.querySelector('summary').onclick=event=>{event.preventDefault();open(event);};
-      // A selected report strip owns curation actions, even over its waveform.
-      // Capture here before the nested read-only beat/wave surface can take it.
-      card.addEventListener('contextmenu',event=>{if(event.target.closest('input,textarea,select,[contenteditable]'))return;event.preventDefault();event.stopPropagation();open(event);},true);
-      card.addEventListener('keydown',event=>{if(event.target.closest('input,textarea,select,[contenteditable]'))return;if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10'){event.preventDefault();event.stopPropagation();open();}if(event.key==='Escape'){tools.open=false;globalThis.ECGReportStripEditor.closeMenu();}},true);
+      // Waveform surfaces own their clinical menu; the rest of the card owns curation.
+      card.addEventListener('contextmenu',event=>{if(event.target.closest('input,textarea,select,[contenteditable],svg,canvas,.occurrence-wave,.report-range-stage,.rw-mini-wave,.rw-wave-canvas,.rw-wave-scroll'))return;event.preventDefault();event.stopPropagation();open(event);},true);
+      card.addEventListener('keydown',event=>{if(event.target.closest('input,textarea,select,[contenteditable],svg,canvas,.occurrence-wave,.report-range-stage,.rw-mini-wave,.rw-wave-canvas,.rw-wave-scroll'))return;if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10'){event.preventDefault();event.stopPropagation();open();}if(event.key==='Escape'){tools.open=false;globalThis.ECGReportStripEditor.closeMenu();}},true);
       card.classList.toggle('rw-print-disabled',row.s.print_enabled===false);
       if(row.s.print_enabled===false)card.querySelector('.rw-print-status').append(' · 已取消打印（选图保留）');
       tools.querySelector('[data-rw-strip-action=print]').textContent=row.s.print_enabled===false?'恢复打印':'取消打印';
@@ -385,12 +385,12 @@ globalThis.ECGReportWorkspace=(()=>{
           const mini=card.querySelector('[data-rw-mini]');
           try{if(!mini._rwOpenPreview)await loadMini(row);if(isCurrent())mini._rwOpenPreview?.();}catch(error){handleError(error);}return;
         }
-        view.active=row.s.event_id;view.inspectionEvent=null;view.inspectionLeads=null;
+        view.active=stripKey(row.s);view.inspectionEvent=null;view.inspectionLeads=null;
         onStripLeads?.(row.i,action==='one'?['II']:action==='three'?['II','V1','V5']:[...ECGReportEngine.leads]);
       });
     });
     host.querySelectorAll('[data-rw-index]').forEach(b=>b.onclick=()=>focusStrip(visible.find(r=>r.i===Number(b.dataset.rwIndex))));
-    host.querySelector('[data-rw-evidence]').onclick=()=>{const row=visible.find(r=>r.s.event_id===view.active)||visible[0];if(row)focusStrip(row);};
+    host.querySelector('[data-rw-evidence]').onclick=()=>{const row=visible.find(r=>stripKey(r.s)===view.active)||visible[0];if(row)focusStrip(row);};
     host.querySelector('[data-rw-evidence]').disabled=!visible.length;
     const editor=dock?.querySelector('#conclusionEditor');
     host.querySelector('[data-rw-conclusion]').disabled=!editor;

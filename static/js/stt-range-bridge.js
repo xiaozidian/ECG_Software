@@ -118,6 +118,8 @@ globalThis.ECGSTTRangeBridge = (() => {
       const value=compact(result);
       accepted={value,generation:++generation,fragment:line};
       state.sttRangeReviewed=copy(value);ownFragment=line;
+      state.sttSelectedCandidate=null;
+      if(typeof globalThis.renderSttCandidateSelection==='function')globalThis.renderSttCandidateSelection();
       staleFragments.clear();host.dataset.sttRangeSnapshotState='current';
       note.value=next;
       note.dispatchEvent(new Event('input',{bubbles:true}));

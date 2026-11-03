@@ -111,6 +111,8 @@ const state = {
   waveformRequestId: 0,
   sttLeads: [...ALL_LEADS],
   sttReview: null,
+  sttSelectedCandidate: null,
+  sttLastSavedEvent: false,
   sttWaveform: null,
   sttRequestId: 0,
   sttAbort: null,
@@ -709,6 +711,7 @@ async function selectCase(caseId, destination = "review") {
   state.sttAbort?.abort();state.sttAbort=null;state.sttEvidence=null;state.sttWaveformSelection=null;
   state.sttSaving=null;if(typeof updateSttSaveState==='function')updateSttSaveState();
   if(sttCaseChanged){
+    state.sttSelectedCandidate=null;state.sttLastSavedEvent=false;
     state.sttIsoFraction=.34;state.sttJFraction=.52;state.sttMeasurementMs=60;
     const note=$('#sttReviewNote'),checked=$('#sttSignalChecked'),finding=$('#sttFinding'),point=$('#sttMeasurementPoint');
     if(note)note.value='';if(checked)checked.checked=false;if(finding)finding.value='无法判读';if(point)point.value='60';
@@ -1856,6 +1859,17 @@ function sttMeasurementValues() {
   });
 }
 
+function renderSttCandidateSelection() {
+  const form=$('#sttReviewForm');if(!form)return;
+  let host=$('#sttSelectedEvent');if(!host){host=document.createElement('div');host.id='sttSelectedEvent';host.className='stt-selected-event';form.prepend(host);}
+  const selected=state.sttSelectedCandidate,item=selected?.item;
+  host.innerHTML=item?`<strong>完整事件：${escapeHtml(formatElapsed(item.start_s))}–${escapeHtml(formatElapsed(item.end_s))}</strong><p>${((item.end_s-item.start_s)/60).toFixed(2)} 分钟 · ${(item.leads||[]).map(escapeHtml).join(' / ')} · 图条另取代表短段</p><div>${[['start','起点',item.start_s],['peak','峰值',item.peak_time_s],['end','终点',item.end_s]].map(([key,label,time])=>`<button type="button" data-stt-episode-position="${time}">${label}</button>`).join('')}<button type="button" data-stt-clear-episode>取消整段</button></div>`:state.sttLastSavedEvent?'<p>整段已保存，至报告筛选决定入报。</p><button type="button" data-stt-report>报告筛选</button>':'<p>当前为点复核；选择左侧持续事件可保存完整起止。</p>';
+  host.querySelectorAll('[data-stt-episode-position]').forEach(button=>button.onclick=()=>setSttStart(Number(button.dataset.sttEpisodePosition)-state.sttDuration/2));
+  host.querySelector('[data-stt-clear-episode]')?.addEventListener('click',()=>{state.sttSelectedCandidate=null;renderSttCandidateSelection();});
+  host.querySelector('[data-stt-report]')?.addEventListener('click',()=>clinicalUI.showSTReport?.());
+  const save=$('#saveSttAnnotation');if(save)save.textContent=item?'保存整段复核':'保存人工复核';
+}
+
 function renderSttCapability() {
   const review=state.sttReview;
   if(!review)return;
@@ -1869,12 +1883,13 @@ function renderSttCapability() {
   if(items.length){
     $("#sttCandidateList").innerHTML=items.map(item=>{
       const peak=Number(item.peak_deviation_units),value=Number.isFinite(peak)?`${peak>=0?"+":""}${peak.toFixed(0)}`:"—";
-      return `<button type="button" class="stt-candidate-card" data-stt-candidate="${Number(item.start_s)||0}" data-stt-leads="${escapeHtml((item.leads||[]).join(","))}"><span><strong>${escapeHtml(item.label||"ST‑T 候选")}</strong><em>待医生复核</em></span><small>${escapeHtml(formatElapsed(Number(item.start_s)||0))}–${escapeHtml(formatElapsed(Number(item.end_s)||0))}</small><b>${escapeHtml((item.leads||[]).join(" / ")||"导联待确认")} · 峰值 ${value} 设备单位</b></button>`;
+      return `<button type="button" class="stt-candidate-card" data-stt-candidate="${Number(item.start_s)||0}" data-stt-candidate-id="${escapeHtml(item.id)}" data-stt-leads="${escapeHtml((item.leads||[]).join(","))}"><span><strong>${escapeHtml(item.label||"ST‑T 候选")}</strong><em>待医生复核</em></span><small>${escapeHtml(formatElapsed(Number(item.start_s)||0))}–${escapeHtml(formatElapsed(Number(item.end_s)||0))}</small><b>${escapeHtml((item.leads||[]).join(" / ")||"导联待确认")} · 峰值 ${value} 设备单位</b></button>`;
     }).join("");
   }else{
     const coverage=evaluation.coverage_pct,message=evaluation.note+(coverage!==null?' 可分析覆盖 '+coverage.toFixed(1)+'%。':'');
     $("#sttCandidateList").innerHTML='<div class="stt-unavailable-state"><strong>'+escapeHtml(evaluation.label)+'</strong><p>'+escapeHtml(message)+'</p><button type="button" class="row-action" data-stt-current-window>从当前时间窗人工复核</button></div>';
   }
+  renderSttCandidateSelection();
   const fragments=review.source_report?.fragments||[];
   $("#sttSourceNotes").innerHTML=fragments.length
     ? fragments.map(text=>`<blockquote><span>源报告</span><p>${escapeHtml(text)}</p></blockquote>`).join("")
@@ -1883,34 +1898,28 @@ function renderSttCapability() {
 
 function renderSttTrendRows() {
   if(!state.caseData)return;
-  const total=Math.max(1,Number(state.caseData.technical.duration_seconds_raw)||1);
-  const left=Math.max(0,Math.min(100,state.sttStart/total*100));
-  const width=Math.max(.35,Math.min(100-left,state.sttDuration/total*100));
+  const total=Math.max(1,Number(state.caseData.technical.duration_seconds_raw)||1),left=Math.max(0,Math.min(100,state.sttStart/total*100)),width=Math.max(.35,Math.min(100-left,state.sttDuration/total*100));
   const trends=state.sttReview?.analysis?.trends?.leads||{},enabled=Boolean(state.sttReview?.automatic_candidates?.enabled);
-  $("#sttTrendNote").textContent=enabled?"16 秒代表搏块 · 局部参考 · J+60 ms · 设备原始单位":"自动趋势不可用；保留手工复核入口";
-  $("#sttTrendBadge").textContent=enabled?"机器候选":"不可定量";
-  $("#sttTrendRows").innerHTML=ALL_LEADS.map(lead=>{
-    const points=(trends[lead]||[]).filter(point=>Number.isFinite(Number(point.deviation_units)));
-    if(points.length<2)return `<div class="stt-trend-row"><strong>${lead}</strong><div class="stt-disabled-track" style="--window-left:${left}%;--window-width:${width}%"><span></span><i></i></div><small>无有效块</small></div>`;
-    const limit=Math.max(100,...points.map(point=>Math.abs(Number(point.deviation_units)))),polyline=points.map(point=>`${(Number(point.time_s)/total*100).toFixed(2)},${(8-Number(point.deviation_units)/limit*6).toFixed(2)}`).join(" ");
-    const target=state.sttStart+state.sttDuration/2,current=points.reduce((best,point)=>Math.abs(point.time_s-target)<Math.abs(best.time_s-target)?point:best,points[0]),value=Number(current.deviation_units);
-    return `<div class="stt-trend-row"><strong>${lead}</strong><div class="stt-trend-track" style="--window-left:${left}%;--window-width:${width}%"><svg viewBox="0 0 100 16" preserveAspectRatio="none" role="img" data-inspect-chart data-inspect-kind="st-trend" data-inspect-duration="${total}" data-inspect-limit="${limit}" data-inspect-title="${lead} ST 趋势 · 全程 · 设备单位" data-inspect-note="记录后 0–${formatElapsed(total)}；幅度显示参考 ±${limit.toFixed(0)} 设备单位；当前窗口附近代表块 ${value.toFixed(0)} 设备单位。16秒块、J+60ms；不换算为mV。" aria-label="${lead} ST 趋势，设备单位"><line x1="0" y1="8" x2="100" y2="8"></line><polyline points="${polyline}"></polyline></svg><span></span><i></i></div><small>${value>=0?"+":""}${value.toFixed(0)}</small></div>`;
-  }).join("");
+  $('#sttTrendNote').textContent=enabled?'逐分钟完整证据 · 内部16秒测量 · 缺口不连线 · u':'自动趋势不可用';
+  $('#sttTrendBadge').textContent=enabled?'机器候选':'不可定量';
+  $('#sttTrendRows').innerHTML=ALL_LEADS.map(lead=>{
+    const points=trends[lead]||[],valid=points.filter(p=>p.eligible!==false&&!p.axis_shift_suspected&&Number.isFinite(p.deviation_units));
+    if(!valid.length)return `<div class="stt-trend-row"><strong>${lead}</strong><div class="stt-disabled-track" style="--window-left:${left}%;--window-width:${width}%"><span></span><i></i></div><small>无有效分钟</small></div>`;
+    const limit=Math.max(100,...valid.map(p=>Math.abs(p.deviation_units)));let d='',pen=false;
+    for(const point of points){if(point.eligible===false||point.axis_shift_suspected||!Number.isFinite(point.deviation_units)){pen=false;continue;}d+=`${pen?'L':'M'}${(point.time_s/total*100).toFixed(2)},${(8-point.deviation_units/limit*6).toFixed(2)} `;pen=true;}
+    const target=state.sttStart+state.sttDuration/2,current=points.find(p=>(p.start_s??p.time_s-30)<=target&&(p.end_s??p.time_s+30)>target),value=current?.eligible!==false&&!current?.axis_shift_suspected&&Number.isFinite(current?.deviation_units)?current.deviation_units:null;
+    return `<div class="stt-trend-row"><strong>${lead}</strong><div class="stt-trend-track" style="--window-left:${left}%;--window-width:${width}%"><svg viewBox="0 0 100 16" preserveAspectRatio="none" role="img" data-inspect-chart data-inspect-kind="st-trend" data-inspect-duration="${total}" data-inspect-limit="${limit}" data-inspect-title="${lead} ST 趋势 · 全程 · u" data-inspect-note="逐分钟完整证据；缺失或质量不合格处断线；设备单位u，非mV。" aria-label="${lead} ST趋势，设备单位"><line x1="0" y1="8" x2="100" y2="8"></line><path d="${d}" fill="none" stroke="currentColor" vector-effect="non-scaling-stroke" stroke-width="1"></path></svg><span></span><i></i></div><small>${value===null?'—':(value>=0?'+':'')+value.toFixed(0)}</small></div>`;
+  }).join('');
 }
 
 function updateSttTrendWindow() {
   if(!state.caseData||!sttEvidenceMatches())return;
-  const total=Math.max(1,Number(state.caseData.technical.duration_seconds_raw)||1),left=Math.max(0,Math.min(100,state.sttStart/total*100));
-  const width=Math.max(.35,Math.min(100-left,state.sttDuration/total*100)),target=state.sttStart+state.sttDuration/2;
+  const total=Math.max(1,Number(state.caseData.technical.duration_seconds_raw)||1),left=Math.max(0,Math.min(100,state.sttStart/total*100)),width=Math.max(.35,Math.min(100-left,state.sttDuration/total*100)),target=state.sttStart+state.sttDuration/2;
   $$('#sttTrendRows .stt-trend-row').forEach(row=>{
     const track=$('.stt-trend-track, .stt-disabled-track',row);if(!track)return;
     track.style.setProperty('--window-left',`${left}%`);track.style.setProperty('--window-width',`${width}%`);
-    const lead=$('strong',row)?.textContent,points=(state.sttReview?.analysis?.trends?.leads?.[lead]||[]).filter(point=>Number.isFinite(Number(point.deviation_units)));
-    if(points.length<2)return;
-    const point=points.reduce((best,item)=>Math.abs(item.time_s-target)<Math.abs(best.time_s-target)?item:best,points[0]),value=Number(point.deviation_units),label=$('small',row);
-    if(label)label.textContent=`${value>=0?'+':''}${value.toFixed(0)}`;
-    const chart=$('svg',track),limit=Math.max(100,...points.map(item=>Math.abs(Number(item.deviation_units))));
-    if(chart)chart.dataset.inspectNote=`记录后 0–${formatElapsed(total)}；幅度显示参考 ±${limit.toFixed(0)} 设备单位；当前窗口附近代表块 ${value.toFixed(0)} 设备单位。16秒块、J+60ms；不换算为mV。`;
+    const lead=$('strong',row)?.textContent,points=state.sttReview?.analysis?.trends?.leads?.[lead]||[],point=points.find(p=>(p.start_s??p.time_s-30)<=target&&(p.end_s??p.time_s+30)>target),value=point?.eligible!==false&&!point?.axis_shift_suspected&&Number.isFinite(point?.deviation_units)?point.deviation_units:null,label=$('small',row);
+    if(label)label.textContent=value===null?'—':`${value>=0?'+':''}${value.toFixed(0)}`;
   });
 }
 
@@ -2145,6 +2154,7 @@ async function reconcileSttMeanSubmission(entry,ownsSave) {
 async function finishSttReviewSave(context,ownsSave,reconciled=false) {
   if(!ownsSave())return;
   const {selection,draft,rangeStatistics,acceptedMean}=context;
+  if(state.sttSelectedCandidate){state.sttSelectedCandidate=null;state.sttLastSavedEvent=true;renderSttCandidateSelection();}
   let preserveMean=Boolean(rangeStatistics&&state.sttRangeReviewed&&state.sttRangeReviewed!==acceptedMean);
   if(rangeStatistics){
     const cleared=state.sttRangeBridge?.clearAfterSave(rangeStatistics);
@@ -2220,6 +2230,15 @@ async function saveSttReviewAnnotation() {
   const pointLabel=state.sttMeasurementMs===0?'J 点':`J+${state.sttMeasurementMs} ms`,values=sttMeasurementValues(),rawValues=values.map(item=>`${item.lead} ${item.delta===null?'—':`${item.delta>=0?'+':''}${item.delta.toFixed(0)}`}`).join('，'),freeNote=draft.note.trim();
   const sampleRate=Number(state.sttWaveform.sample_rate_hz)||200,sampleIndex=Math.round((state.sttStart+sttLandmarkFractions().j*state.sttDuration)*sampleRate),note=[`方法：手工 ISO → ${pointLabel}`,`显示导联：${sttVisibleLeads().join(' / ')}`,`相对差值（设备原始单位）：${rawValues}`,`信号质量核对：${qualityChecked?'已核对':'未核对'}`,freeNote].filter(Boolean).join('；').slice(0,2000);
   const payload={sample_index:sampleIndex,lead:sttVisibleLeads().length===1?sttVisibleLeads()[0]:'全部',category:'note',label:`ST-T 人工复核：${finding}`,note,details:{kind:'ST',status:finding.includes('无法')?'pending':finding.includes('未见')||finding.includes('伪差')?'excluded':'confirmed',end_sample:Math.min(Math.round(state.caseData.technical.duration_seconds_raw*200)-1,Math.round((state.sttStart+state.sttDuration)*200)),finding}};
+  if(state.sttSelectedCandidate&&!rangeStatistics){
+    const chosen=state.sttSelectedCandidate;
+    ECGAnalysisConsistency.assertSame(chosen.scope,basis);
+    if(chosen.scope.case_id!==state.caseId||chosen.scope.beat_revision!==state.sttReview?.beat_revision)throw Error('所选整段事件来自旧病例或旧心搏依据，请重新选择候选');
+    const item=chosen.item;
+    payload.sample_index=Math.round(item.start_s*200);
+    payload.details.end_sample=Math.round(item.end_s*200)-1;
+    payload.details.stt_candidate_id=item.id;payload.details.stt_candidate_scope=chosen.scope;
+  }
   if(rangeStatistics){
     const compact=JSON.parse(JSON.stringify(rangeStatistics));delete compact.blocks;
     payload.sample_index=rangeStatistics.range.start_sample;
@@ -3219,7 +3238,7 @@ function bindEvents() {
     const editClass=event.target.closest("[data-edit-class]");if(editClass)selectEditClass(editClass.dataset.editClass);
     const editSample=event.target.closest("[data-edit-sample]");if(editSample){selectEditSample(editSample.dataset.editSample,editSample.dataset.editTime,event);}
     const libraryFilter=event.target.closest("[data-edit-library-filter]");if(libraryFilter){state.editLibraryFilter=libraryFilter.dataset.editLibraryFilter;renderEditLibrary();}
-    const sttCandidate=event.target.closest("[data-stt-candidate]");if(sttCandidate){const leads=String(sttCandidate.dataset.sttLeads||"").split(",").filter(lead=>ALL_LEADS.includes(lead));if(leads.length)state.sttLeads=leads;setSttStart(Math.max(0,Number(sttCandidate.dataset.sttCandidate)||0));}
+    const sttCandidate=event.target.closest("[data-stt-candidate]");if(sttCandidate){const item=state.sttReview?.automatic_candidates?.items?.find(r=>r.id===sttCandidate.dataset.sttCandidateId);if(item){state.sttSelectedCandidate={item:JSON.parse(JSON.stringify(item)),scope:Object.fromEntries(['case_id','analysis_basis','analysis_revision','beat_revision'].map(k=>[k,state.sttReview[k]]))};state.sttLastSavedEvent=false;const finding=$("#sttFinding");if(finding&&[...finding.options].some(o=>o.value===item.label))finding.value=item.label;$("#sttSignalChecked").checked=false;renderSttCandidateSelection();}const leads=String(sttCandidate.dataset.sttLeads||"").split(",").filter(lead=>ALL_LEADS.includes(lead));if(leads.length)state.sttLeads=leads;setSttStart(Math.max(0,Number(sttCandidate.dataset.sttCandidate)||0));}
     if(event.target.closest("[data-stt-current-window]")){$("#sttWaveformCanvas")?.focus();$("#sttWaveformCanvas")?.scrollIntoView({behavior:"smooth",block:"center"});}
   });
   $("#openFirstCase").addEventListener("click",()=>{const first=filteredCases()[0];if(first)openWorklistCase(first.case_id).catch(handleError)});

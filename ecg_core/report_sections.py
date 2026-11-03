@@ -75,6 +75,31 @@ def rr_derivatives(rows, excluded=()):
         dc=dict(anchor_count=len(anchors),dc_ms=round((prsa[30]+prsa[31]-prsa[29]-prsa[28])/4,4) if len(anchors)>=20 else None,prsa=[dict(x=i-30,y=round(v,4)) for i,v in enumerate(prsa)],method='DC 研究性 PRSA：T=1，L=30；减速锚点增幅 0–5%，只用连续正常 N-N、排除异常节律区段。DC=(X0+X1-X-1-X-2)/4；少于 20 个锚点不报告值。阈值为软件质量控制，不是诊断标准。'))
 
 from .evaluation_status import stt_status
+from .stt import LEADS as ST_LEADS
+
+def st_report_events(index):
+    result=[]
+    for event in index['events']:
+        if event.get('category')!='ST' or event.get('diagnosis_status')!='confirmed' or event.get('stt_evidence_stale'):continue
+        proof=event.get('stt_event_evidence') or {}
+        label=event.get('label','')
+        if proof.get('kind') not in ('st_depression','st_elevation'):continue
+        start,end=event['time_s'],event.get('end_s',event['time_s'])
+        if end-start<60-1e-9:continue  # Point review is not a duration claim.
+        leads=proof.get('leads') or ([event['lead']] if event.get('lead') in ST_LEADS else [])
+        result.append(dict(event_id=event['event_id'],basis_version=event['basis_version'],label=label,
+            start_s=start,end_s=end,duration_s=round(end-start,3),leads=leads,
+            peak_deviation_units=proof.get('peak_deviation_units'),peak_time_s=proof.get('peak_time_s'),
+            source=proof.get('source','physician_selected_range'),review_status='confirmed',
+            continuous_target_s=proof.get('continuous_target_s')))
+    return result
+
+def st_review_notes(index):
+    return [dict(event_id=e['event_id'],basis_version=e['basis_version'],label=e.get('label','ST-T 复核'),
+        start_s=e['time_s'],end_s=e.get('end_s',e['time_s']),
+        review_kind='range_mean' if e.get('range_statistics') else 'point_or_legacy_range',
+        review_status=e.get('diagnosis_status','pending')) for e in index['events']
+        if e.get('category')=='ST' and not e.get('stt_event_evidence')]
 
 def evidence(index, st=None):
     rows=sorted(qrs_rows(index['rows']),key=lambda r:r['sample_index'])
@@ -88,8 +113,9 @@ def evidence(index, st=None):
         if valid[i-1] and valid[i]:points.append(dict(x=rows[i-1]['rr_ms'],y=rows[i]['rr_ms']))
     stride=max(1,(len(points)+7999)//8000)
     counts=Counter(r['class_code'] for r in rows if r['class_code'] in ('P','PA','PV','PD','PF'))
-    st=st or {};trends=(st.get('analysis') or {}).get('trends',{}).get('leads',{})
-    return dict(st_evaluation=stt_status(st.get('automatic_candidates')),sections=[dict(key=k,title=v,available=k not in UNAVAILABLE,reason=UNAVAILABLE.get(k,'')) for k,v in PAGE_TITLES.items()],scatter=dict(points=points[::stride],total=len(points),stride=stride),pacing=dict(counts=dict(counts),total=sum(counts.values()),method='仅统计当前起搏类型标记；不检测夺获失败、感知异常或器械故障。'),af_summary=summary,af=[dict(time_s=e['time_s'],end_s=e['end_s'],label=e['label'],status=e.get('rhythm_status',e['diagnosis_status'])) for e in af],st_trends=trends,st_events=st.get('automatic_candidates',{}).get('items',[]),**derivatives)
+    st=st or {};raw_trends=(st.get('analysis') or {}).get('trends',{}).get('leads',{})
+    trends={lead:[{**p,**({key:None for key in ('deviation_units','t_amplitude_units')} if p.get('eligible') is False or p.get('axis_shift_suspected') else {})} for p in raw_trends.get(lead,[])] for lead in ST_LEADS}
+    return dict(st_evaluation=stt_status(st.get('automatic_candidates')),sections=[dict(key=k,title=v,available=k not in UNAVAILABLE,reason=UNAVAILABLE.get(k,'')) for k,v in PAGE_TITLES.items()],scatter=dict(points=points[::stride],total=len(points),stride=stride),pacing=dict(counts=dict(counts),total=sum(counts.values()),method='仅统计当前起搏类型标记；不检测夺获失败、感知异常或器械故障。'),af_summary=summary,af=[dict(time_s=e['time_s'],end_s=e['end_s'],label=e['label'],status=e.get('rhythm_status',e['diagnosis_status'])) for e in af],st_trends=trends,st_events=st_report_events(index),st_review_notes=st_review_notes(index),st_trend_resolution_s=60,**derivatives)
 
 def validate_pages(composition):
     pages=selected_pages(composition)

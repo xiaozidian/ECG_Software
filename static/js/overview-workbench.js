@@ -622,11 +622,11 @@ const overviewWorkbench=(()=>{
     const candidates=[];for(let i=6;i<ui.rows.length-1;i++){const r=ui.rows[i],prev=ui.rows.slice(i-5,i),next=ui.rows[i+1];if(r.class_code!=='N'||!prev.every(x=>x.class_code==='N'&&x.rr_ms>0)||next.class_code!=='N')continue;const sorted=prev.map(x=>x.rr_ms).sort((a,b)=>a-b),median=sorted[2];if((sorted[4]-sorted[0])/median<.2&&r.rr_ms<median*.75&&r.rr_ms>=300&&next.rr_ms<median*1.5)candidates.push(r)}
     dialog('房早候选重分析 · RR 筛查',`<p>发现 ${candidates.length} 个提前心搏候选。尚未验证 P 波和 QRS 形态，不能仅凭 RR 判断房早；选择后仍需预览改型。这里显示前 100 个，默认不选。</p><div class="ov-candidates">${candidates.slice(0,100).map(r=>`<label><input type="checkbox" name="samples" value="${r.sample_index}">${formatElapsed(r.time_s)} · RR ${r.rr_ms} ms ${button('回看','preview-beat:'+r.time_s)}</label>`).join('')||'<p>未发现满足该规则的候选。</p>'}</div>`,async data=>{const samples=data.getAll('samples').map(Number);if(!samples.length)throw Error('请先回看波形并选择候选');qs('#ovDialog').close();await beatEditor.invoke('relabel',{samples,code:'S'})},'预览改为房早');
   }
-  async function insertStrip(short=false,caption='人工图条',bounds=span()){
+  async function insertStrip(short=false,caption='人工图条',bounds=span(),settings=null){
     const [start,selectedEnd]=bounds,end=short?Math.min(duration(),start+3):Math.min(duration(),selectedEnd,start+120),id=state.caseId;
     const item=await request('annotations',{method:'POST',body:JSON.stringify({sample_index:Math.floor(start*200),category:'note',lead:'全部',label:caption,note:'从总览选区插入；等待报告复核',details:{kind:'STRIP',status:'confirmed',end_sample:Math.min(Math.ceil(end*200)-1,Math.floor(duration()*200)-1),finding:caption}})});
     const events=await request('report-events?'+new URLSearchParams({ids:'annotation:'+item.id,limit:1}));if(id!==state.caseId)return;if(!events.items.length)throw Error('图条已保存，但报告索引尚未更新，请重试');
-    if(ui.af)afMode(false);goPage('report');if(state.currentPage!=='report')return;await clinicalUI.refreshReport();clinicalUI.addStrip(events.items[0]);toast('已加入报告图条草稿；请核对并保存','success');
+    if(ui.af)afMode(false);await goPage('report');if(state.currentPage!=='report')return;await clinicalUI.refreshReport();clinicalUI.addStrip(events.items[0],settings);toast('已加入报告图条草稿；请核对并保存','success');
   }
   async function printStrip(leads){
     if(state.privacySaving||state.privacyIdentityPending){toast('身份显示正在更新，请稍后重新打开图条打印', 'error');return;}
@@ -809,7 +809,7 @@ const overviewWorkbench=(()=>{
       const row=ui.rows.reduce((a,b)=>!a||Math.abs(b.time_s-ui.contextTime)<Math.abs(a.time_s-ui.contextTime)?b:a,null),index=ui.rows.indexOf(row);if(!row||!E.valid(row))throw Error('当前位置没有有效 RR');
       if(arg.endsWith('_nn')&&(row.class_code!=='N'||ui.rows[index-1]?.class_code!=='N'))throw Error('此处不是连续正常心搏 NN 间期');
       const doc=copy(ui.rhythm.document),label='医生指定'+({fastest:'最快心率',slowest:'最慢心率',fastest_nn:'最快窦性心率',slowest_nn:'最慢窦性心率'})[arg];doc.bookmarks[arg]=row.time_s;
-      return dialog('指定心率报告图条',`<p>${label}：${formatElapsed(row.time_s)} · ${Math.round(row.hr)} bpm。</p><p>保存定位书签，并创建该时刻前后 10 秒的报告图条加入草稿。不修改全记录数学极值；报告仍需核对和保存。</p>`,async()=>{await saveRhythm(doc);await insertStrip(false,label,[Math.max(0,row.time_s-3),Math.min(duration(),row.time_s+7)])});
+      return dialog('指定心率报告图条',`<p>${label}：${formatElapsed(row.time_s)} · ${Math.round(row.hr)} bpm。</p><p>保存定位书签，并创建该时刻前后 10 秒的报告图条加入草稿。不修改全记录数学极值；报告仍需核对和保存。</p>`,async()=>{await saveRhythm(doc);await insertStrip(false,label,[Math.max(0,row.time_s-3),Math.min(duration(),row.time_s+7)],{leads:['II','V1','V5'],duration_s:10})});
     }
     if(key==='bookmark-jump'){seek(Number(arg));return}
   }
@@ -942,9 +942,13 @@ const overviewWorkbench=(()=>{
   async function waveAction(name,{time,bounds,caseId,caseToken}){
     const current=()=>state.caseId===caseId&&state.caseRequestId===caseToken;
     if(!current())throw Error('病例已切换，请重新右击当前波形');
+    if(name==='pac-screen'){
+      await goPage('review');if(state.currentPage!=='review'||!current())return;
+      await load();if(!current())return;ui.contextTime=time;return action('pac-screen');
+    }
     if(name==='strip'||name==='strip-short')return insertStrip(name==='strip-short','人工图条',bounds);
     if(['range-anchor','delete-before','delete-after'].includes(name)||name.startsWith('bookmark-')){
-      goPage('review');if(state.currentPage!=='review'||!current())return;
+      await goPage('review');if(state.currentPage!=='review'||!current())return;
       await load();if(!current())return;
       ui.contextTime=time;ui.range=[...bounds];
       return action(name.startsWith('bookmark-')?'bookmark:'+name.slice(9):name);

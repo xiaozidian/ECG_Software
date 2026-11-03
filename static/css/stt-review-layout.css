@@ -69,3 +69,8 @@
   #page-stt.stt-review-layout .stt-waveform-actions {width: 100%; gap: 8px;}
   #page-stt.stt-review-layout .stt-waveform-actions .lead-picker-trigger {min-width: 0;}
 }
+
+#page-stt .stt-selected-event{padding:8px;border:1px solid #b8d6d6;background:#eff8f7;margin-bottom:8px;font-size:12px}
+#page-stt .stt-selected-event p{margin:4px 0;color:#536873}
+#page-stt .stt-selected-event button{padding:4px 8px;margin:2px;border:1px solid #b8ced1;background:white;color:#174e59;border-radius:3px;cursor:pointer}
+#page-stt .stt-trend-track path{stroke:#2678b9}

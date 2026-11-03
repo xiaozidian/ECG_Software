@@ -96,7 +96,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
       await validation;
       return {sample_index: event.start_sample, strip, waveform: wave};
     },
-    selected: () => state.reportComposition.selected_events, selectedLookup: new Map(),
+    selected: () => state.reportComposition.selected_events, composition:()=>state.reportComposition, selectedLookup: new Map(),
     returnedRhythmSelection: () => false, qs: () => null,
     copy: value => JSON.parse(JSON.stringify(value)),
     syncText() {}, dirty() {}, renderReportShell() {}, renderEventNavigation() {},
