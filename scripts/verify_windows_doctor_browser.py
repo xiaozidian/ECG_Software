@@ -801,7 +801,9 @@ async def fault_checks(page, result, editor_selector, sample):
         await page.wait_for_function("() => state.sttEvidence && document.querySelector('#sttWaveCanvasWrap').dataset.sttWaveState==='ready'")
         require(partial["done"], "Partial-trend rendering fixture was not consumed")
         row = page.locator("#sttTrendRows .stt-trend-row").filter(has=page.locator("strong", has_text=re.compile("^V6$")))
-        require("无有效块" in await row.inner_text(), "Missing V6 trend was presented as a normal numeric trend")
+        require("无有效分钟" in await row.inner_text(), "Missing V6 minute evidence was presented as a normal numeric trend")
+        require(await row.locator('.stt-disabled-track').count() == 1 and await row.locator('.stt-trend-track svg').count() == 0,
+                "Missing V6 minute evidence retained a normal numeric trend graph")
         require(await page.locator("#sttTrendRows .stt-trend-row").count() == 12, "Partial response removed another lead's capability row")
         require(await page.locator("#sttMeasurementList").inner_text() != "", "Partial trend response removed manual measurements")
         require(await page.locator("#sttCapabilityBadge").inner_text() == expected_capability, "One missing trend changed the actual native capability state")

@@ -112,10 +112,18 @@ async def verify_latest_ui(page, screenshots):
             leads:[...s.querySelectorAll('[data-wave-lead]')].map(x=>x.dataset.waveLead),
             baselines:[...s.querySelectorAll('[data-wave-baseline]')].map(x=>Number(x.dataset.waveBaseline)),
             width:s.getBoundingClientRect().width,plot:Number(s.dataset.plotWidth),
-            ticks:s.querySelectorAll('[data-wave-time]').length,axis:[...s.querySelectorAll('[data-wave-time]')].map(x=>x.textContent).join(' ')})""")
+            ticks:s.querySelectorAll('[data-wave-time]').length,axis:[...s.querySelectorAll('[data-wave-time]')].map(x=>x.textContent).join(' '),
+            height:s.getBoundingClientRect().height,viewHeight:s.viewBox.baseVal.height,
+            stageHeight:s.parentElement.getBoundingClientRect().height,
+            stageBottom:s.parentElement.getBoundingClientRect().bottom,viewport:innerHeight})""")
         assert shape['columns']=='1' and shape['leads']==LEADS and len(shape['axis'])>12, json.dumps(shape)
         assert shape['plot']/shape['width']>.8
-        assert all(b-a>=45 for a,b in zip(shape['baselines'],shape['baselines'][1:]))
+        # UI2 compresses all12 leads into the same bounded frame. Full modal
+        # twelve-lead previews retain the separate original45px row assertion.
+        assert all(b>a for a,b in zip(shape['baselines'],shape['baselines'][1:]))
+        assert 160 <= shape['stageHeight'] <= 422 and shape['stageBottom'] <= shape['viewport'] + 2, shape
+        assert abs(shape['height'] - shape['stageHeight']) <= 1.1, shape
+        assert abs(shape['height'] - shape['viewHeight']) <= 1.1, 'CSS vertically rescaled rendered ECG'
         geometries.append({'viewport':viewport,**shape})
     checks.append('report-vertical-full-width-twelve-on-large-and-compact-screens')
     await page.locator('#v2EventWave .report-range-stage > svg').dblclick(position={'x':150,'y':60});await modal()

@@ -1244,6 +1244,22 @@ function canvasContext(canvas, height = null) {
   return {ctx, width, height: cssHeight};
 }
 
+function observeAFWaveformSlot(canvas,scroller) {
+  if(typeof ResizeObserver==='undefined'||canvas._afSlotObserver)return;
+  let size=scroller.clientWidth+'|'+scroller.clientHeight,queued=false;
+  canvas._afSlotObserver=new ResizeObserver(()=>{
+    const next=scroller.clientWidth+'|'+scroller.clientHeight;
+    if(next===size)return;size=next;
+    if(queued||!scroller.clientWidth||!scroller.clientHeight)return;
+    queued=true;const id=state.caseId,caseToken=state.caseRequestId,wave=state.waveform;
+    requestAnimationFrame(()=>{
+      queued=false;
+      if(canvas.isConnected&&scroller.isConnected&&id===state.caseId&&caseToken===state.caseRequestId&&wave===state.waveform&&state.currentPage==='review'&&document.querySelector('#page-review.ov-af-mode'))renderWaveform();
+    });
+  });
+  canvas._afSlotObserver.observe(scroller);
+}
+
 function renderWaveform() {
   if (!state.waveform) return;
   const editOwner=state.editFullscreenReturn,targetMatches=beat=>beat.sample_index===editOwner?.targetSample&&(!editOwner.beatId||String(beat.beat_id??beat.id)===String(editOwner.beatId));
@@ -1252,7 +1268,8 @@ function renderWaveform() {
   const scroller = $("#waveformScroller");
   const leadNames = (globalThis.ECGChartInspection?.names(state.waveform.leads)||Object.keys(state.waveform.leads));
   const afFit=!state.waveformExpanded&&!!document.querySelector('#page-review.ov-af-mode');
-  const height = afFit?Math.max(240,scroller.clientHeight):state.waveformExpanded
+  if(afFit)observeAFWaveformSlot(canvas,scroller);
+  const height = afFit?Math.max(160,Math.min(420,scroller.clientHeight)):state.waveformExpanded
     ? Math.max(560, scroller.clientHeight, leadNames.length * 56+48)
     : document.querySelector('#page-review.overview-workbench')
       ? innerWidth>=1100&&!document.querySelector('#page-review.ov-af-mode')?Math.max(195,scroller.clientHeight):Math.max(innerHeight <= 780 && innerWidth <= 1500 ? 195 : 264, leadNames.length * (innerHeight <= 780 && innerWidth <= 1500 ? 65 : 88))
@@ -1262,7 +1279,7 @@ function renderWaveform() {
   const domain=(state.editFullscreenReturn?.amplitudeDomain||state.sttFullscreenReturn?.amplitudeDomain||ECGReviewTools.waveDomain(state.waveform,domainKey))*10/(state.gain||10);
   const gainKey=JSON.stringify([domainKey,domain]),lock=canvas._overviewAmplitudeLock;
   let afPeak=domain;if(afFit)for(const values of Object.values(state.waveform.leads))for(const v of values)if(Number.isFinite(Number(v)))afPeak=Math.max(afPeak,Math.abs(Number(v)));
-  const afScale=afFit?Math.max(1,(height-axisHeight-annotationHeight)/leadNames.length-12)/(2*afPeak):null;
+  const afScale=afFit?Math.max(1,Math.min(112,(height-axisHeight-annotationHeight)/leadNames.length)-12)/(2*afPeak):null;
   const stack=ECGReviewTools.lockedWaveRows(leadNames.map(name=>state.waveform.leads[name]),{top:annotationHeight,rowHeight:(height-axisHeight-annotationHeight)/leadNames.length,domain,scale:afFit?afScale:lock?.key===gainKey?lock.scale:null,labelY:3});
   if(!afFit)canvas._overviewAmplitudeLock={key:gainKey,scale:stack.scale};
   const displayHeight=annotationHeight+stack.rowHeight*leadNames.length+axisHeight;

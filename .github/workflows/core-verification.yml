@@ -59,7 +59,7 @@ jobs:
       - name: Verify AF boundaries and per-episode report linkage
         run: python -m pytest -q tests/test_unsaved_navigation.py tests/test_af_boundary_clock.py tests/test_af_queue.py tests/test_af_report_linkage.py tests/test_af_report_state.py tests/test_local_static_passthrough.py tests/test_workspace_backup.py tests/test_doctor_feedback_api.py tests/test_overview_identity.py tests/test_report_local_update.py tests/test_report_candidate_workflow.py tests/test_demo_rr_candidate_flow.py tests/test_report_af_fit.py tests/test_report_range_drafts.py -p no:cacheprovider --junitxml=build/core-verification/af-editor-junit.xml
       - name: Verify continuous ST, multiple AF strips and hospital waveform actions
-        run: python -m pytest -q tests/test_stt_continuous.py tests/test_report_evidence_ranges.py tests/test_report_multistrip_ui.py tests/test_report_wave_menu.py tests/test_demo_report_evidence.py -p no:cacheprovider --junitxml=build/core-verification/report-evidence-27-junit.xml
+        run: python -m pytest -q tests/test_stt_continuous.py tests/test_report_evidence_ranges.py tests/test_report_multistrip_ui.py tests/test_report_wave_menu.py tests/test_demo_report_evidence.py tests/test_report_wave_height.py -p no:cacheprovider --junitxml=build/core-verification/report-evidence-27-junit.xml
       - name: Retain source identity and test evidence
         if: always()
         uses: actions/upload-artifact@v4

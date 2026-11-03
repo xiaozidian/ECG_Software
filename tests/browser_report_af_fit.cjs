@@ -17,7 +17,10 @@ const frames=page=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(
  try{
   browser=await chromium.launch({executablePath:process.env.ECG_CHROME||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true,chromiumSandbox:true});
   const page=await browser.newPage();page.on('pageerror',e=>errors.push(e.message));await page.route('**/*',r=>r.abort());await page.setContent(html);
-  for(const [width,height]of [[1366,768],[1920,1080]]){
+  const tallGains=new Map();
+  for(const category of ['AF','V','rr_interval']){
+   await page.locator('.v2-event-detail').evaluate((node,isAF)=>node.classList.toggle('report-af-detail',isAF),category==='AF');await page.locator('#v2EventWave').evaluate((node,isAF)=>{node.classList.toggle('report-af-browser',isAF);node.querySelector('.rw-af-candidate-browse').hidden=!isAF;},category==='AF');
+  for(const [width,height]of [[1366,768],[1920,1080],[1500,1343],[1920,1440],[1920,1800]]){
    await page.setViewportSize({width,height});
    for(const open of [false,true]){
     await page.locator('.v2-candidate-distributions').evaluate((e,v)=>e.open=v,open);await frames(page);
@@ -28,11 +31,13 @@ const frames=page=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(
       for(const lane of svg.querySelectorAll('[data-wave-lead]')){const p=lane.querySelector('polyline[data-lead]'),points=p.getAttribute('points').trim().split(' ').map(s=>s.split(',').map(Number));if(points.length!==mathSource.leads[p.dataset.lead].length)laneErrors.push('source point count');const lo=Number(lane.dataset.signalTop),hi=Number(lane.dataset.signalBottom);if(points.some(p=>p[1]<lo-.01||p[1]>hi+.01))laneErrors.push(p.dataset.lead+' exceeds lane');}
       return {count:svg.querySelectorAll('[data-wave-lead]').length,editorGain:Number(editor.dataset.displayGain),svgGain:Number(svg.dataset.displayGain),units:editor.querySelector('[data-display-units]').textContent,box:{y:box.y,height:box.height,bottom:box.bottom},svgHeight:svg.getBoundingClientRect().height,viewHeight:svg.viewBox.baseVal.height,laneErrors,pending:ECGReportRange.pending().map(d=>[d.a,d.b])};
      });
-     assert.equal(result.count,leads);assert(result.box.height>=160,JSON.stringify({width,height,open,leads,...result}));assert(result.box.bottom<=height+1,JSON.stringify({width,height,open,leads,...result}));assert(Math.abs(result.svgHeight-result.box.height)<1);assert(Math.abs(result.viewHeight-result.box.height)<1);assert.equal(result.editorGain,result.svgGain);assert(result.units.includes(String(Number(result.svgGain.toPrecision(4)))+' px/u'));assert.deepEqual(result.laneErrors,[]);assert.deepEqual(result.pending,[[296.5,303.5]]);
+     assert.equal(result.count,leads);assert(result.box.height>=160,JSON.stringify({category,width,height,open,leads,...result}));assert(result.box.height<=420.1,JSON.stringify({category,width,height,open,leads,...result}));assert(result.box.bottom<=height+1,JSON.stringify({category,width,height,open,leads,...result}));assert(Math.abs(result.svgHeight-result.box.height)<1);assert(Math.abs(result.viewHeight-result.box.height)<1);assert.equal(result.editorGain,result.svgGain);assert(result.units.includes(String(Number(result.svgGain.toPrecision(4)))+' px/u'));assert.deepEqual(result.laneErrors,[]);assert.deepEqual(result.pending,[[296.5,303.5]]);
+     if(width===1920&&height>=1080){const key=[category,open,leads].join('|');if(tallGains.has(key))assert.equal(result.svgGain,tallGains.get(key),'taller viewport increased the viewing gain');else tallGains.set(key,result.svgGain);}
     }
    }
   }
-  await page.locator('[data-display-factor="0.5"]').click();await frames(page);assert.match(await page.locator('[data-display-units]').textContent(),/显示 0.5×/);assert.deepEqual(errors,[]);
-  console.log('AF frame fit: 1366/1920, 3L/12L, expanded/collapsed distributions, all source points, actual gain and retained pending range passed');
+  }
+  await page.locator('[data-display-factor="0.5"]').click();await frames(page);assert.match(await page.locator('[data-display-units]').textContent(),/显示 0.5×/);const manualGain=await page.locator('#editor').getAttribute('data-display-gain');await page.setViewportSize({width:1920,height:1080});await frames(page);assert.equal(await page.locator('#editor').getAttribute('data-display-gain'),manualGain,'viewport resize changed the manual viewing gain');assert.match(await page.locator('[data-display-units]').textContent(),/显示 0.5×/);assert.deepEqual(errors,[]);
+  console.log('Candidate frame fit: AF/V/RR, 1366 through tall 1920, 3L/12L, bounded height, stable actual/manual gain, all source points and pending range passed');
  }finally{await browser?.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
