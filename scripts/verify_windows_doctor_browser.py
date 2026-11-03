@@ -802,10 +802,11 @@ async def fault_checks(page, result, editor_selector, sample):
     await page.wait_for_function("() => state.sttEvidence && document.querySelector('#sttWaveCanvasWrap').dataset.sttWaveState==='ready'")
     expected_capability = await page.locator("#sttCapabilityBadge").inner_text()
     require(expected_capability and expected_capability != "尚无当前结果", "Native capability was not ready before the rendering-only fault")
-    partial = {"done": False}
+    partial = {"done": False, "other_leads": None}
     async def partial_trend(route):
         response = await route.fetch(timeout=TIMEOUT_MS)
         body = await response.json()
+        partial["other_leads"] = {lead: points for lead, points in body["analysis"]["trends"]["leads"].items() if lead != "V6"}
         body["analysis"]["trends"]["leads"]["V6"] = []
         partial["done"] = True
         await route.fulfill(response=response, json=body)
@@ -816,10 +817,33 @@ async def fault_checks(page, result, editor_selector, sample):
         await navigate(page, "stt")
         await page.wait_for_function("() => state.sttEvidence && document.querySelector('#sttWaveCanvasWrap').dataset.sttWaveState==='ready'")
         require(partial["done"], "Partial-trend rendering fixture was not consumed")
+        consumed = await page.evaluate("""() => ({
+            missing:state.sttReview.analysis.trends.leads.V6,
+            others:Object.fromEntries(Object.entries(state.sttReview.analysis.trends.leads).filter(([lead])=>lead!=='V6'))
+        })""")
+        require(consumed["missing"] == [], "V6 empty evidence was not consumed by the actual rendering state")
+        require(sorted(consumed["others"]) == sorted(lead for lead in LEADS if lead != "V6") and consumed["others"] == partial["other_leads"],
+                "Rendering fault changed another lead's original native minute evidence")
         row = page.locator("#sttTrendRows .stt-trend-row").filter(has=page.locator("strong", has_text=re.compile("^V6$")))
-        require("无有效分钟" in await row.inner_text(), "Missing V6 minute evidence was presented as a normal numeric trend")
-        require(await row.locator('.stt-disabled-track').count() == 1 and await row.locator('.stt-trend-track svg').count() == 0,
+        require(await row.locator("small").inner_text() == "—", "Missing V6 minute evidence was presented as a normal numeric trend")
+        graph = row.locator(".stt-trend-track svg")
+        require(await graph.count() == 1 and "无有效分钟" in (await graph.get_attribute("aria-label") or ""),
+                "Missing V6 minute evidence lost its explicit accessible missing-data state")
+        require(await graph.locator("path").count() == 1 and not (await graph.locator("path").get_attribute("d") or "").strip(),
                 "Missing V6 minute evidence retained a normal numeric trend graph")
+        axis = await graph.locator("line").evaluate_all("nodes => nodes.map(n => ['x1','y1','x2','y2'].map(k=>n.getAttribute(k)))")
+        require(axis == [["0", "8", "100", "8"]] and await graph.locator(":scope > *").count() == 2,
+                "Missing V6 evidence must retain only the shared baseline and empty curve path")
+        other_rendered = await page.evaluate("""() => {
+            const field=ECGSttReviewLayout.trendMetric(state.sttTrendMode).field,bounds=sttTrendBounds();
+            return [...document.querySelectorAll('#sttTrendRows .stt-trend-row')].filter(row=>row.querySelector('strong').textContent!=='V6').map(row=>{
+                const lead=row.querySelector('strong').textContent,points=state.sttReview.analysis.trends.leads[lead];
+                return {lead,valid:points.filter(p=>p.eligible!==false&&!p.axis_shift_suspected&&Number.isFinite(p[field])&&p.time_s>=bounds.start&&p.time_s<=bounds.end).length,
+                    path:row.querySelector('.stt-trend-track svg path')?.getAttribute('d')??null};
+            });
+        }""")
+        require(len(other_rendered) == 11 and all(row["path"] is not None and bool(row["path"].strip()) == (row["valid"] > 0) for row in other_rendered),
+                "One missing lead suppressed valid original traces or fabricated another lead's missing curve")
         require(await page.locator("#sttTrendRows .stt-trend-row").count() == 12, "Partial response removed another lead's capability row")
         require(await page.locator("#sttMeasurementList").inner_text() != "", "Partial trend response removed manual measurements")
         require(await page.locator("#sttCapabilityBadge").inner_text() == expected_capability, "One missing trend changed the actual native capability state")
