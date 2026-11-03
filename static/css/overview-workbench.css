@@ -392,6 +392,8 @@ body:has(#page-review.active) .case-workflow-context small,body:has(#page-review
 #page-review.ov-af-mode .ov-af-heading p,#page-review.ov-af-mode #ovAF>.ov-method{display:none}
 #page-review.ov-af-mode .ov-af-heading>div:last-child{gap:5px;flex-wrap:nowrap;min-width:0}
 #page-review.ov-af-mode .ov-af-heading [data-ov]{min-height:28px;padding:3px 8px;white-space:nowrap;font-size:12px}
+#page-review.ov-af-mode .ov-af-heading .ov-af-return{margin-left:8px;background:var(--navy-900);border-color:var(--navy-900);color:#fff;font-weight:700}
+#page-review.ov-af-mode .ov-af-heading .ov-af-return:hover{background:var(--navy-800);border-color:var(--navy-800)}
 .ov-af-tabs{display:flex;gap:3px;padding:0 0 5px;flex:0 0 auto;border-bottom:1px solid var(--ov-line)}
 .ov-af-tabs button{flex:1;min-width:0;min-height:28px;font-size:12px;padding:3px 6px}
 .ov-af-tabs button[aria-selected=true]{background:#e2f2ef;color:#086e6d;border-color:#75aaa6}
