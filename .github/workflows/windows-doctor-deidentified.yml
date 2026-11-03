@@ -1,4 +1,4 @@
-name: Windows deidentified-profile software 1.0.8 (math CI only)
+name: Windows deidentified-profile software 1.0.9 (math CI only)
 
 on:
   push:
@@ -22,9 +22,9 @@ jobs:
       PYTHONUTF8: "1"
       PYTHONIOENCODING: "utf-8"
       ECG_ALLOW_PHI: "0"
-      DOCTOR_PACKAGING_VERSION: "1.0.8"
+      DOCTOR_PACKAGING_VERSION: "1.0.9"
       DOCTOR_SOURCE_VERSION: "M01-24h-v1"
-      DOCTOR_RELEASE_NOTES: "候选单次保存、报告内确认入报、切换前处理未保存修改。"
+      DOCTOR_RELEASE_NOTES: "房颤分析返回总览置于最右，深色突出显示；保留未保存保护。"
     defaults:
       run:
         shell: pwsh
@@ -106,23 +106,23 @@ jobs:
       - name: Create source-free P01 native software template
         run: |
           python scripts/windows_deidentified_package.py template `
-            --software-archive "$env:RUNNER_TEMP\doctor-eval\CardioInsight-DoctorEval-Windows-x64-1.0.8-software.zip" `
+            --software-archive "$env:RUNNER_TEMP\doctor-eval\CardioInsight-DoctorEval-Windows-x64-1.0.9-software.zip" `
             --output "$env:RUNNER_TEMP\doctor-p01"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Actual frozen P01 source save reopen and update using mathematical fixture only
         run: |
           python scripts/verify_windows_p01.py `
-            --software-archive "$env:RUNNER_TEMP\doctor-p01\CardioInsight-DoctorEval-Windows-x64-1.0.8-P01-software.zip" `
+            --software-archive "$env:RUNNER_TEMP\doctor-p01\CardioInsight-DoctorEval-Windows-x64-1.0.9-P01-software.zip" `
             --math-source-root "$env:RUNNER_TEMP\doctor-math-M01" `
             --output "$env:RUNNER_TEMP\doctor-p01\evidence\p01-native.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Upload verified source-free P01 software only
         uses: actions/upload-artifact@v4
         with:
-          name: CardioInsight-Windows-x64-1.0.8-P01-software-only
+          name: CardioInsight-Windows-x64-1.0.9-P01-software-only
           path: |
-            ${{ runner.temp }}/doctor-p01/CardioInsight-DoctorEval-Windows-x64-1.0.8-P01-software.zip
-            ${{ runner.temp }}/doctor-p01/CardioInsight-DoctorEval-Windows-x64-1.0.8-P01-software.zip.sha256
+            ${{ runner.temp }}/doctor-p01/CardioInsight-DoctorEval-Windows-x64-1.0.9-P01-software.zip
+            ${{ runner.temp }}/doctor-p01/CardioInsight-DoctorEval-Windows-x64-1.0.9-P01-software.zip.sha256
             ${{ runner.temp }}/doctor-p01/p01-software-build-report.json
           if-no-files-found: error
           retention-days: 14

@@ -199,9 +199,9 @@
       "sha256": "10fd59c6744673f69ac6a1eca1c5468115700714733ce6c26a3b3c5ef3c2dac7"
     },
     "scripts/build_static_demo.py": {
-      "bytes": 11704,
+      "bytes": 11699,
       "component": "build",
-      "sha256": "8356099a5f5235919e526b95231d67c6bae282926ade9b84d9c8e5f5098440d5"
+      "sha256": "67cdb42a227ffb2f80160fbbe4ae0cc0956d1b4df208087a1c15da36a320d8fe"
     },
     "scripts/generate_synthetic_demo.py": {
       "bytes": 16740,
@@ -279,9 +279,9 @@
       "sha256": "db46cebc522231c0b96b69a91942e4f5d0ece0f7165c8bccf586cec411f81357"
     },
     "static/css/overview-workbench.css": {
-      "bytes": 61927,
+      "bytes": 62196,
       "component": "ui",
-      "sha256": "ce3f09da4b41c8012ffbdf728a475a408b9daf4e04694fe5734bba28b32d5e45"
+      "sha256": "a8f2360ae1a8f0ac907ce69f8f0d5751992a38ade003996b7d48fa08e3f4129c"
     },
     "static/css/report-curation.css": {
       "bytes": 8407,
@@ -474,9 +474,9 @@
       "sha256": "7026c9b3e01ed16b02f35f1b11939156ede296c06fdd9ff3ceae2de334d164b6"
     },
     "static/js/overview-workbench.js": {
-      "bytes": 125222,
+      "bytes": 125245,
       "component": "ui",
-      "sha256": "5eb132538cbeaed21e6ab87b3163d2715ea12fcd870c7c7935f38e7635f6a7ae"
+      "sha256": "ec06e7d553291521a2bea1352e8720e351ea7764f61fcd2a3c977b2bc0cce985"
     },
     "static/js/read-requests.js": {
       "bytes": 2715,
@@ -610,7 +610,7 @@
     }
   },
   "schema": 1,
-  "source_fingerprint": "d63d9d11756ac6fd9b4bc0fee6924b7acbad3f2363a4a4146086d5db2b47d04a",
+  "source_fingerprint": "2563737ce6974fd9c7ed2195f5c38e7794129b7b7348e51fcc4588b7e64557d7",
   "source_revision": null,
-  "ui_version": "ui-f2df70a24751a215"
+  "ui_version": "ui-ac9e65b18ad02c10"
 }
