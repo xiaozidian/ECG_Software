@@ -46,5 +46,9 @@
   "tests/test_af_report_linkage.py",
   "tests/test_af_report_state.py",
   "tests/test_local_static_passthrough.py",
-  "tests/test_unsaved_navigation.py"
+  "tests/test_unsaved_navigation.py",
+  "tests/test_report_candidate_workflow.py",
+  "tests/test_demo_rr_candidate_flow.py",
+  "tests/test_report_af_fit.py",
+  "tests/test_report_range_drafts.py"
 ]

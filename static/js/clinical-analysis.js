@@ -2,7 +2,8 @@
 /* Deterministic complete-index counterpart of ecg_core/clinical_analysis.py. */
 (() => {
   const quality=globalThis.ECGRRQuality||(typeof require==='function'?require('./rr-quality.js'):null);
-  const categories=[['fastest','最快心率'],['slowest','最慢心率'],['S','房早事件'],['V','室早事件'],['pause','长 RR 候选'],['rr_candidate','最长 RR 间期候选'],['rate','心率异常'],['AF','房颤事件'],['ST','ST段事件'],['other','其他事件']];
+  const categories=[['fastest','最快心率'],['slowest','最慢心率'],['S','房早事件'],['V','室早事件'],['pause','长 RR 候选'],['rr_candidate','自选 RR 候选'],['rate','心率异常'],['AF','房颤事件'],['ST','ST段事件'],['other','其他事件']];
+  const reportCategories=categories.flatMap(item=>item[0]==='pause'?[['rr_interval','RR 间期']]:item[0]==='rr_candidate'?[]:[item]);
   const patterns=[['all','全部'],['single','单发'],['couplet','成对'],['triplet','连续三发'],['run','连续多发'],['tachycardia','心动过速'],['bigeminy','二联律'],['nnp','三联律（NNP）'],['npp','三联律（NPP）'],['quadrigeminy','四联律']];
   const periodicVersion='periodic-v2';
   // Two complete cycles in any phase, then the matching tail. Never bridge
@@ -81,15 +82,35 @@
     events.sort((a,b)=>a.start_sample-b.start_sample||(a.event_id<b.event_id?-1:1));
     return {quality_control:{artifact_count:rows.concat(markers).filter(r=>r.class_code==='X').length,artifact_samples:rows.concat(markers).filter(r=>r.class_code==='X').map(r=>r.sample_index),role:'quality_control_only'},events,rows:rows.concat(markers),templates,basis_versions:basis,data_version:bv+'-'+av+'-rr-quality-v3-'+periodicVersion+'-af-end-v1-status-v2-no-artifact-v1',beat_version:bv,duration_s:feed.duration};
   }
+  function rrIntervalGroups(index){
+    const rrEvents=index.events.filter(e=>['pause','rr_candidate'].includes(e.category));if(!rrEvents.length)return [];
+    const report=globalThis.ECGReportEngine||(typeof require==='function'?require('./report-engine.js'):null),pairs=new Map(report.intervalPairs(index.rows,index.duration_s).map(pair=>[pair[1].sample_index,pair])),groups=new Map();
+    for(const e of rrEvents){
+      const pair=pairs.get(e.start_sample),p=e.candidate_context;
+      if(!pair||e.rr_ms!==pair[1].rr_ms||e.category==='pause'&&pair[1].rr_ms<=2500||e.category==='rr_candidate'&&(pair[0].sample_index!==p?.rr_start_sample||pair[1].sample_index!==p?.rr_end_sample))continue;
+      const key=`rr-pair-v1:${index.beat_version}:${pair[0].sample_index}:${pair[1].sample_index}`;
+      if(!groups.has(key))groups.set(key,[]);groups.get(key).push(e);
+    }
+    return [...groups].map(([key,events])=>{
+      events.sort((a,b)=>(a.category==='rr_candidate'?0:1)-(b.category==='rr_candidate'?0:1)||(a.event_id<b.event_id?-1:a.event_id>b.event_id?1:0));
+      const aliases=events.map(e=>({event_id:e.event_id,basis_version:e.basis_version,category:e.category}));
+      return {...events[0],rr_semantic_key:key,rr_alias_event_ids:aliases.map(a=>a.event_id),rr_aliases:aliases,rr_sources:['auto','manual'].filter(source=>events.some(e=>e.category===(source==='auto'?'pause':'rr_candidate')))};
+    });
+  }
+  function normalizeRRSelections(index,entries){const lookup=new Map(index.events.map(e=>[e.event_id,e])),keys=new Map(rrIntervalGroups(index).flatMap(e=>e.rr_alias_event_ids.map(id=>[id,e.rr_semantic_key]))),seen=new Set();return entries.filter(entry=>{const event=lookup.get(entry.event_id),key=event?.basis_version===entry.basis_version?keys.get(entry.event_id):null;if(!key)return true;if(seen.has(key))return false;seen.add(key);return true;});}
   function queryIndex(index,params={},occurrences=false){
     if(params instanceof URLSearchParams)params=Object.fromEntries(params);
     const category=params.category||'all',mode=({'NPN':'nnp','NNP':'nnp','NPP':'npp','三联律(NPN)':'nnp','三联律(NNP)':'nnp','三联律(NPP)':'npp'}[params.mode]||params.mode||'all'),code=params.class_code||'S',templateId=String(params.template_id||'all'),offset=Math.max(0,Number(params.offset)||0),limit=Math.max(1,Math.min(200,Number(params.limit)||100));
     const template=index.templates.find(t=>String(t.id)===templateId);if(templateId!=='all'&&!template)throw Error('模板不存在，请刷新');const samples=template?new Set(template.sample_indices):null,fast=(params.fast_slow_mode||'rr').toUpperCase(),ids=params.ids?new Set(params.ids.split('|')):null;
+    const rrGroups=rrIntervalGroups(index),rrSource=params.rr_source===undefined?'all':params.rr_source;if(!['all','auto','manual'].includes(rrSource))throw Error('无效的 RR 来源筛选');
     const rawOccurrences=occurrences&&mode==='all',timeOf=rawOccurrences?r=>r.sample_index/200:e=>e.time_s;
     let items;
     // Hold row references until pagination; do not construct 100k display cards.
     if(rawOccurrences)items=index.rows.filter(r=>(code==='all'||(code==='other'?!['N','S','V'].includes(r.class_code):r.class_code===code))&&(!samples||samples.has(r.sample_index)));
     else {items=index.events.filter(e=>ids?ids.has(e.event_id):(occurrences?e.category===(['A','M','C','H'].includes(code)?'AF':code):category==='all'||e.category===category)&&(mode!=='all'?e.subtype===mode:!e.pattern_only)&&(!['fastest','slowest'].includes(e.category)||fast==='BOTH'||e.subtype===fast));if(samples)items=items.filter(e=>e.target_samples.some(s=>samples.has(s)))}
+    const rrAliasGroups=new Map(rrGroups.flatMap(e=>e.rr_alias_event_ids.map(id=>[id,e])));
+    if(!occurrences&&!ids&&category==='rr_interval')items=rrGroups.filter(e=>rrSource==='all'||e.rr_sources.includes(rrSource));
+    else if(!occurrences)items=items.map(e=>{const group=rrAliasGroups.get(e.event_id);return group?{...e,rr_semantic_key:group.rr_semantic_key,rr_alias_event_ids:group.rr_alias_event_ids,rr_aliases:group.rr_aliases,rr_sources:group.rr_sources}:e;});
     const pause_band=params.pause_band||'all';
     if(!['all','over3','2.5to3','b0','b1','b2'].includes(pause_band))throw Error('无效的长 RR 筛选范围');
     const pauses=index.events.filter(e=>e.category==='pause'),pause_counts={all:pauses.length,over3:pauses.filter(e=>e.rr_ms>3000).length,'2.5to3':pauses.filter(e=>e.rr_ms<=3000).length};
@@ -98,7 +119,7 @@
       if(pause_band.startsWith('b')){const bucket=pause_distribution.bins[Number(pause_band[1])];items=items.filter(e=>e.rr_ms>=bucket.lower_ms&&(bucket.upper_ms===null||e.rr_ms<bucket.upper_ms));}
       else items=items.filter(e=>pause_band==='over3'?e.rr_ms>3000:e.rr_ms<=3000);
     }
-    const rateCandidates=!occurrences&&['fastest','slowest'].includes(category)&&!ids,sortOrder=category==='rr_candidate'?(params.sort||'hr_asc'):rateCandidates?(params.sort||'hr_desc'):'time';
+    const rateCandidates=!occurrences&&['fastest','slowest'].includes(category)&&!ids,sortOrder=['rr_candidate','rr_interval'].includes(category)?(params.sort||'hr_asc'):rateCandidates?(params.sort||'hr_desc'):'time';
     const rawSpacing=params.candidate_spacing_s===undefined?0:params.candidate_spacing_s;
     if(![0,7,30,60,'0','7','30','60'].includes(rawSpacing))throw Error('候选定位点间隔须为 0、7、30 或 60 秒');
     const candidate_spacing_s=rateCandidates?Number(rawSpacing):0;
@@ -106,6 +127,7 @@
     if(rawOccurrences)items.sort((a,b)=>a.sample_index-b.sample_index||(a.id<b.id?-1:a.id>b.id?1:0));
     else items.sort((a,b)=>(sortOrder==='time'?0:(sortOrder==='hr_desc'?1:-1)*(a.rr_ms-b.rr_ms))||a.start_sample-b.start_sample||(a.event_id<b.event_id?-1:1));
     const counts=Object.fromEntries(categories.map(([key])=>[key,index.events.filter(e=>!e.pattern_only&&e.category===key&&(!['fastest','slowest'].includes(key)||fast==='BOTH'||e.subtype===fast)).length])),subtypes={},beats={};
+    counts.rr_interval=rrGroups.length;const rr_source_counts={all:rrGroups.length,auto:rrGroups.filter(e=>e.rr_sources.includes('auto')).length,manual:rrGroups.filter(e=>e.rr_sources.includes('manual')).length};
     index.events.forEach(e=>{if(e.category===(occurrences?(['A','M','C','H'].includes(code)?'AF':code):category)&&(!samples||e.target_samples.some(s=>samples.has(s))))subtypes[e.subtype]=(subtypes[e.subtype]||0)+1});index.rows.forEach(r=>beats[r.class_code]=(beats[r.class_code]||0)+1);
     const time_counts={};items.forEach(e=>{const h=Math.floor(timeOf(e)/3600);time_counts[h]=(time_counts[h]||0)+1});
     const clock=Date.parse(String(index.start_time).replace(' ','T').slice(0,19)+'Z'),time_bins=[];
@@ -124,6 +146,7 @@
     }
     const candidate_hidden_count=candidate_unspaced_total-items.length;
     const confirmed_category_counts={},confirmed_beat_counts={};for(const [key] of categories){const rows=index.events.filter(e=>e.category===key&&!e.pattern_only&&e.diagnosis_status==='confirmed'&&(!['fastest','slowest'].includes(key)||fast==='BOTH'||e.subtype===fast));confirmed_category_counts[key]=rows.length;confirmed_beat_counts[key]=new Set(rows.flatMap(e=>e.target_samples)).size}
+    const confirmedIds=new Set(index.events.filter(e=>e.diagnosis_status==='confirmed').map(e=>e.event_id)),confirmedRR=rrGroups.filter(e=>e.rr_alias_event_ids.some(id=>confirmedIds.has(id)));confirmed_category_counts.rr_interval=confirmedRR.length;confirmed_beat_counts.rr_interval=new Set(confirmedRR.flatMap(e=>e.target_samples)).size;
     let pageOffset=offset;const focus={};
     if(Object.prototype.hasOwnProperty.call(params,'near_sample')){
       const raw=params.near_sample,sample=Number(raw);
@@ -137,14 +160,14 @@
     }
     if(params.locate_event){
       if(occurrences||ids)throw Error('精确定位仅支持报告候选列表');
-      const target=items.findIndex(e=>e.event_id===params.locate_event);
+      const target=items.findIndex(e=>e.event_id===params.locate_event||e.rr_alias_event_ids?.includes(params.locate_event));
       if(target<0)throw Error('目标事件已失效或不在当前筛选内，请重新选择；未跳转到其他事件');
-      if(params.locate_basis!==items[target].basis_version)throw Error('目标事件依据已变化，请重新选择');
+      if(params.locate_basis!==(items[target].rr_aliases?.find(a=>a.event_id===params.locate_event)?.basis_version||items[target].basis_version))throw Error('目标事件依据已变化，请重新选择');
       pageOffset=Math.floor(target/limit)*limit;focus.focus_index=target;
     }
     let page=items.slice(pageOffset,pageOffset+limit);
     if(rawOccurrences)page=page.map(r=>({event_id:'beat:'+r.id,class_code:r.class_code,category:code,subtype:'beat',label:r.name||r.class_code,sample_index:r.sample_index,start_sample:r.sample_index,end_sample:r.sample_index,time_s:r.sample_index/200,end_s:r.sample_index/200,target_samples:[r.sample_index],beat_count:1,hr:r.hr??null,rr_ms:r.rr_ms??null,basis_version:index.beat_version,templates:template?[{id:String(template.id),name:template.name}]:[],diagnosis_status:r.source_sample!==r.sample_index||r.class_code!==({1:'N',2:'S',3:'V',34:'X'}[r.source_group]||'OTHER')?'edited':'pending'}));
-    return {...focus,candidate_spacing_s,candidate_unspaced_total,candidate_hidden_count,time_bins,time_filter,unfiltered_total,pause_counts,pause_distribution,pause_band,sort_order:sortOrder,candidate_limit:rateCandidates?200:null,confirmed_category_counts,confirmed_beat_counts,time_counts,items:page,total:items.length,offset:pageOffset,limit,category_counts:counts,subtype_counts:subtypes,beat_counts:beats,basis_versions:index.basis_versions,data_version:index.data_version};
+    return {...focus,rr_source:rrSource,rr_source_counts,candidate_spacing_s,candidate_unspaced_total,candidate_hidden_count,time_bins,time_filter,unfiltered_total,pause_counts,pause_distribution,pause_band,sort_order:sortOrder,candidate_limit:rateCandidates?200:null,confirmed_category_counts,confirmed_beat_counts,time_counts,items:page,total:items.length,offset:pageOffset,limit,category_counts:counts,subtype_counts:subtypes,beat_counts:beats,basis_versions:index.basis_versions,data_version:index.data_version};
   }
   const mean=a=>a.length?a.reduce((a,b)=>a+b,0)/a.length:null,sd=a=>{if(a.length<2)return null;const m=mean(a);return Math.sqrt(a.reduce((s,x)=>s+(x-m)**2,0)/(a.length-1))},round=x=>x===null?null:Math.round((x+Number.EPSILON)*100)/100;
   function hrvWindows(feed,startTime,window=0){
@@ -160,11 +183,12 @@
   function reportUsed(c,s,e){const pages=c.page_selection_version===1?c.included_pages||[]:['summary','hourly','event_strips'];return s.referenced_in_report===true||pages.includes('event_strips')&&s.print_enabled!==false&&(!e||!['fastest','slowest'].includes(e.category)||c.fast_slow_mode==='both'||e.subtype===(c.fast_slow_mode||'rr').toUpperCase());}
   function validateReport(index,composition,review,approving=false){
     if('include_hrv' in composition&&typeof composition.include_hrv!=='boolean')throw Error('HRV 入报选项须为布尔值');
-    for(const entry of composition.selected_events||[]){if('range_start_s' in entry||'range_end_s' in entry){const event=index.events.find(e=>e.event_id===entry.event_id);if(event&&event.basis_version===entry.basis_version&&reportUsed(composition,entry,event))ECGReportEngine.resolve(index,event,entry)}}
-    const lookup=new Map(index.events.map(e=>[e.event_id,e])),selected=[];
-    for(const [number,entry] of (composition.selected_events||[]).entries()){const e=lookup.get(entry.event_id),used=reportUsed(composition,entry,e);if(entry.event_id.startsWith('other:X:')||(e?.category==='other'&&e.subtype==='X')){if(approving&&used)throw Error('伪差仅用于质控，请移除历史伪差图条后再审核');continue}if(!e||e.basis_version!==entry.basis_version){if(approving&&used)throw Error(`第 ${number+1} 条图条依据已变化（失效），请重新核对或移出本次报告`);continue}if(approving&&used&&e.category==='AF'&&e.rhythm_status!=='confirmed')throw Error('所选房颤／房扑片段尚未确认；请在报告候选区确认本段，或从报告中移除该图条。');if(approving&&used){if(e.evidence_only){if(!evidenceConfirmed(entry,e))throw Error(`第 ${number+1} 条人工图条待核对，请在报告中“确认本条”或移出本次报告`);}else if(e.diagnosis_status!=='confirmed')throw Error('请先完成编辑／ST-T诊断确认');if(['pause','rr_candidate'].includes(e.category)&&(entry.caption||e.label).includes('最长')&&e.rr_ms!==ECGReportEngine.intervalPairs(index.rows,index.duration_s).reduce((m,[,b])=>Math.max(m,b.rr_ms),-Infinity))throw Error('本条不是当前可分析记录的最长 RR，请核对图注');}selected.push({...e,caption:entry.caption||e.label,...(globalThis.ECGReportEngine?ECGReportEngine.settings(entry):{}),print_enabled:entry.print_enabled!==false,notes:entry.notes||''})}
+    const retained=normalizeRRSelections(index,composition.selected_events||[]);
+    for(const entry of retained){if('range_start_s' in entry||'range_end_s' in entry){const event=index.events.find(e=>e.event_id===entry.event_id);if(event&&event.basis_version===entry.basis_version&&reportUsed(composition,entry,event))ECGReportEngine.resolve(index,event,entry)}}
+    const lookup=new Map(index.events.map(e=>[e.event_id,e])),selected=[],rrGroups=rrIntervalGroups(index),rrKeys=new Map(rrGroups.flatMap(e=>e.rr_alias_event_ids.map(id=>[id,e.rr_semantic_key]))),seenRR=new Set();
+    for(const [number,entry] of retained.entries()){const e=lookup.get(entry.event_id),used=reportUsed(composition,entry,e);if(entry.event_id.startsWith('other:X:')||(e?.category==='other'&&e.subtype==='X')){if(approving&&used)throw Error('伪差仅用于质控，请移除历史伪差图条后再审核');continue}if(!e||e.basis_version!==entry.basis_version){if(approving&&used)throw Error(`第 ${number+1} 条图条依据已变化（失效），请重新核对或移出本次报告`);continue}const rrKey=rrKeys.get(e.event_id);if(rrKey&&seenRR.has(rrKey))continue;if(rrKey)seenRR.add(rrKey);if(approving&&used&&e.category==='AF'&&e.rhythm_status!=='confirmed')throw Error('所选房颤／房扑片段尚未确认；请在报告候选区确认本段，或从报告中移除该图条。');if(approving&&used){if(e.evidence_only){if(!evidenceConfirmed(entry,e))throw Error(`第 ${number+1} 条人工图条待核对，请在报告中“确认本条”或移出本次报告`);}else if(e.diagnosis_status!=='confirmed')throw Error('请先完成编辑／ST-T诊断确认');if(['pause','rr_candidate'].includes(e.category)&&(entry.caption||e.label).includes('最长')&&e.rr_ms!==ECGReportEngine.intervalPairs(index.rows,index.duration_s).reduce((m,[,b])=>Math.max(m,b.rr_ms),-Infinity))throw Error('本条不是当前可分析记录的最长 RR，请核对图注');}selected.push({...e,caption:entry.caption||e.label,...(globalThis.ECGReportEngine?ECGReportEngine.settings(entry):{}),print_enabled:entry.print_enabled!==false,notes:entry.notes||''})}
     if(approving&&(composition.diagnosis_blocks||[]).some(b=>b.needs_review))throw Error('请核对保留的人工诊断文字');
     return selected;
   }
-  const api={categories,patterns,buildIndex,queryIndex,hrvWindows,validateReport,fingerprint,evidenceSelection,evidenceConfirmed,reportUsed};globalThis.ECGClinicalAnalysis=api;if(typeof module!=='undefined')module.exports=api;
+  const api={categories,reportCategories,rrIntervalGroups,normalizeRRSelections,patterns,buildIndex,queryIndex,hrvWindows,validateReport,fingerprint,evidenceSelection,evidenceConfirmed,reportUsed};globalThis.ECGClinicalAnalysis=api;if(typeof module!=='undefined')module.exports=api;
 })();

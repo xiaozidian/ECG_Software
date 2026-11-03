@@ -16,12 +16,12 @@
   },
   "clinical_acceptance": false,
   "core_contract": "ecg-core-1",
-  "core_version": "core-1fef53b14eafb0f4",
+  "core_version": "core-4d4abe5c130c2b9e",
   "files": {
     "demo/static/js/demo-api.js": {
-      "bytes": 72527,
+      "bytes": 72851,
       "component": "build",
-      "sha256": "a175acff1eb46aa58d7242da54798fd793d46e2263b73686cd4299ead2ef716c"
+      "sha256": "7bbe71d38ce21e20704f9850275366921e8d97cd58a66e97d1045618a39fe776"
     },
     "demo/static/js/demo-review-api.js": {
       "bytes": 62528,
@@ -44,9 +44,9 @@
       "sha256": "df2ba3ca3e9020149133299c2255aad466f4f2e1d505ba2f981b25bf7ab16c3f"
     },
     "ecg_core/analysis_provenance.py": {
-      "bytes": 9982,
+      "bytes": 9995,
       "component": "core",
-      "sha256": "89e80571a30bef9d058a71bcb726372b022eb30a5880031216608034a45680c9"
+      "sha256": "6f28ab236ee9ea5417a5b102db3a47190073616d75a3e013696deaba87c93a6d"
     },
     "ecg_core/beat_editor.py": {
       "bytes": 20273,
@@ -54,9 +54,9 @@
       "sha256": "e3a7e351a95ac4f78c8dceedda5a21c135737d4aebb0485d1c4af442bb7b5ff1"
     },
     "ecg_core/clinical_analysis.py": {
-      "bytes": 29274,
+      "bytes": 30887,
       "component": "core",
-      "sha256": "90ac76cd759ed346b5c2e6cc4a93dcb169e0c6ed267063d56a37548d0706da5b"
+      "sha256": "725b0a116016cbb07be204cc707b77ac97f44c03427562874f4e580d6755cc35"
     },
     "ecg_core/clinical_query_cache.py": {
       "bytes": 6306,
@@ -114,9 +114,9 @@
       "sha256": "20bff8029c04bfebe81e12899b310caf3e9e319dc12fdaff6d3c072125bda8f4"
     },
     "ecg_core/report_layout.py": {
-      "bytes": 12673,
+      "bytes": 13237,
       "component": "core",
-      "sha256": "26d10dc347e5b1d9717100d23857c904c6cc7e1875fc67b77223bbbe9366f3ca"
+      "sha256": "9a869ac2336a966306f8d1a978ccc128b8d5e7efc794208c4d64b6323f7a3f19"
     },
     "ecg_core/report_paper_pdf.py": {
       "bytes": 20087,
@@ -157,6 +157,11 @@
       "bytes": 7044,
       "component": "core",
       "sha256": "fa9d5dafc3d851e411886ac6ea789a5958153c523e13575b912ba9f9cc29361c"
+    },
+    "ecg_core/rr_report.py": {
+      "bytes": 3361,
+      "component": "core",
+      "sha256": "a5a23cd87efbf136204d8f2d7e423ab25f51f2f6cd33878fcc3aeb05088b681a"
     },
     "ecg_core/rr_review.py": {
       "bytes": 29410,
@@ -199,9 +204,9 @@
       "sha256": "10fd59c6744673f69ac6a1eca1c5468115700714733ce6c26a3b3c5ef3c2dac7"
     },
     "scripts/build_static_demo.py": {
-      "bytes": 11699,
+      "bytes": 11707,
       "component": "build",
-      "sha256": "67cdb42a227ffb2f80160fbbe4ae0cc0956d1b4df208087a1c15da36a320d8fe"
+      "sha256": "4c80762bf3a33483c9b006a5f6aff23f98c4a3b5240c18bbf174b55c6ddc0b7a"
     },
     "scripts/generate_synthetic_demo.py": {
       "bytes": 16740,
@@ -294,9 +299,9 @@
       "sha256": "c65249c41cc31bb2bb48d722bf49a4d61f6a5774c790ddd6d658a64332cc70d7"
     },
     "static/css/report-workspace.css": {
-      "bytes": 91356,
+      "bytes": 95233,
       "component": "ui",
-      "sha256": "99535b183201edc7c93498ee3ceb173c81dd80af3ac9f197b5b5abf327dc5b8b"
+      "sha256": "d802298fb41e561fde12420b8ab5b152b130c6fa3a0c050079f0a1e20f5459d8"
     },
     "static/css/review-candidates.css": {
       "bytes": 2856,
@@ -349,9 +354,9 @@
       "sha256": "1012ab83a16a362ac21e4f8c8e65da817f0744c9b5e0a2eb5365207978ded31e"
     },
     "static/help/af-afl.html": {
-      "bytes": 7646,
+      "bytes": 8598,
       "component": "ui",
-      "sha256": "c6b572a8e3688405a62a7382ddb943d30ca2c9bbff7f451ee7b38f1d03ac94fc"
+      "sha256": "0fd2f0970d0911e7f02076aa63b0c09f39bfdf1a6a919eb86585c5b748936543"
     },
     "static/icon.svg": {
       "bytes": 304,
@@ -379,9 +384,9 @@
       "sha256": "cbde892c76563ad839eea38c9d3b662bc56b253c2d3c98287ed28277efc061ca"
     },
     "static/js/beat-editor-ui.js": {
-      "bytes": 46326,
+      "bytes": 46320,
       "component": "ui",
-      "sha256": "08e624462c7508e4bd22f4c5ab350238b5452b9f8e030ef4f4b33c2a04e5031d"
+      "sha256": "2bd62005c0a2d64c20d06b445eef7d0532e5c7505dc9e6d03b12a112c11e5339"
     },
     "static/js/beat-engine.js": {
       "bytes": 12953,
@@ -394,9 +399,9 @@
       "sha256": "47f32312b1d39e805259f2af1325231b9e8ab875295a27903f315cd16c51c770"
     },
     "static/js/clinical-analysis.js": {
-      "bytes": 23912,
+      "bytes": 27649,
       "component": "ui",
-      "sha256": "2e7a139f6f0a1facecb7e3ccab251ed01b91c9cf170884e24873f631bd683e21"
+      "sha256": "4270d8facfc80f5a294890847c028f6d7b93e47f07c8f689110a4967da431eab"
     },
     "static/js/clinical-review-tools.js": {
       "bytes": 11730,
@@ -404,9 +409,9 @@
       "sha256": "a6388fe03f33d7e58efdbf0a962794231b1d291d14940b6aedc91305edcd4330"
     },
     "static/js/clinical-ui.js": {
-      "bytes": 209351,
+      "bytes": 219932,
       "component": "ui",
-      "sha256": "0aff5e1149a19d898aeb5cb5ec498d0dddfe66a63178fadf6ee53a126e6d3310"
+      "sha256": "2297aedd769c89e04109f5b455f754a57aec4f24276a153795fcb2da1750b287"
     },
     "static/js/clinical-workflow.js": {
       "bytes": 15113,
@@ -489,9 +494,9 @@
       "sha256": "cecd82cec4eb79739a28778c26d884beac28a0ddbc93dae80bb832b86fffc5c1"
     },
     "static/js/report-engine.js": {
-      "bytes": 8359,
+      "bytes": 8573,
       "component": "ui",
-      "sha256": "1c9d47cece359edbc369581656a0a52d48a13cac49251cf26290c32d6de6017a"
+      "sha256": "06e08f4eda07c9d11d380131b7899c0419f404513bd609747c6aa94d6db71689"
     },
     "static/js/report-evidence-ui.js": {
       "bytes": 10055,
@@ -509,9 +514,9 @@
       "sha256": "ca4fd8abf3e3000e2307eb7dba2611f18f5bec79979d34e0b351682fdf5c4084"
     },
     "static/js/report-range-editor.js": {
-      "bytes": 17224,
+      "bytes": 18365,
       "component": "ui",
-      "sha256": "47daf66ff4fa1b89ea785daf72418665a54a2fe8528999ab4dc2dbb051f805b3"
+      "sha256": "1820a21090a3d6dc88dd729d3e175cd58a4f80af7a9c71cbd6e3077c4c717689"
     },
     "static/js/report-sections.js": {
       "bytes": 14092,
@@ -529,9 +534,9 @@
       "sha256": "14a70a4ea68ab3e72ae82f149c88eb6bfaba1515363a385a55bd8aa84ae7b1e7"
     },
     "static/js/review-candidate-ui.js": {
-      "bytes": 7810,
+      "bytes": 7804,
       "component": "ui",
-      "sha256": "a74505e83e36150c05b88f0201f0a1a09142a868e0c688f9429286bf554e1ccf"
+      "sha256": "d783fcfec3d629e235ae4288eb2da78e591479e42d88960bf2253952992b8851"
     },
     "static/js/rhythm-range-editor.js": {
       "bytes": 34669,
@@ -610,7 +615,7 @@
     }
   },
   "schema": 1,
-  "source_fingerprint": "2563737ce6974fd9c7ed2195f5c38e7794129b7b7348e51fcc4588b7e64557d7",
+  "source_fingerprint": "a3e958c53a0f6e18ec149b09b1ca828d1066f7f86446216e3cf9c070ca77a654",
   "source_revision": null,
-  "ui_version": "ui-ac9e65b18ad02c10"
+  "ui_version": "ui-b6a348646212a170"
 }

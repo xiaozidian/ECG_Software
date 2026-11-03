@@ -114,6 +114,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   vm.runInContext(fs.readFileSync('static/js/report-strip-editor.js','utf8'),context);
   context.ECGOccurrenceCard=require('../static/js/occurrence-card.js');
   vm.runInContext(fs.readFileSync('static/js/report-range-editor.js', 'utf8'), context);
+  vm.runInContext(source.slice(source.indexOf('  const reportCategories='),source.indexOf('  const tabs=')),context);
   production(context, 'selectEvent');
   production(context, 'reportStrip', true);
   production(context, 'mountRange', true);

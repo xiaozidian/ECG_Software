@@ -17,7 +17,7 @@ const selection={...event,leads:['II'],duration_s:7,range_start_s:7,
 const original=JSON.stringify(selection);
 const opened=[];
 const context=vm.createContext({
-  reportEvidenceOpening:false,reportData:{analysis_revision:2},active:event,
+  A:{categories:[]},reportEvidenceOpening:false,reportData:{analysis_revision:2},active:event,
   state:{caseId:'synthetic',caseRequestId:3,currentPage:'report',
     report:{version:4},reportStale:false,reportEvidenceLoading:false,
     caseData:{clinical_identity:{analysis_revision:2}}},
@@ -32,6 +32,7 @@ const context=vm.createContext({
     assert(options.isCurrent());opened.push(options);
   }},api:()=>{throw Error('The component must delegate its read to the evidence dialog');}
 });
+vm.runInContext(source.slice(source.indexOf('  const reportCategories='),source.indexOf('  const tabs=')),context);
 vm.runInContext(source.slice(start,end),context);
 
 (async()=>{

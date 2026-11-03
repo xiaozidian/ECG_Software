@@ -35,8 +35,24 @@ async def verify_report_rr(page, screenshots):
     checks.append('save-only-candidate-without-report-selection')
     await page.locator('[data-candidate-open-report]').click()
     await page.wait_for_function(ready)
-    row = page.locator('tr[data-report-event-id]').filter(has_text='M01 RR candidate acceptance')
-    event_id = await row.get_attribute('data-report-event-id')
+    assert await page.locator('#reportV2Nav [data-category="rr_interval"]').count() == 1
+    assert await page.locator('#reportV2Nav [data-category="pause"]').count() == 0
+    assert await page.locator('#reportV2Nav [data-category="rr_candidate"]').count() == 0
+    automatic = await page.evaluate("async()=>api('/api/cases/'+state.caseId+'/report-events?category=rr_interval&rr_source=auto')")
+    assert automatic['total'] == 0  # Unchanged 24h M01 generator caps intervals at 2s.
+    async with page.expect_response(lambda r:'/report-events?' in r.url and 'rr_source=auto' in r.url) as changed:
+        await page.locator('#v2RRSource').select_option('auto')
+    assert (await changed.value).ok
+    await page.wait_for_function(ready)
+    assert await page.locator('tr[data-report-event-id]').count() == 0
+    async with page.expect_response(lambda r:'/report-events?' in r.url and 'rr_source=manual' in r.url) as changed:
+        await page.locator('#v2RRSource').select_option('manual')
+    assert (await changed.value).ok
+    await page.wait_for_function(ready)
+    checks.append('unified-RR-entry-and-native-empty-auto-source-filter')
+    event_id = await page.evaluate("async()=>{const x=await api('/api/cases/'+state.caseId+'/report-events?category=rr_interval&rr_source=manual');const e=x.items.find(e=>e.label==='M01 RR candidate acceptance');if(!e)throw Error('Exact native RR candidate missing');return e.event_id;}")
+    row = page.locator('tr[data-report-event-id=\"'+event_id+'\"]')
+    await row.wait_for(state='visible')
     checkbox = row.locator('[data-include]')
     await checkbox.check()
     await page.wait_for_function(saved)
@@ -44,6 +60,19 @@ async def verify_report_rr(page, screenshots):
     await page.wait_for_function(saved)
     assert await page.evaluate('(id) => !state.reportComposition.selected_events.some(e=>e.event_id===id)', event_id)
     checks.append('uncheck-removes-exact-report-pick')
+    # Re-selecting the same original pair creates no additional candidate or
+    # report row. Cross auto/manual overlap is tested on a separate 4s fixture.
+    before_repeat = await page.evaluate("async()=>api('/api/cases/'+state.caseId+'/evidence-candidates')")
+    await page.evaluate("""async()=>{const ledger=await api('/api/cases/'+state.caseId+'/evidence-candidates'),longest=await api('/api/cases/'+state.caseId+'/report-rr-evidence'),e=longest.event;await ECGReviewCandidates.choose({identity:ledger,item:{sample_index:e.sample_index,rr_ms:e.rr_ms,class_code:e.evidence_ref.terminal.class_code}});} """)
+    await page.locator('[data-candidate-save]').click()
+    await page.locator('[data-candidate-open-report]').wait_for()
+    await page.locator('[data-candidate-open-report]').click()
+    await page.wait_for_function(ready)
+    after_repeat = await page.evaluate("async()=>api('/api/cases/'+state.caseId+'/evidence-candidates')")
+    assert len(after_repeat['items']) == len(before_repeat['items'])
+    assert await row.count() == 1
+    checks.append('same-manual-RR-resave-keeps-one-candidate-and-report-row')
+
     await checkbox.check()
     await page.wait_for_function(saved)
     await page.evaluate("""async id => {
@@ -104,4 +133,4 @@ async def verify_report_rr(page, screenshots):
     await page.locator('.nav-item[data-page="report"]').click()
     await page.wait_for_function(ready)
     checks.append('return-to-overview-after-report-review-keeps-readable-waveform')
-    return {'checks':checks,'input':'mathematical M01 only','actual_frozen_backend':True,'pdf_operations':0}
+    return {'checks':checks,'input':'mathematical M01 only','actual_frozen_backend':True,'pdf_operations':0,'automatic_long_rr_population':'empty in unchanged 24h M01; generator intervals capped at 2 seconds','cross_source_overlap_scope':'separate original 4s Python backend and browser Demo mathematical fixtures'}

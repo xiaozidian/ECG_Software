@@ -41,6 +41,7 @@ from ecg_core.rr_review import build_rr_index, query_rr, resolve_rr_target, RRRe
 from ecg_core.terminology import TerminologyStore, TerminologyConflict
 from ecg_core.report_layout import prepare_strip, report_statistics
 from ecg_core.clinical_analysis import build_index, query_index, hrv_windows, validate_report
+from ecg_core.rr_report import deduplicate_rr_selections
 from ecg_core.clinical_query_cache import ClinicalQueryCache, ClinicalQueryBusy, WaveformBeatCache, ClinicalEvidenceCache
 from ecg_core.storage import normalize_report_composition
 from ecg_core.repository import CASE_ID_RE, CaseNotFound, CaseRepository
@@ -1845,15 +1846,18 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         if composition is not None and not isinstance(composition, dict):
             raise ValueError("composition 必须为 JSON 对象")
         composition=normalize_report_composition(composition if composition is not None else storage.get_report(case_id, "")["composition"])
-        validate_report(clinical_index(case_or_404(case_id)),composition,progress,status=="reviewed")
+        index = clinical_index(case_or_404(case_id))
+        composition['selected_events'], merged_rr = deduplicate_rr_selections(index, composition.get('selected_events', []))
+        validate_report(index,composition,progress,status=="reviewed")
         if composition.get('include_hrv') or any(k.startswith('hrv_') for k in composition.get('included_pages',[])):
             assert_hrv_reference(case,composition.get('hrv_review_reference'),composition.get('hrv_window',0), require_confirmation=status=='reviewed')
         if composition.get('advanced_options',{}).get('markers'):
             case=case_or_404(case_id)
             advanced_evidence(case,clinical_index(case),composition['advanced_options'])
-        return jsonify(storage.save_report(case_id, conclusion, status, ACTOR, composition,
-                                           payload["expected_version"], progress["revision"], basis['digest'],
-                                           lambda: assert_source_basis(case, basis)))
+        saved = storage.save_report(case_id, conclusion, status, ACTOR, composition,
+                                    payload["expected_version"], progress["revision"], basis['digest'],
+                                    lambda: assert_source_basis(case, basis))
+        return jsonify({**saved, 'rr_merged_event_ids': merged_rr})
 
     def report_source_token(case):
         progress = storage.get_review(case["case_id"])
@@ -1890,7 +1894,8 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         report["analysis_revision"] = edit_snapshot["revision"]
         index=clinical_index(case)
         resolved=validate_report(index,report['composition'],report['review_snapshot'],report['status']=='reviewed')
-        used_entries=[s for s in report['composition'].get('selected_events',[]) if used_in_output(report['composition'],s,next((e for e in index['events'] if e['event_id']==s['event_id']),None))]
+        unique_entries, _ = deduplicate_rr_selections(index, report['composition'].get('selected_events', []))
+        used_entries=[s for s in unique_entries if used_in_output(report['composition'],s,next((e for e in index['events'] if e['event_id']==s['event_id']),None))]
         resolved=[e for e in resolved if used_in_output(report['composition'],e,e)]
         if len(resolved)!=len(used_entries):
             raise ValueError('已选图条失效，请重新筛选后导出')

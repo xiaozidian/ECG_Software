@@ -110,7 +110,14 @@ def resolve_strip(index, event, settings=None):
     manual = 'range_start_s' in settings
     if manual:
         start,end=settings['range_start_s'],settings['range_end_s']
-        if end>total or not start<=anchor<end:
+        if end > total:
+            raise ValueError('人工区间须在记录范围内，并包含当前事件定位心搏')
+        if event.get('category') == 'AF':
+            episode_start = event['start_sample']/200
+            episode_end = event.get('end_s', event.get('end_sample', event['start_sample'])/200)
+            if not start < episode_end or not end > episode_start:
+                raise ValueError('代表图条须与当前房颤／房扑片段相交')
+        elif not start<=anchor<end:
             raise ValueError('人工区间须在记录范围内，并包含当前事件定位心搏')
         if pause_start_sample is not None and round(start*200)>pause_start_sample:
             raise ValueError('RR 候选入图须包含完整间期的两个 R 峰（原始计时点）')
@@ -133,9 +140,10 @@ def resolve_strip(index, event, settings=None):
     if not manual and actual > settings["duration_s"] + .01:
         reason = '覆盖完整 RR 间期并包含至少 5 搏' if event.get('category') == 'pause' else '包含至少 5 搏'
         warning = f"为{reason}，已由 {settings['duration_s']:g} 秒延长至 {actual:g} 秒" + (f"；{warning}" if warning else "")
+    context_anchor = (start + end)/2 if manual and event.get('category') == 'AF' else anchor
     return {**settings, "start_s": start, "end_s": end, "actual_duration_s": actual,
             "visible_beats": visible, "visible_beat_count": len(visible), "warning": warning,
-            "context_start_s": max(0, min(anchor - max(30, actual * 3) / 2, total - min(total, max(30, actual * 3)))),
+            "context_start_s": max(0, min(context_anchor - max(30, actual * 3) / 2, total - min(total, max(30, actual * 3)))),
             "context_duration_s": min(total, max(30, actual * 3))}
 
 

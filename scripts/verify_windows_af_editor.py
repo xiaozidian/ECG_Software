@@ -40,7 +40,7 @@ async def verify_af_editor(page, screenshots):
     base_ids = [e['id'] for e in base['document']['episodes']]
     successful_commits = 0
     try:
-        for kind, start, end in [('AF', 3598, 3608), ('AFL', 7200, 7210)]:
+        for kind, start, end in [('AF', 3598, 3720), ('AFL', 7200, 7210)]:
             await page.locator('[data-ov="af-add:' + kind + '"]').first.click()
             await page.locator('#ovEpisodeForm').wait_for(state='visible')
             await page.wait_for_function("kind=>{const f=document.querySelector('#ovEpisodeForm');return f&&f.elements.kind.value===kind&&f.dataset.startS===''&&f.dataset.endS==='';}", arg=kind)
@@ -83,11 +83,28 @@ async def verify_af_editor(page, screenshots):
                 await page.wait_for_function("()=>state.currentPage==='report'&&state.reportDisplayedCategory==='AF'&&!state.reportViewLoading&&!state.reportEvidenceLoading")
                 event_id = 'annotation:af:' + items[0]['id']
                 row = page.locator('tr[data-report-event-id="' + event_id + '"]')
-                await row.locator('[data-locate]').click()
+                await row.locator('td').last.click()
                 await page.wait_for_function("id=>document.querySelector('#v2EventWave .report-range-editor')?._rangeEventId===id", arg=event_id)
-                await row.locator('[data-include]').check()
+                before_confirmation = await read()
+                assert next(e for e in before_confirmation['document']['episodes'] if e['id'] == items[0]['id'])['status'] == 'pending'
+                assert await page.locator('#unsavedChangesDialog').count() == 0
+                viewed_report = await browser_json(page, '/api/cases/' + CASE_ID + '/report?analysis=edited')
+                assert not any(e['event_id'] == event_id for e in viewed_report['composition']['selected_events'])
+                checks.append('AF-viewing-row-does-not-confirm-or-include')
+                await page.locator('#v2EventWave [data-af-browse="middle"]').click()
+                await page.wait_for_function("lo=>Number(document.querySelector('#v2EventWave')?.dataset.afBrowseStart)>lo+30", arg=start)
+                await page.locator('#v2EventWave [data-af-strip-duration]').select_option('7')
+                await page.locator('#v2EventWave [data-af-use-view]').click()
+                await page.wait_for_function("id=>ECGReportRange.pending().some(d=>d.event?.event_id===id)", arg=event_id)
+                chosen = await page.evaluate("id=>{const d=ECGReportRange.pending().find(d=>d.event?.event_id===id);return {start:d.a,end:d.b};}", event_id)
+                assert chosen['start'] > start + 20 and chosen['end'] < end - 20
+                assert abs(chosen['end'] - chosen['start'] - 7) < .001
+                assert next(e for e in (await read())['document']['episodes'] if e['id'] == items[0]['id'])['status'] == 'pending'
+                checks.append('AF-middle-range-pending-without-whole-confirmation')
+                await page.locator('#v2EventNavigation [data-confirm-rhythm="active"]').click()
                 decision = page.locator('#unsavedChangesDialog')
                 await decision.wait_for(state='visible')
+                assert '整段候选' in await decision.inner_text() and '本次图条' in await decision.inner_text()
                 assert await page.evaluate("()=>state.currentPage") == 'report'
                 async with page.expect_response(lambda response: '/rhythm-review' in response.url and response.request.method == 'PUT') as pending:
                     await decision.locator('[data-unsaved-save]').click()
@@ -95,12 +112,18 @@ async def verify_af_editor(page, screenshots):
                 assert response.ok
                 successful_commits += 1
                 saved = await response.json()
-                assert next(e for e in saved['document']['episodes'] if e['id'] == items[0]['id'])['status'] == 'confirmed'
+                confirmed_episode = next(e for e in saved['document']['episodes'] if e['id'] == items[0]['id'])
+                assert confirmed_episode['status'] == 'confirmed'
+                assert confirmed_episode['start_s'] == start and confirmed_episode['end_s'] == end
                 await decision.wait_for(state='hidden', timeout=90000)
                 await page.wait_for_function("()=>!state.reportSaving&&!state.reportDirty")
                 report = await browser_json(page, '/api/cases/' + CASE_ID + '/report?analysis=edited')
-                assert any(e['event_id'] == event_id for e in report['composition']['selected_events'])
+                chosen_entries = [e for e in report['composition']['selected_events'] if e['event_id'] == event_id]
+                assert len(chosen_entries) == 1
+                assert abs(chosen_entries[0]['range_start_s'] - chosen['start']) < .001
+                assert abs(chosen_entries[0]['range_end_s'] - chosen['end']) < .001
                 checks.append('AF-confirmation-and-inclusion-stay-in-native-report')
+                checks.append('explicit-AF-confirmation-keeps-whole-boundaries-and-middle-strip')
                 await row.locator('[data-include]').uncheck()
                 await page.wait_for_function("()=>!state.reportSaving&&!state.reportDirty")
                 report = await browser_json(page, '/api/cases/' + CASE_ID + '/report?analysis=edited')
@@ -128,6 +151,12 @@ async def verify_af_editor(page, screenshots):
             await page.locator('[data-ov="af-side:episodes"]').click()
             await page.screenshot(path=str(screenshots / ('mathematical-af-' + str(width) + 'x' + str(height) + '.png')))
     finally:
+        decision = page.locator('#unsavedChangesDialog')
+        if await decision.is_visible() and await decision.locator('[data-unsaved-stay]').is_enabled():
+            await decision.locator('[data-unsaved-stay]').click()
+        cancel_range = page.locator('#v2EventWave [data-range-cancel]')
+        if await cancel_range.is_visible() and await cancel_range.is_enabled():
+            await cancel_range.click()
         await navigate(page, 'review')
         if not await page.locator('#ovAF').is_visible():
             await page.locator('[data-ov="af-open"]').click()

@@ -7,6 +7,7 @@ const root=path.resolve(__dirname,'..'),read=p=>fs.readFileSync(path.join(root,p
 const ui=read('static/js/clinical-ui.js'),workflow=read('static/js/clinical-workflow.js');
 function region(source,a,b){const i=source.indexOf(a),j=source.indexOf(b,i);assert(i>=0&&j>i,`Shipped source region missing: ${a}`);return source.slice(i,j);}
 const shipped=[
+  region(ui,'  const reportCategories=','  const tabs='),
   region(ui,'  function composition(){','  function svg(wave,'),
   region(ui,'  function pendingRhythmPicks(){','  async function reloadReport('),
   region(ui,"  async function save(status='draft')",'  function gainHtml('),

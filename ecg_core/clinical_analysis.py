@@ -12,7 +12,8 @@ from .rr_quality import nn_intervals, interval_mask, annotation_exclusions, cons
 from collections import Counter
 from datetime import datetime, timedelta
 
-CATEGORIES = [('fastest','最快心率'),('slowest','最慢心率'),('S','房早事件'),('V','室早事件'),('pause','长 RR 候选'),('rr_candidate','最长 RR 间期候选'),('rate','心率异常'),('AF','房颤事件'),('ST','ST段事件'),('other','其他事件')]
+CATEGORIES = [('fastest','最快心率'),('slowest','最慢心率'),('S','房早事件'),('V','室早事件'),('pause','长 RR 候选'),('rr_candidate','自选 RR 候选'),('rate','心率异常'),('AF','房颤事件'),('ST','ST段事件'),('other','其他事件')]
+REPORT_CATEGORIES = [(('rr_interval', 'RR 间期') if key == 'pause' else (key, label)) for key, label in CATEGORIES if key != 'rr_candidate']
 PATTERNS = [('all','全部'),('single','单发'),('couplet','成对'),('triplet','连续三发'),('run','连续多发'),('tachycardia','心动过速'),('bigeminy','二联律'),('nnp','三联律（NNP）'),('npp','三联律（NPP）'),('quadrigeminy','四联律')]
 EXTREME_CANDIDATE_LIMIT = 200
 PERIODIC_VERSION = 'periodic-v2'
@@ -230,6 +231,11 @@ def query_index(index,params,occurrences=False):
     if template_id!='all' and template is None:raise ValueError('模板不存在，请刷新')
     samples=set(template['sample_indices']) if template else None
     events=index['events']; fast=params.get('fast_slow_mode','rr').upper()
+    from .rr_report import rr_interval_groups
+    rr_groups = rr_interval_groups(index)
+    rr_source = params.get('rr_source', 'all')
+    if rr_source not in ('all', 'auto', 'manual'):raise ValueError('无效的 RR 来源筛选')
+    rr_aliases = {event_id: group for group in rr_groups for event_id in group['rr_alias_event_ids']}
     selected_ids=set(str(params.get('ids','')).split('|')) if params.get('ids') else None
     raw_occurrences = occurrences and mode=='all'
     if raw_occurrences:
@@ -240,6 +246,10 @@ def query_index(index,params,occurrences=False):
     else:
         items=[e for e in events if (selected_ids is not None and e['event_id'] in selected_ids) or (selected_ids is None and (e['category']==('AF' if code in ('A','M','C','H') else code) if occurrences else category=='all' or e['category']==category) and (e['subtype']==mode if mode!='all' else not e['pattern_only']) and (e['category'] not in ('fastest','slowest') or fast=='BOTH' or e['subtype']==fast))]
         if samples is not None:items=[e for e in items if any(s in samples for s in e['target_samples'])]
+    if not occurrences and selected_ids is None and category == 'rr_interval':
+        items = [e for e in rr_groups if rr_source == 'all' or rr_source in e['rr_sources']]
+    elif not occurrences:
+        items = [{**e, **{k: rr_aliases[e['event_id']][k] for k in ('rr_semantic_key', 'rr_alias_event_ids', 'rr_aliases', 'rr_sources')}} if e['event_id'] in rr_aliases else e for e in items]
     pause_band=params.get('pause_band','all')
     if pause_band not in ('all','over3','2.5to3','b0','b1','b2'):raise ValueError('无效的长 RR 筛选范围')
     pauses=[e for e in events if e['category']=='pause']
@@ -256,18 +266,24 @@ def query_index(index,params,occurrences=False):
     if isinstance(raw_spacing,bool) or not isinstance(raw_spacing,(str,int,float)) or raw_spacing not in (0,7,30,60,'0','7','30','60'):
         raise ValueError('候选定位点间隔须为 0、7、30 或 60 秒')
     spacing=int(raw_spacing) if rate_candidates else 0
-    sort_order=params.get('sort','hr_asc') if category=='rr_candidate' else params.get('sort','hr_desc') if rate_candidates else 'time'
+    sort_order=params.get('sort','hr_asc') if category in ('rr_candidate','rr_interval') else params.get('sort','hr_desc') if rate_candidates else 'time'
     if sort_order not in ('hr_desc','hr_asc','time'):raise ValueError('无效的候选排序方式')
     if raw_occurrences:
         items.sort(key=lambda r:(r['sample_index'],r['id']))
     else:
         items.sort(key=lambda e:((e['rr_ms'] if sort_order=='hr_desc' else -e['rr_ms']),e['start_sample'],e['event_id']) if sort_order!='time' else (e['start_sample'],e['event_id']))
     counts={key:sum(not e['pattern_only'] and e['category']==key and (key not in ('fastest','slowest') or fast=='BOTH' or e['subtype']==fast) for e in events) for key,_ in CATEGORIES}
+    counts['rr_interval'] = len(rr_groups)
+    rr_source_counts = {'all':len(rr_groups), **{source:sum(source in e['rr_sources'] for e in rr_groups) for source in ('auto', 'manual')}}
     subtypes=Counter(e['subtype'] for e in events if e['category']==(('AF' if code in ('A','M','C','H') else code) if occurrences else category) and (samples is None or any(s in samples for s in e['target_samples'])))
     beats=Counter(r['class_code'] for r in index['rows'])
     confirmed={key:[e for e in events if e['category']==key and not e['pattern_only'] and e['diagnosis_status']=='confirmed' and (key not in ('fastest','slowest') or fast=='BOTH' or e['subtype']==fast)] for key,_ in CATEGORIES}
     confirmed_counts={key:len(rows) for key,rows in confirmed.items()}
     confirmed_beats={key:len({s for e in rows for s in e['target_samples']}) for key,rows in confirmed.items()}
+    confirmed_ids = {e['event_id'] for e in events if e['diagnosis_status'] == 'confirmed'}
+    confirmed_rr = [e for e in rr_groups if confirmed_ids.intersection(e['rr_alias_event_ids'])]
+    confirmed_counts['rr_interval'] = len(confirmed_rr)
+    confirmed_beats['rr_interval'] = len({sample for e in confirmed_rr for sample in e['target_samples']})
     time_of=(lambda r:r['sample_index']/200) if raw_occurrences else (lambda e:e['time_s'])
     time_counts=Counter(int(time_of(e)//3600) for e in items)
     time_bins,bounds=event_time_bins(index,items,params,time_of);unfiltered_total=len(items)
@@ -309,7 +325,7 @@ def query_index(index,params,occurrences=False):
         focus = dict(focus_index=target)
     page=items[offset:offset+limit]
     if raw_occurrences:page=[occurrence_item(r,index,code,template) for r in page]
-    return dict(**focus,candidate_spacing_s=spacing,candidate_unspaced_total=unspaced_total,candidate_hidden_count=unspaced_total-len(items),time_bins=time_bins,time_filter=bounds,unfiltered_total=unfiltered_total,pause_counts=pause_counts,pause_distribution=pause_distribution,pause_band=pause_band,sort_order=sort_order,candidate_limit=EXTREME_CANDIDATE_LIMIT if rate_candidates else None,confirmed_category_counts=confirmed_counts,confirmed_beat_counts=confirmed_beats,time_counts=dict(time_counts),items=page,total=len(items),offset=offset,limit=limit,category_counts=counts,subtype_counts=dict(subtypes),beat_counts=dict(beats),basis_versions=index['basis_versions'],data_version=index['data_version'])
+    return dict(**focus,rr_source=rr_source,rr_source_counts=rr_source_counts,candidate_spacing_s=spacing,candidate_unspaced_total=unspaced_total,candidate_hidden_count=unspaced_total-len(items),time_bins=time_bins,time_filter=bounds,unfiltered_total=unfiltered_total,pause_counts=pause_counts,pause_distribution=pause_distribution,pause_band=pause_band,sort_order=sort_order,candidate_limit=EXTREME_CANDIDATE_LIMIT if rate_candidates else None,confirmed_category_counts=confirmed_counts,confirmed_beat_counts=confirmed_beats,time_counts=dict(time_counts),items=page,total=len(items),offset=offset,limit=limit,category_counts=counts,subtype_counts=dict(subtypes),beat_counts=dict(beats),basis_versions=index['basis_versions'],data_version=index['data_version'])
 
 def hrv_windows(feed,start_time,window=0):
     """NN intervals must lie wholly inside a statistical window; gaps break differences."""
@@ -355,7 +371,7 @@ def normalize_selection(raw):
         result['selected_events'].append({**{k:entry.get(k,'') for k in ('event_id','basis_version','caption')}, **strip_settings(entry), **strip_curation(entry)})
     result['strip_defaults'] = strip_settings(raw.get('strip_defaults'))
     reviews=raw.get('category_reviews',{})
-    if not isinstance(reviews,dict) or any(k not in dict(CATEGORIES) or not isinstance(v,str) or len(v)>100 for k,v in reviews.items()):raise ValueError('无效分类筛选状态')
+    if not isinstance(reviews,dict) or any(k not in {**dict(CATEGORIES), 'rr_interval':'RR 间期'} or not isinstance(v,str) or len(v)>100 for k,v in reviews.items()):raise ValueError('无效分类筛选状态')
     result['category_reviews']=dict(reviews)
     blocks=raw.get('diagnosis_blocks',[])
     if not isinstance(blocks,list) or len(blocks)>100:raise ValueError('无效诊断文字块')
@@ -369,8 +385,10 @@ def normalize_selection(raw):
 def validate_report(index,composition,review,approving=False):
     from .report_curation import strip_curation
     from .report_evidence import evidence_confirmed, assert_caption, used_in_output
+    from .rr_report import deduplicate_rr_selections
+    entries, _ = deduplicate_rr_selections(index, composition.get('selected_events', []))
     lookup={e['event_id']:e for e in index['events']};selected=[]
-    for number, entry in enumerate(composition.get('selected_events',[]), 1):
+    for number, entry in enumerate(entries, 1):
         e=lookup.get(entry['event_id'])
         used=used_in_output(composition, entry, e)
         if entry['event_id'].startswith('other:X:') or (e and e.get('category')=='other' and e.get('subtype')=='X'):

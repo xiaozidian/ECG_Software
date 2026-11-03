@@ -34,7 +34,7 @@
       start=Math.max(0,Math.min(start,pauseStartSample/200-.2));end=Math.min(total,Math.max(end,anchor+.3));
     }
     const manual='range_start_s' in spec;
-    if(manual){start=spec.range_start_s;end=spec.range_end_s;if(end>total||!(start<=anchor&&anchor<end))throw Error('人工区间须在记录范围内，并包含当前事件定位心搏');if(pauseStartSample!==null&&Math.round(start*200)>pauseStartSample)throw Error('RR 候选入图须包含完整间期的两个 R 峰（原始计时点）');if(times.filter(t=>t>=start&&t<end).length<Math.min(5,times.length))throw Error('人工入报区间至少包含 5 个可用心搏，请向外拖动橘色边界')}
+    if(manual){start=spec.range_start_s;end=spec.range_end_s;if(end>total||!(event.category==='AF'?start<event.end_s&&end>event.start_sample/200:start<=anchor&&anchor<end))throw Error(event.category==='AF'?'人工区间须在记录范围内，并与当前房颤／房扑片段相交':'人工区间须在记录范围内，并包含当前事件定位心搏');if(pauseStartSample!==null&&Math.round(start*200)>pauseStartSample)throw Error('RR 候选入图须包含完整间期的两个 R 峰（原始计时点）');if(times.filter(t=>t>=start&&t<end).length<Math.min(5,times.length))throw Error('人工入报区间至少包含 5 个可用心搏，请向外拖动橘色边界')}
     if(!manual&&times.filter(t=>t>=start&&t<end).length<5&&times.length){
       const n=Math.min(5,times.length),found=times.findIndex(t=>t>=anchor),pivot=found<0?times.length-1:found,candidates=[];
       for(let i=Math.max(0,pivot-n);i<Math.min(pivot+1,times.length-n+1);i++){
@@ -47,7 +47,7 @@
     let warning=visible.length<5?`记录可用心搏不足 5 个，当前仅 ${visible.length} 搏`:'';
     if(!manual&&actual>spec.duration_s+.01)warning=`为${event.category==='pause'?'覆盖完整 RR 间期并包含至少 5 搏':'包含至少 5 搏'}，已由 ${spec.duration_s} 秒延长至 ${actual} 秒`+(warning?`；${warning}`:'');
     return {...spec,start_s:start,end_s:end,actual_duration_s:actual,visible_beats:visible,visible_beat_count:visible.length,warning,
-      context_start_s:Math.max(0,Math.min(anchor-Math.max(30,actual*3)/2,total-Math.min(total,Math.max(30,actual*3)))),context_duration_s:Math.min(total,Math.max(30,actual*3))};
+      context_start_s:Math.max(0,Math.min((manual&&event.category==='AF'?(start+end)/2:anchor)-Math.max(30,actual*3)/2,total-Math.min(total,Math.max(30,actual*3)))),context_duration_s:Math.min(total,Math.max(30,actual*3))};
   }
   function statistics(index,startTime,opts,pauseEdges=null){
     const rows=beatRows(index),parsed=Date.parse(String(startTime).replace(' ','T').slice(0,19)+'Z'),clock=Number.isFinite(parsed)?parsed:null,round=x=>Math.round(x*100)/100;
