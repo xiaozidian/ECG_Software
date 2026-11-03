@@ -27,10 +27,21 @@ def documents(case, report, keys):
             stats=f"合格室早 {number(r.get('eligible_pvc'))}；TO {number(r.get('to_pct'))} %；TS {number(r.get('ts_ms_per_rr'))} ms/RR" if key=='hrt' else f"减速锚点 {number(r.get('anchor_count'))}；DC {number(r.get('dc_ms'))} ms"
             add(key,[r.get('method','无可用数据'),stats,'— 表示样本不足或无可用结果，不代表正常。'],[dict(title='平均恢复 RR · ms / 序号' if key=='hrt' else 'PRSA · RR ms / 相对锚点',points=r.get('tachogram' if key=='hrt' else 'prsa',[]))])
         if key in ('st_trend','t_trend'):
-            leads=list(e.get('st_trends',{}).items())
-            if not leads:add(key,['当前没有可用的 ST-T 研究性测量数据；不能解释为正常。'])
-            for i in range(0,len(leads),3):add(key,['设备单位，非 mV；未校准的研究性趋势，空缺不补线，不生成缺血或复极诊断。'],[dict(title=lead+' · '+PAGE_TITLES[key]+' / 相对小时',points=[dict(x=p['time_s']/3600,y=p.get('deviation_units' if key=='st_trend' else 't_amplitude_units')) for p in points]) for lead,points in leads[i:i+3]])
-        if key=='st_events':add(key,[e.get('st_evaluation',{}).get('label','未评估')+'：'+e.get('st_evaluation',{}).get('note','未提供可核实的评估状态；不能解释为正常。'),'ST-T 研究性候选清单，未确认诊断；幅度为设备单位，非 mV。'],rows=[f"{clock(meta,r.get('start_s',0))} · {r.get('type',r.get('label','ST-T 候选'))} · {'/'.join(r.get('leads',[]))} · {number(r.get('duration_s'))} 秒 · 偏移 {number(r.get('peak_deviation_units'))}" for r in e.get('st_events',[])])
+            from .stt import LEADS
+            leads=[(lead,e.get('st_trends',{}).get(lead,[])) for lead in LEADS]
+            field='deviation_units' if key=='st_trend' else 't_amplitude_units'
+            for i in range(0,len(leads),3):
+                part=leads[i:i+3]
+                add(key,['设备单位 u，非 mV；逐分钟完整证据，缺失及质量不合格处断线。'],
+                    [dict(title=lead+' · '+PAGE_TITLES[key]+' / 相对小时',points=[dict(x=p['time_s']/3600,y=None if p.get('eligible') is False or p.get('axis_shift_suspected') else p.get(field)) for p in points]) for lead,points in part],
+                    [f"{lead}：有效分钟 {sum(isinstance(p.get(field),(int,float)) and p.get('eligible') is not False and not p.get('axis_shift_suspected') for p in points)} / {len(points)}；空缺不表示正常。" for lead,points in part])
+        if key=='st_events':
+            selected={p['event_id']:p for p in report.get('composition',{}).get('selected_events',[])}
+            events=[r for r in e.get('st_events',[]) if selected.get(r['event_id'],{}).get('basis_version')==r['basis_version']]
+            rows=[f"{clock(meta,r['start_s'])} — {clock(meta,r['end_s'])} · {r.get('label','ST 事件')} · {'/'.join(r['leads']) or '复核导联见图条'} · {r['duration_s']/60:.2f} 分钟（{number(r['duration_s'])} 秒） · 峰值 {number(r.get('peak_deviation_units'))} u · 医生已复核" for r in events]
+            add(key,['已复核且入选的 ST 事件；完整起止独立于代表波形图条。幅度为设备单位 u，非 mV。'],rows=rows or ['当前没有已复核并入选的持续 ST 事件；不表示正常或已排除。'])
+            notes=[r for r in e.get('st_review_notes',[]) if selected.get(r['event_id'],{}).get('basis_version')==r['basis_version']]
+            if notes:add(key,['点复核与范围统计（未提供持续事件证据）'],rows=[f"{clock(meta,r['start_s'])} — {clock(meta,r['end_s'])} · {r['label']} · {'范围均值' if r['review_kind']=='range_mean' else '点复核 / 旧范围标注'}；此范围不证明连续 ST 事件，原图条与文字保留。" for r in notes])
         if key in ('hrv_time','hrv_frequency'):
             if not d:raise ValueError('HRV 数据尚未加载')
             periods=[d['periods'][k] for k in ('full','day','night')];rows=[]

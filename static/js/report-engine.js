@@ -2,6 +2,9 @@
 /* Paper data contract, kept in parity with ecg_core/report_layout.py. */
 (()=>{
   const leads=['I','II','III','aVR','aVL','aVF','V1','V2','V3','V4','V5','V6'],defaults=['II','V1','V5'];
+  const stripKey=selection=>selection?.strip_id||selection?.event_id;
+  function stripIdentity(raw={}){const result={};if(raw.strip_id!==undefined){if(typeof raw.strip_id!=='string'||!raw.strip_id||raw.strip_id.length>100)throw Error('无效图条标识');result.strip_id=raw.strip_id;}if(raw.representative_role!==undefined){if(!['start','middle','end','custom'].includes(raw.representative_role))throw Error('无效代表图条位置');result.representative_role=raw.representative_role;}return result;}
+  function settingsForEvent(event,raw={}){return settings({...raw,leads:raw.leads??(['fastest','slowest','pause','rr_candidate','rr_interval'].includes(event?.category)?defaults:leads)});}
   function reviewNote(entry){
     if(entry.category!=='AF')return '';
     const name=entry.subtype==='AFL'?'房扑':'房颤';
@@ -24,7 +27,8 @@
   }
   const beatRows=index=>index.rows.filter(r=>!['X','O','Y','T'].includes(r.class_code)&&r.sample_index>=0&&r.sample_index<index.duration_s*200).sort((a,b)=>a.sample_index-b.sample_index);
   function resolve(index,event,raw={}){
-    const spec=settings(raw),total=Math.max(.005,index.duration_s),anchor=Math.min(Math.max(0,event.start_sample/200),total),length=Math.min(total,spec.duration_s),rows=beatRows(index),times=rows.map(r=>r.sample_index/200);
+    const spec=settings(raw),total=Math.max(.005,index.duration_s),length=Math.min(total,spec.duration_s),rows=beatRows(index),times=rows.map(r=>r.sample_index/200);let anchor=Math.min(Math.max(0,event.start_sample/200),total);
+    if(event.category==='ST'&&event.stt_event_evidence&&typeof event.stt_event_evidence==='object')anchor=Math.min(Math.max(0,event.stt_event_evidence.peak_time_s??anchor),total);
     let start=Math.max(0,Math.min(anchor-length/2,total-length)),end=start+length;
     let pauseStartSample=null;
     if(['pause','rr_candidate'].includes(event.category)){
@@ -34,7 +38,7 @@
       start=Math.max(0,Math.min(start,pauseStartSample/200-.2));end=Math.min(total,Math.max(end,anchor+.3));
     }
     const manual='range_start_s' in spec;
-    if(manual){start=spec.range_start_s;end=spec.range_end_s;if(end>total||!(event.category==='AF'?start<event.end_s&&end>event.start_sample/200:start<=anchor&&anchor<end))throw Error(event.category==='AF'?'人工区间须在记录范围内，并与当前房颤／房扑片段相交':'人工区间须在记录范围内，并包含当前事件定位心搏');if(pauseStartSample!==null&&Math.round(start*200)>pauseStartSample)throw Error('RR 候选入图须包含完整间期的两个 R 峰（原始计时点）');if(times.filter(t=>t>=start&&t<end).length<Math.min(5,times.length))throw Error('人工入报区间至少包含 5 个可用心搏，请向外拖动橘色边界')}
+    if(manual){start=spec.range_start_s;end=spec.range_end_s;if(end>total)throw Error('人工区间须在记录范围内，并包含当前事件定位心搏');if(['AF','ST'].includes(event.category)){if(!(start<(event.end_s??(event.end_sample??event.start_sample)/200)&&end>event.start_sample/200))throw Error('代表图条须与当前房颤／房扑或 ST 事件片段相交');}else if(!(start<=anchor&&anchor<end))throw Error('人工区间须在记录范围内，并包含当前事件定位心搏');if(pauseStartSample!==null&&Math.round(start*200)>pauseStartSample)throw Error('RR 候选入图须包含完整间期的两个 R 峰（原始计时点）');if(times.filter(t=>t>=start&&t<end).length<Math.min(5,times.length))throw Error('人工入报区间至少包含 5 个可用心搏，请向外拖动橘色边界')}
     if(!manual&&times.filter(t=>t>=start&&t<end).length<5&&times.length){
       const n=Math.min(5,times.length),found=times.findIndex(t=>t>=anchor),pivot=found<0?times.length-1:found,candidates=[];
       for(let i=Math.max(0,pivot-n);i<Math.min(pivot+1,times.length-n+1);i++){
@@ -47,7 +51,17 @@
     let warning=visible.length<5?`记录可用心搏不足 5 个，当前仅 ${visible.length} 搏`:'';
     if(!manual&&actual>spec.duration_s+.01)warning=`为${event.category==='pause'?'覆盖完整 RR 间期并包含至少 5 搏':'包含至少 5 搏'}，已由 ${spec.duration_s} 秒延长至 ${actual} 秒`+(warning?`；${warning}`:'');
     return {...spec,start_s:start,end_s:end,actual_duration_s:actual,visible_beats:visible,visible_beat_count:visible.length,warning,
-      context_start_s:Math.max(0,Math.min((manual&&event.category==='AF'?(start+end)/2:anchor)-Math.max(30,actual*3)/2,total-Math.min(total,Math.max(30,actual*3)))),context_duration_s:Math.min(total,Math.max(30,actual*3))};
+      context_start_s:Math.max(0,Math.min((manual&&['AF','ST'].includes(event.category)?(start+end)/2:anchor)-Math.max(30,actual*3)/2,total-Math.min(total,Math.max(30,actual*3)))),context_duration_s:Math.min(total,Math.max(30,actual*3))};
+  }
+  function afRepresentatives(index,event,raw={}){
+    if(event?.category!=='AF'||!Number.isFinite(event.end_s)||event.end_s<=event.start_sample/200)throw Error('找不到有效房颤／房扑片段');
+    const spec=settingsForEvent(event,raw),a=event.start_sample/200,b=event.end_s,L=spec.duration_s,positions={},roles=['start','middle','end'];delete spec.range_start_s;delete spec.range_end_s;
+    const anchors=b-a<=L?{start:(a+b)/2,middle:(a+b)/2,end:(a+b)/2}:{start:a+L/2,middle:(a+b)/2,end:b-L/2};
+    for(const role of roles){const resolved=resolve(index,{...event,start_sample:Math.floor(anchors[role]*200+.5)},spec),selectable=resolved.visible_beat_count>=5&&resolved.actual_duration_s<=120;positions[role]={representative_role:role,start_s:resolved.start_s,end_s:resolved.end_s,duration_s:resolved.actual_duration_s,visible_beat_count:resolved.visible_beat_count,warning:resolved.actual_duration_s>120?'包含 5 搏所需范围超过 120 秒，请人工回看后选择可用图条':resolved.warning,selectable};}
+    const equal=(x,y)=>Math.round(x.start_s*200)===Math.round(y.start_s*200)&&Math.round(x.end_s*200)===Math.round(y.end_s*200),covers=(x,lo,hi)=>x.start_s<=lo+1e-8&&x.end_s>=hi-1e-8;
+    const whole=['middle','start','end'].map(role=>positions[role]).find(p=>p.selectable&&covers(p,a,b));let items;
+    if(whole)items=[whole];else{items=['start','end'].map(role=>positions[role]).filter(p=>p.selectable).filter((p,i,list)=>!list.slice(0,i).some(q=>equal(p,q)));const middle=positions.middle;let covered=middle.start_s;for(const p of [...items].sort((x,y)=>x.start_s-y.start_s)){if(p.start_s>covered+1e-8)break;covered=Math.max(covered,p.end_s);}if(middle.selectable&&covered<middle.end_s-1e-8&&!items.some(p=>equal(p,middle)))items.push(middle);items.sort((x,y)=>roles.indexOf(x.representative_role)-roles.indexOf(y.representative_role));}
+    return {items,positions,requested_duration_s:L,episode_start_s:a,episode_end_s:b,units:'seconds',minimum_visible_beats:5};
   }
   function statistics(index,startTime,opts,pauseEdges=null){
     const rows=beatRows(index),parsed=Date.parse(String(startTime).replace(' ','T').slice(0,19)+'Z'),clock=Number.isFinite(parsed)?parsed:null,round=x=>Math.round(x*100)/100;
@@ -69,5 +83,5 @@
     const pause_distribution=quality.rrDistribution(index.rows,index.duration_s,pauseEdges);pause_distribution.bins.forEach(b=>delete b.samples);
     return {pause_distribution,summary:aggregate(0,index.duration_s),hourly,settings:opts,method:'当前修订逐搏统计；心率由有效 RR 计算。成对、短阵和联律按起点计次，模式可重叠，不与总心搏相加；长 RR 为阈值候选，房颤/房扑仅计医生已确认片段。'};
   }
-  const api={leads,defaults,reviewNote,intervalPairs,settings,resolve,statistics};globalThis.ECGReportEngine=api;if(typeof module!=='undefined')module.exports=api;
+  const api={leads,defaults,stripKey,stripIdentity,settingsForEvent,reviewNote,intervalPairs,settings,resolve,afRepresentatives,statistics};globalThis.ECGReportEngine=api;if(typeof module!=='undefined')module.exports=api;
 })();

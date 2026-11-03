@@ -5,7 +5,7 @@ addressable, so an already selected automatic event keeps its own review proof.
 """
 from __future__ import annotations
 
-from .report_layout import valid_rr_pairs
+from .report_layout import valid_rr_pairs, resolve_strip
 
 RR_CATEGORIES = ('pause', 'rr_candidate')
 
@@ -54,15 +54,22 @@ def deduplicate_rr_selections(index, entries):
     and approval checks. A GET may project this result, but never writes it back.
     """
     lookup = {e['event_id']: e for e in index['events']}
-    if not any(lookup.get(entry.get('event_id'), {}).get('category') in RR_CATEGORIES for entry in entries):
-        return list(entries), []
-    groups = rr_alias_groups(index)
+    groups = rr_alias_groups(index) if any(lookup.get(entry.get('event_id'), {}).get('category') in RR_CATEGORIES for entry in entries) else {}
     seen, result, merged = set(), [], []
     for entry in entries:
         event = lookup.get(entry.get('event_id'))
         group = groups.get(entry.get('event_id'))
         current = event and event['basis_version'] == entry.get('basis_version')
         key = group['rr_semantic_key'] if group and current else None
+        if current and event.get('category') == 'AF':
+            try:
+                spec = resolve_strip(index,event,entry)
+                key = ('af-strip',event['event_id'],event['basis_version'],round(spec['start_s']*200),round(spec['end_s']*200))
+            except ValueError:
+                # Invalid/stale geometry stays visible for existing recovery.
+                key = None
+        elif event and event.get('category') != 'AF' and not key:
+            key = ('event',event['event_id'])
         if key and key in seen:
             merged.append(entry['event_id'])
             continue

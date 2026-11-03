@@ -23,7 +23,7 @@ import numpy as np
 from .config import CHANNEL_COUNT, SAMPLE_RATE
 from .source_identity import require_waveform_file, source_read
 
-ALGORITHM_VERSION = "stt-screening-0.1.1"
+ALGORITHM_VERSION = "stt-screening-0.2.0-continuous"
 LEADS = ("I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6")
 _FRAME = struct.Struct("<8h")
 _CACHE: OrderedDict[tuple, dict] = OrderedDict()
@@ -226,79 +226,114 @@ def _rolling_reference(values: list[dict], key: str, radius: int) -> list[float 
     return result
 
 
+def _support(point, config):
+    half = config["block_seconds"] / 2
+    return float(point.get("start_s", point.get("time_s", half)-half)), float(point.get("end_s", point.get("time_s", half)+half))
+
+
 def _lead_episodes(points: list[dict], lead: str, config: dict) -> list[dict]:
-    episodes, block_s = [], config["block_seconds"]
-    exit_blocks = max(1, math.ceil(config["exit_confirmation_s"] / block_s))
-    for direction, kind, label in ((-1, "st_depression", "ST 段压低候选"), (1, "st_elevation", "ST 段抬高候选")):
-        active, below = None, 0
-        for point in points + [{"eligible": False, "deviation_units": 0.0}]:
-            value = direction * float(point.get("deviation_units") or 0.0)
-            qualifies = point.get("eligible") and not point.get("axis_shift_suspected") and value >= config["entry_threshold_units"]
-            if active is None and qualifies:
-                active, below = [point], 0
-            elif active is not None and qualifies:
-                active.append(point); below = 0
-            elif active is not None:
-                below += 1
-                if below >= exit_blocks or not point.get("eligible"):
-                    strong_s = sum(block_s for row in active if direction * row["deviation_units"] >= config["target_threshold_units"])
-                    start_s, end_s = active[0]["time_s"] - block_s / 2, active[-1]["time_s"] + block_s / 2
-                    peak = max(active, key=lambda row: direction * row["deviation_units"])
-                    if strong_s >= config["minimum_target_duration_s"] and end_s - start_s >= config["minimum_target_duration_s"]:
-                        episodes.append({
-                            "kind": kind, "label": label, "start_s": max(0.0, round(start_s, 1)),
-                            "end_s": round(end_s, 1), "duration_s": round(end_s - start_s, 1),
-                            "peak_time_s": round(peak["time_s"], 1),
-                            "peak_deviation_units": round(peak["deviation_units"], 1), "leads": [lead],
-                            "quality_score": round(_median(row["quality_score"] for row in active), 3),
-                            "axis_shift_suspected": False, "review_status": "pending", "diagnosis": None,
-                        })
-                    active, below = None, 0
+    """Per-lead hysteresis with a *continuous* target run, never gap repair."""
+    episodes = []
+    for direction, kind, label in ((-1,"st_depression","ST 段压低候选"),(1,"st_elevation","ST 段抬高候选")):
+        active, below_s, strong_run, longest_run, last_end = [], 0., 0., 0., None
+        def finish():
+            if not active or longest_run + 1e-9 < config['minimum_target_duration_s']: return
+            start, end = _support(active[0],config)[0], _support(active[-1],config)[1]
+            if end-start + 1e-9 < config['minimum_target_duration_s']: return
+            peak=max(active,key=lambda row:direction*row['deviation_units'])
+            episodes.append(dict(kind=kind,label=label,start_s=round(start,3),end_s=round(end,3),
+                duration_s=round(end-start,3),continuous_target_s=round(longest_run,3),
+                peak_time_s=round(peak['time_s'],3),peak_deviation_units=round(peak['deviation_units'],1),
+                leads=[lead],lead=lead,quality_score=round(_median(row['quality_score'] for row in active),3),
+                support_intervals=[dict(start_s=_support(row,config)[0],end_s=_support(row,config)[1]) for row in active],
+                axis_shift_suspected=False,review_status='pending',diagnosis=None))
+        for point in points:
+            start,end=_support(point,config)
+            value=point.get('deviation_units')
+            valid=(point.get('eligible') and not point.get('axis_shift_suspected')
+                   and isinstance(value,(int,float)) and math.isfinite(value) and end>start)
+            contiguous=last_end is None or abs(start-last_end)<1e-7
+            if not valid or not contiguous:
+                finish();active=[];below_s=strong_run=longest_run=0.
+            last_end=end
+            if not valid: continue
+            value=direction*value
+            if value>=config['entry_threshold_units']:
+                active.append(point);below_s=0.
+                strong_run=strong_run+(end-start) if value>=config['target_threshold_units'] else 0.
+                longest_run=max(longest_run,strong_run)
+            elif active:
+                strong_run=0.;below_s+=end-start
+                if below_s+1e-9>=config['exit_confirmation_s']:
+                    finish();active=[];below_s=strong_run=longest_run=0.
+        finish()
     return episodes
 
 
 def _t_episodes(points: list[dict], lead: str, config: dict) -> list[dict]:
-    minimum, block_s, run, result = config["t_inversion_minimum_units"], config["block_seconds"], [], []
-    for point in points + [{"eligible": False}]:
-        value, reference = point.get("t_amplitude_units"), point.get("t_reference_units")
-        inverted = (
-            point.get("eligible") and not point.get("axis_shift_suspected")
-            and value is not None and reference is not None
-            and abs(value) >= minimum and abs(reference) >= minimum and value * reference < 0
-        )
-        if inverted:
-            run.append(point); continue
-        if len(run) * block_s >= config["minimum_target_duration_s"]:
-            start_s, end_s = run[0]["time_s"] - block_s / 2, run[-1]["time_s"] + block_s / 2
-            peak = max(run, key=lambda row: abs(row["t_amplitude_units"] - row["t_reference_units"]))
-            result.append({
-                "kind": "t_wave_inversion", "label": "T 波极性反转候选",
-                "start_s": max(0.0, round(start_s, 1)), "end_s": round(end_s, 1),
-                "duration_s": round(end_s - start_s, 1), "peak_time_s": round(peak["time_s"], 1),
-                "peak_deviation_units": round(peak["t_amplitude_units"] - peak["t_reference_units"], 1),
-                "leads": [lead], "quality_score": round(_median(row["quality_score"] for row in run), 3),
-                "axis_shift_suspected": False, "review_status": "pending", "diagnosis": None,
-            })
-        run = []
+    minimum, run, result, last_end = config['t_inversion_minimum_units'], [], [], None
+    def finish():
+        if not run: return
+        start,end=_support(run[0],config)[0],_support(run[-1],config)[1]
+        if end-start+1e-9 < config['minimum_target_duration_s']: return
+        peak=max(run,key=lambda row:abs(row['t_amplitude_units']-row['t_reference_units']))
+        result.append(dict(kind='t_wave_inversion',label='T 波极性反转候选',start_s=round(start,3),end_s=round(end,3),
+            duration_s=round(end-start,3),continuous_target_s=round(end-start,3),peak_time_s=round(peak['time_s'],3),
+            peak_deviation_units=round(peak['t_amplitude_units']-peak['t_reference_units'],1),leads=[lead],lead=lead,
+            quality_score=round(_median(row['quality_score'] for row in run),3),axis_shift_suspected=False,review_status='pending',diagnosis=None))
+    for point in points:
+        start,end=_support(point,config);value,reference=point.get('t_amplitude_units'),point.get('t_reference_units')
+        inverted=(point.get('eligible') and not point.get('axis_shift_suspected')
+            and isinstance(value,(int,float)) and isinstance(reference,(int,float))
+            and math.isfinite(value) and math.isfinite(reference)
+            and abs(value)>=minimum and abs(reference)>=minimum and value*reference<0)
+        if last_end is not None and abs(start-last_end)>1e-7:finish();run=[]
+        if inverted:run.append(point)
+        else:finish();run=[]
+        last_end=end
+    finish()
     return result
 
 
 def _merge_episodes(items: list[dict]) -> list[dict]:
-    merged = []
-    for item in sorted(items, key=lambda row: (row["kind"], row["start_s"])):
-        target = next((row for row in reversed(merged) if row["kind"] == item["kind"] and item["start_s"] <= row["end_s"] + 30), None)
-        if target is None:
-            merged.append(copy.deepcopy(item)); continue
-        target["start_s"], target["end_s"] = min(target["start_s"], item["start_s"]), max(target["end_s"], item["end_s"])
-        target["duration_s"] = round(target["end_s"] - target["start_s"], 1)
-        target["leads"] = sorted(set(target["leads"] + item["leads"]), key=LEADS.index)
-        if abs(item["peak_deviation_units"]) > abs(target["peak_deviation_units"]):
-            target["peak_deviation_units"], target["peak_time_s"] = item["peak_deviation_units"], item["peak_time_s"]
-        target["quality_score"] = round(min(target["quality_score"], item["quality_score"]), 3)
-    merged.sort(key=lambda row: row["start_s"])
-    for index, item in enumerate(merged, 1):
-        item["id"], item["lead_count"] = f"auto-stt-{index}", len(item["leads"])
-    return merged
+    # Never flatten support from another lead or across an unavailable interval.
+    result=sorted(copy.deepcopy(items),key=lambda row:(row['start_s'],row['kind'],LEADS.index(row['leads'][0])))
+    for index,item in enumerate(result,1):
+        item['id'],item['lead_count']=f'auto-stt-{index}',1
+    return result
+
+
+def minute_trends(points, duration_s, config):
+    """Duration-weighted complete minute evidence before any display reduction.
+
+    Partial means are retained separately, but the plotted value is null if any
+    part of the minute is unavailable. A zero remains an actual observed zero.
+    """
+    result=[];cursor=0
+    for start in range(0,math.ceil(duration_s),60):
+        end=min(duration_s,start+60);covered=0.;sums={'deviation_units':0.,'t_amplitude_units':0.};reasons=set();quality=[]
+        while cursor<len(points) and _support(points[cursor],config)[1]<=start:cursor+=1
+        j=cursor
+        while j<len(points) and _support(points[j],config)[0]<end:
+            point=points[j];a,b=_support(point,config);overlap=max(0.,min(end,b)-max(start,a))
+            valid=point.get('eligible') and not point.get('axis_shift_suspected') and all(isinstance(point.get(k),(int,float)) and math.isfinite(point[k]) for k in sums)
+            if valid:
+                covered+=overlap
+                for key in sums:sums[key]+=point[key]*overlap
+                quality.append(point.get('quality_score',0))
+            elif overlap:
+                reasons.add('axis_shift' if point.get('axis_shift_suspected') else 'quality_or_missing')
+            j+=1
+        if covered+1e-7<end-start:reasons.add('incomplete_support')
+        complete=covered+1e-7>=end-start and not reasons
+        row=dict(start_s=float(start),end_s=end,time_s=(start+end)/2,duration_s=end-start,
+            eligible=complete,valid_duration_s=round(covered,3),coverage_pct=round(covered/(end-start)*100,2),
+            quality_score=round(_median(quality),3),quality_reasons=sorted(reasons),axis_shift_suspected='axis_shift' in reasons)
+        for key,value in sums.items():
+            mean=round(value/covered,2) if covered else None
+            row[key]=mean if complete else None;row['partial_'+key]=mean
+        result.append(row)
+    return result
 
 
 @source_read
@@ -333,15 +368,17 @@ def analyze_stt(waveform_path: str | Path, records, duration_s: float | None = N
                     usable.append(row)
             selected = _evenly(usable, settings["maximum_beats_per_block"])
             all_count = len([row for row in rows if row[1] != 34])
-            time_s = round(min(duration, (block_index + 0.5) * settings["block_seconds"]), 1)
+            block_start=block_index*settings["block_seconds"]
+            block_end=min(duration,block_start+settings["block_seconds"])
+            time_s = (block_start+block_end)/2
             if len(selected) < settings["minimum_normal_beats"]:
-                blocks.append({"time_s": time_s, "eligible": False, "quality_score": 0.0,
+                blocks.append({"time_s": time_s, "start_s":block_start,"end_s":block_end,"eligible": False, "quality_score": 0.0,
                                "normal_beat_count": len(usable), "measurement_beat_count": len(selected),
                                "normal_beat_ratio": round(len(usable) / max(1, all_count), 3),
                                "j_offset_ms": None, "landmark_confidence": 0.0, "leads": {}})
                 continue
             measured = _block_measurement(buffer, selected, all_count, total_samples, settings, normal_count=len(usable))
-            measured["time_s"] = time_s; blocks.append(measured)
+            measured.update(time_s=time_s,start_s=block_start,end_s=block_end); blocks.append(measured)
 
     radius = max(1, round(settings["reference_window_minutes"] * 60 / settings["block_seconds"] / 2))
     lead_points, episodes = {}, []
@@ -350,7 +387,7 @@ def analyze_stt(waveform_path: str | Path, records, duration_s: float | None = N
         for block in blocks:
             measure = block["leads"].get(lead, {})
             points.append({
-                "time_s": block["time_s"], "eligible": block["eligible"], "quality_score": block["quality_score"],
+                "time_s": block["time_s"], "start_s":block["start_s"],"end_s":block["end_s"], "eligible": block["eligible"], "quality_score": block["quality_score"],
                 "j_offset_ms": block["j_offset_ms"], "landmark_confidence": block["landmark_confidence"],
                 "st_level_units": measure.get("st_level_units"), "t_amplitude_units": measure.get("t_amplitude_units"),
                 "qrs_amplitude_units": measure.get("qrs_amplitude_units"),
@@ -365,13 +402,7 @@ def analyze_stt(waveform_path: str | Path, records, duration_s: float | None = N
             point["qrs_change_fraction"] = round(qrs_change, 3) if qrs_change is not None else None
             point["axis_shift_suspected"] = bool(qrs_change is not None and qrs_change >= settings["axis_shift_qrs_fraction"])
         episodes.extend(_lead_episodes(points, lead, settings)); episodes.extend(_t_episodes(points, lead, settings))
-        stride = max(1, math.ceil(len(points) / settings["maximum_trend_points_per_lead"]))
-        lead_points[lead] = [
-            {"time_s": point["time_s"], "deviation_units": point["deviation_units"], "t_amplitude_units": point["t_amplitude_units"],
-             "eligible": point["eligible"], "quality_score": point["quality_score"],
-             "axis_shift_suspected": point["axis_shift_suspected"]}
-            for point in points[::stride]
-        ]
+        lead_points[lead] = minute_trends(points,duration,settings)
 
     candidates = _merge_episodes(episodes)
     eligible_blocks = sum(block["eligible"] for block in blocks)
@@ -383,12 +414,12 @@ def analyze_stt(waveform_path: str | Path, records, duration_s: float | None = N
                     "coverage_pct": round(eligible_blocks * 100 / max(1, len(blocks)), 1),
                     "analyzed_duration_s": round(min(duration, len(blocks) * settings["block_seconds"]), 1),
                     "excluded_blocks": len(blocks) - eligible_blocks,
-                    "gate": "normal-beat density + baseline stability + QRS stability + landmark confidence"},
+                    "gate": "normal-beat density + baseline stability + QRS stability; machine J confidence is reported, not a gate"},
         "summary": {"candidate_count": len(candidates),
                     "st_depression_count": sum(item["kind"] == "st_depression" for item in candidates),
                     "st_elevation_count": sum(item["kind"] == "st_elevation" for item in candidates),
                     "t_wave_count": sum(item["kind"] == "t_wave_inversion" for item in candidates)},
-        "candidates": candidates, "trends": {"block_seconds": settings["block_seconds"], "leads": lead_points},
+        "candidates": candidates, "trends": {"block_seconds": 60, "measurement_block_seconds":settings["block_seconds"], "aggregation":"duration_weighted_complete_minute", "leads": lead_points},
     }
     _CACHE[cache_key] = copy.deepcopy(result); _CACHE.move_to_end(cache_key)
     while len(_CACHE) > _CACHE_LIMIT:

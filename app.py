@@ -39,7 +39,7 @@ from ecg_core.hrv_analysis import analyze_hrv, analyze_hrv_review
 from ecg_core.hrv_review import HrvReviewStore
 from ecg_core.rr_review import build_rr_index, query_rr, resolve_rr_target, RRReviewConflict
 from ecg_core.terminology import TerminologyStore, TerminologyConflict
-from ecg_core.report_layout import prepare_strip, report_statistics
+from ecg_core.report_layout import prepare_strip, report_statistics, af_representatives
 from ecg_core.clinical_analysis import build_index, query_index, hrv_windows, validate_report
 from ecg_core.rr_report import deduplicate_rr_selections
 from ecg_core.clinical_query_cache import ClinicalQueryCache, ClinicalQueryBusy, WaveformBeatCache, ClinicalEvidenceCache
@@ -333,6 +333,21 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
                 raise ReportConflict('心搏版本已变化，请重新读取当前图表')
         clinical_read_basis(case, basis)
         return {**basis, 'beat_revision': revision, 'case_id': case['case_id']}
+
+    def linked_query_identity(case):
+        expected = {name:request.args[name] for name in
+            ('case_id','analysis_basis','analysis_revision') if name in request.args}
+        for name in ('beat_revision','revision'):
+            if name in request.args:
+                value=request.args[name]
+                if not value.isascii() or not value.isdecimal():raise ValueError('逐搏修订须为非负整数')
+                expected[name]=int(value)
+        return linked_read_identity(case,expected)
+
+    def strict_query_number(name, default, minimum, maximum):
+        try: value=float(request.args.get(name,default))
+        except (TypeError,ValueError,OverflowError):raise ValueError(f'{name} 必须为有效数字') from None
+        return _coerce_json_number(value,name,minimum,maximum)
 
     def read_evidence(case, variant, build):
         identity = linked_read_identity(case)
@@ -670,6 +685,10 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         index=build_index(feed,templates,storage.list_annotations(case["case_id"]),storage.get_review(case["case_id"]))
         index['start_time']=case['metadata'].get('start_iso') or case['metadata'].get('start_time')
         identity=linked_read_identity(case)
+        for event in index['events']:
+            proof=event.get('stt_event_evidence')
+            if proof and any(proof.get('scope',{}).get(k)!=identity[k] for k in ('case_id','analysis_basis','beat_revision')):
+                event['diagnosis_status']='pending';event['stt_evidence_stale']=True
         index=augment_index(index, storage.list_candidates(case['case_id']), identity)
         return attach_reviews(index, identity, storage.list_report_evidence(case['case_id']))
 
@@ -687,7 +706,7 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
     def evidence_candidates(case_id):
         case=case_or_404(case_id)
         if request.method=='GET':
-            identity=linked_read_identity(case, request.args)
+            identity=linked_query_identity(case)
             items=storage.list_candidates(case_id)
             linked_read_identity(case,identity)
             return jsonify(items=items, report_version=storage.get_report(case_id,'')['version'], **identity)
@@ -903,6 +922,44 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         result = clinical_query_cache.project(key, build_checked, project_strip)
         linked_read_identity(case, identity)
         return jsonify({**result, **basis})
+
+    @app.get('/api/cases/<case_id>/report-af-representatives')
+    def report_af_representatives(case_id):
+        case=case_or_404(case_id)
+        identity=linked_query_identity(case)
+        def project(index):
+            event=next((e for e in index['events'] if e['event_id']==request.args.get('event_id')),None)
+            if not event or event.get('category')!='AF' or ('basis_version' in request.args and request.args['basis_version']!=event['basis_version']):
+                raise ReportConflict('房颤／房扑片段依据已变化，请重新选择')
+            return {**af_representatives(index,event,dict(leads=_waveform_leads_arg(),
+                duration_s=strict_query_number('duration',7,1,120))), 'event_id':event['event_id'],
+                'basis_version':event['basis_version']}
+        result=clinical_projection(case,project)
+        linked_read_identity(case,identity)
+        return jsonify(**result,**identity)
+
+    @app.get('/api/cases/<case_id>/report-strip-preview')
+    def report_strip_preview(case_id):
+        case=case_or_404(case_id)
+        identity=linked_query_identity(case)
+        feed=edited_feed(case)
+        index=dict(rows=feed.beats+feed.markers,duration_s=feed.duration)
+        time=strict_query_number('time_s',request.args.get('time',0),0,max(0,feed.duration-.005))
+        settings=dict(leads=_waveform_leads_arg() if 'leads' in request.args else list(ALL_LEADS),
+            duration_s=strict_query_number('duration',7,1,120))
+        if 'range_start_s' in request.args or 'range_end_s' in request.args:
+            for name in ('range_start_s','range_end_s'):
+                if name not in request.args:raise ValueError('人工区间须同时提供起止时间')
+                settings[name]=strict_query_number(name,0,0,feed.duration)
+        usable=[r for r in index['rows'] if r.get('class_code') not in ('X','O','Y','T')]
+        nearest=min(usable,key=lambda r:abs(r['sample_index']/200-time)) if usable else {}
+        event=dict(event_id='preview-only',category='other',subtype='manual_strip',label='人工波形图条',
+            start_sample=int(math.floor(time*200+.5)),time_s=time,hr=nearest.get('hr'),rr_ms=nearest.get('rr_ms'))
+        result=prepare_strip(index,event,settings,
+            lambda a,b,leads,points:read_event_waveform(case['paths']['data'],a,b,leads,points))
+        check_read_wave(result)
+        linked_read_identity(case,identity)
+        return jsonify(**result,event=event,preview_only=True,**identity)
 
     @app.get("/api/cases/<case_id>/report-statistics")
     def report_statistics_endpoint(case_id):
@@ -1724,6 +1781,24 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
             raise ValueError("结束位置超出记录范围")
         details = payload.get('details') or {}
         statistics = details.get('range_statistics') if isinstance(details, dict) else None
+        candidate_identity = None
+        if isinstance(details,dict) and 'stt_event_evidence' in details:
+            raise ValueError('ST-T 机器事件证据须由当前候选读取并核验，不能由客户端自行填入')
+        if isinstance(details,dict) and 'stt_candidate_id' in details:
+            if details.get('kind')!='ST' or statistics is not None:raise ValueError('自动 ST-T 整段复核与范围均值分别保存')
+            scope=details.get('stt_candidate_scope')
+            if not isinstance(scope,dict) or any(k not in scope for k in ('case_id','analysis_basis','analysis_revision','beat_revision')):
+                raise ValueError('整段 ST-T 复核须提供完整读取依据')
+            candidate_identity=linked_read_identity(case,scope)
+            measured=stt_review(case_id).get_json()
+            candidate=next((r for r in measured.get('automatic_candidates',{}).get('items',[]) if r['id']==details['stt_candidate_id']),None)
+            if not candidate:raise ReportConflict('ST-T 连续事件依据已变化，请重新读取候选')
+            start=round(candidate['start_s']*200);end=round(candidate['end_s']*200)
+            if payload['sample_index']!=start or details.get('end_sample')!=end-1:
+                raise ValueError('整段 ST-T 复核范围须与所选候选完整起止一致')
+            details['stt_event_evidence']={**{key:candidate[key] for key in ('kind','start_s','end_s','duration_s','continuous_target_s','peak_time_s','peak_deviation_units','leads','quality_score')},
+                'candidate_id':candidate['id'],'algorithm_version':measured['analysis']['algorithm_version'],
+                'scope':candidate_identity,'source':'reviewed_automatic_candidate','units':'source_device_units'}
         if statistics is not None:
             if details.get('kind') != 'ST': raise ValueError('ST 区间统计不能用于其他标注类型')
             previous = storage.annotation_submission(case_id, payload)
@@ -1762,6 +1837,10 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
                     raise ReportConflict('已保存统计后还有其他复核修订，请回看标注后重新计算；未重复保存')
             item = storage.create_annotation(case_id, payload, ACTOR, guard=guard,
                                              source_guard=source_guard, replay_guard=replay_guard)
+        elif candidate_identity is not None:
+            def stt_source_guard():
+                if runtime.basis(case)['digest']!=candidate_identity['analysis_basis']:raise ReportConflict('ST-T 原始来源已变化，本次复核未保存')
+            item=storage.create_annotation(case_id,payload,ACTOR,guard=candidate_guard(case,candidate_identity),source_guard=stt_source_guard)
         else:
             item = storage.create_annotation(case_id, payload, ACTOR)
         return jsonify(item), 201

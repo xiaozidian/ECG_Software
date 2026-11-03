@@ -518,6 +518,12 @@ class Storage(ReviewWorkflowMixin, EvidenceCandidateMixin, ReportEvidenceMixin):
             if type(end) is not int or end<sample_index:raise ValueError("结束位置无效")
             original_details = details
             details={"kind":details["kind"],"status":details["status"],"end_sample":end,"finding":str(details.get("finding",label))[:120]}
+            if 'stt_event_evidence' in original_details:
+                proof=original_details['stt_event_evidence']
+                if details['kind']!='ST' or not isinstance(proof,dict) or proof.get('source')!='reviewed_automatic_candidate':raise ValueError('ST-T 整段证据结构无效')
+                encoded=json.dumps(proof,ensure_ascii=False,allow_nan=False)
+                if len(encoded.encode())>16384:raise ValueError('ST-T 整段证据超过上限')
+                details['stt_event_evidence']=json.loads(encoded)
             if 'range_statistics' in original_details:
                 statistics = original_details['range_statistics']
                 if details['kind'] != 'ST' or not isinstance(statistics, dict) or statistics.get('schema_version') != 'stt-range-mean-v1':

@@ -167,6 +167,10 @@ def build_index(feed, templates=(), annotations=(), review=None):
             item['rhythm_episode_id'] = annotation_id[3:] if annotation_id.startswith('af:') else 'source-' + annotation_id
         if d.get('status')!='confirmed':item['diagnosis_status']='pending'
         item['lead']=a.get('lead','全部');item['note']=a.get('note','')
+        if kind == 'ST':
+            item['diagnosis_status']='confirmed' if d.get('status')=='confirmed' else 'pending'
+            item['end_s']=(end+1)/200
+            if isinstance(d.get('stt_event_evidence'),dict):item['stt_event_evidence']=copy.deepcopy(d['stt_event_evidence'])
         if kind == 'ST' and isinstance(d.get('range_statistics'), dict):
             # Saved measurement evidence, separate from the physician's label.
             item['range_statistics'] = copy.deepcopy(d['range_statistics'])
@@ -318,9 +322,13 @@ def query_index(index,params,occurrences=False):
                      resume_exact=target is not None and position(items[target])==sample)
     if params.get('locate_event'):
         if occurrences or selected_ids is not None:raise ValueError('精确定位仅支持报告候选列表')
-        target = next((i for i,e in enumerate(items) if e['event_id']==params['locate_event']),None)
+        target=None;target_basis=None
+        for i,event in enumerate(items):
+            alias=next((a for a in event.get('rr_aliases',[]) if a['event_id']==params['locate_event']),None) if category=='rr_interval' else None
+            if alias is not None or event['event_id']==params['locate_event']:
+                target=i;target_basis=alias['basis_version'] if alias is not None else event['basis_version'];break
         if target is None:raise ValueError('目标事件已失效或不在当前筛选内，请重新选择；未跳转到其他事件')
-        if params.get('locate_basis') != items[target]['basis_version']:raise ValueError('目标事件依据已变化，请重新选择')
+        if params.get('locate_basis') != target_basis:raise ValueError('目标事件依据已变化，请重新选择')
         offset = target//limit*limit
         focus = dict(focus_index=target)
     page=items[offset:offset+limit]
@@ -361,15 +369,29 @@ def normalize_selection(raw):
     result={'schema_version':2,'selected_events':[],'category_reviews':{},'diagnosis_blocks':[]}
     entries=raw.get('selected_events',[])
     if not isinstance(entries,list) or len(entries)>2000:raise ValueError('报告图条最多2000项')
-    seen=set()
+    seen=set();strip_owners={}
     for entry in entries:
         if not isinstance(entry,dict) or not isinstance(entry.get('event_id'),str) or not 1<=len(entry['event_id'])<=240:raise ValueError('无效事件标识')
-        if entry['event_id'] in seen:continue
-        seen.add(entry['event_id'])
+        strip_id = entry.get('strip_id')
+        role = entry.get('representative_role')
+        if strip_id is not None and (not isinstance(strip_id,str) or not 1<=len(strip_id)<=100):raise ValueError('无效图条标识')
+        if strip_id and strip_id in strip_owners and strip_owners[strip_id]!=entry['event_id']:raise ValueError('同一图条标识不能属于不同事件')
+        if strip_id:strip_owners[strip_id]=entry['event_id']
+        if role is not None and role not in ('start','middle','end','manual','custom'):raise ValueError('无效代表图条位置')
+        selection_key = (entry['event_id'],strip_id or '')
+        if selection_key in seen:continue
+        seen.add(selection_key)
         for field in ('basis_version','caption'):
             if not isinstance(entry.get(field,''),str) or len(entry.get(field,''))>500:raise ValueError('无效图条字段')
-        result['selected_events'].append({**{k:entry.get(k,'') for k in ('event_id','basis_version','caption')}, **strip_settings(entry), **strip_curation(entry)})
+        result['selected_events'].append({**{k:entry.get(k,'') for k in ('event_id','basis_version','caption')},
+            **({'strip_id':strip_id} if strip_id else {}), **({'representative_role':role} if role else {}),
+            **strip_settings(entry), **strip_curation(entry)})
+    if raw.get('schema_version')==3 or any(e.get('strip_id') for e in result['selected_events']):result['schema_version']=3
     result['strip_defaults'] = strip_settings(raw.get('strip_defaults'))
+    if 'strip_category_defaults' in raw:
+        defaults=raw['strip_category_defaults']
+        if not isinstance(defaults,dict) or any(k not in {**dict(CATEGORIES),'rr_interval':'RR 间期'} for k in defaults):raise ValueError('无效类别图条设置')
+        result['strip_category_defaults']={key:strip_settings(value) for key,value in defaults.items()}
     reviews=raw.get('category_reviews',{})
     if not isinstance(reviews,dict) or any(k not in {**dict(CATEGORIES), 'rr_interval':'RR 间期'} or not isinstance(v,str) or len(v)>100 for k,v in reviews.items()):raise ValueError('无效分类筛选状态')
     result['category_reviews']=dict(reviews)
@@ -413,7 +435,8 @@ def validate_report(index,composition,review,approving=False):
             except ValueError:
                 if used:raise
                 continue
-        selected.append({**e,'caption':entry.get('caption') or e['label'], **spec, **strip_curation(entry)})
+        selected.append({**e,'caption':entry.get('caption') or e['label'], **spec, **strip_curation(entry),
+            **{k:entry[k] for k in ('strip_id','representative_role') if k in entry}})
     if approving:
         # Report reviewers decide inclusion directly; visiting every category is not an approval gate.
         if any(b.get('needs_review') for b in composition.get('diagnosis_blocks',[])):raise ValueError('请核对保留的人工诊断文字')

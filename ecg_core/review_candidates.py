@@ -4,7 +4,7 @@ from __future__ import annotations
 from hashlib import sha256
 import json
 import math
-from .report_layout import valid_rr_pairs, strip_settings, resolve_strip
+from .report_layout import valid_rr_pairs, strip_settings, resolve_strip, LEADS
 from .review_workflow import ReportConflict
 from .review_workflow import stamp
 
@@ -45,8 +45,10 @@ def prepare_candidate(index, identity, payload):
     caption = payload.get('caption', '')
     if not isinstance(caption, str) or len(caption) > 120: raise ValueError('候选图注须为不超过120字的文本')
     scope = {k: identity[k] for k in ('case_id', 'analysis_basis', 'analysis_revision', 'beat_revision')}
-    settings = strip_settings(payload.get('settings'))
+    raw_settings = payload.get('settings') or {}
+    settings = strip_settings({**raw_settings, 'leads':raw_settings.get('leads', LEADS if kind=='strip' else ['II','V1','V5'])})
     if kind == 'rr':
+        settings['leads'] = ['II','V1','V5']
         sample = payload.get('sample_index')
         if type(sample) is not int: raise ValueError('RR 候选须指定原心搏采样位置')
         pair = next(((a, b) for a, b in valid_rr_pairs(index['rows'], index['duration_s']) if b['sample_index'] == sample), None)
@@ -73,7 +75,13 @@ def prepare_candidate(index, identity, payload):
         caption = caption.strip() or f'自选 RR 候选 {b["rr_ms"]/1000:.3f} s'
         anchor = b
     elif kind == 'strip':
-        if 'range_start_s' not in settings: raise ValueError('全记录留图须指定精确起止')
+        if 'range_start_s' not in settings:
+            time = payload.get('time_s')
+            if isinstance(time,bool) or not isinstance(time,(int,float)) or not math.isfinite(time) or not 0<=time<index['duration_s']:
+                raise ValueError('留图定位时间须在当前记录范围内')
+            spec = resolve_strip(index, dict(start_sample=math.floor(time*200+.5),category='other'), settings)
+            if spec['actual_duration_s'] > 120: raise ValueError('至少 5 搏所需留图范围超过 120 秒，请选择更合适的位置')
+            settings.update(range_start_s=spec['start_s'],range_end_s=spec['end_s'])
         a, b = settings['range_start_s'], settings['range_end_s']
         rows = [r for r in index['rows'] if r['class_code'] not in ('X','O','Y','T') and a <= r['sample_index']/200 < b]
         if not rows: raise ValueError('所选留图区间没有可用心搏；伪差仅保留质控')
@@ -91,7 +99,7 @@ def prepare_candidate(index, identity, payload):
     if kind == 'rr' and spec['start_s'] > context['start_s']:
         settings.update(range_start_s=max(0, context['start_s']-.5), range_end_s=spec['end_s'])
         spec = resolve_strip(index, event, settings)
-    context.update(caption=caption, settings={**settings, 'leads':['II','V1','V5']},
+    context.update(caption=caption, settings=settings,
                    anchor_sample=anchor['sample_index'], context_start_s=spec['context_start_s'],
                    context_duration_s=spec['context_duration_s'])
     key_scope = {k: scope[k] for k in ('case_id','analysis_basis','beat_revision')}

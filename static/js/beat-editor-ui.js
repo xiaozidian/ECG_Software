@@ -417,8 +417,8 @@ const beatEditor=(()=>{
     if(!host.hasAttribute('tabindex'))host.setAttribute('tabindex','0');
     host.setAttribute('aria-description','右键或 Shift+F10 打开心搏与图条操作；双击查看十二导联。');
     if(host._beatWaveMenuBound)return;host._beatWaveMenuBound=true;
-    const show=event=>{const value=host._beatWaveMenu;if(!value||!value.isCurrent()||!host.isConnected)return;event.preventDefault();event.stopImmediatePropagation();open(event,host,value.wave,state.currentPage,event.type==='keydown',value).catch(handleError);};
-    host.addEventListener('contextmenu',event=>{if(event.target.closest?.('svg,canvas,.occurrence-wave'))show(event);},true);
+    const show=event=>{const value=host._beatWaveMenu;if(!value||!value.isCurrent()||!host.isConnected)return;event.preventDefault();event.stopImmediatePropagation();if(state.currentPage==='report'&&value.readOnly&&globalThis.ECGReportWaveMenu){try{ECGReportWaveMenu.open({event,host,wave:value.wave,isCurrent:value.isCurrent,keyboard:event.type==='keydown'});}catch(error){handleError(error);}return;}open(event,host,value.wave,state.currentPage,event.type==='keydown',value).catch(handleError);};
+    host.addEventListener('contextmenu',event=>{const reportWave=state.currentPage==='report'&&host._beatWaveMenu?.readOnly&&!event.target.closest?.('input,textarea,select,[contenteditable]');if(reportWave||event.target.closest?.('svg,canvas,.occurrence-wave'))show(event);},true);
     host.addEventListener('keydown',event=>{if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10')show(event);},true);
   }
   return {open,bindWaveSurface,quickEdit,invoke,openSettings,refreshHistory,renderOccurrenceToolbar,registerOccurrence,syncOccurrenceSelection,occurrenceMenu:(card)=>occurrenceContext(card,null),invalidate(){openToken++},restore:()=>{if(busy||committing)return;begin({caseId:state.caseId,surface:"edit"});selected=new Set(state.editSelectedSamples);return perform("restore")},selected:sample=>context?.caseId===state.caseId&&context.surface==="review"&&selected.has(sample)};

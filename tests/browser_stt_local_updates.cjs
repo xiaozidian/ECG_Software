@@ -55,7 +55,7 @@ function harness(){
   const context=h.ctx=vm.createContext({state,$,$$,fetch,ECGReadRequests:Reads.create(),ECGAnalysisConsistency:C,ECGReportSections:require('../static/js/report-sections.js'),AbortController,URLSearchParams,
     ALL_LEADS:leads,withPhi:x=>x,escapeHtml:String,formatElapsed:v=>`D1 ${Number(v).toFixed(0)}s`,fmtNumber:String,
     document:{body:{classList:classes()}},window:{scrollTo(){}},ECGReviewTools:{...require('../static/js/clinical-review-tools.js'),shouldConfirmNavigation:()=>false},
-    markWorkflowVisited(){},renderCaseWorkflow(){},updateWaveformModeUI(){},updateZoomControls(){},
+    markWorkflowVisited(){},renderCaseWorkflow(){},updateWaveformModeUI(){},updateZoomControls(){},closeBeatRelabelMenu(){},
     loadWaveform:async()=>{},loadScatter:async()=>{},enterWaveformFullscreen:async()=>{state.waveformExpanded=true;},
     ECGReportConsistency:{receive(){}},clinicalWorkflow:{receive(){},writable:()=>true,refresh:async()=>{},allowLeave:()=>true},
     toast:message=>h.toasts.push(message),handleError:error=>h.errors.push(error),

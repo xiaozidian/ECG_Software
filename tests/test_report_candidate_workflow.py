@@ -71,6 +71,25 @@ def test_rr_group_query_matches_browser_and_does_not_mutate_index(source):
     assert index == before
 
 
+@pytest.mark.parametrize('source',['all','auto','manual'])
+@pytest.mark.parametrize('alias_category',['pause','rr_candidate'])
+def test_rr_exact_focus_keeps_requested_alias_basis_under_each_source(source,alias_category):
+    index=combined_index();before=deepcopy(index)
+    group=next(e for e in rr_interval_groups(index) if e['rr_ms']==4000)
+    requested=next(a for a in group['rr_aliases'] if a['category']==alias_category)
+    params=dict(category='rr_interval',rr_source=source,limit=1,locate_event=requested['event_id'],locate_basis=requested['basis_version'])
+    result=query_index(index,params)
+    assert result['items'][0]['rr_semantic_key']==group['rr_semantic_key']
+    assert result['items'][0]['start_sample']==group['start_sample']
+    assert result['offset']==result['focus_index']
+    assert browser('ECGClinicalAnalysis.queryIndex(x.index,x.params)',dict(index=index,params=params))==json.loads(json.dumps(result))
+    other=next(a for a in group['rr_aliases'] if a['category']!=alias_category)
+    assert other['basis_version']!=requested['basis_version']
+    with pytest.raises(ValueError,match='依据已变化'):query_index(index,{**params,'locate_basis':other['basis_version']})
+    with pytest.raises(ValueError,match='未跳转到其他事件'):query_index(index,{**params,'locate_event':'missing-alias'})
+    assert index==before
+
+
 def test_duplicate_rr_keeps_first_settings_and_stale_entries_remain_reconcilable():
     index=combined_index();group=next(e for e in rr_interval_groups(index) if e['rr_ms']==4000)
     auto=next(e for e in index['events'] if e['event_id'] in group['rr_alias_event_ids'] and e['category']=='pause')
@@ -145,6 +164,15 @@ def test_report_put_deduplicates_current_rr_preserves_auto_review_and_saved_sett
     assert response.status_code==200,response.json
     manual=client.get(base+'/report-events?category=rr_candidate').json['items'][0]
     assert client.get(base+'/report-events?category=rr_interval').json['total']==1
+    for source in ('all','auto','manual'):
+        for requested in (auto,manual):
+            params=dict(category='rr_interval',rr_source=source,limit=1,locate_event=requested['event_id'],locate_basis=requested['basis_version'])
+            focused=client.get(base+'/report-events',query_string=params)
+            assert focused.status_code==200,focused.json
+            assert focused.json['items'][0]['start_sample']==auto['start_sample']
+            assert requested['event_id'] in focused.json['items'][0]['rr_alias_event_ids']
+            wrong=manual if requested is auto else auto
+            assert client.get(base+'/report-events',query_string={**params,'locate_basis':wrong['basis_version']}).status_code==400
     queried=client.get(base+'/report-events',query_string={'ids':auto['event_id']}).json['items'][0]
     assert queried['category']=='pause' and queried['diagnosis_status']=='confirmed'
     report=client.get(base+'/report').json

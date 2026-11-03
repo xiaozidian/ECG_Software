@@ -10,7 +10,7 @@
   if(!sourceCase?.integrity?.mathematical_fixture||sourceCase.simulation_profile?.real_patient_inputs_read!==false)throw new Error("纯数学输入未加载或来源不符合公开演示契约");
 
   const nativeFetch=window.fetch.bind(window),savedDefault={reports:{},annotations:{},patients:{},templates:{},beatOverrides:{},reviews:{},audit:[]};
-  const defaultComposition={schema_version:2,selected_events:[],category_reviews:{},diagnosis_blocks:[],strip_defaults:{leads:["II","V1","V5"],duration_s:7},template:"comprehensive",included_pages:["cover","summary","hourly","event_strips","hrv_time","hrv_overview"],active_page:"summary",preview_mode:"compose",fast_slow_mode:"rr",paper:{size:"A4",orientation:"portrait",show_grid:true,show_labels:true,speed:"25 mm/s",gain:"10 mm/mV"}};
+  const defaultComposition={schema_version:3,selected_events:[],category_reviews:{},diagnosis_blocks:[],strip_defaults:{leads:["II","V1","V5"],duration_s:7},template:"comprehensive",included_pages:["cover","summary","hourly","event_strips","hrv_time","hrv_overview"],active_page:"summary",preview_mode:"compose",fast_slow_mode:"rr",paper:{size:"A4",orientation:"portrait",show_grid:true,show_labels:true,speed:"25 mm/s",gain:"10 mm/mV"}};
   let saved={...savedDefault};
   try{saved={...savedDefault,...JSON.parse(localStorage.getItem(STORE_KEY)||"{}")} }catch(_){/* unavailable */}
   saved.beatOverrides=saved.beatOverrides||{};
@@ -128,7 +128,11 @@
     const [a,b]=pair,event={event_id:'report-longest-rr',category:'rr_candidate',subtype:'rr_measurement',label:`最长 RR ${(b.rr_ms/1000).toFixed(3)} s（当前可分析记录）`,sample_index:b.sample_index,start_sample:b.sample_index,end_sample:b.sample_index,time_s:b.sample_index/200,end_s:b.sample_index/200,rr_ms:b.rr_ms,hr:b.hr,target_samples:[b.sample_index],beat_count:1,templates:[],evidence_only:true,diagnosis_status:'pending',candidate_scope:reportIdentity(),candidate_context:{rr_start_sample:a.sample_index,rr_end_sample:b.sample_index,rr_start_id:a.id,rr_end_id:b.id,rr_ms:b.rr_ms,start_s:a.sample_index/200,end_s:b.sample_index/200}};
     event.basis_version='report-rr-v1:'+reportHash(reportDescriptor(index,event));return attachReportEvidence(index,event);
   }
-  function clinicalBaseIndex(){return {...ECGClinicalAnalysis.buildIndex({...editedFeed(),duration},templateList(),annotationList(),workflow()),start_time:sourceCase.metadata.start_iso||sourceCase.metadata.start_time};}
+  function clinicalBaseIndex(){
+    const index={...ECGClinicalAnalysis.buildIndex({...editedFeed(),duration},templateList(),annotationList(),workflow()),start_time:sourceCase.metadata.start_iso||sourceCase.metadata.start_time},identity=reportIdentity();
+    for(const event of index.events){const proof=event.stt_event_evidence;if(proof&&(['case_id','analysis_basis','beat_revision'].some(k=>proof.scope?.[k]!==identity[k])||sourceCase.stt_review&&(editorValue().revision!==sourceCase.stt_review_binding?.beat_revision||overrideList().length))){event.diagnosis_status='pending';event.stt_evidence_stale=true;}}
+    return index;
+  }
   function clinicalIndex(){
     const index=clinicalBaseIndex(),own=reportIdentity(),active=[];
     for(const c of saved.evidenceCandidates?.[caseId]||[]){if(c.status!=='active'||['case_id','analysis_basis','beat_revision'].some(k=>c.scope[k]!==own[k]))continue;const p=c.payload,row=index.rows.find(r=>r.sample_index===p.anchor_sample&&!['X','O','Y','T'].includes(r.class_code));if(!row)continue;
@@ -152,15 +156,15 @@
     }
     if(method!=='POST'||!['rr','strip'].includes(p.kind))throw Error('候选操作无效');
     if(typeof(p.caption??'')!=='string'||(p.caption||'').length>120)throw Error('候选图注须为不超过120字的文本');
-    const index=clinicalIndex(),settings=ECGReportEngine.settings(p.settings),context={};let anchor;
+    const index=clinicalIndex(),settings=ECGReportEngine.settingsForEvent({category:p.kind==='rr'?'rr_candidate':'other'},p.settings||{}),context={};if(p.kind==='rr')settings.leads=['II','V1','V5'];let anchor;
     if(p.kind==='rr'){
       const pair=ECGReportEngine.intervalPairs(index.rows,index.duration_s).find(([a,b])=>b.sample_index===p.sample_index);if(!pair||p.rr_ms!==undefined&&p.rr_ms!==pair[1].rr_ms)throw Error('此位置没有匹配的有效相邻 RR');const [a,b]=pair;anchor=b;
       Object.assign(context,{rr_start_sample:a.sample_index,rr_end_sample:b.sample_index,rr_start_id:a.id,rr_end_id:b.id,rr_ms:b.rr_ms,endpoint_delta_ms:(b.sample_index-a.sample_index)*5,start_s:a.sample_index/200,end_s:b.sample_index/200});
       const bounds=p.population?.rr_bounds_ms;if(bounds&&(!Array.isArray(bounds)||bounds.length!==2||b.rr_ms<bounds[0]||bounds[1]!==null&&b.rr_ms>=bounds[1]))throw Error('RR 不在所选柱状区间');
       context.population={origin:p.population?.origin||'manual-card',claim:'用户选取的 RR 候选；不声明全记录最长',...(bounds?{rr_bounds_ms:bounds}:{})};settings.duration_s=Math.min(120,Math.max(settings.duration_s,b.rr_ms/1000+2));
-    }else{if(!('range_start_s' in settings))throw Error('留图须提供精确范围');anchor=index.rows.find(r=>r.sample_index/200>=settings.range_start_s&&r.sample_index/200<settings.range_end_s&&!['X','O','Y','T'].includes(r.class_code));if(!anchor)throw Error('区间没有可用心搏');Object.assign(context,{start_s:settings.range_start_s,end_s:settings.range_end_s,start_sample:Math.round(settings.range_start_s*200),end_sample:Math.round(settings.range_end_s*200),population:{origin:'full-record-retain',claim:'人工选段；不构成诊断'}});}
+    }else{if(!('range_start_s' in settings)){number(p.time_s,'留图定位时间',0,duration-.005);const strip=ECGReportEngine.resolve(index,{start_sample:Math.floor(p.time_s*200+.5),category:'other'},settings);if(strip.actual_duration_s>120)throw Error('至少 5 搏所需留图范围超过 120 秒，请选择更合适的位置');Object.assign(settings,{range_start_s:strip.start_s,range_end_s:strip.end_s});}anchor=index.rows.find(r=>r.sample_index/200>=settings.range_start_s&&r.sample_index/200<settings.range_end_s&&!['X','O','Y','T'].includes(r.class_code));if(!anchor)throw Error('区间没有可用心搏');Object.assign(context,{start_s:settings.range_start_s,end_s:settings.range_end_s,start_sample:Math.round(settings.range_start_s*200),end_sample:Math.round(settings.range_end_s*200),population:{origin:'full-record-retain',claim:'人工选段；不构成诊断'}});}
     const event={start_sample:anchor.sample_index,category:p.kind==='rr'?'rr_candidate':'other',candidate_context:context},spec=ECGReportEngine.resolve(index,event,settings),caption=(p.caption||'').trim()||(p.kind==='rr'?`自选 RR 候选 ${(anchor.rr_ms/1000).toFixed(3)} s`:'全记录人工留图');
-    Object.assign(context,{caption,settings:{...settings,leads:['II','V1','V5']},anchor_sample:anchor.sample_index,context_start_s:spec.context_start_s,context_duration_s:spec.context_duration_s});
+    Object.assign(context,{caption,settings:{...settings},anchor_sample:anchor.sample_index,context_start_s:spec.context_start_s,context_duration_s:spec.context_duration_s});
     const key=reportHash([p.kind,{case_id:caseId,analysis_basis:own.analysis_basis,beat_revision:own.beat_revision},p.kind==='rr'?[context.rr_start_sample,context.rr_end_sample]:[context.start_sample,context.end_sample]]);let item=list.find(c=>c.candidate_key===key);
     if(item)item.status='active';else{item={id:Math.max(0,...list.map(c=>c.id))+1,case_id:caseId,kind:p.kind,candidate_key:key,scope:copy(own),payload:context,status:'active'};list.push(item);}audit('evidence_candidate.create','数学候选');return {item:copy(item),report:report(present()),review:workflow(),...own};
   }
@@ -230,6 +234,13 @@
     return {source,calculated:activeEdited?engine.hrv(editedFeed(),duration):calculated,comparison:{source_label:"生成器参考摘要",source_duration:sourceCase.metadata.source_record_duration_text,calculated_label:"当前数学波形重算",calculated_duration:sourceCase.metadata.duration_text,warning:"统计时长不同；10 分钟 SDANN、SDNN index 与三角指数仅作演示估计，不应解释为算法误差或临床结论。"}};
   }
   function sttReview(){
+    if(sourceCase.stt_review){
+      const binding=sourceCase.stt_review_binding||{},value=copy(sourceCase.stt_review),identity=reportIdentity(),valid=binding.case_id===caseId&&binding.analysis_basis===identity.analysis_basis&&binding.beat_revision===editorValue().revision&&!overrideList().length;
+      value.simulation={python_precomputed:true,browser_recomputed:false,patient_inputs_read:false,precomputed_binding:copy(binding)};
+      if(valid)return {...value,...identity};
+      return {...value,case_id:binding.case_id,analysis_basis:binding.analysis_basis,beat_revision:binding.beat_revision,analysis_revision:0,current_scope:identity,stale:true,analysis:null,
+        automatic_candidates:{...value.automatic_candidates,enabled:false,items:[],summary:{candidate_count:0,st_depression_count:0,st_elevation_count:0,t_wave_count:0},reason_code:'beat_edits_invalidated_precomputed_evidence',reasons:['心搏已修订；此数学 Demo 的预计算 ST/T 证据已失效，未伪装为重新分析。']}};
+    }
     const fragments=String(sourceCase.conclusion||"").split(/(?<=[。！？；!?;])\s*|\n+/).map(value=>value.trim()).filter(value=>/(?:ST段|ST[-‑–— ]?T|T波|T倒置|T低平)/i.test(value)).map(value=>value.replace(/(?:[+\-−＋－]?\s*\d+(?:\.\d+)?)\s*(?:mV|µV|μV)/gi,"【病例幅度已隐藏】"));
     return {schema_version:"manual-stt-review-v1",review_mode:"manual_review_only",manual_review_only:true,calibration_unverified:true,measurement_protocol:{default_measurement:"J+60 ms",default_landmark:"ST60",baseline:{preferred:"PR_segment",fallback:"individual_stable_baseline",label:"PR 段/个体稳定基线",requires_manual_confirmation:true},landmarks:[{code:"J",offset_from_j_ms:0,label:"J 点"},{code:"ST60",offset_from_j_ms:60,label:"J+60 ms"},{code:"ST80",offset_from_j_ms:80,label:"J+80 ms"}],case_amplitude_output:{enabled:false,reason:"原始电压标定和分析链未独立验证，不输出病例 ST 幅度。"}},lead_system:{status:"unknown",mapping_verified:false,electrode_placement_verified:false,message:"导联体系及采集通道到标准导联的映射未经独立核验。"},calibration:{status:"unverified",voltage_gain_verified:false,filter_response_verified_for_st:false,message:"在增益、零线稳定性及 ST 分析滤波响应核验前，仅允许人工定性复核。"},automatic_candidates:{enabled:false,reason_code:"measurement_chain_not_validated",reasons:["电压增益与零线标定未独立验证","J 点、基线和 ST 复核点尚无经验证的自动定位算法","动态心电的体位变化、基线漂移与伪差需要人工排除"]},reference_thresholds:{enabled:false,reference_only:true,applied_to_case:false,title:"动态心电常用研究筛查参考（未启用）",st_depression_example:{magnitude_mV:.10,measurement_landmarks:["ST60","ST80"],minimum_duration_s:60},warning:"该参考不是病例判定规则，不得用于自动生成诊断。"},source_report:{origin:"source_report_conclusion",available:Boolean(fragments.length),fragments,is_source_excerpt:true,software_interpretation_added:false},clinical_safety:{diagnosis_generated:false,requires_physician_review:true,statement:"本界面仅用于医师人工复核，不生成缺血诊断或替代临床判断。"}};
   }
@@ -403,6 +414,23 @@
     }
     if(action==="report-statistics"){const feed={...editedFeed(),duration},result=ECGReportEngine.statistics(clinicalIndex(),sourceCase.metadata.start_iso||sourceCase.metadata.start_time,feed.document.settings);result.hrv=engine.hrv(feed,duration);return response(result)}
     if(action==="report-sections")return response(ECGReportSections.evidence(clinicalIndex(),sttReview()));
+    if(['report-af-representatives','report-strip-preview'].includes(action)){
+      if(method!=='GET')return failure('此图条接口仅支持只读GET',405);
+      try{
+        const own=reportScope(Object.fromEntries(url.searchParams)),index=clinicalIndex(),raw={duration_s:Number(url.searchParams.get('duration')||7)},leadArg=url.searchParams.get('leads');if(leadArg)raw.leads=leadArg.split(',');
+        if(action==='report-af-representatives'){
+          const event=index.events.find(e=>e.event_id===url.searchParams.get('event_id'));
+          if(!event||event.category!=='AF'||url.searchParams.has('basis_version')&&url.searchParams.get('basis_version')!==event.basis_version)return failure('房颤／房扑片段依据已变化，请重新选择',409);
+          return response({...ECGReportEngine.afRepresentatives(index,event,raw),event_id:event.event_id,basis_version:event.basis_version,...own});
+        }
+        const time=Number(url.searchParams.get('time_s')??url.searchParams.get('time')??0);number(time,'留图定位时间',0,Math.max(0,duration-.005));
+        if(url.searchParams.has('range_start_s')||url.searchParams.has('range_end_s'))for(const key of ['range_start_s','range_end_s']){if(!url.searchParams.has(key))throw Error('人工区间须同时提供起止时间');raw[key]=Number(url.searchParams.get(key));}
+        const event={event_id:'preview-only',category:'other',subtype:'manual_strip',label:'人工波形图条',start_sample:Math.floor(time*200+.5),time_s:time},spec=ECGReportEngine.resolve(index,event,ECGReportEngine.settingsForEvent(event,raw)),params=new URLSearchParams({whole:'1',filter:'raw'});
+        const wave=await waveform(params,{start:spec.start_s,duration:spec.actual_duration_s,leads:spec.leads,maxPoints:12000,filter:'raw'});wave.beats=spec.visible_beats;
+        const context=await waveform(params,{start:spec.context_start_s,duration:spec.context_duration_s,leads:['II'],maxPoints:1600,filter:'raw'});reportScope(own,true);
+        return response({event,strip:spec,waveform:wave,context,preview_only:true,...own});
+      }catch(error){return failure(error.message,error.status||400)}
+    }
     if(action==="report-strip"){
       const index=clinicalIndex(),event=index.events.find(e=>e.event_id===url.searchParams.get('event_id'));
       if(!event||event.basis_version!==url.searchParams.get('basis_version'))return failure('图条依据已变化，请重新选择事件',409);
@@ -441,6 +469,16 @@
     if(action==="annotations"&&method==="GET")return response({items:annotationList()});
     if(action==="annotations"&&method==="POST"){
       let payload=requestBody(options);
+      if(payload.details&&Object.hasOwn(payload.details,'stt_event_evidence'))return failure('ST-T 机器事件证据不能由客户端自行填入');
+      if(payload.details&&Object.hasOwn(payload.details,'stt_candidate_id')){
+        const d=payload.details;if(d.kind!=='ST'||Object.hasOwn(d,'range_statistics'))return failure('自动 ST-T 整段复核与范围均值分别保存');
+        const identity=reportScope(d.stt_candidate_scope||{},true),measured=sttReview();
+        if(measured.stale)return failure('心搏已修订，数学 Demo 预计算 ST-T 候选已失效',409);
+        const candidate=measured.automatic_candidates?.items?.find(c=>c.id===d.stt_candidate_id);
+        if(!candidate)return failure('ST-T 连续事件依据已变化，请重新读取候选',409);
+        if(payload.sample_index!==Math.round(candidate.start_s*200)||d.end_sample!==Math.round(candidate.end_s*200)-1)return failure('整段 ST-T 复核范围须与所选候选完整起止一致');
+        d.stt_event_evidence={...Object.fromEntries(['kind','start_s','end_s','duration_s','continuous_target_s','peak_time_s','peak_deviation_units','leads','quality_score'].map(k=>[k,candidate[k]])),candidate_id:candidate.id,algorithm_version:measured.analysis.algorithm_version,scope:identity,source:'reviewed_automatic_candidate',units:'source_device_units'};
+      }
       if(payload.details&&Object.hasOwn(payload.details,'range_statistics')){
         payload=meanAnnotationPayload(payload);
         const existing=meanSubmission(payload);if(existing)return response(existing,201);
@@ -473,7 +511,8 @@
       try{
         composition.strip_defaults=ECGReportEngine.settings(composition.strip_defaults);
         const entries=(composition.selected_events||[]).map(s=>({...s,...ECGReportEngine.settings(s)})),index=clinicalIndex();
-        composition.selected_events=ECGClinicalAnalysis.normalizeRRSelections(index,entries);
+        composition.selected_events=ECGClinicalAnalysis.normalizeReportSelections(index,entries);
+        if(composition.selected_events.some(s=>s.strip_id!==undefined||s.representative_role!==undefined))composition.schema_version=3;
         const retained=new Set(composition.selected_events);mergedRR=entries.filter(s=>!retained.has(s)).map(s=>s.event_id);
         ECGClinicalAnalysis.validateReport(index,composition,workflow(),payload.status==="reviewed");
         await demoReview().validateReport(composition,payload.status==="reviewed");
@@ -485,7 +524,7 @@
   }
 
   // Browser demo identity is a local revision, not a verified raw-file fingerprint.
-  const clinicalReads=new Set(['','analysis-basis','report','overview','rhythm-review','trend','rr-visuals','scatter','hrv','hrv-windows','hrv-analysis','stt-review','report-statistics','report-sections','template-occurrences','report-events','waveform','event-waveform','event-waveforms','report-strip','evidence-candidates','report-rr-evidence','report-evidence/preview','waveform-density','scatter-selection','waveform-strips','rr-review','rr-review/locate','hrv-review','stt-range']);
+  const clinicalReads=new Set(['','analysis-basis','report','overview','rhythm-review','trend','rr-visuals','scatter','hrv','hrv-windows','hrv-analysis','stt-review','report-statistics','report-sections','template-occurrences','report-events','waveform','event-waveform','event-waveforms','report-strip','report-af-representatives','report-strip-preview','evidence-candidates','report-rr-evidence','report-evidence/preview','waveform-density','scatter-selection','waveform-strips','rr-review','rr-review/locate','hrv-review','stt-range']);
   async function clinicalRoute(url,options){
     const match=url.pathname.match(/^\/api\/cases\/([^/]+)(?:\/(.*))?$/),action=match?.[2]||'',method=String(options.method||'GET').toUpperCase();
     if(!match||decodeURIComponent(match[1])!==caseId||!clinicalReads.has(action)||(method!=='GET'&&!(['event-waveforms','waveform-density','scatter-selection','waveform-strips','rr-review/locate','stt-range','report-evidence/preview'].includes(action)&&method==='POST')))return route(url,options);
@@ -498,6 +537,7 @@
     if(!result.ok)return result;
     if(stored!==localStorage.getItem(STORE_KEY)||basis.analysis_revision!==workflow().revision)return failure('分析期间病例已变化，请重新读取后复核',409);
     const payload=await result.json();
+    if(action==='stt-review'&&payload.stale)return response(payload,result.status);
     if(['event-waveforms','waveform-strips'].includes(action))payload.items=payload.items.map(item=>({...item,...basis}));
     return response({...payload,...(action?basis:{clinical_identity:basis})},result.status);
   }

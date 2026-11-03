@@ -89,6 +89,8 @@ def resolve_strip(index, event, settings=None):
     settings = strip_settings(settings)
     total = max(.005, index["duration_s"])
     anchor = min(max(0, event["start_sample"] / 200), total)
+    if event.get('category')=='ST' and isinstance(event.get('stt_event_evidence'),dict):
+        anchor=min(max(0,event['stt_event_evidence'].get('peak_time_s',anchor)),total)
     length = min(total, settings["duration_s"])
     start = max(0, min(anchor - length / 2, total - length))
     end = start + length
@@ -112,11 +114,11 @@ def resolve_strip(index, event, settings=None):
         start,end=settings['range_start_s'],settings['range_end_s']
         if end > total:
             raise ValueError('人工区间须在记录范围内，并包含当前事件定位心搏')
-        if event.get('category') == 'AF':
+        if event.get('category') in ('AF','ST'):
             episode_start = event['start_sample']/200
             episode_end = event.get('end_s', event.get('end_sample', event['start_sample'])/200)
             if not start < episode_end or not end > episode_start:
-                raise ValueError('代表图条须与当前房颤／房扑片段相交')
+                raise ValueError('代表图条须与当前房颤／房扑或 ST 事件片段相交')
         elif not start<=anchor<end:
             raise ValueError('人工区间须在记录范围内，并包含当前事件定位心搏')
         if pause_start_sample is not None and round(start*200)>pause_start_sample:
@@ -140,7 +142,7 @@ def resolve_strip(index, event, settings=None):
     if not manual and actual > settings["duration_s"] + .01:
         reason = '覆盖完整 RR 间期并包含至少 5 搏' if event.get('category') == 'pause' else '包含至少 5 搏'
         warning = f"为{reason}，已由 {settings['duration_s']:g} 秒延长至 {actual:g} 秒" + (f"；{warning}" if warning else "")
-    context_anchor = (start + end)/2 if manual and event.get('category') == 'AF' else anchor
+    context_anchor = (start + end)/2 if manual and event.get('category') in ('AF','ST') else anchor
     return {**settings, "start_s": start, "end_s": end, "actual_duration_s": actual,
             "visible_beats": visible, "visible_beat_count": len(visible), "warning": warning,
             "context_start_s": max(0, min(context_anchor - max(30, actual * 3) / 2, total - min(total, max(30, actual * 3)))),
@@ -153,6 +155,49 @@ def prepare_strip(index, event, settings, reader):
     wave["beats"] = spec["visible_beats"]
     context = reader(spec["context_start_s"], spec["context_start_s"] + spec["context_duration_s"], ["II"], 1600)
     return {**event, "strip": spec, "waveform": wave, "context": context}
+
+
+def af_representatives(index, event, settings=None):
+    """Read-only recommendations; the rhythm episode itself is never changed."""
+    if event.get('category') != 'AF':
+        raise ValueError('仅房颤／房扑片段支持代表图条推荐')
+    settings = strip_settings(settings)
+    settings.pop('range_start_s',None); settings.pop('range_end_s',None)
+    a, b = event['start_sample']/200, event.get('end_s', event['end_sample']/200)
+    length = settings['duration_s']
+    anchors = dict(start=a+length/2, middle=(a+b)/2, end=b-length/2)
+    if b-a <= length:
+        anchors = dict.fromkeys(anchors, (a+b)/2)
+    positions = {}
+    for role, anchor in anchors.items():
+        spec = resolve_strip(index, {**event, 'start_sample': math.floor(anchor*200+.5)}, settings)
+        selectable = spec['visible_beat_count'] >= 5 and spec['actual_duration_s'] <= 120
+        warning = spec['warning']
+        if spec['actual_duration_s'] > 120:
+            warning = '包含 5 搏所需范围超过 120 秒，请人工回看后选择可用图条'
+        positions[role] = dict(representative_role=role, start_s=spec['start_s'], end_s=spec['end_s'],
+            visible_beat_count=spec['visible_beat_count'], duration_s=spec['actual_duration_s'],
+            warning=warning, selectable=selectable)
+    available = {role: p for role,p in positions.items() if p['selectable']}
+    whole = next((available[role] for role in ('middle','start','end') if role in available
+                  and available[role]['start_s'] <= a and available[role]['end_s'] >= b), None)
+    if whole:
+        items = [whole]
+    else:
+        items = []
+        for role in ('start','end'):
+            p = available.get(role)
+            if p and not any((p['start_s'],p['end_s']) == (q['start_s'],q['end_s']) for q in items):
+                items.append(p)
+        middle = available.get('middle')
+        if middle:
+            cursor = middle['start_s']
+            for p in sorted(items, key=lambda q:q['start_s']):
+                if p['start_s'] <= cursor: cursor = max(cursor,p['end_s'])
+            if cursor < middle['end_s']: items.append(middle)
+        items.sort(key=lambda p: ('start','middle','end').index(p['representative_role']))
+    return dict(items=items, positions=positions, episode_start_s=a, episode_end_s=b,
+                units='seconds', minimum_visible_beats=5, requested_duration_s=length)
 
 
 def report_statistics(index, start_time, settings, pause_edges_ms=None):
