@@ -10,7 +10,10 @@ ST_KINDS = ('ST', 'ST_REVIEW_NOTE')
 RESULTS = ('st_depression','st_elevation','t_change','nonspecific','no_change','artifact','indeterminate')
 ABNORMAL = ('st_depression','st_elevation','t_change','nonspecific')
 SCHEMA = 'stt-review-record-v1'
-METHOD = 'stt-hospital-review-v1'
+METHOD = 'stt-hospital-review-v2'
+RHYTHM_POLICY = 'independent_of_AF_AFL_reviews'
+RANGE_PROFILE = 'raw-200hz-fixed16s-st-perbeat-mean-v2'
+LEGACY_RANGE_PROFILE = 'raw-200hz-fixed16s-st-perbeat-mean-v1'
 
 
 def digest(value):
@@ -71,8 +74,33 @@ def protocol(raw=None, *, extent='point'):
     if mode not in ('point','whole'):raise ValueError('ST-T 测量作用范围无效')
     baseline=raw.get('baseline_method','pre_qrs_stable')
     if baseline not in ('pre_qrs_stable','manual_iso_point'):raise ValueError('ST-T 基线方法无效')
+    if raw.get('method_version',METHOD)!=METHOD or raw.get('rhythm_policy',RHYTHM_POLICY)!=RHYTHM_POLICY:
+        raise ValueError('ST-T测量方法已变化，请按当前独立分析方法重新核对')
     return dict(method_version=METHOD,measurement_ms=ms,extent=mode,baseline_method=baseline,
-                units='source_device_units',calibration_verified=False)
+                units='source_device_units',calibration_verified=False,rhythm_policy=RHYTHM_POLICY)
+
+
+def stored_protocol(raw):
+    """Validate geometry without relabelling a historical method or its fields."""
+    if not isinstance(raw,dict):return None
+    try:protocol({**raw,'method_version':METHOD,'rhythm_policy':RHYTHM_POLICY})
+    except (TypeError,ValueError):return None
+    return copy.deepcopy(raw)
+
+
+def current_method(details):
+    """An old mask-based record remains readable, but is never silently re-signed."""
+    evidence=details.get('stt_event_evidence') or {}
+    for raw in (details.get('measurement_protocol'),evidence.get('measurement_protocol')):
+        if raw is not None and (stored_protocol(raw) is None or raw.get('method_version')!=METHOD
+                                or raw.get('rhythm_policy')!=RHYTHM_POLICY):return False
+    if evidence and (evidence.get('rhythm_policy')!=RHYTHM_POLICY or 'rhythm_exclusions_digest' in evidence):return False
+    profiles=[(details.get('range_statistics') or {}).get('method_profile'),
+              (evidence.get('measurement_protocol') or {}).get('range_profile')]
+    for profile in profiles:
+        if profile is not None and (not isinstance(profile,dict) or profile.get('id')!=RANGE_PROFILE
+                                    or profile.get('rhythm_policy')!=RHYTHM_POLICY):return False
+    return not details.get('reviewed') or isinstance(details.get('measurement_protocol'),dict)
 
 
 def status_for(code):
@@ -80,14 +108,14 @@ def status_for(code):
 
 
 def saved_protocol(details,evidence):
-    if isinstance(evidence.get('measurement_protocol'),dict):return copy.deepcopy(evidence['measurement_protocol'])
-    if isinstance(details.get('measurement_protocol'),dict):return protocol(details['measurement_protocol'])
+    if isinstance(evidence.get('measurement_protocol'),dict):return stored_protocol(evidence['measurement_protocol'])
+    if isinstance(details.get('measurement_protocol'),dict):return stored_protocol(details['measurement_protocol'])
     profile=(details.get('range_statistics') or {}).get('method_profile')
     if not isinstance(profile,dict) or type(profile.get('measurement_ms')) is not int or profile['measurement_ms'] not in (0,60,80):return None
     # Historical signed means have their own declared method. Neither a
     # default ST60 point nor the new review method may replace that evidence.
     return dict(method_version=profile.get('id'),measurement_ms=profile['measurement_ms'],extent='whole',
-        baseline_method='pre_qrs_stable' if profile.get('id')=='raw-200hz-fixed16s-st-perbeat-mean-v1' else None,
+        baseline_method='pre_qrs_stable' if profile.get('id') in (LEGACY_RANGE_PROFILE,RANGE_PROFILE) else None,
         units=profile.get('units'),calibration_verified=profile.get('calibration_verified') is True,
         range_profile=copy.deepcopy(profile))
 
@@ -97,6 +125,7 @@ def review_metadata(annotation, *, basis_version=None, stale=False):
     explicit=d.get('reviewed') is True
     bound=bool(d.get('review_scope') or (d.get('stt_event_evidence') or {}).get('scope'))
     state='reviewed' if explicit or bound and d.get('status') in ('confirmed','excluded') else 'unreviewed'
+    if state=='reviewed' and not current_method(d):state='stale'
     if stale:state='stale'
     family='ST' if code in ('st_depression','st_elevation') else 'T' if code=='t_change' else 'NOTE'
     group=family if state=='reviewed' and code in ABNORMAL and family!='NOTE' else 'ST_NOTE' if state=='reviewed' else 'pending'
@@ -111,7 +140,7 @@ def review_metadata(annotation, *, basis_version=None, stale=False):
         result_code=code,result_kind=family,report_group=group,status=d.get('status','pending'),review_extent=extent,
         range=dict(start_sample=first,end_sample=end,start_s=first/200,end_s=end/200,duration_s=(end-first)/200),
         basis_version=basis_version,measurement_protocol=copy.deepcopy(actual),
-        point_measurement_protocol=protocol(d['measurement_protocol'],extent='point') if isinstance(d.get('measurement_protocol'),dict) else None,
+        point_measurement_protocol=stored_protocol(d.get('measurement_protocol')),
         report_eligibility=dict(table=table,text=eligible,strip=eligible),
         report_use=dict(table=False,text=False,strip=False),source_scope=copy.deepcopy(d.get('review_scope') or evidence.get('scope')),
         finding=d.get('finding',annotation.get('label','')),note=annotation.get('note',''),physician_note=d.get('physician_note'),

@@ -12,6 +12,7 @@ from ecg_core.clinical_analysis import build_index, query_index
 from ecg_core.hrv_analysis import analyze_hrv, spectrum
 from ecg_core.report_sections import rr_derivatives, evidence
 from ecg_core.rr_quality import interval_mask, nn_intervals, annotation_exclusions
+from test_analysis_provenance import synthetic_app, synthetic_case
 
 OPTS = dict(nn_min=300, nn_max=2000, pause=2.5, tachy=120, brady=50)
 
@@ -193,7 +194,8 @@ def test_explicit_annotation_kind_has_correct_default_label(kind,label,expected_
         pending_event=next(e for e in pending_index['events'] if e['event_id']=='annotation:1')
         assert pending_event['diagnosis_status']=='pending' and pending_event['stt_review_state']=='unreviewed'
         assert browser('ECGClinicalAnalysis.buildIndex(x.f,[],[x.a])',dict(f=vars(f),a=pending))==pending_index
-        current=copy.deepcopy(a);current['details'].update(reviewed=True,result_code='st_depression',review_leads=['II'])
+        from ecg_core.stt_records import protocol
+        current=copy.deepcopy(a);current['details'].update(reviewed=True,result_code='st_depression',review_leads=['II'],measurement_protocol=protocol())
         reviewed_index=build_index(f,annotations=[current]);reviewed=next(e for e in reviewed_index['events'] if e['event_id']=='annotation:1')
         assert reviewed['diagnosis_status']=='confirmed' and reviewed['stt_review_state']=='reviewed'
         assert reviewed['stt_report_eligibility']==dict(table=False,text=True,strip=True)
@@ -224,7 +226,8 @@ def test_p_and_t_annotations_do_not_become_rr_boundaries():
     assert browser('ECGReportSections.evidence(x)',with_markers)==evidence(with_markers)
 
 
-def test_rhythm_annotation_policy_and_api_hrv_use_current_review(client):
+def test_rhythm_annotation_policy_and_api_hrv_use_current_review(synthetic_app):
+    client=synthetic_app.test_client()
     annotations=[dict(sample_index=0,details=dict(kind='AF',end_sample=200,status=s)) for s in ('pending','confirmed','excluded')]
     assert annotation_exclusions(annotations)==[(0,1.005),(0,1.005)]
     assert browser('ECGRRQuality.annotationExclusions(x)',annotations)==[[0,1.005],[0,1.005]]

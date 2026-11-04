@@ -440,9 +440,10 @@ class Storage(ReviewWorkflowMixin, EvidenceCandidateMixin, ReportEvidenceMixin):
         with self.connect() as db:
             self._audit(db, actor, action, case_id, detail)
 
-    def _audit(self, db, actor, action, case_id="", detail=""):
+    def _audit(self, db, actor, action, case_id="", detail="", *, rhythm_only=False):
         # Data, invalidation and its audit receipt must commit or roll back together.
-        self.invalidate_review(db, case_id, action)
+        if rhythm_only:self.invalidate_review(db, case_id, action,rhythm_only=True)
+        else:self.invalidate_review(db, case_id, action)
         db.execute("INSERT INTO audit_log(case_id,actor,action,detail,created_at) VALUES(?,?,?,?,?)",
                    (case_id, actor, action, detail, utc_now()))
 
@@ -582,7 +583,8 @@ class Storage(ReviewWorkflowMixin, EvidenceCandidateMixin, ReportEvidenceMixin):
             )
             db.execute("UPDATE annotations SET details=? WHERE id=?",(json.dumps(details,ensure_ascii=False),cursor.lastrowid))
             row = db.execute("SELECT * FROM annotations WHERE id=?", (cursor.lastrowid,)).fetchone()
-            self._audit(db, actor, "annotation.create", case_id, f"#{row['id']} {row['label']}")
+            self._audit(db, actor, "annotation.create", case_id, f"#{row['id']} {row['label']}",
+                        rhythm_only=isinstance(details,dict) and details.get('kind') in ('AF','AFL'))
             if replay_guard is not None: replay_guard(db)
             elif source_guard is not None: source_guard()
         return {**dict(row),"details":details}
@@ -690,7 +692,8 @@ class Storage(ReviewWorkflowMixin, EvidenceCandidateMixin, ReportEvidenceMixin):
                     self._withdraw_stt_generated_text(composition,event_id)
                     db.execute('UPDATE report_drafts SET composition=? WHERE case_id=?',(json.dumps(composition,ensure_ascii=False),row['case_id']))
             db.execute("DELETE FROM annotations WHERE id=?", (annotation_id,))
-            self._audit(db, actor, "annotation.delete", row["case_id"], f"#{annotation_id} {row['label']}")
+            self._audit(db, actor, "annotation.delete", row["case_id"], f"#{annotation_id} {row['label']}",
+                        rhythm_only=json.loads(row['details'] or '{}').get('kind') in ('AF','AFL'))
         return True
 
     def sync_analysis_basis(self, case_id, basis, actor, readonly=False):

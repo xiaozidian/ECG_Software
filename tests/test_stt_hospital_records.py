@@ -156,7 +156,7 @@ def test_active_uses_only_gate_actual_enabled_pages_and_print_enabled_strips(api
     with pytest.raises(ValueError,match='复核'):validate_report(index,comp,{},True)
 
 
-def test_relevant_rhythm_masks_invalidate_statistics_but_unrelated_records_do_not(st_app):
+def test_relevant_and_unrelated_rhythm_decisions_do_not_invalidate_ST_statistics(st_app):
     app,cid=st_app;client=app.test_client();base='/api/cases/'+cid
     p=payload(client,base,'st_elevation',review_extent='whole',end_sample=39999);p['sample_index']=24000
     first=client.post(base+'/annotations',json=p);assert first.status_code==201,first.json
@@ -167,7 +167,8 @@ def test_relevant_rhythm_masks_invalidate_statistics_but_unrelated_records_do_no
     assert event()['stt_review_state']=='reviewed' and event()['basis_version']==basis
     relevant=copy.deepcopy(unrelated);relevant['sample_index']=28000;relevant['details']['end_sample']=30000
     assert client.post(base+'/annotations',json=relevant).status_code==201
-    assert event()['stt_review_state']=='stale' and not event()['stt_report_eligibility']['table']
+    assert event()['stt_review_state']=='reviewed' and event()['stt_report_eligibility']['table']
+    assert event()['basis_version']==basis
 
 
 def test_update_retains_previous_settings_for_reselection_and_deleted_UUID_does_not_recreate(api_case):
@@ -283,7 +284,7 @@ def test_receipt_protocol_precedence_and_unknown_history_are_explicit():
     unknown=review_metadata(row)
     assert unknown['measurement_protocol'] is None and unknown['point_measurement_protocol'] is None
     row['details']['measurement_protocol']=dict(measurement_ms=80,extent='point',baseline_method='manual_iso_point')
-    point=review_metadata(row);assert point['measurement_protocol']==protocol(row['details']['measurement_protocol'])
+    point=review_metadata(row);assert point['measurement_protocol']==row['details']['measurement_protocol']
     explicit=dict(measurement_ms=0,extent='whole',method_version='retained-original-method')
     row['details']['stt_event_evidence']={'measurement_protocol':explicit}
     whole=review_metadata(row)
@@ -291,30 +292,25 @@ def test_receipt_protocol_precedence_and_unknown_history_are_explicit():
     assert whole['review_state']=='unreviewed' and not any(whole['report_eligibility'].values())
 
 
-def test_saved_AF_masks_break_machine_trends_and_continuity_without_changing_N_beats(st_app):
+def test_saved_pending_AF_preserves_machine_trends_and_continuity_without_changing_N_beats(st_app):
     app,cid=st_app;client=app.test_client();base='/api/cases/'+cid
     before=client.get(base+'/stt-review').json
     old=next(c for c in before['automatic_candidates']['items'] if c['kind']=='st_elevation' and c['leads']==['II'])
-    # The source is still all N. A saved pending clinical rhythm interval is
-    # nevertheless the same authoritative exclusion used by whole-range means.
+    # The same source and N beats keep the same ST/T evidence, even when an
+    # overlapping AF diagnosis is pending. RR/HRV keep their own exclusion rule.
     mask=dict(sample_index=150*200,lead='全部',category='note',label='数学AF排除',note='',details=dict(kind='AF',status='pending',end_sample=151*200-1))
     saved=client.post(base+'/annotations',json=mask);assert saved.status_code==201,saved.json
     after=client.get(base+'/stt-review').json
     assert after['beat_revision']==before['beat_revision']
-    assert after['analysis']['exclusions']['intervals']==[dict(start_sample=30000,end_sample=30200,reason='rhythm_AF')]
-    points=after['analysis']['trends']['leads']['II']
-    assert all(p[k] is None for p in points if p['start_s']==120 for k in ('st_level_units','deviation_units','t_amplitude_units'))
-    assert 'rhythm_exclusion' in next(p for p in points if p['start_s']==120)['quality_reasons']
-    assert not any(c['start_s']<151 and c['end_s']>150 for c in after['automatic_candidates']['items'])
-    assert not any(c['start_s']==old['start_s'] and c['end_s']==old['end_s'] and c['kind']==old['kind'] and c['leads']==old['leads'] for c in after['automatic_candidates']['items'])
-    # Removing this saved exclusion restores the original cached math analysis;
-    # the mask itself must be in the cache identity, not only the beat revision.
+    assert after['analysis']['exclusions']['intervals']==[]
+    assert after['analysis']==before['analysis']
+    assert old in after['automatic_candidates']['items']
     assert client.delete('/api/annotations/'+str(saved.json['id'])).status_code==200
     restored=client.get(base+'/stt-review').json
     assert restored['analysis']==before['analysis']
 
 
-def test_ST_review_note_kind_uses_exact_index_data_version_for_range_scope(api_case):
+def test_ST_review_note_global_identity_does_not_redefine_independent_range_identity(api_case):
     import json
     client,base=api_case;store=client.application.extensions['storage'];cid=base.rsplit('/',1)[-1]
     old=client.get(base+'/report-events?category=ST').json['data_version']
@@ -328,8 +324,12 @@ def test_ST_review_note_kind_uses_exact_index_data_version_for_range_scope(api_c
     scope=client.get(base+'/hrv-review').json['scope']
     assert scope['data_version']==event_reply['data_version']
     response=client.post(base+'/stt-range',json=dict(scope={k:scope[k] for k in ('case_id','analysis_basis','analysis_revision','beat_revision','data_version')},start_sample=0,end_sample=12000,leads=['II'],measurement_ms=60))
+    assert response.status_code==409  # A global HRV identity cannot impersonate the ST-only method identity.
+    independent={k:scope[k] for k in ('case_id','analysis_basis','analysis_revision','beat_revision')}
+    response=client.post(base+'/stt-range',json=dict(scope=independent,start_sample=0,end_sample=12000,leads=['II'],measurement_ms=60))
     assert response.status_code==200,response.json
-    assert response.json['server_identity']['data_version']==event_reply['data_version']
+    assert response.json['server_identity']['data_version'].endswith('-stt-independent-v2')
+    assert response.json['server_identity']['data_version']!=event_reply['data_version']
 
 
 def saved_normal_text_report(client,base):

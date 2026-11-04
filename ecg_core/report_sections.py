@@ -2,6 +2,7 @@
 from collections import Counter
 from math import isfinite
 from .rr_quality import qrs_rows, interval_mask, finite, rhythm_summary, rhythm_episodes
+from .stt_records import protocol as stt_protocol
 
 PAGE_TITLES = dict(cover='封面',summary='首页报告',hourly='小时统计表格',scatter='散点图',st_trend='ST 趋势图',t_trend='T 波趋势图',event_strips='事件图条',st_events='ST 事件',pacing='起搏报告',af='房颤 / 房扑',hrv_time='HRV 时域报告',hrv_frequency='HRV 频域报告',hrv_overview='HRV 概述',hrt='心率震荡 (HRT)',qtd='QT 离散度 (QTd)',vcg='心电向量 (VCG)',dc='心率减速力 (DC)',twa='T 波电交替 (TWA)',vlp='心室晚电位 (VLP)',sap='睡眠窒息 (SAP)')
 UNAVAILABLE = dict(vlp='200 Hz 输入不能覆盖晚电位高频带宽；插值无法补足采集信息')
@@ -153,7 +154,7 @@ def evidence(index, st=None):
     counts=Counter(r['class_code'] for r in rows if r['class_code'] in ('P','PA','PV','PD','PF'))
     st=st or {};raw_trends=(st.get('analysis') or {}).get('trends',{}).get('leads',{})
     trends={lead:[{**p,**({key:None for key in ('st_level_units','reference_units','deviation_units','t_amplitude_units','t_reference_units')} if p.get('eligible') is False or p.get('axis_shift_suspected') else {})} for p in raw_trends.get(lead,[])] for lead in ST_LEADS}
-    return dict(st_evaluation=stt_status(st.get('automatic_candidates')),sections=[dict(key=k,title=v,available=k not in UNAVAILABLE,reason=UNAVAILABLE.get(k,'')) for k,v in PAGE_TITLES.items()],scatter=dict(points=points[::stride],total=len(points),stride=stride),pacing=dict(counts=dict(counts),total=sum(counts.values()),method='仅统计当前起搏类型标记；不检测夺获失败、感知异常或器械故障。'),af_summary=summary,af=[dict(time_s=e['time_s'],end_s=e['end_s'],label=e['label'],status=e.get('rhythm_status',e['diagnosis_status'])) for e in af],st_trends=trends,st_events=st_report_events(index),t_events=st_report_events(index,'T'),st_summary=st_summary(st_report_events(index)),t_summary=st_summary(st_report_events(index,'T')),st_representatives=[],st_review_notes=st_review_notes(index),st_measurement_protocol=dict(measurement_ms=60,extent='whole',method_version='stt-hospital-review-v1',units='source_device_units'),units='source_device_units',st_trend_resolution_s=60,heart_rate_trend=report_heart_rate(rows,index['duration_s']),heart_rate_method='current_detected_nonartifact_beats_per_actual_60s_bin_support',**derivatives)
+    return dict(st_evaluation=stt_status(st.get('automatic_candidates')),sections=[dict(key=k,title=v,available=k not in UNAVAILABLE,reason=UNAVAILABLE.get(k,'')) for k,v in PAGE_TITLES.items()],scatter=dict(points=points[::stride],total=len(points),stride=stride),pacing=dict(counts=dict(counts),total=sum(counts.values()),method='仅统计当前起搏类型标记；不检测夺获失败、感知异常或器械故障。'),af_summary=summary,af=[dict(time_s=e['time_s'],end_s=e['end_s'],label=e['label'],status=e.get('rhythm_status',e['diagnosis_status'])) for e in af],st_trends=trends,st_events=st_report_events(index),t_events=st_report_events(index,'T'),st_summary=st_summary(st_report_events(index)),t_summary=st_summary(st_report_events(index,'T')),st_representatives=[],st_review_notes=st_review_notes(index),st_measurement_protocol=stt_protocol(dict(measurement_ms=60,extent='whole')),units='source_device_units',st_trend_resolution_s=60,heart_rate_trend=report_heart_rate(rows,index['duration_s']),heart_rate_method='current_detected_nonartifact_beats_per_actual_60s_bin_support',**derivatives)
 
 def validate_pages(composition):
     pages=selected_pages(composition)

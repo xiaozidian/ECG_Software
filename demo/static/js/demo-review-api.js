@@ -281,7 +281,7 @@
 /* Browser-only mathematical review state. No patient, sinus gold standard or clinical certification. */
 globalThis.ECGDemoReviewAPI = (() => {
   const PROFILE = 'fixed-300s-fft-compat-v1', SCOPE = ['case_id','source_digest','data_version','analysis_basis','beat_revision','analysis_revision'], SOURCE=SCOPE.filter(k=>k!=='analysis_revision');
-  const STT_SAVE_KIND='browser-math-content-digest-v1', STT_IDENTITY=['case_id','analysis_basis','analysis_revision','beat_revision'];
+  const STT_SAVE_KIND='browser-math-content-digest-v1', STT_IDENTITY=['case_id','analysis_basis','analysis_revision','beat_revision'],STT_POLICY='independent_of_AF_AFL_reviews',STT_PROFILE='raw-200hz-fixed16s-st-perbeat-mean-v2';
   const clone=value=>JSON.parse(JSON.stringify(value));
   const sorted=value=>Array.isArray(value)?value.map(sorted):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,sorted(value[key])])):value;
   const encode=value=>JSON.stringify(sorted(value));
@@ -317,6 +317,7 @@ globalThis.ECGDemoReviewAPI = (() => {
     const blank=()=>({schema_version:1,profile:PROFILE,exclusions:[]});let builtinPromise=null;
     const assertScope=(expected,current,complete=false)=>{if(complete)object(expected,SCOPE,'scope');for(const k of SCOPE){const v=expected?.[k];if(complete&&(v===undefined||typeof v!==typeof current[k]))error('缺少完整复核scope');if(v!==undefined&&String(v)!==String(current[k]))error('数学Demo复核依据已变化，请重新读取',409);}};
     const currentScope=()=>clone(env.scope());
+    const currentSttScope=()=>clone(typeof env.sttScope==='function'?env.sttScope():env.scope());
     const windowIndex=value=>{if(typeof value==='string'){if(!/^\d+$/.test(value))error('HRV窗口须为非负整数');value=Number(value);}return integer(value===undefined?0:value,'HRV窗口',0,Math.max(0,Math.ceil(env.duration/86400)-1));};
     const document=value=>{object(value,['schema_version','profile','exclusions'],'HRV文档');if(value.schema_version!==1||value.profile!==PROFILE||!Array.isArray(value.exclusions)||value.exclusions.length>500)error('HRV文档或排除列表无效');const seen=new Set(),exclusions=value.exclusions.map(raw=>{object(raw,['id','start_sample','end_sample','reason'],'HRV排除');const id=ident(raw.id,'排除id',/^[A-Za-z0-9_-]{1,100}$/);if(seen.has(id))error('排除id重复');seen.add(id);const a=integer(raw.start_sample,'排除起点',0,Math.round(env.duration*200)),b=integer(raw.end_sample,'排除终点',0,Math.round(env.duration*200));if(a>=b)error('排除起点须早于终点');return {id,start_sample:a,end_sample:b,reason:text(raw.reason,'排除原因',500).trim()};}).sort((a,b)=>a.start_sample-b.start_sample||a.end_sample-b.end_sample||a.id.localeCompare(b.id));return {schema_version:1,profile:PROFILE,exclusions};};
     const state=scope=>clone(env.saved().hrvReviews?.[env.caseId]||{revision:0,document:blank(),document_scope:scope,confirmations:{},undo:[],redo:[],updated_at:null});
@@ -352,10 +353,10 @@ globalThis.ECGDemoReviewAPI = (() => {
     }
     function assertSttRangeSaveCurrent(checked){
       if(checked.saved!==encode(env.saved()))error('验证期间病例已变化，未保存；请重新计算后核对',409);
-      assertScope(checked.identity,currentScope(),true);
+      assertScope(checked.identity,currentSttScope(),true);
     }
     function assertSttRangeSavedSource(statistics){
-      const actual=currentScope(),scope=statistics?.scope;
+      const actual=currentSttScope(),scope=statistics?.scope;
       if(!scope||typeof scope!=='object'||STT_IDENTITY.some(key=>!Object.hasOwn(scope,key)))error('已保存区间统计缺少来源依据');
       for(const key of ['case_id','analysis_basis','beat_revision']){
         const expected=scope[key];if(key==='beat_revision')integer(expected,key);
@@ -366,13 +367,16 @@ globalThis.ECGDemoReviewAPI = (() => {
       if(actual.analysis_revision!==revision+1)error('已保存统计之后已有其他复核修订，请回看标注并重新计算',409);
     }
     async function validateSttRangeSave(payload){
+      await env.prepareSttSource?.();
       const details=payload.details,statistics=details?.range_statistics,total=Math.round(env.duration*200);
       if(!details||details.kind!=='ST'||!['pending','confirmed','excluded'].includes(details.status)
           ||!statistics||typeof statistics!=='object'||Array.isArray(statistics)
           ||statistics.schema_version!=='stt-range-mean-v1'||Object.hasOwn(statistics,'blocks'))error('ST区间统计须为当前完整计算摘要');
-      const identity=currentScope();
+      const identity=currentSttScope();
       assertSttIdentity(statistics.scope,identity);assertSttIdentity(statistics.server_identity,identity);
       assertSttIdentity(statistics,identity);
+      if(statistics.method_profile?.id!==STT_PROFILE||statistics.method_profile?.rhythm_policy!==STT_POLICY)error('旧ST范围测量方法须重新计算，未改签旧统计',409);
+      if(statistics.binding?.source_digest!==identity.source_digest?.replace(/^raw-sha256:/,''))error('ST范围统计原始波形已变化，须重新计算',409);
       const range=statistics.range;
       if(!range||!Number.isSafeInteger(range.start_sample)||!Number.isSafeInteger(range.end_sample)
           ||range.start_sample<0||range.end_sample>total||range.end_sample-range.start_sample<12000
@@ -393,11 +397,14 @@ globalThis.ECGDemoReviewAPI = (() => {
     }
     async function sttRangeRoute(method,payload){
       if(method!=='POST')error('ST范围统计仅支持只读POST计算',405);
-      if(Object.hasOwn(payload,'exclusions'))error('范围统计仅采用当前已保存的节律排除区间，请先复核并保存节律标注');
+      if(Object.hasOwn(payload,'exclusions'))error('ST范围统计不接受客户端排除区间；房颤/房扑复核与ST/T独立');
       const requested=payload.scope,required=['case_id','analysis_basis','analysis_revision','beat_revision'];
       if(!requested||typeof requested!=='object'||Array.isArray(requested)||required.some(k=>!Object.hasOwn(requested,k)))error('范围统计须提供病例、分析及逐搏修订依据');
-      const actual=currentScope();
       if(Object.hasOwn(payload,'case_id')&&payload.case_id!==env.caseId)error('范围统计请求来自另一病例',409);
+      const beforeSource=currentScope();
+      for(const key of required){if(['analysis_revision','beat_revision'].includes(key))integer(requested[key],key);if(requested[key]!==beforeSource[key])error('病例或复核修订已变化，请重新读取',409);}
+      await env.prepareSttSource?.();
+      const actual=currentSttScope();
       for(const key of SCOPE)if(Object.hasOwn(requested,key)){
         let expected=requested[key];
         if(['analysis_revision','beat_revision'].includes(key)){
@@ -406,24 +413,17 @@ globalThis.ECGDemoReviewAPI = (() => {
         if(expected!==actual[key])error('病例、原始来源或复核修订已变化，请重新读取',409);
       }
       if(!globalThis.ECGSTTRangeMath||typeof env.rawWaveform!=='function'||typeof env.annotations!=='function')error('全原始数学范围计算模块未加载，请刷新');
-      const savedBefore=encode(env.saved()),feed=env.feed(),masks=[];
-      for(const row of env.annotations()){
-        const details=row.details||{};
-        if(!['AF','AFL'].includes(details.kind)||details.status==='excluded')continue;
-        if(!Number.isSafeInteger(row.sample_index)||!Number.isSafeInteger(details.end_sample))error('节律排除区间须使用完整原始样本范围');
-        const status=details.status===undefined?'unclassified':details.status===null?'None':details.status===true?'True':details.status===false?'False':String(details.status);
-        masks.push({start_sample:row.sample_index,end_sample:details.end_sample+1,reason:'rhythm_'+details.kind,origin:'stored_annotation',review_status:status});
-      }
+      const savedBefore=encode(env.saved()),feed=env.feed();
       const raw=await env.rawWaveform();
       if(raw.byteLength!==Math.round(env.duration*200)*16)error('完整数学波形长度与病例范围不一致');
-      const result=await ECGSTTRangeMath.calculate(raw,feed.beats,{start_sample:payload.start_sample,end_sample:payload.end_sample,leads:payload.leads,measurement_ms:payload.measurement_ms===undefined?60:payload.measurement_ms,exclusions:masks,basis:clone(requested)});
+      const result=await ECGSTTRangeMath.calculate(raw,feed.beats,{start_sample:payload.start_sample,end_sample:payload.end_sample,leads:payload.leads,measurement_ms:payload.measurement_ms===undefined?60:payload.measurement_ms,exclusions:[],basis:clone(requested)});
       if(savedBefore!==encode(env.saved()))error('计算期间病例已变化，请重新读取',409);
-      assertScope(actual,currentScope(),true);
+      assertScope(actual,currentSttScope(),true);
       const compact={...result,...Object.fromEntries(STT_IDENTITY.map(key=>[key,actual[key]])),server_identity:actual,physician_document_written:false};
       delete compact.blocks;
       const saveReceipt={kind:STT_SAVE_KIND,digest:await digest(compact)};
       if(savedBefore!==encode(env.saved()))error('生成摘要期间病例已变化，请重新读取',409);
-      assertScope(actual,currentScope(),true);
+      assertScope(actual,currentSttScope(),true);
       return {...compact,save_receipt:saveReceipt};
     }
     async function route(url,method,payload){const path=url.pathname,query=Object.fromEntries(url.searchParams);if(path.startsWith('/api/terminology/'))return terminology(path,method,payload,query);const match=path.match(/^\/api\/cases\/([^/]+)\/(rr-review(?:\/locate)?|hrv-review(?:\/(preview|confirm|cancel))?|stt-range)$/);if(!match)return null;if(decodeURIComponent(match[1])!==env.caseId)error('数学病例不存在',404);const action=match[2];if(action==='stt-range')return sttRangeRoute(method,payload);if(action.startsWith('hrv-review'))return hrvRoute(action,method,payload,query);const scope=currentScope();assertScope(query,scope);const index=ECGDemoRR.build(env.feed(),scope);if(action==='rr-review'&&method==='GET')return {...ECGDemoRR.query(index,query),simulation:{browser_computed:true,real_patient_inputs_read:false,clinical_validation:false,verified_nn_count:0}};if(action==='rr-review/locate'&&method==='POST'){const target=payload.target||payload;if(['case_id','analysis_basis','analysis_revision','beat_revision','sample_index'].some(k=>!Object.hasOwn(target,k)))error('缺少完整RR目标身份');assertScope(target,scope);const exact=ECGDemoRR.resolve(index,target),start=Math.max(0,exact.sample_index/200-3.5),end=Math.min(env.duration,start+7),wave=await env.waveform(new URLSearchParams({whole:'1',filter:'raw'}),{start,duration:end-start,leads:['II','V1','V5'],maxPoints:2800,filter:'raw'});assertScope(scope,currentScope(),true);wave.beats=env.feed().beats.filter(b=>b.sample_index/200>=wave.start_s&&b.sample_index/200<=wave.start_s+wave.duration_s);if(!wave.beats.some(b=>b.sample_index===exact.sample_index))error('数学波形缺少精确目标；未用最近邻替代',409);return {target:exact,waveform:{...wave,...scope},located:true,...scope,simulation:{browser_computed:true,real_patient_inputs_read:false,clinical_validation:false}};}error('RR接口方法不受支持',405);}

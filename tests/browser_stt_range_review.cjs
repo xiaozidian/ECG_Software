@@ -34,7 +34,7 @@ async function install(page) {
         range: {start_sample: request.start_sample, end_sample: request.end_sample,
           start_s: request.start_sample / 200, end_s: request.end_sample / 200,
           duration_s: duration, half_open: true},
-        method_profile: {id: 'raw-200hz-fixed16s-st-perbeat-mean-v1', sample_rate_hz: 200,
+        method_profile: {id: 'raw-200hz-fixed16s-st-perbeat-mean-v2', rhythm_policy:'independent_of_AF_AFL_reviews', sample_rate_hz: 200,
           measurement_ms: request.measurement_ms, baseline_offsets_samples: [-40,-36,-32,-28,-24],
           st_window_offsets_samples: [-2,-1,0,1,2],
           aggregate: 'arithmetic_mean_of_used_per_beat_st_minus_baseline',
@@ -61,6 +61,8 @@ async function install(page) {
       if (responseMode === 'wrong-case') result.scope.case_id = 'synthetic-sttr-B';
       if (responseMode === 'wrong-basis') result.scope.analysis_basis = 'math-source-B';
       if (responseMode === 'wrong-profile') result.method_profile.id = 'synthetic-unbound-profile';
+      if (responseMode === 'legacy-mask-profile') result.method_profile.id = 'raw-200hz-fixed16s-st-perbeat-mean-v1';
+      if (responseMode === 'missing-rhythm-policy') delete result.method_profile.rhythm_policy;
       if (responseMode === 'wrong-global-count') result.counts.detected_count = 5;
       if (responseMode === 'wrong-lead-count') result.leads.find(row => row.lead === 'V5').used_count = 2;
       if (responseMode === 'wrong-baseline-offsets') result.method_profile.baseline_offsets_samples[0] = -39;
@@ -343,7 +345,7 @@ async function resultsText(page) { return await field(page, 'results').textConte
     checks.push('additional frontend basis keys are retained and exactly echoed without requiring a server identity');
 
     await reset(page);
-    for (const mismatch of ['wrong-profile', 'wrong-global-count', 'wrong-lead-count',
+    for (const mismatch of ['wrong-profile', 'legacy-mask-profile', 'missing-rhythm-policy', 'wrong-global-count', 'wrong-lead-count',
       'wrong-baseline-offsets', 'wrong-st-offsets', 'wrong-j-basis',
       'wrong-start-seconds', 'wrong-end-seconds', 'wrong-duration-seconds',
       'zero-used-non-null', 'positive-used-null']) {
@@ -358,6 +360,7 @@ async function resultsText(page) { return await field(page, 'results').textConte
       assert.match(await field(page, 'status').textContent(), /丢弃结果/);
     }
     checks.push('wrong sample-to-seconds mapping, profile/offsets/landmark and global/lead/mean count binding discard results and block callbacks');
+    checks.push('retired mask-based v1 profile and missing independent-rhythm policy cannot be accepted as a new calculation');
 
     await reset(page); await calculate(page); await page.evaluate(() => { callbackMode = 'held'; });
     await action(page, 'review').click(); await page.waitForFunction(() => reviewGates.length === 1);

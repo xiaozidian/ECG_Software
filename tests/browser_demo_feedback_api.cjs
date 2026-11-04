@@ -432,20 +432,21 @@ async function run() {
       rejectedRevisionTypes: ['numeric-string', 'boolean', 'fraction', 'negative'], weightedMeanI: four.leads[0].mean_units, rawSourceSha256: sha(h.source.raw)};
   });
   for (const kind of ['AF', 'AFL']) for (const status of ['pending', 'confirmed', 'excluded'])
-    await check(`ST saved-${kind}-${status}-authoritative-mask-matches-native-annotations`, async () => {
+    await check(`ST saved-${kind}-${status}-independent-measurement-matches-native-unmasked-source`, async () => {
       const h = harness(), current = await h.call('rhythm-review');
       const document = {episodes: [afEpisode(status, {kind})], bookmarks: {}};
       const saved = await h.call('rhythm-review', 'PUT', afPayload(current, document)), currentScope = scope(saved);
       const stable = h.localStorage.getItem(STORE_KEY), writes = h.localStorage.writes;
       const options = {...cases[0].options, basis: currentScope,
-        exclusions: status === 'excluded' ? [] : [mask(2000, 4000, 'rhythm_' + kind, {origin: 'stored_annotation', review_status: status})]};
+        exclusions: []};
       const expectedValue = nativeOracle([{...cases[0], options}])[0].result;
       const actual = await h.call('stt-range', 'POST', {scope: currentScope, start_sample: 0, end_sample: 12000, leads: LEADS, measurement_ms: 60});
       compareST(actual, expectedValue, `saved-${kind}-${status}`, {compact: true}); verifyReceipt(actual);
       assert.equal(h.localStorage.getItem(STORE_KEY), stable); assert.equal(h.localStorage.writes, writes);
       assert.equal((await h.call('rhythm-review')).document.episodes[0].status, status, 'ST calculation cannot promote or modify an AF review state');
-      if (status === 'excluded') assert.deepEqual(actual.exclusions.intervals, []);
-      else assert(actual.mask_reason_counts.some(value => value.reason === 'rhythm_' + kind && value.review_status === status));
+      assert.deepEqual(actual.exclusions.intervals, []);
+      assert.deepEqual(actual.mask_reason_counts, []);
+      assert.equal(actual.method_profile.rhythm_policy, 'independent_of_AF_AFL_reviews');
       return {kind, status, nativeCounts: expectedValue.counts, meanI: actual.leads[0].mean_units};
     });
   await check('AF GET is read-only, save preserves pending status and reload preserves exact full identity/document', async () => {
