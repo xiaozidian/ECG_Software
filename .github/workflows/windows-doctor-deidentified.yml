@@ -10,6 +10,10 @@ on:
       - 'scripts/stt-native-continuation-contract.json'
       - 'scripts/verify_windows_doctor_browser.py'
       - 'scripts/verify_windows_stt_independent_upgrade.py'
+      - '.github/workflows/windows-independent-native-continuation.yml'
+      - 'scripts/prepare_stt_independent_continuation.py'
+      - 'scripts/stt-independent-continuation-contract.json'
+      - 'scripts/verify_stt_independence_api.py'
   workflow_dispatch:
 
 permissions:

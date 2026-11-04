@@ -128,6 +128,10 @@ async def verify_stt_independence_api(page, case_id, receipt):
             rhythm = await request(page, case_id, 'rhythm-review')
             document = copy.deepcopy(original)
             if current is not None: document['episodes'].append(current)
+            # The public API canonicalizes episode order. Construct that same
+            # order when an older UI episode starts after this new candidate;
+            # retain the exact full-document response assertion below.
+            document['episodes'].sort(key=lambda x:(x['start_s'],x['end_s'],x['id']))
             response = await request(page, case_id, 'rhythm-review', method='PUT', payload={
                 **{k: rhythm[k] for k in IDENTITY}, 'revision': rhythm['revision'], 'confirmed': True, 'document': document})
             assert response['document'] == document

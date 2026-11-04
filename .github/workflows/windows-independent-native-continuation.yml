@@ -1,0 +1,80 @@
+name: Windows independent ST immutable fresh-PE continuation 1.0.14
+
+on:
+  push:
+    branches: ["codex/windows-doctor-deidentified-x64-20261028"]
+    paths:
+      - '.github/workflows/windows-independent-native-continuation.yml'
+      - 'scripts/prepare_stt_independent_continuation.py'
+      - 'scripts/stt-independent-continuation-contract.json'
+      - 'scripts/verify_stt_independence_api.py'
+      - 'scripts/verify_windows_stt_independent_upgrade.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: windows-independent-native-continuation-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  native:
+    name: Lock original fresh14 and passed49 then execute remaining23
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+      ECG_ALLOW_PHI: "0"
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: project
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: project
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12.10"
+          architecture: x64
+          cache: pip
+          cache-dependency-path: project/requirements-doctor-build.txt
+      - name: Isolated native verification tools
+        run: |
+          python -m venv "$env:RUNNER_TEMP\independent-native-tools"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "$env:RUNNER_TEMP\independent-native-tools\Scripts" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Install pinned inspectors and system Edge control
+        run: |
+          python -m pip install -r requirements-doctor-build.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify producer failure17 passed49 and exact unchanged4 archives40 code80 UI129 source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/prepare_stt_independent_continuation.py --output "$env:RUNNER_TEMP\independent-continuation"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Actual packaged ST and multi-AF UI12 plus independent API2 checks
+        run: |
+          $input = Get-Content "$env:RUNNER_TEMP\independent-continuation\continuation-input.json" -Raw | ConvertFrom-Json
+          python scripts/verify_windows_report_evidence_native.py --software-archive "$($input.paths.p01)" --output "$env:RUNNER_TEMP\independent-continuation\evidence\report-evidence-native.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Actual old13 to fresh14 migration9 preserves all old work and marks old method stale
+        run: |
+          $input = Get-Content "$env:RUNNER_TEMP\independent-continuation\continuation-input.json" -Raw | ConvertFrom-Json
+          python scripts/verify_windows_stt_independent_upgrade.py --base-software-archive "$($input.paths.base13)" --software-archive "$($input.paths.p01)" --output "$env:RUNNER_TEMP\independent-continuation\evidence\stt-independent-upgrade-native.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Original passed49 and scopes plus actual fresh23 evidence with explicit provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-doctor-eval-mathematical-validation-1.0.14
+          path: ${{ runner.temp }}/independent-continuation/evidence
+          if-no-files-found: warn
+          retention-days: 14

@@ -1,0 +1,152 @@
+{
+  "schema": 1,
+  "producing_run": 41782148683,
+  "producing_commit": "8dd2c80d0712535bc5a8b7eec0fb6f336bbcc3d0",
+  "EXE_sha256": "f5283fc6a670e4d6dd9553797035458f31d0ea059ef81516f06fcc3ea9c24a73",
+  "common_source_fingerprint": "37519667ee1c075e4f299e75510712d68fcbadc7d67d901d7fc2e4497c367c0a",
+  "outer_artifacts": {
+    "CardioInsight-Windows-x64-1.0.14-P01-software-only": {
+      "id": 13301335927,
+      "digest": "sha256:4ebfe447fc4804fb5f082130055c59cc054686864c43ee3c08e0946aa679eea1",
+      "bytes": 38354486
+    },
+    "Windows-doctor-eval-mathematical-validation-1.0.14": {
+      "id": 13301176556,
+      "digest": "sha256:0c936f6ed969fb82aedb57cec6d6d2c09b7141b40d72ec41970f4f6947503235",
+      "bytes": 3352585
+    },
+    "CardioInsight-Windows-x64-1.0.14-M01-full": {
+      "id": 13301046742,
+      "digest": "sha256:7bfeb21bd43472d22ab1d4ff0e8ec0642728bacaa4111a414010d0ee8999d944",
+      "bytes": 202233322
+    },
+    "CardioInsight-Synthetic-M01-24h-v1-for-1.0.14": {
+      "id": 13300862036,
+      "digest": "sha256:65347ffa34dd55d56a560fb90890714afc2b91d2562f009eb31026662eecb53a",
+      "bytes": 163882723
+    },
+    "CardioInsight-Windows-x64-1.0.14-software-update": {
+      "id": 13300777500,
+      "digest": "sha256:2c39298ed96b31ba08b69faf8f820b7afbc45fcb8f4c124a4d0dfb359ec42892",
+      "bytes": 38346034
+    }
+  },
+  "package_bytes": {
+    "p01": {
+      "sha256": "40642bfe1a25242f158d7ae2e106015e54066ca635fb935d7bc70c63fc2d1a46",
+      "bytes": 38352979
+    },
+    "full": {
+      "sha256": "e6f14d36c8e8864a77bb27d8541b4e2e6c773e7b1e15d990ef9c63f22ecdb807",
+      "bytes": 202228750
+    },
+    "update": {
+      "sha256": "564579640a059e6d2b135eb65f903a96232f628d0f163244836c30af1ebbe397",
+      "bytes": 38345466
+    },
+    "math": {
+      "sha256": "3b09e147add5a794800bc0be400ec57c347077c47546cc67c5593b3bedd745d0",
+      "bytes": 163882245
+    }
+  },
+  "runtime_python_sha256": {
+    "app.py": "904b11b80378c7d4329e0ee14203c5b01ffd6f354537b9c39d91054f2c08a717",
+    "win_doctor_eval.py": "755cfef85ebe20851c7a04e6a95521865daf47472d72a57776b6f68e42c4fe6e",
+    "ecg_core/__init__.py": "81dd81fdaba67c0690fb1a78be18508a66c9033db4307fb235f72b842c11ccdf",
+    "ecg_core/advanced_analysis.py": "df2ba3ca3e9020149133299c2255aad466f4f2e1d505ba2f981b25bf7ab16c3f",
+    "ecg_core/analysis_provenance.py": "e2c157d5fdb9ef75a5b0b7a24f13a89e855ef7abddd9b6f952719cab7299135c",
+    "ecg_core/beat_editor.py": "e3a7e351a95ac4f78c8dceedda5a21c135737d4aebb0485d1c4af442bb7b5ff1",
+    "ecg_core/clinical_analysis.py": "f5cc1ff303190ed1fdfad9c92077936f38ee80769f0e7373921808a40517bb74",
+    "ecg_core/clinical_query_cache.py": "b0ca1934769f72dc372bb79a5d6f3308fc658553356169ce08f03279261d1a16",
+    "ecg_core/config.py": "e8568f600bb6b53e5abdcb28aeb34ce185504ee4a599128a96f20b50d4b4366e",
+    "ecg_core/core_contract.py": "d701dc3f4e31dde1955072e3d0521e9f3282bfc7fb60888b18cdcd40662c747a",
+    "ecg_core/doctor_source.py": "037a07a91510210207dc2fd6d0af0b2630593ed302daf3852151deb7c1c8801d",
+    "ecg_core/ebi.py": "80dd8f1b4a59063fb96a0f848107cacbfee9b61264432964edbf97edccabdc80",
+    "ecg_core/evaluation_status.py": "a0f5c23bcb1de66f72b31bbd4b0c1005f708c56664cc199eeace8346b0a1757f",
+    "ecg_core/hrv_analysis.py": "b651ea7f92b19e94dcc7e8a405e402ee16201b2948c3736e5baa84d5d3bf55cf",
+    "ecg_core/hrv_report_pdf.py": "638d51c26e5316b663c97fabbe3b6045b28f6956ad8a1c5f74d408ce41c6fa70",
+    "ecg_core/hrv_review.py": "b8d28e6f852728546e87f3f2480af7c68332f354f732782cb4e97c232c2e2983",
+    "ecg_core/lps_parser.py": "9b2688e2668492f5e2b987b5a64798d4bcbd5062583a2c318b6637b2aa2e4c81",
+    "ecg_core/overview.py": "6715f00c5816ff531b2b8126c6438fd6f89c259115cb4ba83328ad15d2dee1c1",
+    "ecg_core/report_curation.py": "4ea19df99d2986cd2d35dc3df307066844b793a43c080fbf13e809fcc2aa6ca6",
+    "ecg_core/report_evidence.py": "702a7b36eef61ea8d4109780d312d2961293d88c536596ec86b4cd6e156287f8",
+    "ecg_core/report_layout.py": "e9273eaa17c0db979cf2ecc7943712b5bd530ee75be1e7ab6530041b5107a35a",
+    "ecg_core/report_paper_pdf.py": "fab1c02939146164b6a79aaf40dfbbb6678cf0c14ae2c3f323329d9efe537107",
+    "ecg_core/report_pdf.py": "e3f3bffe904da896e81fd94fb17f9da495c38003af9e093cd289bce7b5caf5ea",
+    "ecg_core/report_sections.py": "7f3277ca14aa55e7aa6ffa355528a97f9f5db9bfd93fce6e8799a21376eca506",
+    "ecg_core/report_sections_pdf.py": "d30dd593cab5dce2e41f1c0304e27eb244086130adefd140358dd05316bc25a7",
+    "ecg_core/repository.py": "e17f3bd5c8fdba4891eb082b9d383124283650d1f4641a15702c04b4585b1b81",
+    "ecg_core/review_candidates.py": "f43b50ac39ec2bdba573dcb88c96d11900df8e1e722e39e155e8fad924536f26",
+    "ecg_core/review_workflow.py": "6e2d6bd87504692ea07f6f4b835a2d82a33db1f9d0905b10e9f5b5f3ee75ff8e",
+    "ecg_core/rr_quality.py": "fa9d5dafc3d851e411886ac6ea789a5958153c523e13575b912ba9f9cc29361c",
+    "ecg_core/rr_report.py": "619b8544f59fe1a99582a94d54423d4980f1bc6bb31c25455e74d06d306567ed",
+    "ecg_core/rr_review.py": "609acd9c66e256ce5a42767532d6195970defb1564f2b0e216b7ca0037e884bd",
+    "ecg_core/signal_profile.py": "6a33721d4e3b38d09228d8ce4604675b89a1a92bdb98c6e675824db164ec88c6",
+    "ecg_core/source_identity.py": "1e01f431ad78966b11b12729bb644521a23aee286e9cdb9d9f139d99bc94a418",
+    "ecg_core/storage.py": "88237d35de245400666803c80157a7bd8d259ce5a3d44c8e931b255b8db78af4",
+    "ecg_core/stt.py": "2ba6bf2b247f7d13a3df786f258e4a8d8dd30c56c75bee3f9b736e7baa518738",
+    "ecg_core/stt_range.py": "a775d3499f8e63530ff5b1421e401f3c67c2856474c090632759cce47a7fc192",
+    "ecg_core/stt_records.py": "c7d423fe37dac2912d131eb01faefe62fec3990d66a5c813b630b626bd0bfba2",
+    "ecg_core/terminology.py": "70f0b680b4b96a85d9e7d9044ba071a06841965f229324c32789b04de6b607e0",
+    "ecg_core/waveform.py": "52d0c3dfc40ea0e8129bbd997974dfff54974782eb0b953561f81e1f16a4fbf7",
+    "ecg_core/workspace_backup.py": "594886d94868defe404eaeb5ad4ed7a638b886085bbb0dc9c7b3fe2caddedd53"
+  },
+  "native49_success": {
+    "checks": {
+      "native": 41,
+      "P01": 8
+    },
+    "receipt_sha256": {
+      "browser-validation.json": "f60754358a6d98f8b880aab716987f8691981cfdc5504f61d82d32fd135a5488",
+      "p01-native.json": "27b01ea643bf626477b3073041f363d60eb1ab834b39523f560ada7fa2a9279a"
+    },
+    "helper_source_sha256": {
+      "scripts/verify_windows_doctor_browser.py": "6054750ecab1ed535045ae7ba9675e114687c5c732837d2df1719e41c5a1ed92",
+      "scripts/verify_windows_p01.py": "656e3be2ce698133fa03240119705deb2929b137f06de7932a2689d33f393efa",
+      "scripts/verify_windows_latest_ui.py": "73cfc82e460311ac32b2ca958b6977ec98cf1d6b9ad13f9430dbdeb68880bd7a",
+      "scripts/verify_windows_af_editor.py": "2a79bf075913c633be1ecd0eafbf7b882972a1e0c490f3492fd728efd40f546a",
+      "scripts/verify_report_rr_browser.py": "be3a75d24a25d239adcf78a2be016a78fe3025909a76d89bcbffb12c98b7f804",
+      "scripts/verify_lasso_browser.py": "e8febf501fcd6d93281f68b827e54a5edb432c23383c2beecb0e8ffa8c1921bf",
+      "scripts/generate_report_evidence_math.py": "52def9390cac1370f864946fd5cae2749facec6c6f9cb34f34f758838d15f72d",
+      "scripts/generate_doctor_24h.py": "bc694ce453e70d197c1e597ecf18f421d18190e9999844ac31b3428bb27d310f",
+      "scripts/deidentify_patient_source.py": "87eafde52e17764fd73db8765e12fa565b4c9e674d6450aa3ad86a6c3b9b58d8",
+      "scripts/windows_doctor_build.py": "43c92840a12366313cb034eec4eb9da28c6888807d3fa8ab5a970db5cf753e17",
+      "scripts/windows_deidentified_package.py": "52aada1bf5d35761e0c3b017a91e741f11d829f94648ed523934e2f70b43030f"
+    },
+    "input_package_SHA": {
+      "p01": "40642bfe1a25242f158d7ae2e106015e54066ca635fb935d7bc70c63fc2d1a46",
+      "full": "e6f14d36c8e8864a77bb27d8541b4e2e6c773e7b1e15d990ef9c63f22ecdb807",
+      "update": "564579640a059e6d2b135eb65f903a96232f628d0f163244836c30af1ebbe397",
+      "math": "3b09e147add5a794800bc0be400ec57c347077c47546cc67c5593b3bedd745d0"
+    }
+  },
+  "corrected_API_helper_sha256": "fba208ff71eed4f8deb361ed3d830189d1592dceb13ada70b9b920ac6498bb2e",
+  "failed_supplemental_checks": [
+    "native29-initial-twelve-lead-minute-ST-Delta-T-exact-current-Python-oracle",
+    "actual-native-AF-three-recommendations-and-fourth-custom-range-persist-distinct-12L-strips",
+    "actual-native-once-whole-AF-confirmation-rebases-four-strips-and-keeps-full-bounds",
+    "actual-native-four-AF-strips-save-and-full-reopen-keeps-identifiers-curation-and-ranges",
+    "native29-saved-AF-preserves-full-minute-evidence-and-three-metric-controls-use-own-fields",
+    "native29-view-only-candidate-keeps-blank-result-whole-range-and-bounded-one-three-twelve-lead-source",
+    "native29-negative-reviewed-record-text-only-adoption-is-not-an-abnormal-event-or-strip",
+    "native29-same-ID-result-update-retracts-own-old-normal-text-and-preserves-unrelated-curation",
+    "native29-table-text-strip-purposes-are-independent-and-withdrawn-strip-disappears-without-count-change",
+    "native29-hospital-ST-T-single-page-twelve-trends-heart-rate-and-three-real-source-representatives"
+  ],
+  "QA_allowed_paths": [
+    ".github/workflows/windows-doctor-deidentified.yml",
+    ".github/workflows/windows-independent-native-continuation.yml",
+    "scripts/prepare_stt_independent_continuation.py",
+    "scripts/stt-independent-continuation-contract.json",
+    "scripts/verify_stt_independence_api.py"
+  ],
+  "remaining_fresh_checks": {
+    "ST_AF": 14,
+    "old13_to_new14": 9,
+    "total": 23
+  },
+  "native_checks_total": 72,
+  "all_native_gates_executed_in_final_validation": false,
+  "original_archives_immutable": true,
+  "clinical_validation": false
+}
