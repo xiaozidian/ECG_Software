@@ -46,19 +46,27 @@ def generate(output: Path, release_id: str) -> dict:
     # The adapter invalidates it after beat edits; it never relabels this
     # precomputed evidence as a fresh browser analysis.
     if str(root) not in sys.path: sys.path.insert(0, str(root))
-    from ecg_core.stt import build_stt_review
+    from ecg_core.stt import build_stt_review, ALGORITHM_VERSION
+    from ecg_core.stt_records import RHYTHM_POLICY
+    from ecg_core.beat_editor import EditedRecords, blank
+    from ecg_core.clinical_analysis import build_index
+    feed=EditedRecords([(b.sample_index,0,b.group,0,0,0,b.rr_ms) for b in beats],blank(),[],duration)
+    beat_version=build_index(feed)['beat_version']
     case['stt_review'] = build_stt_review(case['conclusion'], waveform,
-        [{'sample_index':b.sample_index,'group':b.group,'rr_ms':b.rr_ms} for b in beats], duration,
+        feed.records, duration,
         analysis_revision='editor-0|overrides-none')
+    assert ALGORITHM_VERSION == 'stt-screening-0.3.2-independent-rhythm'
+    assert case['stt_review']['analysis']['algorithm_version'] == ALGORITHM_VERSION
+    assert case['stt_review']['analysis']['rhythm_policy'] == RHYTHM_POLICY == 'independent_of_AF_AFL_reviews'
     case['stt_review_binding'] = {'case_id': case_id,
         'analysis_basis': 'public-math-4314-v2:' + case_id,
-        'rhythm_exclusions': [],
+        'rhythm_policy': RHYTHM_POLICY, 'algorithm_version': ALGORITHM_VERSION,
+        'beat_version':beat_version,'data_version':beat_version+'-stt-independent-v2',
         'beat_revision': 0, 'python_precomputed': True,
         'patient_inputs_read': False, 'raw_waveform_sha256': hashlib.sha256(waveform.read_bytes()).hexdigest()}
     from ecg_core.stt_range import analyze_stt_range
     for candidate in case['stt_review']['automatic_candidates']['items']:
-        candidate['whole_statistics']=analyze_stt_range(waveform,
-            [{'sample_index':b.sample_index,'group':b.group,'rr_ms':b.rr_ms} for b in beats],
+        candidate['whole_statistics']=analyze_stt_range(waveform,feed.records,
             start_sample=round(candidate['start_s']*200),end_sample=round(candidate['end_s']*200),
             leads=candidate['leads'],measurement_ms=60,basis=case['stt_review_binding'],
             source_digest=case['stt_review_binding']['raw_waveform_sha256'])

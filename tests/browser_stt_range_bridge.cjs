@@ -21,7 +21,7 @@ async function fixture(page, overrides={}) {
     window.response=request=>({schema_version:'stt-range-mean-v1',scope:structuredClone(request.scope),
       server_identity:{case_id:request.scope.case_id,analysis_basis:request.scope.analysis_basis,
         analysis_revision:request.scope.analysis_revision,beat_revision:request.scope.beat_revision,source_digest:'b'.repeat(64)},
-      method_profile:{id:'raw-200hz-fixed16s-st-perbeat-mean-v1',sample_rate_hz:200,measurement_ms:request.measurement_ms,
+      method_profile:{id:'raw-200hz-fixed16s-st-perbeat-mean-v2',rhythm_policy:'independent_of_AF_AFL_reviews',sample_rate_hz:200,measurement_ms:request.measurement_ms,
         baseline_offsets_samples:[-40,-36,-32,-28,-24],st_window_offsets_samples:[-2,-1,0,1,2],
         aggregate:'arithmetic_mean_of_used_per_beat_st_minus_baseline',j_basis:'fixed_16s_machine_estimate_after_explicit_masks',
         unit_label:'u',calibration_verified:false,quality_note:'数学质量标记未经医生核对。'},
@@ -73,6 +73,17 @@ const flush=page=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame((
     assert.equal(data.snapshot.blocks,undefined);assert.equal(data.snapshot.binding.source_digest,'b'.repeat(64));
     assert.equal(data.finding,'无法判读');assert.equal(data.quality,false);assert.equal(data.iso,.34);assert.equal(data.j,.52);
     checks.push('actual component fills concise machine-range note, preserves doctor text/manual ISO/J/finding/quality, and compacts provenance');
+
+    await fixture(page);await page.evaluate(()=>{const make=response;window.response=request=>{
+      const value=make(request);value.method_profile.id='raw-200hz-fixed16s-st-perbeat-mean-v1';return value;
+    };});await calculate(page);
+    assert(await button(page,'review').isDisabled());
+    await button(page,'review').dispatchEvent('click');await flush(page);
+    assert.equal(await page.evaluate(()=>state.sttRangeReviewed),null);
+    assert.equal(await page.locator('#sttReviewNote').inputValue(),'医生原文：需结合症状核对。');
+    assert.match(await page.locator('[data-sttr-status]').textContent(),/丢弃结果/);
+    checks.push('retired v1 mask-based calculation is discarded before bridge note mutation or save binding');
+    await fixture(page);await fill(page);
 
     await page.evaluate(()=>{window.saved=bridge.snapshotForSave();saved.range.start_sample=123;});
     assert.equal(await page.evaluate(()=>state.sttRangeReviewed.range.start_sample),10000);

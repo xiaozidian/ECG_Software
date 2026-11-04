@@ -21,6 +21,7 @@ if str(ROOT) not in sys.path:sys.path.insert(0,str(ROOT))
 from playwright.async_api import async_playwright
 from generate_report_evidence_math import generate
 from verify_report_evidence_ui import verify_report_evidence_ui
+from verify_windows_ui_upgrade_native import cleanup_owned
 from deidentify_patient_source import export_case
 from windows_deidentified_package import unpack
 from windows_doctor_build import verify_content_manifest
@@ -30,7 +31,7 @@ from ecg_core.repository import CaseRepository
 from ecg_core.ebi import load_records
 from ecg_core.stt import build_stt_review
 from ecg_core.stt_range import analyze_stt_range
-from ecg_core.stt_records import rhythm_exclusions
+from ecg_core.stt_records import RHYTHM_POLICY
 
 
 def snapshot(root):return {p.relative_to(root).as_posix():sha256(p.read_bytes()).hexdigest() for p in root.rglob('*') if p.is_file()}
@@ -38,7 +39,7 @@ def snapshot(root):return {p.relative_to(root).as_posix():sha256(p.read_bytes())
 
 async def verify(args,result):
     assert os.name=='nt' and platform.machine().upper() in ('AMD64','X86_64'), 'Native Windows x64 required; local prechecks cannot satisfy this receipt'
-    with tempfile.TemporaryDirectory(prefix='report28-native-mathematics-') as tmp:
+    with tempfile.TemporaryDirectory(prefix='report29-native-mathematics-') as tmp:
         work=Path(tmp);origin=work/'new-mathematics';declaration=generate(origin)
         cases,issues=CaseRepository(origin).scan_cases();assert len(cases)==1 and not issues
         fixture=work/'sources/P01';export_case(cases[0],fixture,mathematical_fixture=True)
@@ -48,17 +49,17 @@ async def verify(args,result):
         raw=fixture/doctor_source.PATHS['data'];ebi=fixture/doctor_source.PATHS['ebi']
         records=load_records(str(ebi))
         expected=build_stt_review('',raw,records,600,analysis_revision='independent-native-fixture')
-        assert expected['analysis']['algorithm_version']=='stt-screening-0.3.1-hospital-records-rhythm-masks'
+        assert expected['analysis']['algorithm_version']=='stt-screening-0.3.2-independent-rhythm'
         assert any(c['kind'] in ('st_depression','st_elevation') and len(c['leads'])==1 and c['duration_s']>=60 for c in expected['automatic_candidates']['items'])
-        def current_oracle(items):return build_stt_review('',raw,records,600,analysis_revision='independent-native-fixture',excluded_intervals=rhythm_exclusions(items))
-        def range_oracle(first,end,leads,items):return analyze_stt_range(raw,records,start_sample=first,end_sample=end,leads=leads,measurement_ms=60,exclusions=rhythm_exclusions(items))
+        def current_oracle(items):return build_stt_review('',raw,records,600,analysis_revision='independent-native-fixture')
+        def range_oracle(first,end,leads,items):return analyze_stt_range(raw,records,start_sample=first,end_sample=end,leads=leads,measurement_ms=60)
         program=unpack(args.software_archive,work/'program');verify_content_manifest(program)
         exe=program/'CardioInsightDoctorEval.exe';assert pe_is_x64(exe)
         release=json.loads((program/'RELEASE.json').read_text())
         shared=json.loads((program/'_internal/shared-source-build.json').read_text())
         from scripts.verify_public_release import verify as verify_source
         from scripts.shared_source import snapshot as software_snapshot
-        assert release['app_version']=='0.12.28-stt-hospital.20261103' and release['packaging_version']=='1.0.13'
+        assert release['app_version']=='0.12.29-stt-independent.20261104' and release['packaging_version']=='1.0.14'
         assert release['production_source_identity']==verify_source(Path(__file__).resolve().parents[1])
         assert shared==software_snapshot(Path(__file__).resolve().parents[1])[0]
         new_assets=['static/js/report-wave-menu.js','static/css/report-wave-menu.css']
@@ -72,8 +73,9 @@ async def verify(args,result):
             source_kind=manifest['kind'],fixture_sha256=before)
         home=work/'doctor-home';browser=None;context=None;page=None
         errors=[];blocked=[];responses=[];guards=[]
-        try:
-            async with async_playwright() as pw:
+        async with async_playwright() as pw:
+            primary_error=None
+            try:
                 browser=await pw.chromium.launch(channel='msedge',headless=True)
                 result['browser']={'channel':'msedge','installed_system_browser':True,'version':browser.version}
                 context=await browser.new_context(viewport={'width':1440,'height':1000},service_workers='block')
@@ -114,6 +116,8 @@ async def verify(args,result):
                 screenshots=args.output.parent/'report-evidence-screenshots';screenshots.mkdir(exist_ok=True)
                 result['ui']={'status':'running','checks':[]}
                 result['ui']=await verify_report_evidence_ui(page,doctor_source.CASE_ID,expected,screenshots,result['ui'],expected_for_annotations=current_oracle,range_oracle=range_oracle)
+                assert len(result['ui']['checks'])==14 and result['ui']['actual_UI_checks']==12 and result['ui']['actual_PE_API_lifecycle_checks']==2
+                assert result['ui']['ST_rhythm_independence']['lifecycle_operations']==12
                 await page.wait_for_timeout(250)
                 assert all(any(r['path']==g['path'] and r['status']==200 for r in responses[g['index']+1:]) for g in guards),'Stale overview guard did not recover'
                 assert errors==[] and blocked==[]
@@ -123,16 +127,16 @@ async def verify(args,result):
                 result.update(status='passed',native_frozen_runtime=True,source_hashes_unchanged=True,
                     page_errors=errors,blocked_requests=blocked,expected_basis_rejections=guards,windows_system=platform.system(),
                     windows_release=platform.release(),hospital_physical_windows10_verified=False)
-        except Exception as error:
-            if page and not page.is_closed():
-                try:await page.screenshot(path=str(args.output.parent/'report-evidence-native-failure.png'))
-                except Exception:pass
-            result.update(status='failed',error=safe_error(error),page_errors=errors,blocked_requests=blocked)
-            raise
-        finally:
-            if context and browser and browser.is_connected():await context.close()
-            await stop(exe,home)
-            if browser and browser.is_connected():await browser.close()
+            except Exception as error:
+                primary_error=error
+                if page and not page.is_closed():
+                    try:await page.screenshot(path=str(args.output.parent/'report-evidence-native-failure.png'))
+                    except Exception:pass
+                result.update(status='failed',error=safe_error(error),page_errors=errors,blocked_requests=blocked)
+                raise
+            finally:
+                await cleanup_owned(context,browser,exe,home,stop,result,primary_error,sanitize=safe_error)
+
 
 
 def main():

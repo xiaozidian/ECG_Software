@@ -52,17 +52,34 @@
   function sttProtocol(raw={},extent='point'){
     if(!raw||typeof raw!=='object'||Array.isArray(raw))throw Error('ST-T测量协议须为对象');const ms=raw.measurement_ms??60,mode=raw.extent??extent,baseline=raw.baseline_method??'pre_qrs_stable';
     if(![0,60,80].includes(ms)||!['point','whole'].includes(mode)||!['pre_qrs_stable','manual_iso_point'].includes(baseline))throw Error('ST-T测量协议无效');
-    return {method_version:'stt-hospital-review-v1',measurement_ms:ms,extent:mode,baseline_method:baseline,units:'source_device_units',calibration_verified:false};
+    if((raw.method_version??'stt-hospital-review-v2')!=='stt-hospital-review-v2'||(raw.rhythm_policy??'independent_of_AF_AFL_reviews')!=='independent_of_AF_AFL_reviews')throw Error('ST-T测量方法已变化，请按当前独立分析方法重新核对');
+    return {method_version:'stt-hospital-review-v2',rhythm_policy:'independent_of_AF_AFL_reviews',measurement_ms:ms,extent:mode,baseline_method:baseline,units:'source_device_units',calibration_verified:false};
+  }
+  function sttStoredProtocol(raw){
+    if(!raw||typeof raw!=='object'||Array.isArray(raw))return null;
+    try{sttProtocol({...raw,method_version:'stt-hospital-review-v2',rhythm_policy:'independent_of_AF_AFL_reviews'});return structuredClone(raw);}catch{return null;}
+  }
+  function sttCurrentMethod(details){
+    const evidence=details.stt_event_evidence||{};
+    for(const raw of [details.measurement_protocol,evidence.measurement_protocol])
+      if(raw!=null&&(!sttStoredProtocol(raw)||raw.method_version!=='stt-hospital-review-v2'||raw.rhythm_policy!=='independent_of_AF_AFL_reviews'))return false;
+    if(Object.keys(evidence).length&&(evidence.rhythm_policy!=='independent_of_AF_AFL_reviews'||Object.hasOwn(evidence,'rhythm_exclusions_digest')))return false;
+    for(const profile of [details.range_statistics?.method_profile,evidence.measurement_protocol?.range_profile])
+      if(profile!=null&&(!profile||typeof profile!=='object'||Array.isArray(profile)||profile.id!=='raw-200hz-fixed16s-st-perbeat-mean-v2'||profile.rhythm_policy!=='independent_of_AF_AFL_reviews'))return false;
+    return !details.reviewed||!!(details.measurement_protocol&&typeof details.measurement_protocol==='object'&&!Array.isArray(details.measurement_protocol));
   }
   function sttSavedProtocol(details,evidence){
-    if(evidence.measurement_protocol&&typeof evidence.measurement_protocol==='object')return structuredClone(evidence.measurement_protocol);
-    if(details.measurement_protocol&&typeof details.measurement_protocol==='object')return sttProtocol(details.measurement_protocol);
+    if(evidence.measurement_protocol&&typeof evidence.measurement_protocol==='object')return sttStoredProtocol(evidence.measurement_protocol);
+    if(details.measurement_protocol&&typeof details.measurement_protocol==='object')return sttStoredProtocol(details.measurement_protocol);
     const profile=details.range_statistics?.method_profile;if(!profile||!Number.isInteger(profile.measurement_ms)||![0,60,80].includes(profile.measurement_ms))return null;
-    return {method_version:profile.id??null,measurement_ms:profile.measurement_ms,extent:'whole',baseline_method:profile.id==='raw-200hz-fixed16s-st-perbeat-mean-v1'?'pre_qrs_stable':null,units:profile.units??null,calibration_verified:profile.calibration_verified===true,range_profile:structuredClone(profile)};
+    return {method_version:profile.id??null,measurement_ms:profile.measurement_ms,extent:'whole',baseline_method:['raw-200hz-fixed16s-st-perbeat-mean-v1','raw-200hz-fixed16s-st-perbeat-mean-v2'].includes(profile.id)?'pre_qrs_stable':null,units:profile.units??null,calibration_verified:profile.calibration_verified===true,range_profile:structuredClone(profile)};
   }
   function sttMetadata(a,basis=null){
-    const d=a.details||{},code=sttResult(d),explicit=d.reviewed===true,bound=!!(d.review_scope||d.stt_event_evidence?.scope),reviewState=explicit||bound&&['confirmed','excluded'].includes(d.status)?'reviewed':'unreviewed',family=['st_depression','st_elevation'].includes(code)?'ST':code==='t_change'?'T':'NOTE',group=reviewState==='reviewed'&&sttAbnormal.includes(code)&&family!=='NOTE'?family:reviewState==='reviewed'?'ST_NOTE':'pending',first=a.sample_index,end=(d.end_sample??first)+1,evidence=d.stt_event_evidence||{},extent=d.review_extent??(Object.keys(evidence).length?'whole':'point'),eligible=reviewState==='reviewed',table=eligible&&['st_depression','st_elevation','t_change'].includes(code)&&extent==='whole'&&end-first>=12000&&!!Object.keys(evidence).length;
-    return {schema_version:'stt-review-record-v1',record_id:'annotation:'+a.id,event_id:'annotation:'+a.id,annotation_id:a.id,record_version:d.record_version??1,review_state:reviewState,result_code:code,result_kind:family,report_group:group,status:d.status||'pending',review_extent:extent,range:{start_sample:first,end_sample:end,start_s:first/200,end_s:end/200,duration_s:(end-first)/200},basis_version:basis,measurement_protocol:sttSavedProtocol(d,evidence),point_measurement_protocol:d.measurement_protocol?sttProtocol(d.measurement_protocol):null,report_eligibility:{table,text:eligible,strip:eligible},report_use:{table:false,text:false,strip:false},source_scope:structuredClone(d.review_scope||evidence.scope||null),finding:d.finding??a.label??'',note:a.note||'',physician_note:d.physician_note??null,leads:structuredClone(d.review_leads||evidence.leads||(a.lead&&!['全部',''].includes(a.lead)?[a.lead]:[])),legacy:!explicit};
+    const d=a.details||{},code=sttResult(d),explicit=d.reviewed===true,bound=!!(d.review_scope||d.stt_event_evidence?.scope);
+    let reviewState=explicit||bound&&['confirmed','excluded'].includes(d.status)?'reviewed':'unreviewed';
+    if(reviewState==='reviewed'&&!sttCurrentMethod(d))reviewState='stale';
+    const family=['st_depression','st_elevation'].includes(code)?'ST':code==='t_change'?'T':'NOTE',group=reviewState==='reviewed'&&sttAbnormal.includes(code)&&family!=='NOTE'?family:reviewState==='reviewed'?'ST_NOTE':'pending',first=a.sample_index,end=(d.end_sample??first)+1,evidence=d.stt_event_evidence||{},extent=d.review_extent??(Object.keys(evidence).length?'whole':'point'),eligible=reviewState==='reviewed',table=eligible&&['st_depression','st_elevation','t_change'].includes(code)&&extent==='whole'&&end-first>=12000&&!!Object.keys(evidence).length;
+    return {schema_version:'stt-review-record-v1',record_id:'annotation:'+a.id,event_id:'annotation:'+a.id,annotation_id:a.id,record_version:d.record_version??1,review_state:reviewState,result_code:code,result_kind:family,report_group:group,status:d.status||'pending',review_extent:extent,range:{start_sample:first,end_sample:end,start_s:first/200,end_s:end/200,duration_s:(end-first)/200},basis_version:basis,measurement_protocol:sttSavedProtocol(d,evidence),point_measurement_protocol:sttStoredProtocol(d.measurement_protocol),report_eligibility:{table,text:eligible,strip:eligible},report_use:{table:false,text:false,strip:false},source_scope:structuredClone(d.review_scope||evidence.scope||null),finding:d.finding??a.label??'',note:a.note||'',physician_note:d.physician_note??null,leads:structuredClone(d.review_leads||evidence.leads||(a.lead&&!['全部',''].includes(a.lead)?[a.lead]:[])),legacy:!explicit};
   }
   function sttDecorate(event,a,beatVersion){
     const d=a.details||{},scope=d.review_scope||d.stt_event_evidence?.scope||{},material=structuredClone([a.id,a.sample_index,d,a.lead||'',a.note||'',a.label||'']);
@@ -250,5 +267,5 @@
     if(approving&&(composition.diagnosis_blocks||[]).some(b=>b.needs_review))throw Error('请核对保留的人工诊断文字');
     return selected;
   }
-  const api={sttDigest,sttCanonical,sttResult,sttProtocol,sttSavedProtocol,sttMetadata,sttDecorate,sttMarkStale,sttNormalizedUses,sttUseFor,categories,reportCategories,rrIntervalGroups,normalizeRRSelections,normalizeReportSelections,patterns,buildIndex,queryIndex,hrvWindows,validateReport,fingerprint,evidenceSelection,evidenceConfirmed,reportUsed};globalThis.ECGClinicalAnalysis=api;if(typeof module!=='undefined')module.exports=api;
+  const api={sttDigest,sttCanonical,sttResult,sttProtocol,sttStoredProtocol,sttCurrentMethod,sttSavedProtocol,sttMetadata,sttDecorate,sttMarkStale,sttNormalizedUses,sttUseFor,categories,reportCategories,rrIntervalGroups,normalizeRRSelections,normalizeReportSelections,patterns,buildIndex,queryIndex,hrvWindows,validateReport,fingerprint,evidenceSelection,evidenceConfirmed,reportUsed};globalThis.ECGClinicalAnalysis=api;if(typeof module!=='undefined')module.exports=api;
 })();

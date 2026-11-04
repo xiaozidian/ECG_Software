@@ -1,10 +1,13 @@
 """Actual served report UI checks, reusable with native EXE or isolated local math.
 
-All writes use visible UI controls. API evaluation below performs GET assertions.
+The original twelve checks write via visible UI controls. The additional AF/AFL
+independence gate uses version-controlled actual-PE APIs and labels this scope.
 A caller must label native Windows acceptance separately from local prechecks.
-Hospital28 adapts the actual reviewed-record UI; legacy27 constructor remains separate.
+Independent29 preserves the hospital UI checks and adds explicit rhythm independence.
 """
 from urllib.parse import urlencode, urlsplit
+import json
+from verify_stt_independence_api import verify_stt_independence_api
 import asyncio
 import time
 
@@ -32,7 +35,7 @@ async def verify_report_evidence_ui(page, case_id, expected_st, screenshots, pro
     page.on('request',started);page.on('requestfinished',finished);page.on('requestfailed',finished);page.on('framenavigated',navigated)
 
     async def get(action):
-        return await page.evaluate("""async path=>{const r=await fetch(path,{cache:'no-store'});if(!r.ok)throw Error(path+': '+r.status);return r.json();}""",'/api/cases/'+case_id+'/'+action)
+        return json.loads(await page.evaluate("""async path=>{const r=await fetch(path,{cache:'no-store'});if(!r.ok)throw Error(path+': '+r.status);return r.text();}""",'/api/cases/'+case_id+'/'+action))
     async def frames(): await page.evaluate('()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))')
     async def settled():
         deadline=time.monotonic()+90
@@ -62,12 +65,13 @@ async def verify_report_evidence_ui(page, case_id, expected_st, screenshots, pro
         await frames()
     def preserved(p):return {**{k:p.get(k) for k in ['strip_id','event_id','caption','leads','range_start_s','range_end_s','duration_s','representative_role']},'notes':p.get('notes','')}
 
-    assert callable(expected_for_annotations) and callable(range_oracle), 'Exact current-mask and per-beat scalar oracles are required'
+    assert callable(expected_for_annotations) and callable(range_oracle), 'Exact independent source and per-beat scalar oracles are required'
     await nav('stt');await st_ready()
     initial=await get('stt-review')
-    assert initial['analysis']['algorithm_version']=='stt-screening-0.3.1-hospital-records-rhythm-masks'
+    assert initial['analysis']['algorithm_version']=='stt-screening-0.3.2-independent-rhythm'
     assert initial['analysis']['trends']==expected_st['analysis']['trends']
-    checks.append('native28-initial-twelve-lead-minute-ST-Delta-T-exact-current-Python-oracle')
+    initial_analysis=initial['analysis']
+    checks.append('native29-initial-twelve-lead-minute-ST-Delta-T-exact-current-Python-oracle')
     # A second independent rhythm candidate holds four stable report strips.
     await nav('review')
     if not await page.locator('#ovAF').is_visible():await page.locator('[data-ov="af-open"]').click()
@@ -76,10 +80,10 @@ async def verify_report_evidence_ui(page, case_id, expected_st, screenshots, pro
     clocks=await page.evaluate("()=>[400,580].map(s=>ECGRhythmRangeEditor.boundaryClock(s,state.caseData.metadata.start_time))")
     for name,value in zip(['startClock','endClock'],clocks):
         control=page.locator('#ovEpisodeForm [name='+name+']');await control.fill(value);await control.press('Tab')
-    await page.locator('#ovEpisodeForm [name=note]').fill('Native28 independent multi-AF mathematical candidate')
+    await page.locator('#ovEpisodeForm [name=note]').fill('Native29 independent multi-AF mathematical candidate')
     await page.locator('[data-ov="af-save:pending"]').click()
     await page.wait_for_function('()=>!overviewWorkbench.isSaving()')
-    episode=next(e for e in (await get('rhythm-review'))['document']['episodes'] if e['note']=='Native28 independent multi-AF mathematical candidate')
+    episode=next(e for e in (await get('rhythm-review'))['document']['episodes'] if e['note']=='Native29 independent multi-AF mathematical candidate')
     await page.locator('[data-ov="af-report"]').click();await saved();await tab('AF')
     af=next(e for e in (await get('report-events?category=AF'))['items'] if e['rhythm_episode_id']==episode['id'])
     row=await locate(af)
@@ -137,12 +141,13 @@ async def verify_report_evidence_ui(page, case_id, expected_st, screenshots, pro
     assert await page.locator('#v2EventWave .report-range-stage [data-wave-lead]').count()==12
     await page.screenshot(path=str(screenshots/'report-evidence-AF-four-strips-reopened.png'))
 
-    # AF decisions precede ST review: they are real eligibility masks, not display flags.
+    # AF decisions precede ST review; the new ST method is independent of them.
     await nav('stt');await st_ready()
     annotations=await get('annotations');st=await get('stt-review')
     oracle=expected_for_annotations(annotations['items'])
     assert st['analysis']['trends']==oracle['analysis']['trends']
-    assert st['analysis']['exclusions']['intervals'], 'Saved AF/AFL must enter screening support exclusions'
+    assert not st['analysis']['exclusions']['intervals'], 'Saved AF/AFL incorrectly entered ST/T screening exclusions'
+    assert st['analysis']==initial_analysis, 'Actual AF confirmation changed independent ST/T source analysis'
     assert sorted(st['analysis']['trends']['leads'])==sorted(LEADS)
     for points in st['analysis']['trends']['leads'].values():
         assert len(points)==10 and points[0]['start_s']==0 and points[-1]['end_s']==600
@@ -162,7 +167,7 @@ async def verify_report_evidence_ui(page, case_id, expected_st, screenshots, pro
         assert g['track']['width']>g['row']['width']*.7
         assert g['label']['right']<=g['track']['left']+.75 and g['track']['right']<=g['value']['left']+.75
         assert abs(g['heart']['left']-g['track']['left'])<2 and abs(g['heart']['right']-46-g['track']['right'])<2
-    checks.append('native28-saved-AF-mask-breaks-full-minute-evidence-and-three-metric-controls-use-own-fields')
+    checks.append('native29-saved-AF-preserves-full-minute-evidence-and-three-metric-controls-use-own-fields')
     candidates=[c for c in st['automatic_candidates']['items'] if c['kind'] in ('st_depression','st_elevation') and len(c['leads'])==1 and c['end_s']-c['start_s']>=60]
     assert candidates, 'Real detector must supply a current full-minute candidate'
     candidate=max(candidates,key=lambda c:c['end_s']-c['start_s']);lead=candidate['leads'][0]
@@ -183,7 +188,7 @@ async def verify_report_evidence_ui(page, case_id, expected_st, screenshots, pro
             assert shape['count']==shape['source']==count and 149<=shape['height']<=421 and shape['top']>=0 and shape['bottom']<=height+2 and shape['gain']>0,shape
     await page.set_viewport_size({'width':1440,'height':1000});await frames()
     assert (await get('annotations'))==before_annotations and (await get('report'))['version']==before_report['version']
-    checks.append('native28-view-only-candidate-keeps-blank-result-whole-range-and-bounded-one-three-twelve-lead-source')
+    checks.append('native29-view-only-candidate-keeps-blank-result-whole-range-and-bounded-one-three-twelve-lead-source')
 
     async def save_review(code,note):
         finding=await page.evaluate('code=>ECGSttReviewLayout.outcomes[code]',code)
@@ -201,15 +206,15 @@ async def verify_report_evidence_ui(page, case_id, expected_st, screenshots, pro
         await row.locator('[data-stt-use="'+purpose+'"]').set_checked(value);await saved()
         return await get('report')
     def picks_for(report,identifier):return [p for p in report['composition']['selected_events'] if p['event_id']==identifier]
-    nochange=await save_review('no_change','Native28 mathematical record; no whole-record negative diagnosis.')
+    nochange=await save_review('no_change','Native29 mathematical record; no whole-record negative diagnosis.')
     assert nochange['review_state']=='reviewed' and nochange['report_group']=='ST_NOTE' and nochange['record_version']==1
     assert {k:nochange['range'][k] for k in ['start_s','end_s']}==source_range and nochange['range']['duration_s']==duration and not nochange['report_eligibility']['table'] and nochange['report_eligibility']['text']
     row=await open_record(nochange);assert not await row.locator('[data-stt-use="table"]').is_enabled()
     r=await adopt(nochange,'text',True);assert not picks_for(r,nochange['event_id'])
     assert any(b['key']=='ST:review:'+nochange['event_id'] for b in r['composition']['diagnosis_blocks'])
-    checks.append('native28-negative-reviewed-record-text-only-adoption-is-not-an-abnormal-event-or-strip')
+    checks.append('native29-negative-reviewed-record-text-only-adoption-is-not-an-abnormal-event-or-strip')
     await page.locator('[data-stt-edit]').click();await st_ready()
-    reviewed=await save_review(candidate['kind'],'Native28 whole source interval; the short strip is evidence only.')
+    reviewed=await save_review(candidate['kind'],'Native29 whole source interval; the short strip is evidence only.')
     assert reviewed['event_id']==nochange['event_id'] and reviewed['record_version']==2 and reviewed['basis_version']!=nochange['basis_version']
     current=await get('annotations');annotation=next(a for a in current['items'] if 'annotation:'+str(a['id'])==reviewed['event_id']);proof=annotation['details']['stt_event_evidence']
     assert len(current['items'])==len(before_annotations['items'])+1
@@ -220,7 +225,7 @@ async def verify_report_evidence_ui(page, case_id, expected_st, screenshots, pro
     r=await get('report');assert not picks_for(r,reviewed['event_id']) and not any(u['event_id']==reviewed['event_id'] for u in r['composition'].get('stt_report_use',[]))
     assert not any(b['key']=='ST:review:'+reviewed['event_id'] for b in r['composition']['diagnosis_blocks'])
     assert r['composition']['selected_events']==before_report['composition']['selected_events'] and r['conclusion']==before_report['conclusion']
-    checks.append('native28-same-ID-result-update-retracts-own-old-normal-text-and-preserves-unrelated-curation')
+    checks.append('native29-same-ID-result-update-retracts-own-old-normal-text-and-preserves-unrelated-curation')
     row=await open_record(reviewed)
     await adopt(reviewed,'table',True);r=await adopt(reviewed,'text',True);assert not picks_for(r,reviewed['event_id'])
     r=await adopt(reviewed,'strip',True);pick=picks_for(r,reviewed['event_id']);assert len(pick)==1 and pick[0]['leads']==LEADS and pick[0]['duration_s']==7
@@ -228,7 +233,7 @@ async def verify_report_evidence_ui(page, case_id, expected_st, screenshots, pro
     await adopt(reviewed,'table',False);assert (await get('report-sections'))['st_summary']==summary
     await adopt(reviewed,'table',True);r=await adopt(reviewed,'strip',True);pick=picks_for(r,reviewed['event_id'])[0]
     assert r['composition']['selected_events'][:len(before_report['composition']['selected_events'])]==before_report['composition']['selected_events']
-    checks.append('native28-table-text-strip-purposes-are-independent-and-withdrawn-strip-disappears-without-count-change')
+    checks.append('native29-table-text-strip-purposes-are-independent-and-withdrawn-strip-disappears-without-count-change')
     event=next(e for e in (await get('report-events?category=ST&stt_group=all&ids='+reviewed['event_id']+'&limit=1'))['items'] if e['event_id']==reviewed['event_id'])
     strip=await get('report-strip?'+urlencode(dict(event_id=event['event_id'],basis_version=event['basis_version'],leads=','.join(LEADS),duration=7)))
     assert strip['strip']['actual_duration_s']==7 and strip['strip']['visible_beat_count']>=5 and len(strip['waveform']['leads'])==12 and strip['stt_event_evidence']['duration_s']==duration
@@ -240,8 +245,23 @@ async def verify_report_evidence_ui(page, case_id, expected_st, screenshots, pro
     reps=[r for r in rendering['evidence']['st_representatives'] if r['event_id']==event['event_id']];assert len(reps)==3
     for rep in reps:assert rep['role'] in ('reference','st_min','st_max') and annotation['sample_index']<=rep['sample_index']<=annotation['details']['end_sample'] and rep['waveform']['leads'][rep['lead']]
     assert all(not d.get('table_rows') for d in rendering['empty'])
-    checks.append('native28-hospital-ST-T-single-page-twelve-trends-heart-rate-and-three-real-source-representatives')
-    await page.screenshot(path=str(screenshots/'native28-hospital-ST-record-and-strip.png'))
+    checks.append('native29-hospital-ST-T-single-page-twelve-trends-heart-rate-and-three-real-source-representatives')
+    await page.screenshot(path=str(screenshots/'native29-hospital-ST-record-and-strip.png'))
+
+    # The excluded state is not a visible status editor in the current app.
+    # This separate mathematical gate calls the actual packaged public API;
+    # it does not pretend to click an absent control or seed final approval.
+    independence=await verify_stt_independence_api(page,case_id,reviewed)
+    for kind in ('AF','AFL'):
+        assert len([x for x in independence['operations'] if x['kind']==kind])==6
+        checks.append('native29-actual-PE-API-'+kind+'-full-lifecycle-preserves-ST-T-record-basis-uses-manual-ack-and-range-statistics')
+    # API changes advance real concurrency revisions. Reopen the actual UI
+    # before later pointer actions rather than patching state or bypassing it.
+    await nav('dashboard');await page.reload();await page.wait_for_function('()=>typeof state!=="undefined"&&state.dashboardStatus==="ready"')
+    await page.locator('#openFirstCase').click();await page.wait_for_function('id=>state.caseId===id&&!state.caseLoading',arg=case_id)
+    await nav('report');await tab('ST');await saved()
+    refreshed=next(e for e in (await get('report-events?category=ST&stt_group=all&ids='+reviewed['event_id']+'&limit=1'))['items'] if e['event_id']==reviewed['event_id'])
+    await locate(refreshed)
 
     # Retain the original readonly preview and real pointer menu assertions.
     # Read-only preview has no report/clinical/candidate side effects.
@@ -275,4 +295,4 @@ async def verify_report_evidence_ui(page, case_id, expected_st, screenshots, pro
         'algorithm_version':st['analysis']['algorithm_version'],'full_ST_event_duration_s':duration,'ST_strip_duration_s':7,
         'ST_T_trend_leads':12,'ST_T_minutes_per_lead':10,'AF_strip_count':4,'source_case_id':case_id,
         'retired_old_document_readonly_requests':retired,'ST_record_version':reviewed['record_version'],'ST_record_event_id':reviewed['event_id'],
-        'same_record_old_generated_text_withdrawn':True,'three_purposes_independent':True,'current_mask_oracle_verified':True,'full_range_perbeat_oracle_verified':True}
+        'same_record_old_generated_text_withdrawn':True,'three_purposes_independent':True,'independent_ST_oracle_verified':True,'ST_rhythm_independence':independence,'actual_UI_checks':12,'actual_PE_API_lifecycle_checks':2,'full_range_perbeat_oracle_verified':True}

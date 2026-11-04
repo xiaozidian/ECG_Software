@@ -218,7 +218,9 @@ def test_stt_range_known_zero_and_no_eligible_observations_are_distinct(
         excluded_count=1, missing_count=0, reason_counts={"rr_outside_legacy_bounds": 1})
     assert zero["leads"][0]["mean_units"] == 0
     assert rows(store) == before
-    annotation(store, synthetic_case[1], start=0, end=17999)
+    # Genuine non-N beat eligibility, rather than an unrelated AF diagnosis,
+    # creates the no-observation case under the independent ST method.
+    assert client.put(base+'/beat-overrides',json=dict(sample_indices=list(range(200,12000,200)),class_code='V')).status_code==200
     scope = identity(client, base)
     before = rows(store)
     empty = ok(client.post(base + "/stt-range", json=range_payload(scope)))
@@ -231,7 +233,7 @@ def test_stt_range_known_zero_and_no_eligible_observations_are_distinct(
 
 @pytest.mark.parametrize("kind", ["AF", "AFL"])
 @pytest.mark.parametrize("status", ["pending", "confirmed", "excluded"])
-def test_stt_range_stored_rhythm_mask_uses_inclusive_end_and_actual_status(
+def test_stt_range_ignores_stored_rhythm_decision_and_preserves_actual_status(
         synthetic_app, synthetic_case, kind, status):
     client = synthetic_app.test_client()
     store = synthetic_app.extensions["storage"]
@@ -240,15 +242,13 @@ def test_stt_range_stored_rhythm_mask_uses_inclusive_end_and_actual_status(
     scope = identity(client, base)
     before = rows(store)
     result = ok(client.post(base + "/stt-range", json=range_payload(scope)))
-    expected = [] if status == "excluded" else [dict(
-        start_sample=2000, end_sample=2001, reason="rhythm_" + kind,
-        origin="stored_annotation", review_status=status, kind="exclusion")]
-    assert result["exclusions"]["intervals"] == expected
-    assert result["coverage"]["explicit_excluded_s"] == (0 if status == "excluded" else .005)
+    assert result["exclusions"]["intervals"] == []
+    assert result["coverage"]["explicit_excluded_s"] == 0
+    assert store.list_annotations(synthetic_case[1])[0]['details']['status']==status
     assert rows(store) == before
 
 
-def test_stt_range_uses_authoritative_saved_document_not_old_annotation_masks(
+def test_stt_range_preserves_authoritative_rhythm_document_without_applying_it_as_ST_mask(
         synthetic_app, synthetic_case):
     client = synthetic_app.test_client()
     store = synthetic_app.extensions["storage"]
@@ -264,9 +264,8 @@ def test_stt_range_uses_authoritative_saved_document_not_old_annotation_masks(
     scope = {key: saved[key] for key in IDENTITY_FIELDS}
     before = rows(store)
     result = ok(client.post(base + "/stt-range", json=range_payload(scope)))
-    assert result["exclusions"]["intervals"] == [dict(
-        start_sample=2001, end_sample=2002, reason="rhythm_AFL", origin="stored_annotation",
-        review_status="pending", kind="exclusion")]
+    assert result["exclusions"]["intervals"] == []
+    assert ok(client.get(base+'/rhythm-review'))['document']==saved['document']
     assert rows(store) == before
 
 

@@ -1,14 +1,6 @@
 name: Windows ST-T immutable fresh-PE native continuation 1.0.13
 
 on:
-  push:
-    branches: ["codex/windows-doctor-deidentified-x64-20261028"]
-    paths:
-      - '.github/workflows/windows-stt-native-continuation.yml'
-      - 'scripts/prepare_stt_native_continuation.py'
-      - 'scripts/stt-native-continuation-contract.json'
-      - 'scripts/verify_windows_doctor_browser.py'
-      - 'scripts/verify_windows_stt_hospital_upgrade.py'
   workflow_dispatch:
 
 permissions:

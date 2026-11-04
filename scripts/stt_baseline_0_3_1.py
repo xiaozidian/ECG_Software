@@ -1,0 +1,522 @@
+"""Conservative ambulatory ST-T screening with mandatory physician review.
+
+The detector works in the source device scale and emits review candidates,
+never a diagnosis. It uses normal-beat blocks, local references, J+60 ms
+measurements, persistence rules, and signal/axis-shift quality gates.
+"""
+
+from __future__ import annotations
+
+import copy
+import math
+import mmap
+import re
+import statistics
+import struct
+from hashlib import sha256
+from collections import OrderedDict
+from bisect import bisect_left, insort
+from pathlib import Path
+
+import numpy as np
+
+from .config import CHANNEL_COUNT, SAMPLE_RATE
+from .source_identity import require_waveform_file, source_read
+
+ALGORITHM_VERSION = "stt-screening-0.3.1-hospital-records-rhythm-masks"
+LEADS = ("I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6")
+_FRAME = struct.Struct("<8h")
+_CACHE: OrderedDict[tuple, dict] = OrderedDict()
+_CACHE_LIMIT = 8
+
+DEFAULT_CONFIG = {
+    "block_seconds": 16,
+    "minimum_normal_beats": 3,
+    "maximum_beats_per_block": 7,
+    "st_measurement_ms": 60,
+    "entry_threshold_units": 50.0,
+    "target_threshold_units": 100.0,
+    "minimum_target_duration_s": 60,
+    "exit_confirmation_s": 30,
+    "reference_window_minutes": 20,
+    "axis_shift_qrs_fraction": 0.35,
+    "t_inversion_minimum_units": 75.0,
+    "maximum_trend_points_per_lead": 720,
+}
+
+_ST_T_TERM = re.compile(
+    r"(?:(?<![A-Za-z])S\s*[-–—－]?\s*T(?:\s*[-–—－]?\s*T)?(?![A-Za-z])"
+    r"|ST段|T波|T倒置|T低平|T\s*[-–—]?\s*wave)", re.IGNORECASE,
+)
+_SOURCE_FRAGMENT_SPLIT = re.compile(r"(?<=[。！？；!?;])\s*|\n+")
+_CASE_AMPLITUDE = re.compile(
+    r"(?<![A-Za-z0-9])(?:[+\-−＋－]?\s*\d+(?:\.\d+)?)\s*(?:mV|µV|μV)", re.IGNORECASE,
+)
+
+
+def extract_stt_source_report(conclusion: str) -> dict:
+    """Extract ST/T source wording while hiding unverified case amplitudes."""
+    if not isinstance(conclusion, str):
+        conclusion = ""
+    fragments, redacted_any = [], False
+    for raw in _SOURCE_FRAGMENT_SPLIT.split(conclusion):
+        fragment = raw.strip()
+        if not fragment or not _ST_T_TERM.search(fragment):
+            continue
+        redacted, count = _CASE_AMPLITUDE.subn("【病例幅度已隐藏】", fragment)
+        redacted_any = redacted_any or count > 0
+        if redacted not in fragments:
+            fragments.append(redacted)
+    return {
+        "origin": "source_report_conclusion", "available": bool(fragments),
+        "text": "\n".join(fragments), "fragments": fragments,
+        "is_source_excerpt": True, "software_interpretation_added": False,
+        "amplitude_values_redacted": redacted_any,
+    }
+
+
+def _median(values, default=0.0) -> float:
+    finite = [float(value) for value in values if isinstance(value, (int, float)) and math.isfinite(value)]
+    return float(statistics.median(finite)) if finite else float(default)
+
+
+def _mad(values) -> float:
+    center = _median(values)
+    return _median(abs(float(value) - center) for value in values)
+
+
+def _derived(raw: tuple[int, ...]) -> tuple[float, ...]:
+    lead_i, lead_ii = raw[0], raw[1]
+    return (
+        lead_i, lead_ii, lead_ii - lead_i, -(lead_i + lead_ii) / 2,
+        lead_i - lead_ii / 2, lead_ii - lead_i / 2,
+        raw[2], raw[3], raw[4], raw[5], raw[6], raw[7],
+    )
+
+
+def _read_leads(buffer: mmap.mmap, sample: int, total_samples: int) -> tuple[float, ...]:
+    sample = max(0, min(total_samples - 1, sample))
+    return _derived(_FRAME.unpack_from(buffer, sample * CHANNEL_COUNT * 2))
+
+
+def _normalize_records(records) -> list[tuple[int, int, int]]:
+    normalized = []
+    for row in records:
+        if isinstance(row, dict):
+            sample, group, rr = row.get("sample_index"), row.get("group", row.get("source_group")), row.get("rr_ms", 0)
+        else:
+            sample, group, rr = row[0], row[2], row[6]
+        if isinstance(sample, int) and isinstance(group, int):
+            normalized.append((sample, group, int(rr or 0)))
+    return sorted(normalized)
+
+
+def _evenly(values: list, limit: int) -> list:
+    if len(values) <= limit:
+        return values
+    return [values[round(index * (len(values) - 1) / (limit - 1))] for index in range(limit)]
+
+
+def _estimate_j_sample(buffer, beats, total_samples) -> tuple[int, float]:
+    """Estimate QRS end from multi-beat, multi-lead derivative energy."""
+    # Identical 33 offsets and II/V1/V5 observations, batched without int16
+    # overflow. No smoothing, resampling, fewer beats, or changed tie rules.
+    if beats:
+        positions = np.array([b[0] for b in beats])[:, None] + np.arange(-1, 33)
+        np.clip(positions, 0, total_samples - 1, out=positions)
+        raw = np.frombuffer(buffer, dtype='<i2').reshape(-1, CHANNEL_COUNT)
+        frames = raw[positions][..., [1, 2, 6]].astype(np.float64)
+        energies = np.median(np.abs(np.diff(frames, axis=1)), axis=(0, 2)).tolist()
+    else:
+        energies = [0.0] * 33
+    peak_index = max(range(21), key=energies.__getitem__)
+    peak, noise = energies[peak_index], _median(energies[-8:])
+    threshold = max(2.0, noise * 2.5, peak * 0.12)
+    j_sample = 18  # 90 ms fallback
+    for index in range(max(8, peak_index + 2), 29):
+        if all(value <= threshold for value in energies[index:index + 4]):
+            j_sample = index
+            break
+    confidence = max(0.0, min(1.0, (peak - noise) / max(peak, 1.0)))
+    return j_sample, confidence
+
+
+def _sample_frames(buffer, beats, offsets, total_samples):
+    positions = np.array([b[0] for b in beats])[:, None] + np.array(offsets)
+    np.clip(positions, 0, total_samples - 1, out=positions)
+    raw = np.frombuffer(buffer, dtype='<i2').reshape(-1, CHANNEL_COUNT)
+    channels = raw[positions].astype(np.float64)
+    a, b = channels[..., 0], channels[..., 1]
+    return np.stack((a, b, b-a, -(a+b)/2, a-b/2, b-a/2,
+                     *[channels[..., i] for i in range(2, 8)]), axis=-1)
+
+
+def _block_measurement(buffer, beats, all_count, total_samples, config, *, normal_count=None) -> dict:
+    j_sample, landmark_confidence = _estimate_j_sample(buffer, beats, total_samples)
+    st_offset = j_sample + round(config["st_measurement_ms"] * SAMPLE_RATE / 1000)
+    values = {lead: {key: [] for key in ("baseline", "st", "t", "qrs", "span")} for lead in LEADS}
+    if beats:
+        base_frames = _sample_frames(buffer, beats, range(-40, -23, 4), total_samples)
+        baseline = np.median(base_frames, axis=1)
+        st = np.median(_sample_frames(buffer, beats, range(st_offset-2, st_offset+3), total_samples), axis=1) - baseline
+        qrs_frames = _sample_frames(buffer, beats, range(-8, j_sample+1, 2), total_samples)
+        qrs = np.max(qrs_frames, axis=1) - np.min(qrs_frames, axis=1)
+        span = np.max(base_frames, axis=1) - np.min(base_frames, axis=1)
+        # RR-dependent T endpoints remain per beat. argmax preserves the first
+        # maximum of equal magnitudes, as Python's max(key=abs) did.
+        t = []
+        for index, beat in enumerate(beats):
+            rr_samples = max(round(beat[2] * SAMPLE_RATE / 1000), round(0.45 * SAMPLE_RATE))
+            last = min(j_sample+72, max(j_sample+30, round(rr_samples * 0.62)))
+            frames = _sample_frames(buffer, [beat], range(j_sample+24, last+1, 2), total_samples)[0] - baseline[index]
+            t.append(frames[np.argmax(np.abs(frames), axis=0), np.arange(len(LEADS))])
+        arrays = {'baseline':baseline, 'st':st, 't':np.array(t), 'qrs':qrs, 'span':span}
+        for index, lead in enumerate(LEADS):
+            values[lead] = {key:array[:, index].tolist() for key,array in arrays.items()}
+
+    lead_values, lead_scores = {}, []
+    for lead, lead_data in values.items():
+        qrs = _median(lead_data["qrs"])
+        baseline_variation = _mad(lead_data["baseline"]) + _median(lead_data["span"])
+        qrs_variation = _mad(lead_data["qrs"]) / max(qrs, 1.0)
+        noise_ratio = baseline_variation / max(qrs, 40.0)
+        score = max(0.0, min(1.0, 1.0 - min(0.65, noise_ratio) - min(0.35, qrs_variation)))
+        lead_scores.append(score)
+        column=LEADS.index(lead)
+        raw_clipped=lead in ('I','II','V1','V2','V3','V4','V5','V6') and bool(beats) and (bool(np.any(qrs_frames[:,:,column]>=32767)) or bool(np.any(qrs_frames[:,:,column]<=-32768)))
+        lead_values[lead] = {
+            "st_level_units": round(_median(lead_data["st"]), 2),
+            "t_amplitude_units": round(_median(lead_data["t"]), 2),
+            "qrs_amplitude_units": round(qrs, 2), "quality_score": round(score, 3),
+            "eligible": qrs>0 and score>=0.42 and not raw_clipped,
+            "availability_reasons": (['flatline'] if qrs<=0 else [])+(['lead_engineering_quality'] if score<0.42 else [])+(['source_clipping'] if raw_clipped else []),
+        }
+    # A derived limb lead can be a genuine zero projection. Its zero is not a
+    # disconnected source channel; availability follows its two measured inputs.
+    limb_available=lead_values['I']['eligible'] and lead_values['II']['eligible']
+    for lead in ('III','aVR','aVL','aVF'):
+        lead_values[lead]['eligible']=limb_available and lead_values[lead]['quality_score']>=.42
+        lead_values[lead]['availability_reasons']=[] if lead_values[lead]['eligible'] else ['source_limb_unavailable']
+    # Sampling limits measurement work; it must not reduce the actual normal
+    # beat density used by the existing quality gates.
+    has_population_count = normal_count is not None
+    normal_count = len(beats) if normal_count is None else normal_count
+    normal_ratio = normal_count / max(all_count, 1)
+    overall = max(0.0, min(1.0, _median(lead_scores) * min(1.0, normal_ratio / 0.6)))
+    return {
+        "j_offset_ms": round(j_sample * 1000 / SAMPLE_RATE),
+        "landmark_confidence": round(landmark_confidence, 3),
+        "normal_beat_count": normal_count,
+        **({"measurement_beat_count": len(beats)} if has_population_count else {}),
+        "normal_beat_ratio": round(normal_ratio, 3),
+        "quality_score": round(overall, 3),
+        "eligible": normal_ratio >= 0.35 and overall >= 0.42,
+        "leads": lead_values,
+    }
+
+
+def _rolling_reference(values: list[dict], key: str, radius: int) -> list[float | None]:
+    # Retain the exact centered window and finite-value median. Incremental
+    # insertion/removal avoids re-reading and re-sorting each overlapping window.
+    eligible = []
+    for row in values:
+        value = row.get(key)
+        eligible.append(float(value) if row.get('eligible') and isinstance(value, (int, float)) and math.isfinite(value) else None)
+    ordered, left, right, result = [], 0, 0, []
+    for index in range(len(values)):
+        end = min(len(values), index+radius+1)
+        while right < end:
+            if eligible[right] is not None: insort(ordered, eligible[right])
+            right += 1
+        while left < max(0, index-radius):
+            if eligible[left] is not None: ordered.pop(bisect_left(ordered, eligible[left]))
+            left += 1
+        window_has_value = any(row.get('eligible') and row.get(key) is not None for row in values[left:right]) if not ordered else True
+        result.append(round(float(statistics.median(ordered)), 2) if ordered else 0.0 if window_has_value else None)
+    return result
+
+
+def _support(point, config):
+    half = config["block_seconds"] / 2
+    return float(point.get("start_s", point.get("time_s", half)-half)), float(point.get("end_s", point.get("time_s", half)+half))
+
+
+def _lead_episodes(points: list[dict], lead: str, config: dict) -> list[dict]:
+    """Per-lead hysteresis with a *continuous* target run, never gap repair."""
+    episodes = []
+    for direction, kind, label in ((-1,"st_depression","ST 段压低候选"),(1,"st_elevation","ST 段抬高候选")):
+        active, below_s, strong_run, longest_run, last_end = [], 0., 0., 0., None
+        def finish():
+            if not active or longest_run + 1e-9 < config['minimum_target_duration_s']: return
+            start, end = _support(active[0],config)[0], _support(active[-1],config)[1]
+            if end-start + 1e-9 < config['minimum_target_duration_s']: return
+            peak=max(active,key=lambda row:direction*row['deviation_units'])
+            episodes.append(dict(kind=kind,label=label,start_s=round(start,3),end_s=round(end,3),
+                duration_s=round(end-start,3),continuous_target_s=round(longest_run,3),
+                peak_time_s=round(peak['time_s'],3),peak_deviation_units=round(peak['deviation_units'],1),
+                leads=[lead],lead=lead,quality_score=round(_median(row['quality_score'] for row in active),3),
+                support_intervals=[dict(start_s=_support(row,config)[0],end_s=_support(row,config)[1]) for row in active],
+                axis_shift_suspected=False,review_status='pending',diagnosis=None))
+        for point in points:
+            start,end=_support(point,config)
+            value=point.get('deviation_units')
+            valid=(point.get('eligible') and not point.get('axis_shift_suspected')
+                   and isinstance(value,(int,float)) and math.isfinite(value) and end>start)
+            contiguous=last_end is None or abs(start-last_end)<1e-7
+            if not valid or not contiguous:
+                finish();active=[];below_s=strong_run=longest_run=0.
+            last_end=end
+            if not valid: continue
+            value=direction*value
+            if value>=config['entry_threshold_units']:
+                active.append(point);below_s=0.
+                strong_run=strong_run+(end-start) if value>=config['target_threshold_units'] else 0.
+                longest_run=max(longest_run,strong_run)
+            elif active:
+                strong_run=0.;below_s+=end-start
+                if below_s+1e-9>=config['exit_confirmation_s']:
+                    finish();active=[];below_s=strong_run=longest_run=0.
+        finish()
+    return episodes
+
+
+def _t_episodes(points: list[dict], lead: str, config: dict) -> list[dict]:
+    minimum, run, result, last_end = config['t_inversion_minimum_units'], [], [], None
+    def finish():
+        if not run: return
+        start,end=_support(run[0],config)[0],_support(run[-1],config)[1]
+        if end-start+1e-9 < config['minimum_target_duration_s']: return
+        peak=max(run,key=lambda row:abs(row['t_amplitude_units']-row['t_reference_units']))
+        result.append(dict(kind='t_wave_inversion',label='T 波极性反转候选',start_s=round(start,3),end_s=round(end,3),
+            duration_s=round(end-start,3),continuous_target_s=round(end-start,3),peak_time_s=round(peak['time_s'],3),
+            peak_deviation_units=round(peak['t_amplitude_units']-peak['t_reference_units'],1),leads=[lead],lead=lead,
+            quality_score=round(_median(row['quality_score'] for row in run),3),axis_shift_suspected=False,review_status='pending',diagnosis=None))
+    for point in points:
+        start,end=_support(point,config);value,reference=point.get('t_amplitude_units'),point.get('t_reference_units')
+        inverted=(point.get('eligible') and not point.get('axis_shift_suspected')
+            and isinstance(value,(int,float)) and isinstance(reference,(int,float))
+            and math.isfinite(value) and math.isfinite(reference)
+            and abs(value)>=minimum and abs(reference)>=minimum and value*reference<0)
+        if last_end is not None and abs(start-last_end)>1e-7:finish();run=[]
+        if inverted:run.append(point)
+        else:finish();run=[]
+        last_end=end
+    finish()
+    return result
+
+
+def _merge_episodes(items: list[dict]) -> list[dict]:
+    # Never flatten support from another lead or across an unavailable interval.
+    result=sorted(copy.deepcopy(items),key=lambda row:(row['start_s'],row['kind'],LEADS.index(row['leads'][0])))
+    for index,item in enumerate(result,1):
+        material=[ALGORITHM_VERSION,item['kind'],item['leads'],item['start_s'],item['end_s']]
+        item['id'],item['lead_count']='auto-stt-'+sha256(repr(material).encode()).hexdigest()[:24],1
+    return result
+
+
+def minute_trends(points, duration_s, config):
+    """Duration-weighted complete minute evidence before any display reduction.
+
+    Partial means are retained separately, but the plotted value is null if any
+    part of the minute is unavailable. A zero remains an actual observed zero.
+    """
+    result=[];cursor=0
+    for start in range(0,math.ceil(duration_s),60):
+        end=min(duration_s,start+60);covered=0.;sums={key:0. for key in ('st_level_units','reference_units','deviation_units','t_amplitude_units','t_reference_units')};reasons=set();quality=[]
+        while cursor<len(points) and _support(points[cursor],config)[1]<=start:cursor+=1
+        j=cursor
+        while j<len(points) and _support(points[j],config)[0]<end:
+            point=points[j];a,b=_support(point,config);overlap=max(0.,min(end,b)-max(start,a))
+            valid=point.get('eligible') and not point.get('axis_shift_suspected') and all(isinstance(point.get(k),(int,float)) and math.isfinite(point[k]) for k in sums)
+            if valid:
+                covered+=overlap
+                for key in sums:sums[key]+=point[key]*overlap
+                quality.append(point.get('quality_score',0))
+            elif overlap:
+                reasons.add('axis_shift' if point.get('axis_shift_suspected') else 'quality_or_missing')
+                reasons.update(point.get('availability_reasons',[]))
+            j+=1
+        if covered+1e-7<end-start:reasons.add('incomplete_support')
+        complete=covered+1e-7>=end-start and not reasons
+        row=dict(start_s=float(start),end_s=end,time_s=(start+end)/2,duration_s=end-start,
+            eligible=complete,valid_duration_s=round(covered,3),coverage_pct=round(covered/(end-start)*100,2),
+            quality_score=round(_median(quality),3),quality_reasons=sorted(reasons),axis_shift_suspected='axis_shift' in reasons,
+            lead_availability='available' if complete else 'unavailable',quality_verified_by_physician=False)
+        for key,value in sums.items():
+            mean=round(value/covered,2) if covered else None
+            row[key]=mean if complete else None;row['partial_'+key]=mean
+        result.append(row)
+    return result
+
+
+def _screening_masks(intervals,total_samples):
+    result=set()
+    for row in intervals:
+        if not isinstance(row,dict) or any(type(row.get(k)) is not int for k in ('start_sample','end_sample')):raise ValueError('ST-T节律排除须使用原始整数样本范围')
+        start,end=row['start_sample'],row['end_sample'];reason=row.get('reason','stored_rhythm_exclusion')
+        if not 0<=start<end<=total_samples or not isinstance(reason,str) or not reason or len(reason)>200:raise ValueError('ST-T节律排除范围无效')
+        result.add((start,end,reason))
+    return tuple(sorted(result))
+
+
+@source_read
+def analyze_stt(waveform_path: str | Path, records, duration_s: float | None = None, *, analysis_revision=None, config=None,excluded_intervals=()) -> dict:
+    """Analyze a recording and return automatic review candidates and trends."""
+    path, settings = Path(waveform_path), {**DEFAULT_CONFIG, **(config or {})}
+    stat, normalized = require_waveform_file(path), _normalize_records(records)
+    total_samples = stat.st_size // (CHANNEL_COUNT * 2)
+    duration = min(float(duration_s or total_samples / SAMPLE_RATE), total_samples / SAMPLE_RATE)
+    masks=_screening_masks(excluded_intervals,total_samples)
+    # Revisions can be equal in separate workspaces. Bind every normalized
+    # record, including middle edits, rather than only the count and endpoints.
+    signature = (sha256(repr(normalized).encode("ascii")).hexdigest(), analysis_revision)
+    from .source_identity import file_signature
+    cache_key = (str(path.resolve()), file_signature(path), signature, duration, tuple(sorted(settings.items())),masks)
+    if cache_key in _CACHE:
+        _CACHE.move_to_end(cache_key); return copy.deepcopy(_CACHE[cache_key])
+    block_samples = int(settings["block_seconds"] * SAMPLE_RATE)
+    block_count=math.ceil(duration/settings['block_seconds']);masked_blocks=set()
+    # The same source supports used for baseline/J/ST/T must be outside a saved
+    # rhythm exclusion. A conservative full-block break prevents gap bridging.
+    for start,end,_ in masks:
+        masked_blocks.update(range(max(0,(start-120)//block_samples),min(block_count-1,(end+40-1)//block_samples)+1))
+    by_block: dict[int, list[tuple[int, int, int]]] = {}
+    for row in normalized:
+        if 0 <= row[0] < total_samples:
+            by_block.setdefault(row[0] // block_samples, []).append(row)
+    blocks = []
+    with path.open("rb") as stream, mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as buffer:
+        for block_index in range(math.ceil(duration / settings["block_seconds"])):
+            rows = by_block.get(block_index, [])
+            usable = []
+            for index, row in enumerate(rows):
+                sample, group, rr = row
+                previous_group = rows[index - 1][1] if index else None
+                next_group = rows[index + 1][1] if index + 1 < len(rows) else None
+                if group == 1 and previous_group not in {3, 34} and next_group not in {3, 34} and 350 <= rr <= 2000 and sample >= 50 and sample + 120 < total_samples:
+                    usable.append(row)
+            selected = _evenly(usable, settings["maximum_beats_per_block"])
+            all_count = len([row for row in rows if row[1] != 34])
+            block_start=block_index*settings["block_seconds"]
+            block_end=min(duration,block_start+settings["block_seconds"])
+            time_s = (block_start+block_end)/2
+            if block_index in masked_blocks:
+                blocks.append(dict(time_s=time_s,start_s=block_start,end_s=block_end,eligible=False,quality_score=0.,
+                    normal_beat_count=len(usable),measurement_beat_count=0,normal_beat_ratio=round(len(usable)/max(1,all_count),3),
+                    j_offset_ms=None,landmark_confidence=0.,leads={},availability_reasons=['rhythm_exclusion']))
+                continue
+            if len(selected) < settings["minimum_normal_beats"]:
+                blocks.append({"time_s": time_s, "start_s":block_start,"end_s":block_end,"eligible": False, "quality_score": 0.0,
+                               "normal_beat_count": len(usable), "measurement_beat_count": len(selected),
+                               "normal_beat_ratio": round(len(usable) / max(1, all_count), 3),
+                               "j_offset_ms": None, "landmark_confidence": 0.0, "leads": {}})
+                continue
+            measured = _block_measurement(buffer, selected, all_count, total_samples, settings, normal_count=len(usable))
+            measured.update(time_s=time_s,start_s=block_start,end_s=block_end); blocks.append(measured)
+
+    radius = max(1, round(settings["reference_window_minutes"] * 60 / settings["block_seconds"] / 2))
+    lead_points, episodes = {}, []
+    for lead in LEADS:
+        points = []
+        for block in blocks:
+            measure = block["leads"].get(lead, {})
+            points.append({
+                "time_s": block["time_s"], "start_s":block["start_s"],"end_s":block["end_s"], "eligible": block["eligible"] and measure.get('eligible',False), "quality_score": measure.get('quality_score',0),
+                "availability_reasons":block.get('availability_reasons',measure.get('availability_reasons',['lead_missing'])),
+                "j_offset_ms": block["j_offset_ms"], "landmark_confidence": block["landmark_confidence"],
+                "st_level_units": measure.get("st_level_units"), "t_amplitude_units": measure.get("t_amplitude_units"),
+                "qrs_amplitude_units": measure.get("qrs_amplitude_units"),
+            })
+        st_refs = _rolling_reference(points, "st_level_units", radius)
+        t_refs = _rolling_reference(points, "t_amplitude_units", radius)
+        qrs_refs = _rolling_reference(points, "qrs_amplitude_units", radius)
+        for point, st_ref, t_ref, qrs_ref in zip(points, st_refs, t_refs, qrs_refs):
+            point["reference_units"], point["t_reference_units"] = st_ref, t_ref
+            point["deviation_units"] = round(point["st_level_units"] - st_ref, 2) if point["st_level_units"] is not None and st_ref is not None else None
+            qrs_change = abs(point["qrs_amplitude_units"] - qrs_ref) / max(abs(qrs_ref), 1.0) if point["qrs_amplitude_units"] is not None and qrs_ref is not None else None
+            point["qrs_change_fraction"] = round(qrs_change, 3) if qrs_change is not None else None
+            point["axis_shift_suspected"] = bool(qrs_change is not None and qrs_change >= settings["axis_shift_qrs_fraction"])
+        episodes.extend(_lead_episodes(points, lead, settings)); episodes.extend(_t_episodes(points, lead, settings))
+        lead_points[lead] = minute_trends(points,duration,settings)
+
+    candidates = _merge_episodes(episodes)
+    eligible_blocks = sum(block["eligible"] for block in blocks)
+    result = {
+        "algorithm_version": ALGORITHM_VERSION, "analysis_revision": analysis_revision, "status": "completed",
+        "sample_rate_hz": SAMPLE_RATE, "units": "source_device_units", "unit_label": "设备原始单位",
+        "calibration_status": "unverified", "parameters": copy.deepcopy(settings),
+        "quality": {"total_blocks": len(blocks), "eligible_blocks": eligible_blocks,
+                    "coverage_pct": round(eligible_blocks * 100 / max(1, len(blocks)), 1),
+                    "analyzed_duration_s": round(min(duration, len(blocks) * settings["block_seconds"]), 1),
+                    "excluded_blocks": len(blocks) - eligible_blocks,
+                    "gate": "normal-beat density + baseline stability + QRS stability; saved AF/AFL support exclusions break blocks; machine J confidence is reported, not a gate"},
+        "exclusions":dict(intervals=[dict(start_sample=a,end_sample=b,reason=r) for a,b,r in masks],support_halo_samples=[-40,120],
+            rule='any_intersection_breaks_fixed_measurement_block_and_continuity'),
+        "summary": {"candidate_count": len(candidates),
+                    "st_depression_count": sum(item["kind"] == "st_depression" for item in candidates),
+                    "st_elevation_count": sum(item["kind"] == "st_elevation" for item in candidates),
+                    "t_wave_count": sum(item["kind"] == "t_wave_inversion" for item in candidates)},
+        "candidates": candidates, "trends": {"block_seconds": 60, "measurement_block_seconds":settings["block_seconds"], "aggregation":"duration_weighted_complete_minute", "leads": lead_points},
+    }
+    _CACHE[cache_key] = copy.deepcopy(result); _CACHE.move_to_end(cache_key)
+    while len(_CACHE) > _CACHE_LIMIT:
+        _CACHE.popitem(last=False)
+    return result
+
+
+def build_stt_review(conclusion: str, waveform_path=None, records=None, duration_s=None, *, analysis_revision=None, config=None,excluded_intervals=()) -> dict:
+    """Build the ST-T workbench contract with optional automatic analysis."""
+    analysis = None
+    if waveform_path is not None and records is not None:
+        analysis = analyze_stt(waveform_path, records, duration_s, analysis_revision=analysis_revision, config=config,excluded_intervals=excluded_intervals)
+    automatic = {
+        "enabled": analysis is not None, "algorithm_version": ALGORITHM_VERSION,
+        "role": "screening_candidates_only", "review_status": "pending_physician_review",
+        "items": analysis["candidates"] if analysis else [],
+        "summary": analysis["summary"] if analysis else {"candidate_count": 0, "st_depression_count": 0, "st_elevation_count": 0, "t_wave_count": 0},
+        "quality": analysis["quality"] if analysis else None,
+        "reason_code": None if analysis else "waveform_not_supplied",
+        "reasons": [] if analysis else ["未向筛查引擎提供原始波形与心搏定位数据"],
+    }
+    from .evaluation_status import stt_status
+    automatic["evaluation"] = stt_status(automatic)
+    return {
+        "schema_version": "stt-screening-review-v2",
+        "review_mode": "automatic_screening_with_physician_review" if analysis else "manual_review_only",
+        "manual_review_only": analysis is None, "calibration_unverified": True,
+        "measurement_protocol": {
+            "default_measurement": "J+60 ms", "default_landmark": "ST60",
+            "baseline": {"preferred": "PR_segment", "implemented_surrogate": "pre-QRS stable baseline (-200 to -120 ms)",
+                         "fallback": "individual_stable_baseline", "label": "PR 段优先 / QRS 前稳定基线替代",
+                         "requires_manual_confirmation": True,
+                         "note": "医师需核对 P/QRS/T 分界、体位变化、伪差、传导异常及心率变化。"},
+            "landmarks": [
+                {"code": "J", "offset_from_j_ms": 0, "label": "J 点", "purpose": "多导联导数能量估计 QRS 终点，需人工确认"},
+                {"code": "ST60", "offset_from_j_ms": 60, "label": "J+60 ms", "purpose": "默认 ST 筛查点"},
+                {"code": "ST80", "offset_from_j_ms": 80, "label": "J+80 ms", "purpose": "人工备选复核点"},
+            ],
+            "case_amplitude_output": {"enabled": analysis is not None, "unit": "source_device_units", "mV_conversion_enabled": False,
+                                      "reason": "仅显示设备原始尺度相对值；计量溯源前禁止解释为临床 mV 阈值。"},
+        },
+        "lead_system": {"status": "mapping_from_source_channels_unverified", "mapping_verified": False,
+                        "electrode_placement_verified": False,
+                        "message": "12 导联由 8 个源通道按现有映射派生；电极位置与导联映射尚需独立核验。"},
+        "calibration": {"status": "unverified", "voltage_gain_verified": False, "filter_response_verified_for_st": False,
+                        "analysis_filter": "raw source samples; block median; no 0.5 Hz display high-pass",
+                        "message": "已开启自动筛查候选；幅值仅以设备原始单位表示，不直接换算 mV。"},
+        "automatic_candidates": automatic, "analysis": analysis,
+        "reference_thresholds": {
+            "enabled": analysis is not None, "reference_only": True, "applied_as_research_screen": analysis is not None,
+            "applied_to_case": analysis is not None,
+            "title": "动态 ST-T 研究筛查协议（非诊断阈值）",
+            "st_change": {"entry_units": DEFAULT_CONFIG["entry_threshold_units"],
+                          "target_units": DEFAULT_CONFIG["target_threshold_units"], "measurement_landmark": "ST60",
+                          "minimum_target_duration_s": DEFAULT_CONFIG["minimum_target_duration_s"],
+                          "exit_confirmation_s": DEFAULT_CONFIG["exit_confirmation_s"]},
+            "warning": "阈值应用于未溯源的设备原始尺度，只用于排列复核优先级，不得自动生成诊断。",
+        },
+        "source_report": extract_stt_source_report(conclusion),
+        "clinical_safety": {"diagnosis_generated": False, "automatic_interpretation_generated": analysis is not None,
+                            "requires_physician_review": True, "acute_care_rule_out_supported": False,
+                            "statement": "软件仅生成 ST-T 自动筛查候选，医师必须回看原始波形、修正或排除后才可进入报告。"},
+    }

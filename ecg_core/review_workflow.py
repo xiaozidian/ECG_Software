@@ -36,16 +36,17 @@ class ReviewWorkflowMixin:
             (value["case_id"], value["revision"], json.dumps(value["steps"], ensure_ascii=False),
              json.dumps(value["events"], ensure_ascii=False)))
 
-    def invalidate_review(self, db, case_id, action):
+    def invalidate_review(self, db, case_id, action, *, rhythm_only=False):
         if not case_id:
             return
+        rhythm_only=(rhythm_only and action.startswith('annotation.')) or action.startswith('annotation.rhythm')
         if action in ("analysis.basis_changed", "workspace.restored"):
             affected = STEPS
         elif action.startswith("beat_override."):
             affected = STEPS  # waveform and classifications changed, source statistics did not
         elif action.startswith("beat_template."):
             affected = STEPS
-        elif action.startswith("annotation.rhythm"):
+        elif rhythm_only:
             # Episode decisions do not modify QRS types or ST markings. Their
             # own status guards AF report use; the new review revision below
             # still refreshes NN-derived evidence and invalidates report approval.
@@ -78,13 +79,17 @@ class ReviewWorkflowMixin:
         if report:
             composition=json.loads(report["composition"] or "{}")
             reviews=composition.get("category_reviews",{})
-            if action.startswith("annotation.") and not action.startswith("annotation.rhythm"):reviews.pop("ST",None)
+            if rhythm_only:
+                st_review=reviews.get('ST');reviews.clear()
+                if st_review is not None:reviews['ST']=st_review
+            elif action.startswith("annotation."):reviews.pop("ST",None)
             elif action != "event.review" and not action.startswith(("hrv_review.", "report_evidence.")):reviews.clear()
             composition["category_reviews"]=reviews
             # Preserve the doctor's prose, but never carry its acknowledgement
             # across a changed clinical basis (including undo/redo).
             for block in composition.get("diagnosis_blocks", []):
-                if block.get("manual") and not action.startswith("report_evidence."):
+                if (block.get("manual") and not action.startswith("report_evidence.")
+                        and not (rhythm_only and str(block.get('key','')).startswith('ST:'))):
                     block.update(needs_review=True, acknowledged=False)
             db.execute("UPDATE report_drafts SET composition=? WHERE case_id=?",(json.dumps(composition,ensure_ascii=False),case_id))
         db.execute("""UPDATE report_drafts SET status='draft', reviewed_by='', version=version+1,

@@ -20,11 +20,12 @@ import numpy as np
 
 from .config import CHANNEL_COUNT, SAMPLE_RATE
 from .source_identity import require_waveform_file, source_read
+from .stt_records import RANGE_PROFILE, RHYTHM_POLICY
 from .stt import (DEFAULT_CONFIG, LEADS, _block_measurement, _estimate_j_sample,
                   _evenly, _normalize_records, _sample_frames)
 
 SCHEMA_VERSION = "stt-range-mean-v1"
-PROFILE_ID = "raw-200hz-fixed16s-st-perbeat-mean-v1"
+PROFILE_ID = RANGE_PROFILE
 BASELINE_OFFSETS = (-40, -36, -32, -28, -24)
 ST_OFFSETS = (-2, -1, 0, 1, 2)
 BLOCK_SAMPLES = 3200
@@ -64,7 +65,7 @@ def method_profile(measurement_ms=60):
     if type(measurement_ms) is not int or measurement_ms not in (0, 60, 80):
         raise STTRangeError("measurement_ms must be 0, 60 or 80")
     return {
-        "id": PROFILE_ID, "sample_rate_hz": SAMPLE_RATE,
+        "id": PROFILE_ID, "sample_rate_hz": SAMPLE_RATE, "rhythm_policy":RHYTHM_POLICY,
         "sample_rate_device_verified": False, "block_seconds": 16,
         "minimum_range_samples": MINIMUM_RANGE_SAMPLES,
         "measurement_ms": measurement_ms,

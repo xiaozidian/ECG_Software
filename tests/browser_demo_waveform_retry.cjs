@@ -1,12 +1,13 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const text=fs.readFileSync('demo/static/js/demo-api.js','utf8');
-const start=text.indexOf('  let waveformPromise=null;'),end=text.indexOf('\n  function ',start);
-assert(start>=0&&end>start,'mathematical waveform loader was not found');
+const loader=text.match(/  async function waveformBuffer\(\)\{[\s\S]*?\n  \}/g);
+assert(loader?.length===1,'unique mathematical waveform loader was not found');
+const actualLoader='let waveformPromise=null;\n'+loader[0];
 let calls=0,resolve,reject;
 const payload=new Int16Array([12,-8,0,49]).buffer;
 const context=vm.createContext({ASSET_BASE:'mathematical-only',nativeFetch:()=>{calls++;return new Promise((r,j)=>{resolve=r;reject=j})}});
-vm.runInContext(text.slice(start,end),context);
+vm.runInContext(actualLoader,context);
 (async()=>{
   const first=context.waveformBuffer(),concurrent=context.waveformBuffer();
   assert.equal(calls,1,'concurrent raw reads must share one physical fetch');
@@ -22,7 +23,7 @@ vm.runInContext(text.slice(start,end),context);
   assert.equal(calls,2,'a successful complete read remains reusable');
   let otherCalls=0;
   const other=vm.createContext({ASSET_BASE:'second-mathematical-only',nativeFetch:()=>{otherCalls++;return Promise.reject(new Error('network unavailable'))}});
-  vm.runInContext(text.slice(start,end),other);
+  vm.runInContext(actualLoader,other);
   await assert.rejects(other.waveformBuffer(),/network unavailable/);
   await assert.rejects(other.waveformBuffer(),/network unavailable/);
   assert.equal(otherCalls,2,'network failure must also release the failed fetch');

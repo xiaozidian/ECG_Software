@@ -22,8 +22,9 @@ import numpy as np
 
 from .config import CHANNEL_COUNT, SAMPLE_RATE
 from .source_identity import require_waveform_file, source_read
+from .stt_records import RHYTHM_POLICY
 
-ALGORITHM_VERSION = "stt-screening-0.3.1-hospital-records-rhythm-masks"
+ALGORITHM_VERSION = "stt-screening-0.3.2-independent-rhythm"
 LEADS = ("I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6")
 _FRAME = struct.Struct("<8h")
 _CACHE: OrderedDict[tuple, dict] = OrderedDict()
@@ -442,16 +443,16 @@ def analyze_stt(waveform_path: str | Path, records, duration_s: float | None = N
     candidates = _merge_episodes(episodes)
     eligible_blocks = sum(block["eligible"] for block in blocks)
     result = {
-        "algorithm_version": ALGORITHM_VERSION, "analysis_revision": analysis_revision, "status": "completed",
+        "algorithm_version": ALGORITHM_VERSION, "analysis_revision": analysis_revision, "status": "completed", "rhythm_policy":RHYTHM_POLICY,
         "sample_rate_hz": SAMPLE_RATE, "units": "source_device_units", "unit_label": "设备原始单位",
         "calibration_status": "unverified", "parameters": copy.deepcopy(settings),
         "quality": {"total_blocks": len(blocks), "eligible_blocks": eligible_blocks,
                     "coverage_pct": round(eligible_blocks * 100 / max(1, len(blocks)), 1),
                     "analyzed_duration_s": round(min(duration, len(blocks) * settings["block_seconds"]), 1),
                     "excluded_blocks": len(blocks) - eligible_blocks,
-                    "gate": "normal-beat density + baseline stability + QRS stability; saved AF/AFL support exclusions break blocks; machine J confidence is reported, not a gate"},
+                    "gate": "normal-beat density + baseline stability + QRS stability; AF/AFL review annotations do not exclude ST/T measurements; machine J confidence is reported, not a gate"},
         "exclusions":dict(intervals=[dict(start_sample=a,end_sample=b,reason=r) for a,b,r in masks],support_halo_samples=[-40,120],
-            rule='any_intersection_breaks_fixed_measurement_block_and_continuity'),
+            rule='explicit_quality_support_intersection_breaks_fixed_measurement_block_and_continuity',rhythm_policy=RHYTHM_POLICY),
         "summary": {"candidate_count": len(candidates),
                     "st_depression_count": sum(item["kind"] == "st_depression" for item in candidates),
                     "st_elevation_count": sum(item["kind"] == "st_elevation" for item in candidates),

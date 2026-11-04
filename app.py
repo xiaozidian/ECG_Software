@@ -651,14 +651,12 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         feed = edited_feed(case, editor_value["document"])
         overrides = storage.list_beat_overrides(case_id)
         override_signature = ",".join(f"{item['sample_index']}:{item['class_code']}" for item in overrides)
-        from ecg_core.stt_records import rhythm_exclusions
         result = build_stt_review(
             case.get("conclusion", ""),
             case["paths"]["data"],
             feed.records,
             case["technical"]["duration_seconds_raw"],
             analysis_revision=f"editor-{editor_value['revision']}|overrides-{override_signature or 'none'}",
-            excluded_intervals=rhythm_exclusions(storage.list_annotations(case_id)),
         )
         linked_read_identity(case, basis)
         result['review_records']=[a for a in stt_annotation_items(case) if a.get('details',{}).get('kind') in ('ST','ST_REVIEW_NOTE')]
@@ -742,15 +740,6 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
             if event.get('category')=='ST' and stt_scope and any(stt_scope.get(k)!=identity[k] for k in ('case_id','analysis_basis','beat_revision')):
                 from ecg_core.stt_records import mark_stale
                 mark_stale(event)
-            if event.get('category')=='ST' and (proof or {}).get('rhythm_exclusions_digest'):
-                from ecg_core.stt_records import mark_stale,rhythm_scope_digest
-                if proof['rhythm_exclusions_digest']!=rhythm_scope_digest(annotations,event['start_sample'],event['end_sample']+1):mark_stale(event)
-            if event.get('category')=='ST' and event.get('range_statistics'):
-                from ecg_core.stt_records import mark_stale,rhythm_scope_digest,mask_scope_digest
-                statistics=event['range_statistics'];interval=statistics.get('range',{})
-                if 'start_sample' in interval and 'end_sample' in interval:
-                    saved=mask_scope_digest(statistics.get('exclusions',{}).get('intervals',[]),interval['start_sample'],interval['end_sample'])
-                    if saved!=rhythm_scope_digest(annotations,interval['start_sample'],interval['end_sample']):mark_stale(event)
         index=augment_index(index, storage.list_candidates(case['case_id']), identity)
         return attach_reviews(index, identity, storage.list_report_evidence(case['case_id']))
 
@@ -1114,12 +1103,20 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         runtime.assert_current()
         return value
 
+    def stt_data_version(feed):
+        """ST measurements depend on edited beats/settings, never AF/AFL decisions."""
+        from ecg_core.clinical_analysis import fingerprint,encode
+        rows=feed.beats+feed.markers;opts=feed.document['settings']
+        version=fingerprint('|'.join(f"{r['id']}:{r['sample_index']}:{r['class_code']}" for r in rows)
+                            +'|'+encode([[k,opts[k]] for k in sorted(opts)]))
+        return version+'-stt-independent-v2'
+
     def stt_range_result(case, payload):
         from ecg_core.stt_range import analyze_stt_range
         case_id = case['case_id']
         scope = payload.get('scope')
         if 'exclusions' in payload:
-            raise ValueError('范围统计仅采用当前已保存的节律排除区间，请先复核并保存节律标注')
+            raise ValueError('范围统计不接受客户端排除区间；ST-T独立分析不采用AF/AFL诊断屏蔽')
         names = ('case_id', 'analysis_basis', 'analysis_revision', 'beat_revision')
         if not isinstance(scope, dict) or any(name not in scope for name in names):
             raise ValueError('范围统计须提供病例、分析及逐搏修订依据')
@@ -1131,19 +1128,17 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         source = runtime.basis(case)
         source_digest = provenance_digest(source['inputs'])
         feed = edited_feed(case)
-        data_version = review_data_version(case, feed)
+        data_version = stt_data_version(feed)
         for name, value in (('source_digest', source_digest), ('data_version', data_version)):
             if name in scope and scope[name] != value:
                 raise ReportConflict('范围统计来源或复核依据已变化，请重新读取')
-        # Use the same authoritative AF/AFL annotations as RR eligibility.
-        # Their end_sample is inclusive; the statistic accepts half-open masks.
-        # Pending episodes also withhold beats and must retain their actual status.
-        from ecg_core.stt_records import rhythm_exclusions
-        exclusions=rhythm_exclusions(storage.list_annotations(case_id))
+        # feed.records contains the actual edited QRS samples/classes. The
+        # feed's separate excluded_rhythm_intervals is only for RR/HRV, and is
+        # deliberately not passed to ST/T measurements.
         result = analyze_stt_range(case['paths']['data'], feed.records,
             start_sample=payload.get('start_sample'), end_sample=payload.get('end_sample'),
             leads=payload.get('leads'), measurement_ms=payload.get('measurement_ms', 60),
-            exclusions=exclusions, basis=scope, source_digest=source_digest)
+            basis=scope, source_digest=source_digest)
         linked_read_identity(case, identity)
         assert_source_basis(case, source)
         runtime.assert_current()
@@ -1197,6 +1192,10 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         identity = linked_read_identity(case, scope)
         if snapshot.get('server_identity', {}).get('case_id') != case['case_id']:
             raise ReportConflict('区间统计来自另一病例')
+        from ecg_core.stt_records import RANGE_PROFILE,RHYTHM_POLICY
+        profile=snapshot.get('method_profile') or {}
+        if profile.get('id')!=RANGE_PROFILE or profile.get('rhythm_policy')!=RHYTHM_POLICY:
+            raise ReportConflict('ST-T范围统计方法已变化，请重新计算后保存')
         return identity
 
     def review_duration(case):
@@ -1905,8 +1904,8 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
                 measurement_protocol=machine_protocol,scope=identity,units='source_device_units',
                 source='reviewed_automatic_candidate' if exact else 'physician_selected_range',
                 original_machine_range={k:chosen[k] for k in ('start_s','end_s')} if chosen else None)
-            from ecg_core.stt_records import rhythm_scope_digest
-            proof['rhythm_exclusions_digest']=rhythm_scope_digest(storage.list_annotations(case['case_id']),first,end+1)
+            from ecg_core.stt_records import RHYTHM_POLICY
+            proof['rhythm_policy']=RHYTHM_POLICY
             if chosen:proof['candidate_id']=chosen['id']
             if end+1-first>=12000:
                 statistics=stt_range_result(case,dict(scope=identity,start_sample=first,end_sample=end+1,leads=leads,measurement_ms=machine_protocol['measurement_ms']))
@@ -1956,8 +1955,10 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
             start=round(candidate['start_s']*200);end=round(candidate['end_s']*200)
             if payload['sample_index']!=start or details.get('end_sample')!=end-1:
                 raise ValueError('整段 ST-T 复核范围须与所选候选完整起止一致')
+            from ecg_core.stt_records import protocol,RHYTHM_POLICY
             details['stt_event_evidence']={**{key:candidate[key] for key in ('kind','start_s','end_s','duration_s','continuous_target_s','peak_time_s','peak_deviation_units','leads','quality_score')},
                 'candidate_id':candidate['id'],'algorithm_version':measured['analysis']['algorithm_version'],
+                'measurement_protocol':protocol(dict(extent='whole')),'rhythm_policy':RHYTHM_POLICY,
                 'scope':candidate_identity,'source':'reviewed_automatic_candidate','units':'source_device_units'}
         if statistics is not None:
             if details.get('kind') != 'ST': raise ValueError('ST 区间统计不能用于其他标注类型')

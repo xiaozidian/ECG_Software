@@ -329,10 +329,10 @@ def test_real_node_roundtrip_all_leads_zero_null_and_negative_zero_are_numerical
         review_app, measurement, empty, negative_zero):
     review = review_app
     if empty:
-        mask = post(review, "/annotations", dict(sample_index=0, lead="全部", category="note",
-            label="Synthetic full-range rhythm mask", note="Mathematical exclusion only",
-            details=dict(kind="AF", status="confirmed", end_sample=11999, finding="Synthetic mask")))
-        assert mask.status_code == 201, mask.get_json()
+        excluded=review.client.put(review.base+'/beat-overrides',json=dict(
+            sample_indices=list(range(200,12000,200)),class_code='V'),
+            headers={'X-CardioInsight-Request':'1'})
+        assert excluded.status_code==200,excluded.get_json()
     statistics = signed_range(review, measurement_ms=measurement, leads=ALL_LEADS,
                               negative_zero=negative_zero)
     assert [item["lead"] for item in statistics["leads"]] == ALL_LEADS

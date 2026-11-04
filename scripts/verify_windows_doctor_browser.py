@@ -581,7 +581,8 @@ async def stt_range(page):
     require(native["range"]["end_sample"] - native["range"]["start_sample"] == 12000, "ST range must cover a complete minute")
     require(native["range"]["start_sample"] == 0 and native["range"]["end_sample"] == 12000, "Native ST result substituted a different source range")
     profile = native["method_profile"]
-    require(profile["id"] == "raw-200hz-fixed16s-st-perbeat-mean-v1" and profile["sample_rate_hz"] == 200, "Native ST method profile changed")
+    require(profile["id"] == "raw-200hz-fixed16s-st-perbeat-mean-v2" and profile["sample_rate_hz"] == 200, "Native ST method profile changed")
+    require(profile["rhythm_policy"] == "independent_of_AF_AFL_reviews", "Native ST method retained cross-rhythm masking")
     require(profile["measurement_ms"] == request["measurement_ms"] == 60 and profile["block_seconds"] == 16, "Native ST landmark protocol differs from the actual request")
     require(profile["filter"] == "raw source; no display high-pass" and profile["mean_beat_limit"] is None, "Display filtering or beat sampling replaced the raw complete-range ST mean")
     counts = native["counts"]

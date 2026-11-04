@@ -2,7 +2,7 @@
 /* Read-only range statistics. The calculator owns measurement and quality rules. */
 globalThis.ECGSTTRangeReview = (() => {
   const LEADS = Object.freeze(['I','II','III','aVR','aVL','aVF','V1','V2','V3','V4','V5','V6']);
-  const PROFILE_ID = 'raw-200hz-fixed16s-st-perbeat-mean-v1';
+  const PROFILE_ID = 'raw-200hz-fixed16s-st-perbeat-mean-v2';
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const copy = value => JSON.parse(JSON.stringify(value));
   function number(value) {
@@ -74,7 +74,7 @@ globalThis.ECGSTTRangeReview = (() => {
       || ![range.start_s,range.end_s,range.duration_s].every(Number.isFinite)
       || Math.abs(range.start_s-request.start_sample/200)>1e-7 || Math.abs(range.end_s-request.end_sample/200)>1e-7
       || Math.abs(range.duration_s-(request.end_sample-request.start_sample)/200)>1e-7) throw Error('返回的统计范围不一致，已丢弃结果。');
-    if (!method || method.id !== PROFILE_ID || method.sample_rate_hz !== 200
+    if (!method || method.id !== PROFILE_ID || method.rhythm_policy !== 'independent_of_AF_AFL_reviews' || method.sample_rate_hz !== 200
       || method.measurement_ms !== request.measurement_ms || method.aggregate !== 'arithmetic_mean_of_used_per_beat_st_minus_baseline'
       || method.unit_label !== 'u' || method.calibration_verified !== false
       || JSON.stringify(method.baseline_offsets_samples)!=='[-40,-36,-32,-28,-24]'
