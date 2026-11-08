@@ -290,7 +290,7 @@
       "error": "TargetClosedError: BrowserContext.close: Target page, context or browser has been closed"
     }
   ],
-  "corrected_upgrade_helper_sha256": "0704afef12251d2c33ea99ffe9b1bdb8cb39173b87b696dc50155dce34398f1b",
+  "corrected_upgrade_helper_sha256": "ca20986425e1cc0115fa722a85e10ba091e92a8117811fae4e56569ba204024e",
   "QA_allowed_paths": [
     ".github/workflows/windows-ui15-final-upgrade.yml",
     "scripts/prepare_ui15_final_upgrade.py",

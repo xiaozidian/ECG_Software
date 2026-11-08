@@ -314,9 +314,21 @@ async def source_chart_readonly(page,diagnostics=None):
     """Real Shift+Enter opens and visible zoom controls on actual15 assets."""
     results=[]
     progress=dict(status='running',surfaces=[],completed=results,requests=[],active_requests={})
+    source_owner=await page.evaluate('()=>({caseId:state.caseId,caseToken:state.caseRequestId})')
+    editor_ready_predicate="""()=>{const m=typeof morphologyWorkbench==='undefined'?null:morphologyWorkbench.privateSnapshot();return state.currentPage==='edit'&&!!state.editWaveform&&document.querySelector('#editTemplateGallery')?.dataset.readState==='ready'&&m?.ready&&m?.phase==='ready'&&(!m.linked||m.linked.phase==='ready');}"""
     def persist():
         if diagnostics:
             diagnostics.write_text(json.dumps(progress,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+    async def editor_ready(mode):
+        progress['readiness']=dict(status='waiting',mode=mode);persist()
+        # Wait for the actual occurrence/density/waveform business signals.
+        # Empty legacy representative arrays are valid and are not a gate.
+        await page.wait_for_function(editor_ready_predicate)
+        await page.evaluate('()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))')
+        owner=await page.evaluate('()=>({caseId:state.caseId,caseToken:state.caseRequestId,page:state.currentPage,mode:state.editMode})')
+        require(owner['caseId']==source_owner['caseId'] and owner['caseToken']==source_owner['caseToken'] and owner['page']=='edit' and owner['mode']==mode,'Editor case, token or mode changed before source-inspection baseline')
+        require(await page.evaluate(editor_ready_predicate),'Actual editor business readiness changed before source-inspection baseline')
+        progress['readiness']=dict(status='ready',**owner);persist()
     async def snapshot(selector,phase,record):
         record['phase']=phase
         try:
@@ -327,7 +339,7 @@ async def source_chart_readonly(page,diagnostics=None):
               const m=typeof morphologyWorkbench==='undefined'?null:morphologyWorkbench.privateSnapshot();
               const morph=m?{phase:m.phase,ready:m.ready,partitionGeneration:m.partitionGeneration,viewedScope:m.viewedScope,sourcePopulationCount:m.sourcePopulation?.length??null,linked:m.linked}:null;
               const flags=Object.fromEntries(['caseLoading','editLoading','editDetailLoading','editRrLoading','editTemplateLoading','reportSaving','reportViewLoading','reportEvidenceLoading'].map(k=>[k,k in state?Boolean(state[k]):null]));
-              return {page:state.currentPage,mode:state.editMode,active:{id:a?.id||'',tag:a?.tagName||''},source:{connected:!!c?.isConnected,marker:c?.hasAttribute('data-inspection-source')??false,aria:c?.getAttribute('aria-keyshortcuts')??null,current,currentError,managed:!!c?._inspectionManaged,bbox:b?{x:b.x,y:b.y,width:b.width,height:b.height}:null},dialog:{exists:!!d,open:!!d?.open},flags,edit:{requestId:state.editRequestId,stripRequestId:state.editStripRequestId,workspaceRequestId:state.editWorkspaceRequestId,templateStrips:state.editTemplateStrips?.length??null,waveMeta:document.querySelector('#editWaveMeta')?.textContent??null,libraryWaveMeta:document.querySelector('#editLibraryWaveMeta')?.textContent??null},morph,linked:globalThis.ECGTemplateLinkedView?.capturePresentation?.()??null,trace:globalThis.__CI_UI15_INSPECTION_OBSERVER__?.events??[],traceCount:globalThis.__CI_UI15_INSPECTION_OBSERVER__?.count??0};
+              return {page:state.currentPage,mode:state.editMode,active:{id:a?.id||'',tag:a?.tagName||''},source:{connected:!!c?.isConnected,marker:c?.hasAttribute('data-inspection-source')??false,aria:c?.getAttribute('aria-keyshortcuts')??null,current,currentError,managed:!!c?._inspectionManaged,bbox:b?{x:b.x,y:b.y,width:b.width,height:b.height}:null},dialog:{exists:!!d,open:!!d?.open},flags,edit:{requestId:state.editRequestId,stripRequestId:state.editStripRequestId,workspaceRequestId:state.editWorkspaceRequestId,templateStrips:state.editTemplateStrips?.length??null,waveformPresent:!!state.editWaveform,galleryReadState:document.querySelector('#editTemplateGallery')?.dataset.readState??null,waveMeta:document.querySelector('#editWaveMeta')?.textContent??null,libraryWaveMeta:document.querySelector('#editLibraryWaveMeta')?.textContent??null},morph,linked:globalThis.ECGTemplateLinkedView?.capturePresentation?.()??null,trace:globalThis.__CI_UI15_INSPECTION_OBSERVER__?.events??[],traceCount:globalThis.__CI_UI15_INSPECTION_OBSERVER__?.count??0};
             }""",selector)
             record.setdefault('snapshots',[]).append(dict(phase=phase,active_requests=list(progress['active_requests'].values()),**value))
         except Exception as error:
@@ -356,6 +368,8 @@ async def source_chart_readonly(page,diagnostics=None):
             rows.append(dict(factor=float(factor),**geometry))
         await dialog.locator('[data-inspection-close]').click();await dialog.wait_for(state='detached')
         after=await page.evaluate("()=>JSON.stringify({start:state.start,editStart:state.editStart,editDuration:state.editDuration,samples:[...state.editSelectedSamples],trace:state.editMorphTraceGeometry,selection:state.editSelection,morph:typeof morphologyWorkbench==='undefined'?null:morphologyWorkbench.privateSnapshot(),linked:globalThis.ECGTemplateLinkedView?.capturePresentation()})")
+        previous,current=json.loads(before),json.loads(after)
+        record['readonly_comparison']=dict(before_sha256=sha256(before.encode()).hexdigest(),after_sha256=sha256(after.encode()).hexdigest(),changed_top_level=[key for key in sorted(previous.keys()|current.keys()) if previous.get(key)!=current.get(key)])
         require(before==after,'Native inspection changed source position, selection or original morphology hit geometry')
         results.append(dict(surface=selector,zooms=rows,readonly_source_state_identical=True))
     async def inspect(selector):
@@ -400,8 +414,10 @@ async def source_chart_readonly(page,diagnostics=None):
             await nav(page,page_name)
             if page_name=='edit':
                 await page.locator('[data-edit-mode="cluster"]').click()
+                await editor_ready('cluster')
             for selector in selectors:await inspect(selector)
         await page.locator('[data-edit-mode="library"]').click()
+        await editor_ready('library')
         for selector in ('#editLibraryHistogramCanvas','#editLibraryTrendCanvas','#editLibraryScatterCanvas','#editLibraryDensityPrimary'):await inspect(selector)
         await nav(page,'report')
         progress['status']='passed';persist()
