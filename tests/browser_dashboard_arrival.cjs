@@ -7,12 +7,13 @@ const caseRow = (id = 'A', extra = {}) => ({case_id:id, active:true, metadata:{n
 const payload = (rows = [caseRow()], issues = []) => ({cases:rows, source_issues:issues, totals:{cases:rows.length,recording_hours:1,beats:89,pending_reports:rows.length}});
 function harness() {
   const elements = new Map(), requests = [], errors = [], opened = [], timers = new Map(); let timerId = 0;
-  const $ = key => { if (!elements.has(key)) elements.set(key, {value:'',textContent:'',innerHTML:'',hidden:true,disabled:false,attrs:{},
+  const $ = key => { if (!elements.has(key)) elements.set(key, {value:'',textContent:'',innerHTML:'',hidden:true,disabled:false,attrs:{},children:[],append(...nodes){this.children.push(...nodes);},
     setAttribute(k,v){this.attrs[k]=v;},focus(){ctx.focus=key;},classList:{add(){}}}); return elements.get(key); };
   $('#worklistFilter').value = 'all';
   const state = {search:'',cases:[],dashboard:null,dashboardStatus:'loading',dashboardRequestId:0,dashboardError:'',workspaceReady:false,workspaceEpoch:'',includePhi:false,allowPhi:true};
   const noop = () => {};
-  const ctx = vm.createContext({ECGReviewTools:require('../static/js/clinical-review-tools.js'),state,$,AbortController,navigator:{platform:''},
+  const document = {createElement:tag=>({tagName:String(tag).toUpperCase(),id:'',textContent:'',title:''}),querySelector:$};
+  const ctx = vm.createContext({document,ECGReviewTools:require('../static/js/clinical-review-tools.js'),state,$,AbortController,navigator:{platform:''},
     setTimeout(fn,ms){const id=++timerId;timers.set(id,{fn,ms});return id;},clearTimeout:id=>timers.delete(id),
     handleError:e=>errors.push(e),selectCase:async(id,destination)=>{opened.push({id,destination});state.caseLoading={};},
     sourceHint:String,applyPlatformIdentity:noop,bindEvents:noop,updateWaveformModeUI:noop,setLeadPickerSelection:noop,
