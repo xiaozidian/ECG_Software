@@ -10,9 +10,12 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
+import time
+from http import HTTPStatus
 import xml.etree.ElementTree as ET
 import zipfile
 
@@ -28,6 +31,46 @@ from scripts.windows_doctor_build import PACKAGE_NAME, SOURCE_FILES, create_cont
 
 REPO = 'xiaozidian/ECG_Software'
 CONTRACT = ROOT / 'scripts/ui15-native-continuation-contract.json'
+
+
+def log_download_reason(stderr):
+    """Return fixed classifications only; never echo headers, URLs, or tokens."""
+    text = (stderr or b'').decode('utf-8', errors='replace')
+    text = re.sub(r'https?://\S+', '<URL omitted>', text, flags=re.I)
+    statuses = [int(value) for value in re.findall(r'\bHTTP(?:/\d(?:\.\d)?)?[ :]+([1-5]\d\d)\b', text, re.I)]
+    denial_status = next((value for value in statuses if value in (401,403,404)), None)
+    status = denial_status or (statuses[-1] if statuses else None)
+    denied = denial_status is not None or bool(re.search(r'permission|\bdenied\b|forbidden|unauthori[sz]ed|not accessible by integration|authentication|credentials', text, re.I))
+    network = next((name for pattern,name in (
+        (r'connection.?reset|ECONNRESET', 'connection reset'),
+        (r'timed? out|timeout', 'timeout'),
+        (r'\bEOF\b', 'EOF'),
+    ) if re.search(pattern,text,re.I)), None)
+    transient = not denied and (status == 429 or status is not None and 500 <= status <= 599 or network is not None)
+    if status:
+        try: reason = HTTPStatus(status).phrase
+        except ValueError: reason = 'HTTP server response'
+    else:
+        reason = 'permission or authentication denial' if denied else network or 'unrecognized CLI error; raw stderr withheld'
+    return dict(HTTP_status=status, reason=reason, permission_or_not_found=denied, explicitly_transient=transient)
+
+
+def fetch_producer_log(job_id):
+    command = ['gh','api',f'repos/{REPO}/actions/jobs/{job_id}/logs']
+    for attempt in range(2):
+        try:
+            return subprocess.check_output(command, stderr=subprocess.PIPE, timeout=120)
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+            stderr = error.stderr or b''
+            if isinstance(error,subprocess.TimeoutExpired):
+                stderr += b'\ntimeout'
+            reason = log_download_reason(stderr)
+            if attempt == 0 and reason['explicitly_transient']:
+                print(json.dumps(dict(producer_log_download_retry=1, diagnostic=reason)), flush=True)
+                time.sleep(2)
+                continue
+            raise RuntimeError('Producer job log download failed; acceptance blocked: '+json.dumps(reason)) from error
+    raise AssertionError('Unreachable log download attempt')
 
 
 def xml_counts(path, *, total, skip_name=None, modes=None):
@@ -55,7 +98,7 @@ def producer_proof(c):
     actual = {str(s['number']): dict(name=s['name'], conclusion=s['conclusion']) for s in jobs[0]['steps']}
     assert actual == c['producer_steps'], 'Producer step truth changed'
     assert {n for n, s in actual.items() if s['conclusion'] == 'failure'} == {'10'}
-    log = subprocess.check_output(['gh', 'api', f'repos/{REPO}/actions/jobs/{jobs[0]["id"]}/logs'], stderr=subprocess.PIPE, timeout=120)
+    log = fetch_producer_log(jobs[0]['id'])
     normalized = log.decode('utf-8-sig').replace('\r\n', '\n').rstrip() + '\n'
     assert hashlib.sha256(normalized.encode()).hexdigest() == c['producer_normalized_log_sha256']
     errors = [line.split('Z ', 1)[-1] for line in normalized.splitlines() if '##[error]' in line]
