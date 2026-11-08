@@ -288,6 +288,25 @@
     if(lead==="I")return leadI;if(lead==="II")return leadII;if(lead==="III")return leadII-leadI;if(lead==="aVR")return-(leadI+leadII)/2;if(lead==="aVL")return leadI-leadII/2;if(lead==="aVF")return leadII-leadI/2;
     return read({V1:2,V2:3,V3:4,V4:5,V5:6,V6:7}[lead]??1);
   }
+  async function waveformOverview(params){
+    const rawBins=params.get('bins')??'1000',bins=Number(rawBins);
+    if(!/^[+-]?\d+$/.test(rawBins.trim())||!Number.isSafeInteger(bins)||bins<50||bins>1600)throw Error('全览分箱须为50–1600');
+    const buffer=await waveformBuffer(),total=buffer.byteLength/16;
+    if(!Number.isSafeInteger(total)||total<1||total!==Math.round(duration*RATE)){
+      const error=new Error('数学原始波形长度与来源范围不一致');error.status=409;throw error;
+    }
+    const count=Math.min(total,bins),boundaries=Array.from({length:count+1},(_,index)=>Math.floor(index*total/count)),view=new DataView(buffer),leads={II:[],V1:[],V5:[]};
+    // Visit every real sample: point decimation would lose narrow negative QS or R peaks.
+    for(let index=0;index<count;index++){
+      let minII=Infinity,maxII=-Infinity,minV1=Infinity,maxV1=-Infinity,minV5=Infinity,maxV5=-Infinity;
+      for(let sample=boundaries[index];sample<boundaries[index+1];sample++){
+        const offset=sample*16,ii=view.getInt16(offset+2,true),v1=view.getInt16(offset+4,true),v5=view.getInt16(offset+12,true);
+        minII=Math.min(minII,ii);maxII=Math.max(maxII,ii);minV1=Math.min(minV1,v1);maxV1=Math.max(maxV1,v1);minV5=Math.min(minV5,v5);maxV5=Math.max(maxV5,v5);
+      }
+      leads.II.push([minII,maxII]);leads.V1.push([minV1,maxV1]);leads.V5.push([minV5,maxV5]);
+    }
+    return {start_s:0,total_duration_s:total/RATE,total_samples:total,sample_rate_hz:RATE,bin_edges_s:boundaries.map(sample=>sample/RATE),leads,...rawSignalMetadata(),method:'全记录原始采样逐箱最小/最大包络；仅用于时间导航，请在局部原始波形复核；不改变采样、增益、R点或RR。'};
+  }
   async function waveform(params,forced={}){
     const waveBeats=beats.slice(),waveMarkers=activeEdited?editedFeed().markers:[];
     const buffer=await waveformBuffer(),view=new DataView(buffer),start=Math.max(0,Math.min(duration-1,Number(forced.start??params.get("start")??0))),windowSeconds=Math.max(.5,Math.min(params.get("whole")==="1"?duration:120,duration-start,Number(forced.duration??params.get("duration")??10))),supported=["I","II","III","aVR","aVL","aVF","V1","V2","V3","V4","V5","V6"],leads=forced.leads||String(params.get("leads")||"II,V1,V5").split(",").filter(x=>supported.includes(x)),max=Math.max(200,Math.min(12000,Number(forced.maxPoints??params.get("max_points")??4000))),startSample=Math.floor(start*RATE+1e-7),sampleCount=Math.min(Math.floor(windowSeconds*RATE+1e-7),buffer.byteLength/16-startSample),stride=Math.max(1,Math.ceil(sampleCount/max)),applyFilter=(forced.filter||params.get("filter")||"display")!=="raw",data={};
@@ -541,6 +560,7 @@
     if(action==="review-workflow"&&method==="GET")return response(workflow());
     if(action==="review-workflow"&&method==="PUT"){try{return response(confirmWorkflow(requestBody(options)))}catch(error){return failure(error.message)}}
     if(action==="event-reviews"&&method==="PUT"){try{return response(reviewEvents(requestBody(options)))}catch(error){return failure(error.message)}}
+    if(action==='waveform-overview'&&method==='GET')return response(await waveformOverview(url.searchParams));
     if(action==="trend")return response(trend());if(action==="hrv")return response(hrv());if(action==="stt-review")return response(sttReview());if(action==="rr-visuals")return response(rrVisuals());if(action==="waveform")return response(await waveform(url.searchParams));if(action==="beat-templates"&&method==="GET")return response({items:templateList()});if(action==="beat-templates"&&method==="POST"){try{return response(saveTemplate(requestBody(options)),201)}catch(error){return failure(error.message)}}if(action==="beat-overrides"&&method==="GET")return response({items:overrideList()});if(action==="beat-overrides"&&method==="PUT"){try{const items=saveOverrides(requestBody(options));return response({items,changed:items.length})}catch(error){return failure(error.message)}}if(action==="beat-overrides"&&method==="DELETE"){try{return response({ok:true,changed:restoreOverrides(requestBody(options))})}catch(error){return failure(error.message)}}
     if(action==="scatter"){const data=scatter(url.searchParams.get("mode")||"rr",Math.floor(Number(url.searchParams.get("hour_start_s")||0)/3600)*3600,Number(url.searchParams.get("max_points")||12000));delete data._all;return response(data)}
     if(action==="scatter-selection"&&method==="POST"){
@@ -618,7 +638,7 @@
   }
 
   // Browser demo identity is a local revision, not a verified raw-file fingerprint.
-  const clinicalReads=new Set(['','analysis-basis','report','overview','rhythm-review','trend','rr-visuals','scatter','hrv','hrv-windows','hrv-analysis','stt-review','report-statistics','report-sections','template-occurrences','report-events','waveform','event-waveform','event-waveforms','report-strip','report-af-representatives','report-strip-preview','evidence-candidates','report-rr-evidence','report-evidence/preview','waveform-density','scatter-selection','waveform-strips','rr-review','rr-review/locate','hrv-review','stt-range']);
+  const clinicalReads=new Set(['','analysis-basis','report','overview','rhythm-review','trend','rr-visuals','scatter','hrv','hrv-windows','hrv-analysis','stt-review','report-statistics','report-sections','template-occurrences','report-events','waveform','waveform-overview','event-waveform','event-waveforms','report-strip','report-af-representatives','report-strip-preview','evidence-candidates','report-rr-evidence','report-evidence/preview','waveform-density','scatter-selection','waveform-strips','rr-review','rr-review/locate','hrv-review','stt-range']);
   async function clinicalRoute(url,options){
     const match=url.pathname.match(/^\/api\/cases\/([^/]+)(?:\/(.*))?$/),action=match?.[2]||'',method=String(options.method||'GET').toUpperCase();
     if(!match||decodeURIComponent(match[1])!==caseId||!clinicalReads.has(action)||(method!=='GET'&&!(['event-waveforms','waveform-density','scatter-selection','waveform-strips','rr-review/locate','stt-range','report-evidence/preview'].includes(action)&&method==='POST')))return route(url,options);

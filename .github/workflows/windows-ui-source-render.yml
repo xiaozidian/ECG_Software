@@ -1,0 +1,176 @@
+name: Windows1.0.15 source-render UI (exact accepted14 runtime; math only)
+
+on:
+  push:
+    branches: ["codex/windows-doctor-deidentified-x64-20261028"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: windows-doctor-deidentified-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ui15:
+    name: Reuse exact14 runtime, fresh15 UI and reviewed-work upgrade
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: "utf-8"
+      PYTHONDONTWRITEBYTECODE: "1"
+      ECG_ALLOW_PHI: "0"
+      DOCTOR_PACKAGING_VERSION: "1.0.15"
+      GH_TOKEN: ${{ github.token }}
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: project
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: project
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12.10"
+          architecture: x64
+          cache: pip
+          cache-dependency-path: project/requirements-doctor-build.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Isolated verification controller; never compile the application
+        run: |
+          python -m venv "$env:RUNNER_TEMP\ui15-controller"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "$env:RUNNER_TEMP\ui15-controller\Scripts" | Out-File $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Install pinned controller dependencies and system Edge test driver
+        run: |
+          python -m pip install -r requirements-doctor-build.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $tools = "$env:RUNNER_TEMP\ui15-node"
+          npm install --prefix "$tools" --no-save --ignore-scripts --no-audit --no-fund playwright-core@1.63.0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $edge = @("$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe", "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $edge) { throw 'Installed system Edge missing' }
+          "ECG_PLAYWRIGHT_CORE=$tools\node_modules\playwright-core" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "ECG_CHROME=$edge" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "ECG_CHROME_PATH=$edge" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "ECG_DATA_ROOT=$env:RUNNER_TEMP\ui15-math-M01" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "ECG_APP_DATA_ROOT=$env:RUNNER_TEMP\ui15-regression-work" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Verify frozen UI source release and unchanged clinical40
+        run: |
+          python scripts/verify_public_release.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -c "from scripts.prepare_ui15_baseline import read,ROOT,verify_runtime_source; print(verify_runtime_source(read(ROOT/'scripts/ui15-baseline-contract.json')))"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Download and verify exact accepted14 packages and attributed49 plus23
+        run: |
+          python scripts/prepare_ui15_baseline.py --repository "${{ github.repository }}" --output "$env:RUNNER_TEMP\ui15-baseline"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Assemble15 ZIPs from same EXE and every non-UI byte; actual final ZIP PE smoke
+        id: assembly
+        run: |
+          python scripts/repack_windows_ui15.py --baseline-proof "$env:RUNNER_TEMP\ui15-baseline\baseline-proof.json" --output "$env:RUNNER_TEMP\doctor-eval" --source-commit "${{ github.sha }}" --ci-run-url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Fresh current backend scope and UI regression wrappers
+        run: |
+          python scripts/run_windows_release_tests.py --output "$env:RUNNER_TEMP\ui15-core"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/run_windows_ui_tests.py --output "$env:RUNNER_TEMP\ui15-ui"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/chart_source_render.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/node_full_record_geometry.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/template_source_render.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/chart_owner_render.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/chart_inspection_lifecycle.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/node_chart_write_owner.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/node_demo_full_record_overview.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Fresh request equivalence and latency repetitions
+        run: |
+          python scripts/verify_windows_request_source_perf.py --output "$env:RUNNER_TEMP\ui15-core\windows-request-source-perf.json" --rounds 3
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Actual15 full interactions and same-schema16 packaging fixture
+        run: |
+          python scripts/verify_windows_doctor_browser.py --package-root "$env:RUNNER_TEMP\doctor-eval\verify-package\CardioInsight-DoctorEval-Windows-x64" --software-archive "$env:RUNNER_TEMP\doctor-eval\CardioInsight-DoctorEval-Windows-x64-1.0.16-upgrade-fixture.zip" --output "$env:RUNNER_TEMP\ui15-native\browser-validation.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Actual15 P01 source save reopen and update
+        run: |
+          python scripts/verify_windows_p01.py --software-archive "$env:RUNNER_TEMP\doctor-p01\CardioInsight-DoctorEval-Windows-x64-1.0.15-P01-software.zip" --math-source-root "$env:RUNNER_TEMP\ui15-math-M01" --output "$env:RUNNER_TEMP\ui15-native\p01-native.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Actual15 current29 ST and AF report flow with independent mathematical oracle
+        run: |
+          python scripts/verify_windows_ui15_report_native.py --software-archive "$env:RUNNER_TEMP\doctor-p01\CardioInsight-DoctorEval-Windows-x64-1.0.15-P01-software.zip" --output "$env:RUNNER_TEMP\ui15-native\report-evidence-native.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Actual14 to15 retains approved report basis acknowledgements and UUID ledger
+        run: |
+          $proof = Get-Content "$env:RUNNER_TEMP\ui15-baseline\baseline-proof.json" -Raw | ConvertFrom-Json
+          python scripts/verify_windows_ui15_upgrade.py --base-software-archive "$($proof.paths.P01_software)" --software-archive "$env:RUNNER_TEMP\doctor-p01\CardioInsight-DoctorEval-Windows-x64-1.0.15-P01-software.zip" --output "$env:RUNNER_TEMP\ui15-native\ui15-upgrade-native.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Retain P01 UI15 package; workflow verdict remains separate
+        if: always() && steps.assembly.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: CardioInsight-Windows-x64-1.0.15-P01-software-only
+          path: |
+            ${{ runner.temp }}/doctor-p01/*.zip*
+            ${{ runner.temp }}/doctor-p01/p01-software-build-report.json
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+      - name: Retain M01 full UI15 package
+        if: always() && steps.assembly.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: CardioInsight-Windows-x64-1.0.15-M01-full
+          path: |
+            ${{ runner.temp }}/doctor-eval/*1.0.15-full.zip*
+            ${{ runner.temp }}/doctor-eval/build-report.json
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+      - name: Retain M01 UI15 update
+        if: always() && steps.assembly.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: CardioInsight-Windows-x64-1.0.15-software-update
+          path: ${{ runner.temp }}/doctor-eval/*1.0.15-software.zip*
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+      - name: Retain exact unchanged M01 mathematics
+        if: always() && steps.assembly.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: CardioInsight-Synthetic-M01-24h-v1-for-1.0.15
+          path: ${{ runner.temp }}/doctor-eval/CardioInsight-Synthetic-M01-24h-v1.zip*
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+      - name: Retain15 public synthetic checks, never raw data or work databases
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-UI15-mathematical-validation
+          path: |
+            ${{ runner.temp }}/ui15-baseline/baseline-proof.json
+            ${{ runner.temp }}/ui15-core/**/*.json
+            ${{ runner.temp }}/ui15-core/**/*.xml
+            ${{ runner.temp }}/ui15-ui/**/*.json
+            ${{ runner.temp }}/ui15-ui/**/*.xml
+            ${{ runner.temp }}/ui15-native/**/*.json
+            ${{ runner.temp }}/ui15-native/**/*.png
+          if-no-files-found: warn
+          retention-days: 30

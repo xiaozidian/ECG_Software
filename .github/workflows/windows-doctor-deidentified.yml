@@ -1,19 +1,6 @@
-name: Windows deidentified-profile software 1.0.14 (math CI only)
+name: Historical Windows fresh engine 1.0.14 (manual only; UI15 uses unchanged runtime)
 
 on:
-  push:
-    branches: ["codex/windows-doctor-deidentified-x64-20261028"]
-    paths-ignore:
-      - '.github/workflows/windows-doctor-deidentified.yml'
-      - '.github/workflows/windows-stt-native-continuation.yml'
-      - 'scripts/prepare_stt_native_continuation.py'
-      - 'scripts/stt-native-continuation-contract.json'
-      - 'scripts/verify_windows_doctor_browser.py'
-      - 'scripts/verify_windows_stt_independent_upgrade.py'
-      - '.github/workflows/windows-independent-native-continuation.yml'
-      - 'scripts/prepare_stt_independent_continuation.py'
-      - 'scripts/stt-independent-continuation-contract.json'
-      - 'scripts/verify_stt_independence_api.py'
   workflow_dispatch:
 
 permissions:

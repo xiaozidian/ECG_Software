@@ -2,7 +2,7 @@
 /* Two views of one remainder, four disjoint review groups. No raw-beat writes. */
 const morphologyWorkbench=(()=>{
   const G=ECGMorphologyGroups,qs=s=>document.querySelector(s),esc=escapeHtml;
-  const sessions=new Map(),plots=new Map(),bitmaps=new WeakMap(),leads=['I','II','III','aVR','aVL','aVF','V1','V2','V3','V4','V5','V6'];
+  const sessions=new Map(),plots=new Map(),leads=['I','II','III','aVR','aVL','aVF','V1','V2','V3','V4','V5','V6'];
   const sourceIds={top:'editDensityPrimary',bottom:'editDensitySelection'};
   let current=null,requestToken=0,selectionToken=0,busy=false,selecting=false,saving=false,drag=null,selection=null,box=null,activeSlot=6,formSlot=null,formContext=null,saveReload=null;
   const view={top:'II',bottom:'V1',groups:'II'};
@@ -243,31 +243,35 @@ const morphologyWorkbench=(()=>{
     qs('#morphTemplateForm').querySelectorAll('input,select,button').forEach(el=>el.disabled=saving);
     const submit=qs('#morphTemplateForm').querySelector('button[type="submit"]');if(submit){submit.disabled=!ready;submit.title=ready?'保存当前组的形态模板；心搏分类不变':'密度依据不可用，请重新读取后保存';}
   }
-  function bitmap(d){
-    if(bitmaps.has(d))return bitmaps.get(d);
-    const canvas=document.createElement('canvas');canvas.width=d.width;canvas.height=d.height;
-    const ctx=canvas.getContext('2d'),pixels=ctx.createImageData(d.width,d.height),max=Math.max(1,...d.bins);
-    d.bins.forEach((v,i)=>{if(!v)return;const f=Math.log1p(v)/Math.log1p(max),o=i*4;pixels.data[o]=f<.5?Math.round(f*470):255;pixels.data[o+1]=f<.5?220:Math.round(240*(1-(f-.5)*2));pixels.data[o+2]=0;pixels.data[o+3]=255});
-    ctx.putImageData(pixels,0,0);bitmaps.set(d,canvas);return canvas;
-  }
-  function draw(canvas,data,message='正在读取…'){
-    if(!canvas?.getClientRects().length)return;
-    const rect=canvas.getBoundingClientRect(),width=rect.width,height=rect.height,dpr=Math.min(devicePixelRatio||1,2);
+  function draw(canvas,data,message='正在读取…',target=null,source=null){
+    if(!canvas)return;
+    if(!data&&!target){delete canvas.dataset.inspectNote;globalThis.ECGChartInspection?.unregisterRenderer(canvas);}
+    if(!target&&!canvas.getClientRects().length)return;
+    const rect=target||canvas.getBoundingClientRect(),width=rect.width,height=rect.height,dpr=target?.dpr||Math.min(devicePixelRatio||1,2);
     const pixelWidth=Math.round(width*dpr),pixelHeight=Math.round(height*dpr);
     if(canvas.width!==pixelWidth)canvas.width=pixelWidth;if(canvas.height!==pixelHeight)canvas.height=pixelHeight;
-    const ctx=canvas.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);ctx.fillStyle='#020b09';ctx.fillRect(0,0,width,height);
+    if(target){canvas.style.width=width+'px';canvas.style.height=height+'px';}
+    const ctx=canvas.getContext('2d');ctx.setTransform(pixelWidth/width,0,0,pixelHeight/height,0,0);ctx.fillStyle='#020b09';ctx.fillRect(0,0,width,height);
     ctx.fillStyle='#e5f0eb';ctx.font='12px '+UI_FONT;
-    if(!data){ctx.fillText(message,10,height/2);canvas.setAttribute('aria-description',message);plots.delete(canvas);return}
-    const group=!!canvas.dataset.morphGroupPlot,compact=!canvas.dataset.morphSource,pad=group?2:compact?3:8,foot=group?12:compact?20:24;
+    if(!data){ctx.fillText(message,10,height/2);if(!target){canvas.setAttribute('aria-description',message);plots.delete(canvas);}return}
+    const group=source?.group??!!canvas.dataset.morphGroupPlot,compact=source?.compact??!canvas.dataset.morphSource,pad=group?2:compact?3:8,foot=group?12:compact?20:24;
     const g={l:pad,t:pad,w:Math.max(1,width-pad*2),h:Math.max(1,height-pad-foot),limit:data.amplitude_limit,data};
-    ctx.imageSmoothingEnabled=false;ctx.drawImage(bitmap(data),g.l,g.t,g.w,g.h);
+    // Paint every source bin at the current geometry; no old canvas is rescaled.
+    const max=data.bins.reduce((n,v)=>Math.max(n,v),1),binWidth=g.w/data.width,binHeight=g.h/data.height;
+    data.bins.forEach((v,i)=>{if(!v)return;const f=Math.log1p(v)/Math.log1p(max),red=f<.5?Math.round(f*470):255,green=f<.5?220:Math.round(240*(1-(f-.5)*2));ctx.fillStyle='rgb('+red+','+green+',0)';ctx.fillRect(g.l+(i%data.width)*binWidth,g.t+Math.floor(i/data.width)*binHeight,binWidth,binHeight);});
     ctx.strokeStyle='#758d82';ctx.setLineDash([2,3]);ctx.beginPath();ctx.moveTo(g.l+g.w/2,g.t);ctx.lineTo(g.l+g.w/2,g.t+g.h);ctx.stroke();ctx.setLineDash([]);
     if(group)ctx.font='10px '+UI_FONT;
     ctx.fillText('−1s',g.l,height-(group?2:4));if(!compact||width>=100){ctx.textAlign='center';ctx.fillText('R · 0',width/2,height-(group?2:4))}ctx.textAlign='right';ctx.fillText('+1s',width-pad,height-(group?2:4));ctx.textAlign='left';
-    if(!data.included)ctx.fillText(data.total?'边界不足，无法叠加':current?.groups?.source.length?'剩余集合为空':'当前集合没有心搏',10,height/2);
-    if(box&&canvas.dataset.morphSource===box.slot){const [a,b]=box.points;ctx.strokeStyle='#fff';ctx.lineWidth=1.5;ctx.strokeRect(g.l+Math.min(a.x,b.x)*g.w,g.t+Math.min(a.y,b.y)*g.h,Math.abs(a.x-b.x)*g.w,Math.abs(a.y-b.y)*g.h);}
-    plots.set(canvas,g);
-    canvas.setAttribute('aria-description',data.lead+'；'+data.included+' 搏参与密度统计；边界不足 '+data.skipped_edges+' 搏；幅度范围 ±'+Math.round(data.amplitude_limit)+' 设备单位');
+    const emptyMessage=source?.emptyMessage||(data.total?'边界不足，无法叠加':current?.groups?.source.length?'剩余集合为空':'当前集合没有心搏'),sourceBox=source?source.box:(box&&canvas.dataset.morphSource===box.slot?box.points.map(p=>({...p})):null);
+    if(!data.included)ctx.fillText(emptyMessage,10,height/2);
+    if(sourceBox){const [a,b]=sourceBox;ctx.strokeStyle='#fff';ctx.lineWidth=1.5;ctx.strokeRect(g.l+Math.min(a.x,b.x)*g.w,g.t+Math.min(a.y,b.y)*g.h,Math.abs(a.x-b.x)*g.w,Math.abs(a.y-b.y)*g.h);}
+    if(!target){
+      plots.set(canvas,g);
+      canvas.setAttribute('aria-description',data.lead+'；'+data.included+' 搏参与密度统计；边界不足 '+data.skipped_edges+' 搏；幅度范围 ±'+Math.round(data.amplitude_limit)+' 设备单位');
+      canvas.dataset.inspectNote='只读密度统计；'+canvas.getAttribute('aria-description');
+      const presentation={group,compact,box:sourceBox,emptyMessage,morphSource:canvas.dataset.morphSource,morphGroupPlot:canvas.dataset.morphGroupPlot};
+      globalThis.ECGChartInspection?.registerRenderer(canvas,(copy,geometry)=>{for(const key of ['morphSource','morphGroupPlot']){if(presentation[key]!==undefined)copy.dataset[key]=presentation[key];else delete copy.dataset[key];}draw(copy,data,message,geometry,presentation);});
+    }
   }
   function drawAll(){
     const s=current;
