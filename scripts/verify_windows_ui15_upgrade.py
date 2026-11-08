@@ -228,15 +228,21 @@ async def curate_and_approve(page,case_id,checks):
             await editor.locator('[data-se-lead][value="II"]').check()
         else:await editor.locator('[data-se-preset="three"]').click()
         await editor.locator('button[type=submit]').click();await editor.wait_for(state='hidden');await settled(page)
-    for step in ('edit','stt'):
+    # The shipped14 product requires only the edit checkpoint. ST-T review is
+    # per-record/report evidence; its intentionally hidden global button is
+    # not a physician checkpoint and must never be forced or marked by API.
+    for step in ('edit',):
         workflow=await get(page,case_id,'review-workflow')
         if workflow['steps'].get(step,{}).get('status')=='done':continue
         await nav(page,step)
-        if step=='stt':await page.wait_for_function('()=>sttWaveformIsCurrent()')
         await page.locator('#workflowNext').click();dialog=page.locator('#workflowConfirmDialog[open]')
         await dialog.wait_for(state='visible');await page.locator('#workflowConfirmed').check()
         await page.locator('#workflowNote').fill('Independent mathematical software upgrade acceptance; not a clinical diagnosis.')
         await page.locator('#workflowConfirmSubmit').click();await page.locator('#workflowConfirmDialog[open]').wait_for(state='detached')
+    workflow=await get(page,case_id,'review-workflow')
+    require(workflow['steps'].get('edit',{}).get('status')=='done','Actual required edit checkpoint was not confirmed')
+    await nav(page,'stt')
+    require(await page.locator('#workflowNext').is_hidden(),'ST-T unexpectedly exposes a global confirmation gate')
     await nav(page,'report');await tab(page,'strips')
     report=await get(page,case_id,'report');ids=list(dict.fromkeys(p['event_id'] for p in report['composition']['selected_events']))
     events=await get(page,case_id,'report-events?'+urlencode(dict(ids='|'.join(ids),limit=2000)))

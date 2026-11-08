@@ -1,0 +1,84 @@
+name: Windows UI15 exact887 final reviewed-work upgrade continuation
+
+on:
+  push:
+    branches: ["codex/windows-doctor-deidentified-x64-20261028"]
+    paths:
+      - '.github/workflows/windows-ui15-final-upgrade.yml'
+      - 'scripts/prepare_ui15_final_upgrade.py'
+      - 'scripts/ui15-final-upgrade-contract.json'
+      - 'scripts/verify_windows_ui15_upgrade.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: windows-ui15-final-upgrade-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  upgrade:
+    name: Immutable producer1–14 proof and actual required-checkpoint14 to15 upgrade
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: "utf-8"
+      PYTHONDONTWRITEBYTECODE: "1"
+      ECG_ALLOW_PHI: "0"
+      GH_TOKEN: ${{ github.token }}
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: project
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: project
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12.10"
+          architecture: x64
+          cache: pip
+          cache-dependency-path: project/requirements-doctor-build.txt
+      - name: Isolated native verification tools; no application compile
+        run: |
+          python -m venv "$env:RUNNER_TEMP\final-upgrade-controller"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "$env:RUNNER_TEMP\final-upgrade-controller\Scripts" | Out-File $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Pinned inspectors and installed system Edge
+        run: |
+          python -m pip install -r requirements-doctor-build.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify current129 immutable40 and original accepted14 baseline49 plus23
+        run: |
+          python scripts/verify_public_release.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/prepare_ui15_baseline.py --repository "${{ github.repository }}" --output "$env:RUNNER_TEMP\final-upgrade-baseline"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify original887 steps1–14 raw failure15 JSON and every byte of exact four ZIPs
+        run: |
+          python scripts/prepare_ui15_final_upgrade.py --baseline-proof "$env:RUNNER_TEMP\final-upgrade-baseline\baseline-proof.json" --output "$env:RUNNER_TEMP\final-upgrade"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Actual old14 visible required edit checkpoint and exact15 reviewed-report preservation
+        run: |
+          $upgradeInputs = Get-Content "$env:RUNNER_TEMP\final-upgrade\final-upgrade-input.json" -Raw | ConvertFrom-Json
+          python scripts/verify_windows_ui15_upgrade.py --base-software-archive "$($upgradeInputs.paths.base14_p01)" --software-archive "$($upgradeInputs.paths.p01)" --output "$env:RUNNER_TEMP\final-upgrade\evidence\upgrade\ui15-upgrade-native.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Final composite verdict; producer failure and original ZIP attribution remain unchanged
+        run: |
+          python scripts/prepare_ui15_final_upgrade.py --output "$env:RUNNER_TEMP\final-upgrade" --finalize
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Preserve original passed63 and actual new8 with independent raw receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-UI15-exact887-final-upgrade-validation
+          path: ${{ runner.temp }}/final-upgrade/evidence
+          if-no-files-found: warn
+          retention-days: 30

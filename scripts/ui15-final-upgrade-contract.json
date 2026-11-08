@@ -1,0 +1,307 @@
+{
+  "schema": 1,
+  "EXE_sha256": "f5283fc6a670e4d6dd9553797035458f31d0ea059ef81516f06fcc3ea9c24a73",
+  "common_source_fingerprint": "cac64ad7bb56700090fd8817a0cdecaf065c9bb1e7dc47541904c27a598feaf8",
+  "core_version": "core-9875ef91ba671541",
+  "ui_version": "ui-b69d4322a87d555f",
+  "ui_release_id": "0.12.29-ui-source-render.20261108",
+  "production129_sha256": "7e72a67fa13b73e235afe7ef2a76ee6f95865af40d50bd27efb78825aa01b5a9",
+  "historical_missing_tests": [
+    "test_candidate_thresholds_match_unchanged_frozen_development",
+    "test_current_workstation_cannot_masquerade_as_frozen_development"
+  ],
+  "standalone_Node_commands": [
+    "tests/chart_source_render.cjs",
+    "tests/node_full_record_geometry.cjs",
+    "tests/template_source_render.cjs",
+    "tests/chart_owner_render.cjs",
+    "tests/chart_inspection_lifecycle.cjs",
+    "tests/node_chart_write_owner.cjs"
+  ],
+  "demo_modes": [
+    "parity",
+    "validation",
+    "identity",
+    "concurrency",
+    "abort"
+  ],
+  "producing_run": 42498799025,
+  "producing_job": 128786819346,
+  "producing_commit": "887bb1e375c729107bc0b2fc69c85c3951f1cb11",
+  "producer_conclusion": "failure",
+  "producer_steps": {
+    "1": {
+      "name": "Set up job",
+      "conclusion": "success"
+    },
+    "2": {
+      "name": "Run actions/checkout@v4",
+      "conclusion": "success"
+    },
+    "3": {
+      "name": "Run actions/setup-python@v5",
+      "conclusion": "success"
+    },
+    "4": {
+      "name": "Run actions/setup-node@v4",
+      "conclusion": "success"
+    },
+    "5": {
+      "name": "Isolated verification controller; never compile the application",
+      "conclusion": "success"
+    },
+    "6": {
+      "name": "Install pinned controller dependencies and system Edge test driver",
+      "conclusion": "success"
+    },
+    "7": {
+      "name": "Verify frozen UI source release and unchanged clinical40",
+      "conclusion": "success"
+    },
+    "8": {
+      "name": "Download and verify exact accepted14 packages and attributed49 plus23",
+      "conclusion": "success"
+    },
+    "9": {
+      "name": "Assemble15 ZIPs from same EXE and every non-UI byte; actual final ZIP PE smoke",
+      "conclusion": "success"
+    },
+    "10": {
+      "name": "Fresh current backend scope and UI regression wrappers",
+      "conclusion": "success"
+    },
+    "11": {
+      "name": "Fresh request equivalence and latency repetitions",
+      "conclusion": "success"
+    },
+    "12": {
+      "name": "Actual15 full interactions and same-schema16 packaging fixture",
+      "conclusion": "success"
+    },
+    "13": {
+      "name": "Actual15 P01 source save reopen and update",
+      "conclusion": "success"
+    },
+    "14": {
+      "name": "Actual15 current29 ST and AF report flow with independent mathematical oracle",
+      "conclusion": "success"
+    },
+    "15": {
+      "name": "Actual14 to15 retains approved report basis acknowledgements and UUID ledger",
+      "conclusion": "failure"
+    },
+    "16": {
+      "name": "Retain P01 UI15 package; workflow verdict remains separate",
+      "conclusion": "success"
+    },
+    "17": {
+      "name": "Retain M01 full UI15 package",
+      "conclusion": "success"
+    },
+    "18": {
+      "name": "Retain M01 UI15 update",
+      "conclusion": "success"
+    },
+    "19": {
+      "name": "Retain exact unchanged M01 mathematics",
+      "conclusion": "success"
+    },
+    "20": {
+      "name": "Retain15 public synthetic checks, never raw data or work databases",
+      "conclusion": "success"
+    },
+    "38": {
+      "name": "Post Run actions/setup-node@v4",
+      "conclusion": "skipped"
+    },
+    "39": {
+      "name": "Post Run actions/setup-python@v5",
+      "conclusion": "skipped"
+    },
+    "40": {
+      "name": "Post Run actions/checkout@v4",
+      "conclusion": "success"
+    },
+    "41": {
+      "name": "Complete job",
+      "conclusion": "success"
+    }
+  },
+  "outer_artifacts": {
+    "CardioInsight-Synthetic-M01-24h-v1-for-1.0.15": {
+      "id": 13625548395,
+      "digest": "sha256:1e38ee7e29d09d880786131370fc4df367a2bd27de79162b46486d6162022aed",
+      "bytes": 163882723,
+      "role": "math"
+    },
+    "CardioInsight-Windows-x64-1.0.15-M01-full": {
+      "id": 13625403776,
+      "digest": "sha256:7dd447b3bafa654d50045ef0a6baa08f7ae9a2d84966eebadf41473343ebeadb",
+      "bytes": 202256263,
+      "role": "full"
+    },
+    "CardioInsight-Windows-x64-1.0.15-P01-software-only": {
+      "id": 13625149503,
+      "digest": "sha256:682fd1c8bb23a78af39949dba064247f709f12f7d4e2ce4bc419b62fae074f8b",
+      "bytes": 38360506,
+      "role": "p01"
+    },
+    "CardioInsight-Windows-x64-1.0.15-software-update": {
+      "id": 13625134426,
+      "digest": "sha256:9dfed17315aa03c9559780845cc7c8e8f19d1b3a9351263a3721881bf4b0ea16",
+      "bytes": 38360266,
+      "role": "update"
+    },
+    "Windows-UI15-mathematical-validation": {
+      "id": 13625104767,
+      "digest": "sha256:34b74eb38aa01868d8c7f5f70ca6755d10f4a65ff0a0f0e37a78ae89a7049c76",
+      "bytes": 3624626,
+      "role": "original887"
+    }
+  },
+  "producer_receipt_files": {
+    "ui15-ui/ui-regressions-tests.xml": {
+      "sha256": "568cf7e27196d2b2e2bb632273ca0c776537d0883130a02af7b0ecd205e8456a",
+      "bytes": 111168
+    },
+    "ui15-ui/demo-full-record.xml": {
+      "sha256": "d1cb95b6ce3b008d40e144e31f5b497dbf16b9b4d8cc79073af777b5abbc330a",
+      "bytes": 894
+    },
+    "ui15-ui/ui-test-summary.json": {
+      "sha256": "f3f1da7ee9763e810b410b24da29e08ff49c93e1b6c1c420505bb88ef03e4c80",
+      "bytes": 30050
+    },
+    "ui15-core/windows-request-source-perf.json": {
+      "sha256": "8bb69aeba977ffc6837b0603fb1a766e4800be1a5c1d5baaf6769f62b3630809",
+      "bytes": 43901
+    },
+    "ui15-core/test-scope.json": {
+      "sha256": "34b5c0f81218aa8a920c9ef0e011b673ec92f9467bec40eae5f87af2d11bde9a",
+      "bytes": 198466
+    },
+    "ui15-core/test-summary.json": {
+      "sha256": "0223aa41c7a4b8118cb1ab5e83bb75273630a45e5acca7749eac63882a3822a1",
+      "bytes": 926
+    },
+    "ui15-core/scoped-tests.xml": {
+      "sha256": "bbaa9d204b56b531a55387af61a9496ffca14b386a3e47885a4ec0c2cd08f98a",
+      "bytes": 200636
+    },
+    "ui15-core/historical-af.xml": {
+      "sha256": "ced945c05197c59bd6f8e9cfc8e4e5f2b499e121f17fa1de4738b02c0c26314e",
+      "bytes": 4914
+    },
+    "ui15-baseline/baseline-proof.json": {
+      "sha256": "0622d7d159a8d80f9038195bc5bf3f6639132794464d0c37e8eeba85e23c41b1",
+      "bytes": 3671
+    },
+    "ui15-native/report-evidence-native.json": {
+      "sha256": "6a8d9f46eaba7b284bfaf48a80fdffad74e3809d026d78fa98da52aa0d3546aa",
+      "bytes": 7896
+    },
+    "ui15-native/ui15-upgrade-native.json": {
+      "sha256": "11d58380bebbfcb1fd41ae43e2b457984f47c73a7aeab657e5dcb79fa351d795",
+      "bytes": 7351
+    },
+    "ui15-native/p01-mathematical-lasso.png": {
+      "sha256": "62035fcfc661e3f907be0fd46bdb9d54bbba15d4ac9d6679813ddba4d268c115",
+      "bytes": 365602
+    },
+    "ui15-native/browser-validation.json": {
+      "sha256": "4db70dcd419253f23c7a39f63a77f883861f3d7fb16dcd259d400a69a7a57e10",
+      "bytes": 70650
+    },
+    "ui15-native/p01-native.json": {
+      "sha256": "6182daf2d519c6324902ab207a4cfaa1cd3e61e9e4308ed6890316ff112446a3",
+      "bytes": 2216
+    },
+    "ui15-native/ui-upgrade-screenshots/native29-hospital-ST-record-and-strip.png": {
+      "sha256": "8f951426d709d252f4f73e49167acde1c3a3f104c0ed3f9001ddb90d2cd15882",
+      "bytes": 275928
+    },
+    "ui15-native/ui-upgrade-screenshots/report-evidence-AF-four-strips-reopened.png": {
+      "sha256": "8e037717409525fa02fc47618d916b4a7d4043b0d46fd6b93f8eec1835eced1c",
+      "bytes": 286529
+    },
+    "ui15-native/report-evidence-screenshots/native29-hospital-ST-record-and-strip.png": {
+      "sha256": "ddd7674e741e4b7f5faebf18be8f4ab7ca9c1019fccb454b238e1811471413e4",
+      "bytes": 276598
+    },
+    "ui15-native/report-evidence-screenshots/report-evidence-AF-four-strips-reopened.png": {
+      "sha256": "9251533238a50792927964ed0000a762ae86ba76ee74f02f3910237c6694bc03",
+      "bytes": 287179
+    },
+    "ui15-native/browser-screenshots/mathematical-report-draft.png": {
+      "sha256": "2e9b8491c6548613b1d75a363000763ce135297722d5bd6fcdc5a40643405021",
+      "bytes": 167297
+    },
+    "ui15-native/browser-screenshots/rr-report-evidence-twelve-fit.png": {
+      "sha256": "276cd0989f9bd556bfd1365e879de22fd82c24e3b49667d8e663216d535e87cf",
+      "bytes": 388514
+    },
+    "ui15-native/browser-screenshots/mathematical-free-lasso.png": {
+      "sha256": "940e12e2477bac4c4df429edeebfcc09a994e16216abd4ed8a39db15667daa58",
+      "bytes": 364177
+    },
+    "ui15-native/browser-screenshots/mathematical-af-1366x768.png": {
+      "sha256": "0036dd32b64e2ea4e224adc64437c2555f8858e44ba6f5d3f78ac4166092d103",
+      "bytes": 287249
+    },
+    "ui15-native/browser-screenshots/mathematical-af-1440x900.png": {
+      "sha256": "b03322c74353238be01f696832f88c1899ef578ab37c5e09128af25d36f2f78a",
+      "bytes": 317964
+    },
+    "ui15-native/browser-screenshots/latest-report-included-strip.png": {
+      "sha256": "b2931c5754f935af84d2caf9ff277c2ad705971775b156745ac96e4b8b1ff6d2",
+      "bytes": 202133
+    },
+    "ui15-native/browser-screenshots/mathematical-af-1920x1080.png": {
+      "sha256": "9eec05707ad625b81e9e3a1512236146d66a98338741a35e8c60b533a56e6531",
+      "bytes": 446009
+    }
+  },
+  "package_bytes": {
+    "p01": {
+      "filename": "CardioInsight-DoctorEval-Windows-x64-1.0.15-P01-software.zip",
+      "sha256": "e4b05f506a363ae89ee44ab44a9540dbe640848a4e5178a406fc8a023d952462",
+      "bytes": 38358543
+    },
+    "full": {
+      "filename": "CardioInsight-DoctorEval-Windows-x64-1.0.15-full.zip",
+      "sha256": "fc5eca2c823f3b484325bf52c3fe3799c95d5f93712abef530b61af417651153",
+      "bytes": 202243070
+    },
+    "update": {
+      "filename": "CardioInsight-DoctorEval-Windows-x64-1.0.15-software.zip",
+      "sha256": "588aaa2f72372cf3ec2ff6ab76ae02ed4201f64cb72d1259c7701fd1489565a7",
+      "bytes": 38359698
+    },
+    "math": {
+      "filename": "CardioInsight-Synthetic-M01-24h-v1.zip",
+      "sha256": "3b09e147add5a794800bc0be400ec57c347077c47546cc67c5593b3bedd745d0",
+      "bytes": 163882245
+    }
+  },
+  "exact_failed_upgrade_error": "TimeoutError: Locator.click: Timeout 120000ms exceeded.\nCall log:\n  - waiting for locator(\"#workflowNext\")\n    - locator resolved to <button hidden=\"\" type=\"button\" id=\"workflowNext\" title=\"打开复核确认窗口；确认并保存后进入下一阶段\">确认本步</button>\n  - attempting click action\n    2 × waiting for element to be visible, enabled and stable\n      - element is not visible\n    - retrying click action\n    - waiting 20ms\n    2 × waiting for element to be visible, enabled and stable\n      - element is not visible\n    - retrying click action\n      - waiting 100ms\n    225 × waiting for element to be visible, enabled and stable\n        - element is not visible\n      - retrying click action\n        - waiting 500ms\n",
+  "original_failure_cleanup_errors": [
+    {
+      "operation": "context.close",
+      "error": "TargetClosedError: BrowserContext.close: Target page, context or browser has been closed"
+    }
+  ],
+  "corrected_upgrade_helper_sha256": "5b3ac960c5377a23a9467da040a59c157fc752dcf35a4d3045c0938228009bb3",
+  "QA_allowed_paths": [
+    ".github/workflows/windows-ui15-final-upgrade.yml",
+    "scripts/prepare_ui15_final_upgrade.py",
+    "scripts/ui15-final-upgrade-contract.json",
+    "scripts/verify_windows_ui15_upgrade.py"
+  ],
+  "original_four_ZIPs_immutable": true,
+  "original_steps1_to14_reused_with_887_attribution": true,
+  "remaining_fresh_native_primary_checks": 8,
+  "combined_native_primary_count": 71,
+  "source_chart_zoom_cases_nested_in_new8": 60,
+  "old14_72_reused_baseline_only": true,
+  "clinical_validation": false
+}
