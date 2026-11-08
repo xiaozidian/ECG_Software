@@ -143,7 +143,7 @@ const overviewWorkbench=(()=>{
     globalThis.ecgChartInspection?.invalidate();
     rememberEpisodeForm();episodeEditor=null;overviewReady=false;ui.identity=null;ui.rows=[];ui.hist=null;ui.statistics=null;ui.rhythm=null;episodeNavigation++;
     for(const selector of ['#ovEpisodeRows','#ovAFSummary','#ovEpisodeNavigation','#ovEpisodeEditor','#ovEpisodePages','#ovStatistics','#ovStatisticsMethod']){const host=qs(selector);if(host)host.innerHTML='';}
-    document.querySelectorAll('#page-review canvas[data-ov-plot],#ovHistogram,#scatterCanvas').forEach(canvas=>{geometries.delete(canvas);canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height);});
+    document.querySelectorAll('#page-review canvas[data-ov-plot],#ovHistogram,#scatterCanvas').forEach(canvas=>{globalThis.ECGChartInspection?.unregisterRenderer(canvas);geometries.delete(canvas);canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height);});
     const focus=qs('#ovFocusContext');if(focus)focus.textContent='当前波形依据尚未核对';
     resetCoverage(message);
   }
@@ -157,9 +157,10 @@ const overviewWorkbench=(()=>{
   function waveformFailed(basis){
     if(basis&&ui.identity===basis){invalidateEvidence('波形依据读取失败或已变化，请重新载入后复核。');qs('#ovStatus').innerHTML=`波形与总览尚未重新核对 · ${button('重试载入','reload')}`;}
   }
-  function prepare(canvas,height){
-    if(innerWidth>=1100&&!ui.af&&['ovHistogram','ovFullHR','ovHourHR','ovFullRR','ovHourRR'].includes(canvas.id)){canvas.style.height='';height=Math.max(canvas.id==='ovHistogram'?58:54,canvas.getBoundingClientRect().height||height);}
-    const box=canvasContext(canvas,height),ctx=box.ctx,width=canvas.getBoundingClientRect().width||box.width;
+  function prepare(canvas,height,target=null){
+    if(target)height=target.height;
+    if(!target&&innerWidth>=1100&&!ui.af&&['ovHistogram','ovFullHR','ovHourHR','ovFullRR','ovHourRR'].includes(canvas.id)){canvas.style.height='';height=Math.max(canvas.id==='ovHistogram'?58:54,canvas.getBoundingClientRect().height||height);}
+    const box=canvasContext(canvas,height,target),ctx=box.ctx,width=target?.width||canvas.getBoundingClientRect().width||box.width;
     // Fractional grid widths must keep painted coordinates and pointer
     // coordinates identical, including closely spaced / coincident RR points.
     ctx.setTransform(canvas.width/width,0,0,canvas.height/height,0,0);
@@ -174,8 +175,10 @@ const overviewWorkbench=(()=>{
     ctx.fillStyle='rgba(11,146,144,.13)';ctx.strokeStyle='#0b9290';const x1=map(range[0]),width=Math.max(2,map(range[1])-x1);ctx.fillRect(x1,t,width,h);ctx.strokeRect(x1,t,width,h);
     ctx.strokeStyle='#c26b20';ctx.beginPath();ctx.moveTo(map(state.start),t);ctx.lineTo(map(state.start),t+h);ctx.stroke();ctx.restore();
   }
-  function drawTime(canvas,start,end,kind){
-    if(!canvas||!canvas.getClientRects().length)return;end=Math.max(start+.005,Math.min(duration(),end));const g=prepare(canvas,58),{ctx,l,w,h,t}=g,maxY=kind==='hr'?ui.maxHR:ui.maxRR;
+  function drawTime(canvas,start,end,kind,target=null){
+    if(!ui.rows.length){if(!target)globalThis.ECGChartInspection?.unregisterRenderer(canvas);return;}
+    if(!target&&canvas)globalThis.ECGChartInspection?.registerRenderer(canvas,(copy,geometry)=>drawTime(copy,start,end,kind,geometry));
+    if(!canvas||!canvas.getClientRects().length)return;end=Math.max(start+.005,Math.min(duration(),end));const g=prepare(canvas,58,target),{ctx,l,w,h,t}=g,maxY=kind==='hr'?ui.maxHR:ui.maxRR;
     geometries.set(canvas,{...g,start,end,maxY,kind});axis(g,maxY,start,end);shade(g,start,end);
     ctx.save();ctx.beginPath();ctx.rect(l,t,w,h);ctx.clip();ctx.fillStyle=kind==='hr'?'#207cba':'#52a72c';
     // Every RR contributes. At whole-record scale HR uses pixel min/max envelopes,
@@ -213,16 +216,17 @@ const overviewWorkbench=(()=>{
     picker.disabled=!bins.length;picker.value=position<0?'':String(ui.bin);
     const longest=qs('[data-ov="hist-longest"]'),shorter=qs('[data-ov="hist-shorter"]');if(longest){longest.disabled=!bins.length;longest.textContent=ui.ratio?'最大R/R档':'最长RR档';}if(shorter)shorter.disabled=!bins.length||position===0;
   }
-  function drawHistogram(){
-    syncHistogramReview();
-    const canvas=qs('#ovHistogram');if(!canvas.getClientRects().length||!ui.hist)return;const g=prepare(canvas,76),{ctx,l,w,h,t,height}=g,bins=ui.hist.bins,max=Math.max(1,...bins.map(x=>x.count)),scale=v=>ui.log?Math.log10(v+1)/Math.log10(max+1):v/max;
+  function drawHistogram(canvas=qs('#ovHistogram'),target=null){
+    if(!ui.hist){if(!target)globalThis.ECGChartInspection?.unregisterRenderer(canvas);return;}
+    if(!target){syncHistogramReview();globalThis.ECGChartInspection?.registerRenderer(canvas,(copy,geometry)=>drawHistogram(copy,geometry));}
+    if(!canvas.getClientRects().length||!ui.hist)return;const g=prepare(canvas,76,target),{ctx,l,w,h,t,height}=g,bins=ui.hist.bins,max=Math.max(1,...bins.map(x=>x.count)),scale=v=>ui.log?Math.log10(v+1)/Math.log10(max+1):v/max;
     ctx.fillStyle='#526773';ctx.textAlign='right';for(const f of [0,.5,1]){const value=ui.log?Math.round((max+1)**f-1):Math.round(max*f),y=t+h*(1-f);ctx.fillText(fmtNumber(value),l-5,y+3);ctx.strokeStyle='#e2eaed';ctx.beginPath();ctx.moveTo(l,y);ctx.lineTo(l+w,y);ctx.stroke()}ctx.textAlign='left';
     const selected=linked?.active()&&linked.snapshot().kind==='samples'?linked.index().selectedHistogram(linked.snapshot(),ui.ratio):null;
     const bar=w/bins.length;bins.forEach((b,i)=>{ctx.fillStyle=selected?'#b8d8db':ui.bin===i?'#d39235':'#4ba6ad';ctx.fillRect(l+i*bar,t+h-h*scale(b.count),Math.max(.8,bar-1),h*scale(b.count));if(selected){ctx.fillStyle='#d08a2e';ctx.fillRect(l+i*bar,t+h-h*scale(selected.bins[i].count),Math.max(.8,bar-1),h*scale(selected.bins[i].count));}});
     const rare=[];bins.forEach((b,i)=>{if(b.count<=0||!b.samples.length)return;const x=l+(i+.5)*bar;if(h*scale(b.count)<6){rare.push(i);ctx.strokeStyle=ui.bin===i?'#ac6410':'#087f83';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(x-2.5,t+h-1);ctx.lineTo(x,t+h-7);ctx.lineTo(x+2.5,t+h-1);ctx.closePath();ctx.stroke();}if(ui.bin===i){ctx.strokeStyle='#ac6410';ctx.lineWidth=1.5;ctx.strokeRect(l+i*bar,t,Math.max(.8,bar-1),h);}});
     canvas.dataset.nonemptyBins=JSON.stringify(histogramNonempty());canvas.dataset.rareBins=JSON.stringify(rare);
     const ticks=w<420?2:6;for(let i=0;i<=ticks;i++){ctx.textAlign=i===ticks?'right':i===0?'left':'center';ctx.fillStyle='#526773';ctx.fillText((i===ticks?bins.at(-1).start+'+':Math.round(ui.hist.max*i/ticks))+(ui.ratio?'%':' ms'),l+w*i/ticks,height-3)}ctx.textAlign='left';
-    geometries.set(canvas,{...g,kind:'hist'});qs('#ovHistInfo').textContent=(ui.bin===null?`横轴 ${ui.ratio?'相邻 RR 比值（%）':'RR（ms）'} · 纵轴心搏数${ui.log?'，log10(n+1)':''}`:`${ui.bin===bins.length-1?'≥'+bins[ui.bin].start:bins[ui.bin].start+'–'+bins[ui.bin].end}${ui.ratio?'%':' ms'} · ${fmtNumber(bins[ui.bin].count)} 搏`)+(selected?` · 橙色：已选有效 ${fmtNumber(selected.bins.reduce((n,b)=>n+b.count,0))} 搏`:'');
+    geometries.set(canvas,{...g,kind:'hist'});if(!target)qs('#ovHistInfo').textContent=(ui.bin===null?`横轴 ${ui.ratio?'相邻 RR 比值（%）':'RR（ms）'} · 纵轴心搏数${ui.log?'，log10(n+1)':''}`:`${ui.bin===bins.length-1?'≥'+bins[ui.bin].start:bins[ui.bin].start+'–'+bins[ui.bin].end}${ui.ratio?'%':' ms'} · ${fmtNumber(bins[ui.bin].count)} 搏`)+(selected?` · 橙色：已选有效 ${fmtNumber(selected.bins.reduce((n,b)=>n+b.count,0))} 搏`:'');
     canvas.dataset.linkedCount=String(selected?selected.bins.reduce((n,b)=>n+b.count,0):0);
   }
   const colors={N:'#263c46',S:'#269766',V:'#d04a45',X:'#a5b0b7',A:'#854a9b',C:'#aa6b28'};
@@ -231,22 +235,24 @@ const overviewWorkbench=(()=>{
     const cancel=qs('.ov-scatter-tools [data-ov="cancel-gesture"]');if(cancel)cancel.disabled=!active;
     const hint=qs('#ovGestureStatus');if(hint)hint.textContent=active?'正在选择 · 松开应用 · Esc 取消本次拖动':ui.selectionMode==='point'?'单击散点定位波形':`${ui.selectionMode==='lasso'?'拖动圈选':'拖动框选'} · 松开应用 · Esc 取消拖动`;
   }
-  function drawScatter(canvas=qs('#scatterCanvas')){
+  function drawScatter(canvas=qs('#scatterCanvas'),target=null,sourceAF=null){
+    if(!ui.rows.length){if(!target)globalThis.ECGChartInspection?.unregisterRenderer(canvas);return;}
+    if(!target&&canvas)globalThis.ECGChartInspection?.registerRenderer(canvas,(copy,geometry)=>drawScatter(copy,geometry,canvas.id==='ovAFLorenz'),{plotAspectRatio:1,margins:{l:42,r:12,t:6,b:18}});
     if(!canvas?.getClientRects().length||!ui.rows.length)return;
-    const af=canvas.id==='ovAFLorenz';if(!af&&qs('#ovScatterMode'))qs('#ovScatterMode').value=ui.mode;
-    if(!af&&innerWidth>=1100&&!ui.af){const wrap=canvas.closest('.scatter-canvas-wrap'),value=Math.max(160,Math.round(wrap?.clientWidth-30||160))+'px';if(wrap&&wrap.style.getPropertyValue('--ov-scatter-height')!==value)wrap.style.setProperty('--ov-scatter-height',value);}
+    const af=sourceAF??(canvas.id==='ovAFLorenz');if(!target&&!af&&qs('#ovScatterMode'))qs('#ovScatterMode').value=ui.mode;
+    if(!target&&!af&&innerWidth>=1100&&!ui.af){const wrap=canvas.closest('.scatter-canvas-wrap'),value=Math.max(160,Math.round(wrap?.clientWidth-30||160))+'px';if(wrap&&wrap.style.getPropertyValue('--ov-scatter-height')!==value)wrap.style.setProperty('--ov-scatter-height',value);}
     // Measure the current CSS slot after reserving square RR axes, keeping
     // painted coordinates and pointer coordinates equal while controls scroll.
     const height=af?Math.max(110,canvas.clientWidth-30):Math.max(1,canvas.getBoundingClientRect().height);
-    const points=E.pairs(ui.rows,af?'rr':ui.mode,ui.hour).filter(r=>!af||(r.time_s>=span()[0]&&r.time_s<=span()[1])),g=prepare(canvas,height),{ctx,l,w,h,t}=g,bound=ECGReviewTools.scatterBound(points,ui.bound);
-    if(!af){ui.scatter=points;state.scatterData={mode:ui.mode,points,bounds:{x_min:0,x_max:bound,y_min:0,y_max:bound},hour_start_s:ui.hour};qs('#scatterLoading').hidden=true;if(ui.rangeBounds!==bound){ui.rangeBounds=bound;initializeScatterRangeInputs(state.scatterData.bounds)}}geometries.set(canvas,{...g,kind:'scatter',points,bound});
+    const points=E.pairs(ui.rows,af?'rr':ui.mode,ui.hour).filter(r=>!af||(r.time_s>=span()[0]&&r.time_s<=span()[1])),g=prepare(canvas,height,target),{ctx,l,w,h,t}=g,bound=ECGReviewTools.scatterBound(points,ui.bound);
+    if(!target&&!af){ui.scatter=points;state.scatterData={mode:ui.mode,points,bounds:{x_min:0,x_max:bound,y_min:0,y_max:bound},hour_start_s:ui.hour};qs('#scatterLoading').hidden=true;if(ui.rangeBounds!==bound){ui.rangeBounds=bound;initializeScatterRangeInputs(state.scatterData.bounds)}}geometries.set(canvas,{...g,kind:'scatter',points,bound});
     ctx.strokeStyle='#d1dde2';ctx.strokeRect(l,t,w,h);ctx.fillStyle='#526773';ctx.fillText('RR(i+1) · ms',l+4,t+10);ctx.fillText('0',l-12,t+h+12);ctx.textAlign='right';ctx.fillText(bound+' ms · RR(i)',l+w,t+h+14);ctx.textAlign='left';ctx.fillText(String(bound),1,t+8);
     ctx.save();ctx.beginPath();ctx.rect(l,t,w,h);ctx.clip();
     if(ui.guides){ctx.setLineDash([4,4]);ctx.strokeStyle='#9fb0b8';for(const slope of [.5,1,2]){ctx.beginPath();ctx.moveTo(l,t+h);ctx.lineTo(l+w,t+h-h*slope);ctx.stroke()}ctx.setLineDash([])}
     for(const r of points){if(r.x>bound||r.y>bound)continue;ctx.fillStyle=state.scatterSelectedSet.has(r.sample_index)?'#d08a2e':linked?.snapshot()?.kind==='samples'?'#d3dfe1':colors[r.class_code]||'#854a9b';ctx.fillRect(l+r.x/bound*w,t+h-r.y/bound*h,ui.size,ui.size)}
     const focused=points.find(r=>r.sample_index===state.scatterFocusedSample);if(focused&&focused.x<=bound&&focused.y<=bound){ctx.strokeStyle='#0c6464';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(l+focused.x/bound*w,t+h-focused.y/bound*h,4,0,Math.PI*2);ctx.stroke();}
     if(ui.polygon.length){ctx.strokeStyle='#078986';ctx.fillStyle='rgba(11,146,144,.12)';ctx.beginPath();ui.polygon.forEach(([x,y],i)=>i?ctx.lineTo(l+x/bound*w,t+h-y/bound*h):ctx.moveTo(l+x/bound*w,t+h-y/bound*h));ctx.closePath();ctx.fill();ctx.stroke()}ctx.restore();
-    if(!af)qs('#ovScatterCount').textContent=`${fmtNumber(points.filter(r=>r.x<=bound&&r.y<=bound).length)} / ${fmtNumber(points.length)} 个相邻 RR 配对 · 已选 ${fmtNumber(state.scatterSelectedSamples.length)} 搏`;
+    if(!target&&!af)qs('#ovScatterCount').textContent=`${fmtNumber(points.filter(r=>r.x<=bound&&r.y<=bound).length)} / ${fmtNumber(points.length)} 个相邻 RR 配对 · 已选 ${fmtNumber(state.scatterSelectedSamples.length)} 搏`;
   }
   function selectSamples(samples,details={}){
     if(linked?.active()){linked.select(samples,details);return;}
@@ -645,7 +651,7 @@ const overviewWorkbench=(()=>{
     const seconds=Math.min(120,Math.max(30,state.duration*3)),start=E.clamp(state.start-seconds/3,0,Math.max(0,duration()-seconds)),key=JSON.stringify([caseId,caseToken,basis,start,seconds,filter]);
     if(ui.navKey!==key||!ui.nav){
       if(ui.navPendingKey===key)return;const token=ui.navToken=(ui.navToken||0)+1;ui.navKey=key;ui.navPendingKey=key;ui.nav=null;
-      const canvas=qs('#ovNavigator');if(canvas){geometries.delete(canvas);canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height);}qs('#ovNavigatorTime').textContent='正在读取导航…';
+      const canvas=qs('#ovNavigator');if(canvas){globalThis.ECGChartInspection?.unregisterRenderer(canvas);geometries.delete(canvas);canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height);}qs('#ovNavigatorTime').textContent='正在读取导航…';
       try{const result=await request('waveform?'+new URLSearchParams({start,duration:seconds,leads:'II',filter,max_points:2400,...basis}));
         if(!current()||ui.navToken!==token||ui.navKey!==key)return;ECGAnalysisConsistency.assertSame(basis,result);ui.nav=result;
       }catch(error){if(current()&&ui.navToken===token){ui.navKey=null;ui.nav=null;qs('#ovNavigatorTime').innerHTML=`导航 ${formatElapsed(start)}–${formatElapsed(start+seconds)} 读取失败 · ${button('重试','navigator-retry')}`;}return;}

@@ -19,9 +19,9 @@
   "core_version": "core-9875ef91ba671541",
   "files": {
     "demo/static/js/demo-api.js": {
-      "bytes": 94252,
+      "bytes": 96103,
       "component": "build",
-      "sha256": "b5aea22d56df4a16342dad7f85278e03ca967e21f7db09280a2bc8fafbb0fb59"
+      "sha256": "8a8cc38afc090ea501cd5d7a728e4e7b5bb767e77e9d993af6bc5deb54d5f024"
     },
     "demo/static/js/demo-review-api.js": {
       "bytes": 62832,
@@ -209,9 +209,9 @@
       "sha256": "f1747435cc2cf4d9f5baddbc60008b57ee80fe64ef6b7a4eb7eee4730f7ec21d"
     },
     "scripts/build_static_demo.py": {
-      "bytes": 12187,
+      "bytes": 12188,
       "component": "build",
-      "sha256": "40a10b2690341d3c91d722052aedea50ebefa02a2f7407e489d368bfa5c5dc2c"
+      "sha256": "b56fb9ac3690e4da700bd5ceda91e02660f142683e373960909c21c3a95d49eb"
     },
     "scripts/generate_synthetic_demo.py": {
       "bytes": 16740,
@@ -389,9 +389,9 @@
       "sha256": "fb20b4aa33e0cd2cc5fae8bf8a2a7968b22f8506cdc012ae507c465ea59da3ee"
     },
     "static/js/app.js": {
-      "bytes": 307629,
+      "bytes": 312727,
       "component": "ui",
-      "sha256": "29945dcbf295a47b9ea92147fc871d0b2bc19b2fe6588cfae08d88c683ca4dd4"
+      "sha256": "a212471555e9469ee927df0b49b83063bc66163fd81fe58f87f2ca635d417c55"
     },
     "static/js/beat-editor-ui.js": {
       "bytes": 46712,
@@ -404,9 +404,9 @@
       "sha256": "a8aea660c1e344636e4407167935c8410e7eafeee29eb07c2a8e1f9983158b95"
     },
     "static/js/chart-inspection.js": {
-      "bytes": 13256,
+      "bytes": 18968,
       "component": "ui",
-      "sha256": "47f32312b1d39e805259f2af1325231b9e8ab875295a27903f315cd16c51c770"
+      "sha256": "887e9dc9f36c13a7f570659e1096c861f8bc4111395ef5b4217bf2617d3d5afd"
     },
     "static/js/clinical-analysis.js": {
       "bytes": 42037,
@@ -434,9 +434,9 @@
       "sha256": "118f105ed4a34a878f20b2adda69a96c0644e26dd9c587223bb160e5513291a0"
     },
     "static/js/full-record-retain.js": {
-      "bytes": 8817,
+      "bytes": 13979,
       "component": "ui",
-      "sha256": "278686116f77f368a5118aeab27a14f87891320c0fff69e8cac54ee5d1c50a79"
+      "sha256": "32e82b94d52b29ce489ba03a351bc1a899a7f83a79d079edf44892bdd4c57e5f"
     },
     "static/js/hrv-analysis.js": {
       "bytes": 6159,
@@ -469,9 +469,9 @@
       "sha256": "9a179f05c75c44034dba3c4a0f84de7dfe87a5e0e1bf00ee57dee611856b1c13"
     },
     "static/js/morphology-workbench.js": {
-      "bytes": 56437,
+      "bytes": 57289,
       "component": "ui",
-      "sha256": "009a97d0c1dc3d49fd0046d346ff14a6b2de31a0283b841ed422548065d8e1f3"
+      "sha256": "6568a6a48468c9cf0627f47c183d4a855c1bcbeccaea2e7b3276828faf6fedcd"
     },
     "static/js/occurrence-card.js": {
       "bytes": 15968,
@@ -489,9 +489,9 @@
       "sha256": "7026c9b3e01ed16b02f35f1b11939156ede296c06fdd9ff3ceae2de334d164b6"
     },
     "static/js/overview-workbench.js": {
-      "bytes": 125524,
+      "bytes": 126590,
       "component": "ui",
-      "sha256": "86eafcf83bd7cee39abc11ea055fdd92e72c4d4f2ab864810218b073f4d91109"
+      "sha256": "520bcce9987211c10d657d51b92af299f21701487291de860dad7c643d85a92a"
     },
     "static/js/read-requests.js": {
       "bytes": 2715,
@@ -594,9 +594,9 @@
       "sha256": "8d27741c42a5dd15b2db105dba293ac00957a652ac4be32154015e27da199589"
     },
     "static/js/template-linked-view.js": {
-      "bytes": 34570,
+      "bytes": 35398,
       "component": "ui",
-      "sha256": "e0bc52a04df25be36b6d32dd2290079a98efe436eaaa240ccd6c0a3bcc20373d"
+      "sha256": "1d075747b16cdf56fd8693e912b1e6ee8f0a286913d23b97a96a494d7f79da5d"
     },
     "static/js/terminology-tree.js": {
       "bytes": 28666,
@@ -630,7 +630,7 @@
     }
   },
   "schema": 1,
-  "source_fingerprint": "37519667ee1c075e4f299e75510712d68fcbadc7d67d901d7fc2e4497c367c0a",
+  "source_fingerprint": "cac64ad7bb56700090fd8817a0cdecaf065c9bb1e7dc47541904c27a598feaf8",
   "source_revision": null,
-  "ui_version": "ui-9700556846beaf5f"
+  "ui_version": "ui-b69d4322a87d555f"
 }

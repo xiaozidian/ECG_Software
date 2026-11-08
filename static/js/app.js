@@ -363,12 +363,12 @@ async function api(path, options = {}) {
   const reportOnly=/\/report(?:\?|$)/.test(path);
   // Saving report curation does not change clinical waveforms. Keep visible
   // reads alive across autosave; report receivers already reject older versions.
-  if(isWrite&&!reportOnly&&!evidencePick){state.editReadCache=null;globalThis.ecgChartInspection?.invalidate();reads?.clear();}
+  if(isWrite&&!reportOnly&&!evidencePick){state.editReadCache=null;globalThis.ECGChartInspection?.clearRenderers();globalThis.ECGFullRecordRetain?.invalidate();reads?.clear();}
   const scope=JSON.stringify([requestCase,state.caseRequestId,state.currentPage]);
   const reportMetadata=/\/(?:report|report-events|report-rr-evidence|evidence-candidates)(?:\?|$)/.test(path);
   const readKey=reportMetadata?path+'|report-evidence:'+String(state.reportEvidenceEpoch||0):path;
   const payload=method==='GET'&&reads?await reads.read(scope,readKey,readRequest,readLane,options.signal):await readRequest(options.signal);
-  if(isWrite&&!reportOnly&&!evidencePick){globalThis.ecgChartInspection?.invalidate();reads?.clear();if(typeof overviewWorkbench!=='undefined')overviewWorkbench.invalidateAfterWrite(requestCase,requestCaseToken);}
+  if(isWrite&&!reportOnly&&!evidencePick&&requestCase===state.caseId&&requestCaseToken===state.caseRequestId){globalThis.ECGChartInspection?.clearRenderers();globalThis.ECGFullRecordRetain?.invalidate();reads?.clear();if(typeof overviewWorkbench!=='undefined')overviewWorkbench.invalidateAfterWrite(requestCase,requestCaseToken);}
   if(isWrite&&(evidencePick||reportOnly)&&requestCase===state.caseId&&requestCaseToken===state.caseRequestId)state.reportEvidenceEpoch=(state.reportEvidenceEpoch||0)+1;
   if(requestCase===state.caseId&&/^(PUT|PATCH|DELETE|POST)$/.test(options.method||"")&&/\/(beat-overrides|beat-templates|annotations|patient)(\/|$)/.test(path)){
     state.reportComposer=null;
@@ -698,7 +698,7 @@ async function selectCase(caseId, destination = "review") {
   const sttCaseChanged=state.caseId!==caseId;
   if(typeof clinicalUI!=='undefined')clinicalUI.cancelReportExport();
   if(state.editFullscreenReturn){cancelEditTwelveRead(state.editFullscreenReturn);state.editFullscreenReturn=null;finishWaveformFullscreenExit();requestWaveformNativeExit($("#waveformCard")).catch(handleError);}
-  globalThis.ecgChartInspection?.invalidate();
+  globalThis.ECGChartInspection?.clearRenderers();globalThis.ECGFullRecordRetain?.invalidate();
   globalThis.ECGReadRequests?.clear();
   clinicalWorkflow.reset();
   const requestId=++state.caseRequestId;
@@ -926,7 +926,7 @@ function goPage(name, {reuseEditWorkspace=false,editFullscreenTransition=false}=
       Object.assign(state,context.preview);$("#filterSelect").value=state.filter;updateZoomControls();
       finishWaveformFullscreenExit();requestWaveformNativeExit($("#waveformCard")).catch(handleError);
     }
-    globalThis.ecgChartInspection?.invalidate();globalThis.ECGReadRequests?.clear();
+    globalThis.ECGChartInspection?.clearRenderers();globalThis.ECGFullRecordRetain?.invalidate();globalThis.ECGReadRequests?.clear();
   }
   if(state.currentPage==="stt"&&name!=="stt"){
     state.sttRequestId++;state.sttAbort?.abort();state.sttAbort=null;state.sttWaveformSelection=null;
@@ -1236,18 +1236,21 @@ function clearWaveformSurface(key,selectors){
   if(typeof syncRhythmRangeEditor==='function')syncRhythmRangeEditor();
 }
 
-function canvasContext(canvas, height = null) {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+function canvasContext(canvas, height = null, target = null) {
+  const dpr = target?.dpr || Math.min(window.devicePixelRatio || 1, 2);
   // Measure the CSS slot, not a minimum backing-store size: small strip cards
   // must show the whole time window rather than clipping a 300 px canvas.
-  canvas.style.width = "100%";
-  const width = Math.max(1, Math.floor(canvas.getBoundingClientRect().width || canvas.parentElement.clientWidth - 2));
-  const cssHeight = height || Number(canvas.getAttribute("height")) || 200;
+  canvas.style.width = target ? `${target.width}px` : "100%";
+  const width = target?.width || Math.max(1, canvas.getBoundingClientRect().width || canvas.parentElement.clientWidth - 2);
+  // The height attribute becomes physical pixels after the first paint. Keep
+  // the original logical height separately so DPR never feeds back into CSS.
+  if(!canvas._logicalHeight)canvas._logicalHeight=height||Number(canvas.getAttribute("height"))||200;
+  const cssHeight = target?.height || height || canvas._logicalHeight;
   canvas.style.height = `${cssHeight}px`;
   canvas.width = Math.round(width * dpr);
   canvas.height = Math.round(cssHeight * dpr);
   const ctx = canvas.getContext("2d");
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.setTransform(canvas.width/width, 0, 0, canvas.height/cssHeight, 0, 0);
   return {ctx, width, height: cssHeight};
 }
 
@@ -1747,8 +1750,10 @@ function drawAxes(ctx, width, height, margin, yTicks, xLabels = []) {
   return {w,h};
 }
 
-function renderTrendChart() {
-  const {ctx,width,height} = canvasContext($("#trendCanvas"),250), m={l:44,r:15,t:14,b:26};
+function renderTrendChart(canvas = $("#trendCanvas"), target = null) {
+  if(!state.caseData||!Array.isArray(state.trend?.points)){if(!target)globalThis.ECGChartInspection?.unregisterRenderer(canvas);return;}
+  if(!target)globalThis.ECGChartInspection?.registerRenderer(canvas,(copy,geometry)=>renderTrendChart(copy,geometry));
+  const {ctx,width,height} = canvasContext(canvas,250,target), m={l:44,r:15,t:14,b:26};
   ctx.clearRect(0,0,width,height);if(!state.caseData||!Array.isArray(state.trend?.points))return;
   const total=state.caseData.technical.duration_seconds_raw,divisions=Math.max(1,Math.min(4,Math.floor((width-m.l-m.r)/130)));
   const times=Array.from({length:divisions+1},(_,i)=>({pos:i/divisions,label:formatElapsed(total*i/divisions)}));
@@ -1758,15 +1763,19 @@ function renderTrendChart() {
   ctx.beginPath(); state.trend.points.forEach((p,i)=>{const x=m.l+p.time_s/total*w,y=m.t+h-Math.min(p.hr,200)/200*h;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.strokeStyle="#197fbd";ctx.lineWidth=1.4;ctx.stroke();
 }
 
-function renderHistogram() {
-  const {ctx,width,height}=canvasContext($("#histogramCanvas"),260),m={l:52,r:16,t:15,b:27};ctx.clearRect(0,0,width,height);
+function renderHistogram(canvas = $("#histogramCanvas"), target = null) {
+  if(!Array.isArray(state.rr?.histogram)){if(!target)globalThis.ECGChartInspection?.unregisterRenderer(canvas);return;}
+  if(!target)globalThis.ECGChartInspection?.registerRenderer(canvas,(copy,geometry)=>renderHistogram(copy,geometry));
+  const {ctx,width,height}=canvasContext(canvas,260,target),m={l:52,r:16,t:15,b:27};ctx.clearRect(0,0,width,height);
   if(!Array.isArray(state.rr?.histogram))return;
   const data=state.rr.histogram,max=Math.max(...data.map(x=>x.count),1);const {w,h}=drawAxes(ctx,width,height,m,[0,.5,1].map(p=>({pos:p,label:Math.round(max*p)})),[{pos:0,label:"300"},{pos:.5,label:"1150"},{pos:1,label:"2000 ms"}]);
   const bar=w/data.length;data.forEach((item,i)=>{const bh=item.count/max*h;ctx.fillStyle=i%2?"#42b7b1":"#239e9a";ctx.fillRect(m.l+i*bar+1,m.t+h-bh,Math.max(1,bar-2),bh)});
 }
 
-function renderPoincare() {
-  const {ctx,width,height}=canvasContext($("#poincareCanvas"),260),m={l:44,r:16,t:15,b:27};ctx.clearRect(0,0,width,height);if(!Array.isArray(state.rr?.poincare))return;const {w,h}=drawAxes(ctx,width,height,m,[0,.5,1].map(p=>({pos:p,label:Math.round(300+1700*p)})),[{pos:0,label:"300"},{pos:.5,label:"1150"},{pos:1,label:"2000 ms"}]);
+function renderPoincare(canvas = $("#poincareCanvas"), target = null) {
+  if(!Array.isArray(state.rr?.poincare)){if(!target)globalThis.ECGChartInspection?.unregisterRenderer(canvas);return;}
+  if(!target)globalThis.ECGChartInspection?.registerRenderer(canvas,(copy,geometry)=>renderPoincare(copy,geometry),{plotAspectRatio:1,margins:{l:44,r:16,t:15,b:27}});
+  const {ctx,width,height}=canvasContext(canvas,260,target),m={l:44,r:16,t:15,b:27};ctx.clearRect(0,0,width,height);if(!Array.isArray(state.rr?.poincare))return;const {w,h}=drawAxes(ctx,width,height,m,[0,.5,1].map(p=>({pos:p,label:Math.round(300+1700*p)})),[{pos:0,label:"300"},{pos:.5,label:"1150"},{pos:1,label:"2000 ms"}]);
   ctx.strokeStyle="#d8e1e5";ctx.beginPath();ctx.moveTo(m.l,m.t+h);ctx.lineTo(m.l+w,m.t);ctx.stroke();ctx.fillStyle="rgba(13,119,119,.25)";
   state.rr.poincare.forEach(([xv,yv])=>{const x=m.l+(xv-300)/1700*w,y=m.t+h-(yv-300)/1700*h;if(x>=m.l&&x<=m.l+w&&y>=m.t&&y<=m.t+h)ctx.fillRect(x,y,1.5,1.5)});
 }
@@ -1985,7 +1994,7 @@ function renderSttTrendRows() {
     for(const point of points){if(!validPoint(point)||point.time_s<bounds.start||point.time_s>bounds.end){pen=false;continue;}d+=`${pen?'L':'M'}${((point.time_s-bounds.start)/length*100).toFixed(3)},${(8-point[mode.field]/limit*6).toFixed(3)} `;pen=true;used++;}
     const target=state.sttStart+state.sttDuration/2,current=points.find(p=>(p.start_s??p.time_s-30)<=target&&(p.end_s??p.time_s+30)>target),value=current&&validPoint(current)?current[mode.field]:null;
     const item=state.sttSelectedCandidate?.item,a=item?Math.max(0,Math.min(100,(item.start_s-bounds.start)/length*100)):0,b=item?Math.max(0,Math.min(100,(item.end_s-bounds.start)/length*100)):0;
-    return `<div class="stt-trend-row"><strong>${lead}</strong><div class="stt-trend-track" data-trend-start="${bounds.start}" data-trend-end="${bounds.end}" style="--window-left:${left}%;--window-width:${width}%"><svg viewBox="0 0 100 16" preserveAspectRatio="none" role="img" aria-label="${lead} ${mode.label}，u${used?'':'，无有效分钟'}"><line x1="0" y1="8" x2="100" y2="8"></line><path d="${d}" fill="none" stroke="currentColor" vector-effect="non-scaling-stroke" stroke-width="1"></path></svg>${item?`<em class="stt-episode-band" style="left:${a}%;width:${Math.max(0,b-a)}%" title="完整复核范围"></em>`:''}<span title="当前原始波形窗"></span><i></i></div><small>${value===null?'—':(value>=0?'+':'')+value.toFixed(0)}</small></div>`;
+    return `<div class="stt-trend-row"><strong>${lead}</strong><div class="stt-trend-track" data-trend-start="${bounds.start}" data-trend-end="${bounds.end}" style="--window-left:${left}%;--window-width:${width}%"><svg data-inspect-chart data-inspect-kind="st-trend" data-inspect-title="${lead} ${mode.label}" data-inspect-metric="${mode.label}" data-inspect-unit="设备单位 u" data-inspect-bin-seconds="60" data-inspect-start="${bounds.start}" data-inspect-duration="${length}" data-inspect-limit="${limit}" viewBox="0 0 100 16" preserveAspectRatio="none" role="img" aria-label="${lead} ${mode.label}，u${used?'':'，无有效分钟'}"><line x1="0" y1="8" x2="100" y2="8"></line><path d="${d}" fill="none" stroke="currentColor" vector-effect="non-scaling-stroke" stroke-width="1"></path></svg>${item?`<em class="stt-episode-band" style="left:${a}%;width:${Math.max(0,b-a)}%" title="完整复核范围"></em>`:''}<span title="当前原始波形窗"></span><i></i></div><small>${value===null?'—':(value>=0?'+':'')+value.toFixed(0)}</small></div>`;
   }).join('');
   $$('#sttTrendRows .stt-trend-track').forEach(track=>{track.setAttribute('role','button');track.tabIndex=0;track.setAttribute('aria-label',track.parentElement.querySelector('strong').textContent+' '+mode.label+' 趋势定位');});
 }
@@ -1996,9 +2005,10 @@ function updateSttTrendWindow() {
   $$('#sttTrendRows .stt-trend-row').forEach(row=>{const track=$('.stt-trend-track',row);if(!track)return;track.style.setProperty('--window-left',left+'%');track.style.setProperty('--window-width',width+'%');const lead=$('strong',row)?.textContent,points=state.sttReview?.analysis?.trends?.leads?.[lead]||[],point=points.find(p=>(p.start_s??p.time_s-30)<=target&&(p.end_s??p.time_s+30)>target),value=point?.eligible!==false&&!point?.axis_shift_suspected&&Number.isFinite(point?.[field])?point[field]:null,label=$('small',row);if(label)label.textContent=value===null?'—':(value>=0?'+':'')+value.toFixed(0);});
 }
 
-function renderSttOverview() {
-  if(!state.caseData||!state.trend||!sttEvidenceMatches())return;
-  const canvas=$("#sttOverviewCanvas"),{ctx,width,height}=canvasContext(canvas,30),m={l:0,r:46,t:2,b:12};
+function renderSttOverview(canvas=$("#sttOverviewCanvas"),target=null) {
+  if(!state.caseData||!state.trend||!sttEvidenceMatches()){if(!target)globalThis.ECGChartInspection?.unregisterRenderer(canvas);return;}
+  if(!target)globalThis.ECGChartInspection?.registerRenderer(canvas,(copy,geometry)=>renderSttOverview(copy,geometry));
+  const {ctx,width,height}=canvasContext(canvas,30,target),m={l:0,r:46,t:2,b:12};
   ctx.clearRect(0,0,width,height);ctx.fillStyle="#fff";ctx.fillRect(0,0,width,height);
   const plotW=width-m.l-m.r,plotH=height-m.t-m.b,bounds=sttTrendBounds(),total=Math.max(.005,bounds.end-bounds.start),points=(state.trend.points||[]).filter(p=>p.time_s>=bounds.start&&p.time_s<=bounds.end);
   const values=points.map(point=>Number(point.hr)).filter(Number.isFinite),minHr=Math.max(20,Math.floor((Math.min(...values,50)-10)/10)*10),maxHr=Math.min(240,Math.ceil((Math.max(...values,120)+10)/10)*10),range=Math.max(20,maxHr-minHr);
@@ -2458,16 +2468,25 @@ function syncEditTimeSlider() {
   slider.max=String(max);slider.value=String(start);slider.setAttribute("aria-valuetext",`${formatElapsed(start)}–${formatElapsed(start+state.editDuration)}`);
 }
 
-function renderEditOverview() {
-  if(!state.caseData)return;
-  $("#editWindowLabel").textContent=`${formatElapsed(state.editStart)}–${formatElapsed(state.editStart+state.editDuration)}`;syncEditTimeSlider();
-  if(!state.trend||!state.editRr)return;
-  const trendCanvas=$("#editTrendCanvas"),trendContext=canvasContext(trendCanvas,editCanvasHeight(trendCanvas,90,48)),trendCtx=trendContext.ctx,tw=trendContext.width,th=trendContext.height,tm={l:38,r:12,t:7,b:17},plotW=tw-tm.l-tm.r,plotH=th-tm.t-tm.b,total=Math.max(1,state.caseData.technical.duration_seconds_raw),points=state.trend.points||[];
+function paintEditOverviewTrend(trendCanvas,source,target=null) {
+  const trendContext=canvasContext(trendCanvas,editCanvasHeight(trendCanvas,90,48),target),trendCtx=trendContext.ctx,tw=trendContext.width,th=trendContext.height,tm={l:38,r:12,t:7,b:17},plotW=tw-tm.l-tm.r,plotH=th-tm.t-tm.b,{total,points,start,duration}=source;
   trendCtx.clearRect(0,0,tw,th);trendCtx.fillStyle="#fff";trendCtx.fillRect(0,0,tw,th);trendCtx.strokeStyle="#e4eaed";[0,.5,1].forEach(f=>{const y=tm.t+plotH*f;trendCtx.beginPath();trendCtx.moveTo(tm.l,y);trendCtx.lineTo(tw-tm.r,y);trendCtx.stroke();});
-  const hrs=points.map(point=>Number(point.hr)).filter(Number.isFinite),minHr=Math.max(20,Math.min(...hrs,50)-10),maxHr=Math.min(240,Math.max(...hrs,120)+10),range=Math.max(20,maxHr-minHr),startX=tm.l+state.editStart/total*plotW,endX=tm.l+Math.min(total,state.editStart+state.editDuration)/total*plotW;
+  const hrs=points.map(point=>Number(point.hr)).filter(Number.isFinite),minHr=Math.max(20,Math.min(...hrs,50)-10),maxHr=Math.min(240,Math.max(...hrs,120)+10),range=Math.max(20,maxHr-minHr),startX=tm.l+start/total*plotW,endX=tm.l+Math.min(total,start+duration)/total*plotW;
   trendCtx.fillStyle="rgba(11,146,144,.12)";trendCtx.fillRect(startX,tm.t,Math.max(3,endX-startX),plotH);trendCtx.strokeStyle="#0b9290";trendCtx.strokeRect(startX+.5,tm.t+.5,Math.max(2,endX-startX-1),plotH-1);trendCtx.beginPath();points.forEach((point,index)=>{const x=tm.l+point.time_s/total*plotW,y=tm.t+plotH-(Number(point.hr)-minHr)/range*plotH;index?trendCtx.lineTo(x,y):trendCtx.moveTo(x,y)});trendCtx.strokeStyle="#2678b9";trendCtx.lineWidth=1.25;trendCtx.stroke();trendCtx.fillStyle="#71828c";trendCtx.font=`12px ${UI_FONT}`;trendCtx.fillText(`${Math.round(maxHr)}`,3,tm.t+5);trendCtx.fillText(`${Math.round(minHr)}`,3,tm.t+plotH);trendCtx.fillText("D1 00h",tm.l,th-5);trendCtx.textAlign="right";trendCtx.fillText(formatElapsed(total),tw-tm.r,th-5);trendCtx.textAlign="left";
-  const histogram=$("#editHistogramCanvas"),histContext=canvasContext(histogram,editCanvasHeight(histogram,90,48)),ctx=histContext.ctx,w=histContext.width,h=histContext.height,m={l:34,r:10,t:7,b:17},data=state.editRr.histogram||[],max=Math.max(1,...data.map(item=>item.count)),barW=(w-m.l-m.r)/Math.max(1,data.length),plotHeight=h-m.t-m.b;
-  ctx.clearRect(0,0,w,h);ctx.fillStyle="#fff";ctx.fillRect(0,0,w,h);ctx.strokeStyle="#e4eaed";ctx.beginPath();ctx.moveTo(m.l,m.t+plotHeight+.5);ctx.lineTo(w-m.r,m.t+plotHeight+.5);ctx.stroke();data.forEach((item,index)=>{const bh=item.count/max*plotHeight;ctx.fillStyle=index%2?"#42b7b1":"#168f8b";ctx.fillRect(m.l+index*barW+1,m.t+plotHeight-bh,Math.max(1,barW-2),bh)});ctx.font=`12px ${UI_FONT}`;ctx.fillStyle="#71828c";ctx.fillText("300",m.l,h-5);ctx.textAlign="right";ctx.fillText("2000 ms",w-m.r,h-5);ctx.textAlign="left";$("#editHistogramRange").textContent="300–2000 ms";
+}
+
+function paintEditOverviewHistogram(histogram,data,target=null) {
+  const histContext=canvasContext(histogram,editCanvasHeight(histogram,90,48),target),ctx=histContext.ctx,w=histContext.width,h=histContext.height,m={l:34,r:10,t:7,b:17},max=Math.max(1,...data.map(item=>item.count)),barW=(w-m.l-m.r)/Math.max(1,data.length),plotHeight=h-m.t-m.b;
+  ctx.clearRect(0,0,w,h);ctx.fillStyle="#fff";ctx.fillRect(0,0,w,h);ctx.strokeStyle="#e4eaed";ctx.beginPath();ctx.moveTo(m.l,m.t+plotHeight+.5);ctx.lineTo(w-m.r,m.t+plotHeight+.5);ctx.stroke();data.forEach((item,index)=>{const bh=item.count/max*plotHeight;ctx.fillStyle=index%2?"#42b7b1":"#168f8b";ctx.fillRect(m.l+index*barW+1,m.t+plotHeight-bh,Math.max(1,barW-2),bh)});ctx.font=`12px ${UI_FONT}`;ctx.fillStyle="#71828c";ctx.fillText("300",m.l,h-5);ctx.textAlign="right";ctx.fillText("2000 ms",w-m.r,h-5);ctx.textAlign="left";
+}
+
+function renderEditOverview() {
+  const trendCanvas=$("#editTrendCanvas"),histogram=$("#editHistogramCanvas"),points=state.trend?.points||[],data=state.editRr?.histogram||[];
+  if(!state.caseData){globalThis.ECGChartInspection?.unregisterRenderer(trendCanvas);globalThis.ECGChartInspection?.unregisterRenderer(histogram);return;}
+  $("#editWindowLabel").textContent=`${formatElapsed(state.editStart)}–${formatElapsed(state.editStart+state.editDuration)}`;syncEditTimeSlider();
+  if(trendCanvas){const source={total:Math.max(1,state.caseData.technical.duration_seconds_raw),points,start:state.editStart,duration:state.editDuration};paintEditOverviewTrend(trendCanvas,source);if(points.length)globalThis.ECGChartInspection?.registerRenderer(trendCanvas,(copy,target)=>paintEditOverviewTrend(copy,source,target));else globalThis.ECGChartInspection?.unregisterRenderer(trendCanvas);}
+  if(histogram){paintEditOverviewHistogram(histogram,data);if(data.length)globalThis.ECGChartInspection?.registerRenderer(histogram,(copy,target)=>paintEditOverviewHistogram(copy,data,target));else globalThis.ECGChartInspection?.unregisterRenderer(histogram);}
+  $("#editHistogramRange").textContent="300–2000 ms";
 }
 
 function drawTemplateScatterPoints(ctx,data,descriptor,m,plotW,plotH) {
@@ -2485,12 +2504,16 @@ function drawTemplateScatterPoints(ctx,data,descriptor,m,plotW,plotH) {
   ctx.restore();
 }
 
-function renderEditScatter() {
-  const data=state.editScatterData;if(!data)return;
-  const canvas=$("#editScatterCanvas"),canvasData=canvasContext(canvas,editCanvasHeight(canvas,190,88)),ctx=canvasData.ctx,width=canvasData.width,height=canvasData.height,m={l:31,r:9,t:10,b:22},plotW=width-m.l-m.r,plotH=height-m.t-m.b,bounds=data.bounds||{x_min:0,x_max:2000,y_min:0,y_max:2000},selected=editDescriptor(),selectedSet=new Set(selected.type==="custom"?selected.sample_indices:[]);
+function renderEditScatter(canvas=$("#editScatterCanvas"),target=null) {
+  if(!canvas)return;
+  const canvasData=canvasContext(canvas,editCanvasHeight(canvas,190,88),target),ctx=canvasData.ctx,width=canvasData.width,height=canvasData.height,m={l:31,r:9,t:10,b:22},plotW=width-m.l-m.r,plotH=height-m.t-m.b,data=state.editScatterData,bounds=data?.bounds;
+  ctx.clearRect(0,0,width,height);
+  if(!data?.points?.length||!bounds||!['x_min','x_max','y_min','y_max'].every(key=>Number.isFinite(bounds[key]))||bounds.x_max<=bounds.x_min||bounds.y_max<=bounds.y_min){if(!target)globalThis.ECGChartInspection?.unregisterRenderer(canvas);return;}
+  const selected=editDescriptor();
   ctx.clearRect(0,0,width,height);ctx.fillStyle="#f8fafb";ctx.fillRect(0,0,width,height);ctx.strokeStyle="#dbe5e8";[0,.25,.5,.75,1].forEach(f=>{const x=m.l+plotW*f,y=m.t+plotH*f;ctx.beginPath();ctx.moveTo(x,m.t);ctx.lineTo(x,m.t+plotH);ctx.moveTo(m.l,y);ctx.lineTo(m.l+plotW,y);ctx.stroke();});ctx.strokeStyle="#adc0c7";ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(m.l,m.t+plotH);ctx.lineTo(m.l+plotW,m.t);ctx.stroke();ctx.setLineDash([]);
   drawTemplateScatterPoints(ctx,data,selected,m,plotW,plotH);
   ctx.fillStyle="#71828c";ctx.font=`12px ${UI_FONT}`;ctx.fillText("RR(i+1)",3,10);ctx.fillText("0",m.l-10,m.t+plotH+3);ctx.textAlign="right";ctx.fillText(`${Math.round(bounds.x_min)}–${Math.round(bounds.x_max)} ms · RR(i)`,width-m.r,height-4);ctx.textAlign="left";
+  if(!target)globalThis.ECGChartInspection?.registerRenderer(canvas,(copy,geometry)=>renderEditScatter(copy,geometry),{plotAspectRatio:(bounds.x_max-bounds.x_min)/(bounds.y_max-bounds.y_min),margins:m});
 }
 
 function drawEditStrip(canvas,item) {
@@ -2610,14 +2633,16 @@ function renderEditGallery() {
   $$(".edit-template-strip",gallery).forEach((button,index)=>drawEditStrip($("canvas",button),shown[index]));renderEditDensity();
 }
 
-function drawEditDensityCanvas(canvas,items,color,interactive=false) {
-  const height=editCanvasHeight(canvas,interactive?190:92,54),canvasData=canvasContext(canvas,height),ctx=canvasData.ctx,width=canvasData.width,m={l:8,r:8,t:8,b:8},plotW=width-m.l-m.r,plotH=height-m.t-m.b;
+function drawEditDensityCanvas(canvas,items,color,interactive=false,target=null) {
+  if(!canvas)return;
+  const canvasData=canvasContext(canvas,editCanvasHeight(canvas,interactive?190:92,54),target),ctx=canvasData.ctx,width=canvasData.width,height=canvasData.height,m={l:8,r:8,t:8,b:8},plotW=width-m.l-m.r,plotH=height-m.t-m.b;
   ctx.clearRect(0,0,width,height);ctx.fillStyle="#07181f";ctx.fillRect(0,0,width,height);ctx.strokeStyle="#1d3741";ctx.lineWidth=1;[.25,.5,.75].forEach(f=>{const y=m.t+plotH*f;ctx.beginPath();ctx.moveTo(m.l,y);ctx.lineTo(width-m.r,y);ctx.stroke();});[.25,.5,.75].forEach(f=>{const x=m.l+plotW*f;ctx.beginPath();ctx.moveTo(x,m.t);ctx.lineTo(x,m.t+plotH);ctx.stroke();});
-  if(!items?.length){if(interactive)state.editMorphTraceGeometry=[];ctx.fillStyle="#748b94";ctx.font=`10px ${UI_FONT}`;ctx.textAlign="center";ctx.fillText("当前类别暂无可框选的形态片段",width/2,height/2);ctx.textAlign="left";return;}
+  if(!items?.some(item=>(item?.leads?.[state.editLead]||Object.values(item?.leads||{})[0]||[]).length)){if(!target){globalThis.ECGChartInspection?.unregisterRenderer(canvas);if(interactive)state.editMorphTraceGeometry=[];}ctx.fillStyle="#748b94";ctx.font=`10px ${UI_FONT}`;ctx.textAlign="center";ctx.fillText("当前类别暂无可框选的形态片段",width/2,height/2);ctx.textAlign="left";return;}
   const all=items.flatMap(item=>item?.leads?.[state.editLead]||Object.values(item?.leads||{})[0]||[]),shape=ECGReviewTools.waveRow(all,{top:m.t,bottom:m.t+plotH}),scale=shape.scale,baseline=shape.baseline,selectedSet=new Set(state.editSelection?.source==="morphology"?state.editSelection.samples:[]),traces=items.map(item=>{const values=item?.leads?.[state.editLead]||Object.values(item?.leads||{})[0]||[],points=values.map((value,index)=>({x:m.l+index/Math.max(1,values.length-1)*plotW,y:baseline-(Number(value)||0)*scale}));return {item,points};});
   const strokeTrace=(trace,selected=false,representative=false)=>{ctx.strokeStyle=selected?"#f4c74e":color;ctx.globalAlpha=selected?0.96:(representative?0.82:0.16);ctx.lineWidth=selected?1.55:representative?1.1:.75;ctx.beginPath();trace.points.forEach((point,index)=>{index?ctx.lineTo(point.x,point.y):ctx.moveTo(point.x,point.y)});ctx.stroke();};
   traces.filter(trace=>!selectedSet.has(trace.item.sample_index)).forEach(trace=>strokeTrace(trace));if(!selectedSet.size&&traces.length)strokeTrace(traces[Math.floor(traces.length/2)],false,true);traces.filter(trace=>selectedSet.has(trace.item.sample_index)).forEach(trace=>strokeTrace(trace,true));ctx.globalAlpha=1;
-  if(interactive){state.editMorphTraceGeometry=traces;const box=state.editMorphDraft||state.editSelection?.source==="morphology"&&state.editSelection;if(box){const x1=Math.min(box.x1,box.x2)*width,x2=Math.max(box.x1,box.x2)*width,y1=Math.min(box.y1,box.y2)*height,y2=Math.max(box.y1,box.y2)*height;ctx.fillStyle="rgba(35,197,184,.13)";ctx.fillRect(x1,y1,Math.max(1,x2-x1),Math.max(1,y2-y1));ctx.strokeStyle="#46d1c4";ctx.lineWidth=1.3;ctx.setLineDash([5,3]);ctx.strokeRect(x1+.5,y1+.5,Math.max(1,x2-x1-1),Math.max(1,y2-y1-1));ctx.setLineDash([]);ctx.fillStyle="#d8fffb";ctx.font=`700 9px ${UI_FONT}`;ctx.fillText(`${state.editSelection?.source==="morphology"?state.editSelection.samples.length:0} 搏`,Math.min(width-38,x1+5),Math.max(13,y1+13));}}
+  if(interactive){if(!target)state.editMorphTraceGeometry=traces;const box=state.editMorphDraft||state.editSelection?.source==="morphology"&&state.editSelection;if(box){const x1=Math.min(box.x1,box.x2)*width,x2=Math.max(box.x1,box.x2)*width,y1=Math.min(box.y1,box.y2)*height,y2=Math.max(box.y1,box.y2)*height;ctx.fillStyle="rgba(35,197,184,.13)";ctx.fillRect(x1,y1,Math.max(1,x2-x1),Math.max(1,y2-y1));ctx.strokeStyle="#46d1c4";ctx.lineWidth=1.3;ctx.setLineDash([5,3]);ctx.strokeRect(x1+.5,y1+.5,Math.max(1,x2-x1-1),Math.max(1,y2-y1-1));ctx.setLineDash([]);ctx.fillStyle="#d8fffb";ctx.font=`700 9px ${UI_FONT}`;ctx.fillText(`${state.editSelection?.source==="morphology"?state.editSelection.samples.length:0} 搏`,Math.min(width-38,x1+5),Math.max(13,y1+13));}}
+  if(!target)globalThis.ECGChartInspection?.registerRenderer(canvas,(copy,geometry)=>drawEditDensityCanvas(copy,items,color,interactive,geometry));
 }
 
 function renderEditDensity() {
@@ -2664,13 +2689,28 @@ function renderEditWaveform(target="#editWaveformCanvas",metaTarget="#editWaveMe
   if(typeof syncRhythmRangeEditor==='function')syncRhythmRangeEditor();
 }
 
+function paintEditLibraryHistogram(histogram,data,target=null) {
+  const {ctx,width,height}=canvasContext(histogram,editCanvasHeight(histogram,92,54),target),m={l:20,r:7,t:7,b:14},max=Math.max(1,...data.map(item=>item.count)),bar=(width-m.l-m.r)/Math.max(1,data.length);ctx.clearRect(0,0,width,height);ctx.fillStyle="#fff";ctx.fillRect(0,0,width,height);data.forEach((item,index)=>{const h=item.count/max*(height-m.t-m.b);ctx.fillStyle="#29a7a2";ctx.fillRect(m.l+index*bar+1,height-m.b-h,Math.max(1,bar-2),h)});ctx.fillStyle="#71828c";ctx.font=`8px ${UI_FONT}`;ctx.fillText("300",m.l,height-3);ctx.fillText("2000",width-32,height-3);
+}
+
+function paintEditLibraryTrend(trend,source,target=null) {
+  const {ctx,width,height}=canvasContext(trend,editCanvasHeight(trend,54,42),target),{total,points}=source,values=points.map(item=>Number(item.hr)).filter(Number.isFinite),min=Math.min(...values,40),max=Math.max(...values,120),range=Math.max(1,max-min);ctx.clearRect(0,0,width,height);ctx.strokeStyle="#dce6e9";ctx.beginPath();ctx.moveTo(0,height-8);ctx.lineTo(width,height-8);ctx.stroke();ctx.strokeStyle="#2780b8";ctx.beginPath();points.forEach((item,index)=>{const x=Number(item.time_s)/total*width,y=4+(max-Number(item.hr))/range*(height-14);index?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();
+}
+
+function renderEditLibraryScatter(scatter=$("#editLibraryScatterCanvas"),target=null) {
+  if(!scatter)return;
+  const {ctx,width,height}=canvasContext(scatter,editCanvasHeight(scatter,146,74),target),m={l:20,r:6,t:6,b:16},scatterData=state.editScatterData,bounds=scatterData?.bounds,plotW=width-m.l-m.r,plotH=height-m.t-m.b;
+  ctx.clearRect(0,0,width,height);
+  if(!scatterData?.points?.length||!bounds||!['x_min','x_max','y_min','y_max'].every(key=>Number.isFinite(bounds[key]))||bounds.x_max<=bounds.x_min||bounds.y_max<=bounds.y_min){if(!target)globalThis.ECGChartInspection?.unregisterRenderer(scatter);return;}
+  const descriptor=editDescriptor();ctx.fillStyle="#f8fafb";ctx.fillRect(0,0,width,height);ctx.strokeStyle="#dce6e9";[0,.5,1].forEach(f=>{ctx.beginPath();ctx.moveTo(m.l+plotW*f,m.t);ctx.lineTo(m.l+plotW*f,m.t+plotH);ctx.moveTo(m.l,m.t+plotH*f);ctx.lineTo(m.l+plotW,m.t+plotH*f);ctx.stroke()});drawTemplateScatterPoints(ctx,scatterData,descriptor,m,plotW,plotH);
+  if(!target)globalThis.ECGChartInspection?.registerRenderer(scatter,(copy,geometry)=>renderEditLibraryScatter(copy,geometry),{plotAspectRatio:(bounds.x_max-bounds.x_min)/(bounds.y_max-bounds.y_min),margins:m});
+}
+
 function renderEditLibraryAnalytics() {
-  const histogram=$("#editLibraryHistogramCanvas"),data=state.editRr?.histogram||[];
-  if(histogram){const {ctx,width,height}=canvasContext(histogram,editCanvasHeight(histogram,92,54)),m={l:20,r:7,t:7,b:14},max=Math.max(1,...data.map(item=>item.count)),bar=(width-m.l-m.r)/Math.max(1,data.length);ctx.clearRect(0,0,width,height);ctx.fillStyle="#fff";ctx.fillRect(0,0,width,height);data.forEach((item,index)=>{const h=item.count/max*(height-m.t-m.b);ctx.fillStyle="#29a7a2";ctx.fillRect(m.l+index*bar+1,height-m.b-h,Math.max(1,bar-2),h)});ctx.fillStyle="#71828c";ctx.font=`8px ${UI_FONT}`;ctx.fillText("300",m.l,height-3);ctx.fillText("2000",width-32,height-3);}
-  const trend=$("#editLibraryTrendCanvas"),points=state.trend?.points||[];
-  if(trend){const {ctx,width,height}=canvasContext(trend,editCanvasHeight(trend,54,42)),total=Math.max(1,Number(state.caseData?.technical?.duration_seconds_raw)||1),values=points.map(item=>Number(item.hr)).filter(Number.isFinite),min=Math.min(...values,40),max=Math.max(...values,120),range=Math.max(1,max-min);ctx.clearRect(0,0,width,height);ctx.strokeStyle="#dce6e9";ctx.beginPath();ctx.moveTo(0,height-8);ctx.lineTo(width,height-8);ctx.stroke();ctx.strokeStyle="#2780b8";ctx.beginPath();points.forEach((item,index)=>{const x=Number(item.time_s)/total*width,y=4+(max-Number(item.hr))/range*(height-14);index?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();}
-  const scatter=$("#editLibraryScatterCanvas"),scatterData=state.editScatterData;
-  if(scatter&&scatterData){const {ctx,width,height}=canvasContext(scatter,editCanvasHeight(scatter,146,74)),m={l:20,r:6,t:6,b:16},bounds=scatterData.bounds,plotW=width-m.l-m.r,plotH=height-m.t-m.b,descriptor=editDescriptor(),custom=new Set(descriptor.sample_indices||[]);ctx.clearRect(0,0,width,height);ctx.fillStyle="#f8fafb";ctx.fillRect(0,0,width,height);ctx.strokeStyle="#dce6e9";[0,.5,1].forEach(f=>{ctx.beginPath();ctx.moveTo(m.l+plotW*f,m.t);ctx.lineTo(m.l+plotW*f,m.t+plotH);ctx.moveTo(m.l,m.t+plotH*f);ctx.lineTo(m.l+plotW,m.t+plotH*f);ctx.stroke()});drawTemplateScatterPoints(ctx,scatterData,descriptor,m,plotW,plotH);}
+  const histogram=$("#editLibraryHistogramCanvas"),data=state.editRr?.histogram||[],trend=$("#editLibraryTrendCanvas"),points=state.trend?.points||[];
+  if(histogram){paintEditLibraryHistogram(histogram,data);if(data.length)globalThis.ECGChartInspection?.registerRenderer(histogram,(copy,target)=>paintEditLibraryHistogram(copy,data,target));else globalThis.ECGChartInspection?.unregisterRenderer(histogram);}
+  if(trend){const source={total:Math.max(1,Number(state.caseData?.technical?.duration_seconds_raw)||1),points};paintEditLibraryTrend(trend,source);if(state.caseData&&points.length)globalThis.ECGChartInspection?.registerRenderer(trend,(copy,target)=>paintEditLibraryTrend(copy,source,target));else globalThis.ECGChartInspection?.unregisterRenderer(trend);}
+  renderEditLibraryScatter();
 }
 
 function renderEditLibraryDeck() {
@@ -3016,7 +3056,7 @@ function reportFastSlowCandidates(){const mode=state.reportComposition?.fast_slo
 function reportEventPageHtml(){const all=state.reportComposer?.events?.items||[],filter=state.reportEventFilter,items=filter==="all"?all:all.filter(item=>item.type===filter),extremes=reportFastSlowCandidates();return `<div class="report-event-page"><aside><div><strong>事件索引</strong><small>${fmtNumber(items.length)} 条候选</small></div>${items.slice(0,28).map((item,index)=>`<button type="button" data-report-event-sample="${item.sample_index}" class="${state.reportFocusedSample===item.sample_index?"active":""}"><span>${index+1}</span><strong>${formatElapsed(item.time_s)}</strong><em>${escapeHtml(item.label)}</em></button>`).join("")||`<p>当前类别没有候选事件</p>`}</aside><div class="report-event-trends report-dual-trends"><figure><figcaption>全程心率趋势</figcaption><canvas id="reportTrendCanvas" height="54"></canvas></figure><figure><figcaption>事件定位趋势</figcaption><canvas id="reportRrTrendCanvas" height="42"></canvas></figure></div><section class="report-event-gallery"><header><strong>代表图条</strong><small>点击后在右侧同步展开</small></header><div class="report-strip-grid report-strip-grid-event">${reportStripCards(6,null,extremes,"event")}</div></section><section class="report-detail-sheet report-event-detail"><header><div><strong>全导联事件页</strong><small>${formatElapsed(state.reportComposer.waveform.start_s)} · 8 秒</small></div><span>12 导联同步</span></header><canvas id="reportEventTwelveCanvas" height="500"></canvas><footer>${escapeHtml(state.reportComposition.paper.speed)} · 逐导联自适应幅度 · 设备单位，电压未校准 · 当前粉色定位带对应选中事件</footer></section></div>`;}
 function reportStripCards(limit=6,filterSamples=null,priority=[],variant="standard"){let strips=state.reportComposer?.strips?.items||[],captionBySample=new Map(priority.map(item=>[item.sample_index,item.report_caption]));if(filterSamples)strips=strips.filter(item=>filterSamples.includes(item.sample_index));if(priority.length){const rank=new Map(priority.map((item,index)=>[item.sample_index,index]));strips=[...strips].sort((a,b)=>(rank.get(a.sample_index)??999)-(rank.get(b.sample_index)??999));}const leadCaption="I · II · III · V1 · V3 · V5";return strips.slice(0,limit).map((item,index)=>`<article class="report-strip-card report-strip-card-${variant}${state.reportFocusedSample===item.sample_index?" active":""}" data-report-strip-sample="${item.sample_index}"><header><strong>${escapeHtml(item.report_caption||captionBySample.get(item.sample_index)||item.label||"N")}</strong><span>${formatElapsed(item.time_s)} · ${item.hr??"—"} bpm</span></header><canvas id="reportStrip${index}" data-report-strip-index="${(state.reportComposer.strips.items||[]).indexOf(item)}" data-report-strip-height="${variant==="event"?108:96}" height="${variant==="event"?108:96}"></canvas><footer>${leadCaption} · RR ${item.rr_ms??"—"} ms</footer></article>`).join("")||`<div class="report-module-empty compact"><strong>当前没有可定位的事件图条</strong></div>`;}
 
-function drawReportSeries(canvas,points,xValue,yValue,color="#267db1",fill=false){if(!canvas||!points?.length)return;const {ctx,width,height}=canvasContext(canvas,Number(canvas.getAttribute("height"))||80),m={l:28,r:8,t:8,b:15},w=width-m.l-m.r,h=height-m.t-m.b,xs=points.map(xValue),ys=points.map(yValue).filter(Number.isFinite),xMin=Math.min(...xs),xMax=Math.max(...xs),yMin=Math.min(...ys),yMax=Math.max(...ys),dy=Math.max(1,yMax-yMin),dx=Math.max(1,xMax-xMin);ctx.fillStyle="#fff";ctx.fillRect(0,0,width,height);ctx.strokeStyle="#dce5e8";ctx.lineWidth=.7;[0,.5,1].forEach(f=>{const y=m.t+h*f;ctx.beginPath();ctx.moveTo(m.l,y);ctx.lineTo(m.l+w,y);ctx.stroke()});ctx.beginPath();points.forEach((point,index)=>{const x=m.l+(xValue(point)-xMin)/dx*w,y=m.t+h-(yValue(point)-yMin)/dy*h;index?ctx.lineTo(x,y):ctx.moveTo(x,y)});if(fill){ctx.lineTo(m.l+w,m.t+h);ctx.lineTo(m.l,m.t+h);ctx.closePath();ctx.fillStyle="rgba(38,125,177,.12)";ctx.fill();ctx.beginPath();points.forEach((point,index)=>{const x=m.l+(xValue(point)-xMin)/dx*w,y=m.t+h-(yValue(point)-yMin)/dy*h;index?ctx.lineTo(x,y):ctx.moveTo(x,y)})}ctx.strokeStyle=color;ctx.lineWidth=1.2;ctx.stroke();}
+function drawReportSeries(canvas,points,xValue,yValue,color="#267db1",fill=false){if(!canvas||!points?.length)return;const {ctx,width,height}=canvasContext(canvas,canvas._logicalHeight||Number(canvas.getAttribute("height"))||80),m={l:28,r:8,t:8,b:15},w=width-m.l-m.r,h=height-m.t-m.b,xs=points.map(xValue),ys=points.map(yValue).filter(Number.isFinite),xMin=Math.min(...xs),xMax=Math.max(...xs),yMin=Math.min(...ys),yMax=Math.max(...ys),dy=Math.max(1,yMax-yMin),dx=Math.max(1,xMax-xMin);ctx.fillStyle="#fff";ctx.fillRect(0,0,width,height);ctx.strokeStyle="#dce5e8";ctx.lineWidth=.7;[0,.5,1].forEach(f=>{const y=m.t+h*f;ctx.beginPath();ctx.moveTo(m.l,y);ctx.lineTo(m.l+w,y);ctx.stroke()});ctx.beginPath();points.forEach((point,index)=>{const x=m.l+(xValue(point)-xMin)/dx*w,y=m.t+h-(yValue(point)-yMin)/dy*h;index?ctx.lineTo(x,y):ctx.moveTo(x,y)});if(fill){ctx.lineTo(m.l+w,m.t+h);ctx.lineTo(m.l,m.t+h);ctx.closePath();ctx.fillStyle="rgba(38,125,177,.12)";ctx.fill();ctx.beginPath();points.forEach((point,index)=>{const x=m.l+(xValue(point)-xMin)/dx*w,y=m.t+h-(yValue(point)-yMin)/dy*h;index?ctx.lineTo(x,y):ctx.moveTo(x,y)})}ctx.strokeStyle=color;ctx.lineWidth=1.2;ctx.stroke();}
 function drawReportWaveform(canvas,waveform,leadNames,height){if(!canvas||!waveform)return;const {ctx,width,height:h}=canvasContext(canvas,height),names=(leadNames||Object.keys(waveform.leads)).filter(name=>waveform.leads[name]),leadHeight=h/Math.max(1,names.length);ctx.fillStyle="#fffefd";ctx.fillRect(0,0,width,h);if(state.reportComposition.paper.show_grid){for(let x=0;x<width;x+=10){ctx.strokeStyle=x%50===0?"rgba(231,133,117,.25)":"rgba(241,181,169,.16)";ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke()}for(let y=0;y<h;y+=10){ctx.strokeStyle=y%50===0?"rgba(231,133,117,.25)":"rgba(241,181,169,.16)";ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(width,y);ctx.stroke()}}names.forEach((name,row)=>{const values=waveform.leads[name],base=leadHeight*(row+.52),range=Math.max(200,...values.map(value=>Math.abs(Number(value)||0))),scale=leadHeight*.36/range;if(state.reportComposition.paper.show_labels){ctx.fillStyle="#0a7180";ctx.font=`700 9px ${UI_FONT}`;ctx.fillText(name,5,row*leadHeight+12)}ctx.beginPath();values.forEach((value,index)=>{const x=index/Math.max(1,values.length-1)*width,y=base-Number(value)*scale;index?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.strokeStyle="#28383f";ctx.lineWidth=.9;ctx.stroke()});}
 function drawReportEventHighlight(canvas){if(!canvas)return;const ctx=canvas.getContext("2d"),x=canvas.width*.5,w=Math.max(14,canvas.width*.035);ctx.fillStyle="rgba(220,73,109,.14)";ctx.fillRect(x-w/2,0,w,canvas.height);ctx.strokeStyle="rgba(210,54,91,.55)";ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x-w/2,0);ctx.lineTo(x-w/2,canvas.height);ctx.moveTo(x+w/2,0);ctx.lineTo(x+w/2,canvas.height);ctx.stroke();}
 function drawReportScatter(canvas){const data=state.reportComposer?.scatter;if(!canvas||!data)return;const {ctx,width,height}=canvasContext(canvas,430),m={l:38,r:12,t:12,b:25},w=width-m.l-m.r,h=height-m.t-m.b,b=data.bounds||{x_min:0,x_max:2000,y_min:0,y_max:2000};ctx.fillStyle="#fdfefe";ctx.fillRect(0,0,width,height);ctx.strokeStyle="#dce5e8";for(let i=0;i<=4;i++){const x=m.l+w*i/4,y=m.t+h*i/4;ctx.beginPath();ctx.moveTo(x,m.t);ctx.lineTo(x,m.t+h);ctx.stroke();ctx.beginPath();ctx.moveTo(m.l,y);ctx.lineTo(m.l+w,y);ctx.stroke()}ctx.fillStyle="rgba(20,145,143,.42)";(data.points||[]).forEach(point=>{const x=m.l+(point.x-b.x_min)/(b.x_max-b.x_min)*w,y=m.t+h-(point.y-b.y_min)/(b.y_max-b.y_min)*h;ctx.fillRect(x-1,y-1,2,2)});ctx.fillStyle="#617681";ctx.font=`10px ${UI_FONT}`;ctx.fillText("RR(i) ms",width-58,height-6);ctx.save();ctx.translate(10,66);ctx.rotate(-Math.PI/2);ctx.fillText("RR(i+1) ms",0,0);ctx.restore();}
@@ -3423,6 +3463,8 @@ function bindEvents() {
 }
 
 async function init() {
+  const uiBuild=document.createElement('small');uiBuild.id='uiBuild';uiBuild.textContent='UI 20261108';uiBuild.title='源数据重绘 · 0.12.29-ui-source-render.20261108';
+  document.querySelector('.sidebar-version')?.append(document.createElement('br'),uiBuild);
   globalThis.ecgChartInspection=globalThis.ECGChartInspection?.mount({getScope:()=>JSON.stringify([state.caseId,state.caseRequestId,state.currentPage,state.editMode,state.caseData?.analysis_basis,state.caseData?.analysis_revision,state.caseData?.review_workflow?.beat_revision,state.waveform?.analysis_revision,state.sttWaveform?.analysis_revision,state.editRequestId,state.trendsRequestId,state.reportRequestId])});
   initRhythmRangeEditor();
   initSttRangeReview();

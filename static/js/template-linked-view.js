@@ -93,7 +93,7 @@
     const density=c.m.linked;
     return (c.snap.kind==='samples'?'精确选集 '+fmtNumber(c.total)+' 搏':'当前来源 '+fmtNumber(c.total)+' 搏')+' · '+sourceLabel(c)+' · '+(c.m.viewedScope.kind==='group'?c.m.viewedScope.slot+'组':'剩余集合')+'匹配 '+fmtNumber(c.samples.length)+' 搏 · 跨来源排除 '+fmtNumber(c.crossSource)+' · 其他组排除 '+fmtNumber(c.otherGroups)+(c.snap.timeBounds?' · 显式范围 ['+formatElapsedPrecise(c.snap.timeBounds.start_s)+', '+formatElapsedPrecise(c.snap.timeBounds.end_s)+')':'')+(density?.phase==='ready'?' · 密度参与 '+fmtNumber(density.top.included)+' 搏 / 边界不足 '+fmtNumber(density.top.skipped_edges)+' 搏':density?' · 密度'+(density.phase==='loading'?'读取中':'读取失败，原分组保留'):'');
   }
-  function geometry(canvas){const rect=canvas.getBoundingClientRect(),library=canvas.id==='editLibraryScatterCanvas',m=library?{l:20,r:6,t:6,b:16}:{l:31,r:9,t:10,b:22};return {...m,rect,w:Math.max(1,rect.width-m.l-m.r),h:Math.max(1,rect.height-m.t-m.b)};}
+  function geometry(canvas,target=null,library=canvas.id==='editLibraryScatterCanvas'){const rect=target?{left:0,top:0,width:target.width,height:target.height}:canvas.getBoundingClientRect(),m=library?{l:20,r:6,t:6,b:16}:{l:31,r:9,t:10,b:22};return {...m,rect,w:Math.max(1,rect.width-m.l-m.r),h:Math.max(1,rect.height-m.t-m.b)};}
   function coordinates(event,canvas){const g=geometry(canvas),b=state.editScatterData?.bounds||{x_min:0,x_max:2000,y_min:0,y_max:2000},x=Math.max(0,Math.min(1,(event.clientX-g.rect.left-g.l)/g.w)),y=Math.max(0,Math.min(1,(event.clientY-g.rect.top-g.t)/g.h));return [b.x_min+x*(b.x_max-b.x_min),b.y_max-y*(b.y_max-b.y_min)];}
   function redrawScatter(){if(!scatterFrame)scatterFrame=requestAnimationFrame(()=>{scatterFrame=0;renderEditScatter();renderEditLibraryAnalytics();});}
   function cancelGesture(){const job=drag;drag=null;if(job?.canvas.hasPointerCapture(job.id))job.canvas.releasePointerCapture(job.id);if(job){redrawScatter();schedule();}}
@@ -101,9 +101,9 @@
   function gesturePoint(event,job){return [Math.max(0,Math.min(job.g.w,event.clientX-job.g.rect.left-job.g.l)),Math.max(0,Math.min(job.g.h,event.clientY-job.g.rect.top-job.g.t))];}
   function appendGesture(event,job){const p=gesturePoint(event,job);job.extent=Math.max(job.extent,Math.hypot(event.clientX-job.client[0],event.clientY-job.client[1]));if(Math.hypot(p[0]-job.points.at(-1)[0],p[1]-job.points.at(-1)[1])>=1){if(job.points.length>=4096)job.overflow=true;else job.points.push(p);}}
   function rrPolygon(points,job){const b=job.bounds;return points.map(p=>[b.x_min+p[0]/job.g.w*(b.x_max-b.x_min),b.y_max-p[1]/job.g.h*(b.y_max-b.y_min)]);}
-  function scatterOverlay(canvas){
-    if(!active()||!sameRows()||!canvas?.getClientRects().length)return;
-    const snap=C().snapshot(),g=geometry(canvas),b=state.editScatterData?.bounds;if(!b)return;
+  function scatterOverlay(canvas,target=null,library=canvas?.id==='editLibraryScatterCanvas'){
+    if(!canvas||!active()||!sameRows()||(!target&&!canvas.getClientRects().length))return;
+    const snap=C().snapshot(),g=geometry(canvas,target,library),b=state.editScatterData?.bounds;if(!b)return;
     const ctx=canvas.getContext('2d'),dpr=canvas.width/g.rect.width;ctx.save();ctx.setTransform(dpr,0,0,canvas.height/g.rect.height,0,0);
     const x=p=>g.l+(p.x-b.x_min)/(b.x_max-b.x_min)*g.w,y=p=>g.t+g.h-(p.y-b.y_min)/(b.y_max-b.y_min)*g.h;
     ctx.beginPath();ctx.rect(g.l,g.t,g.w,g.h);ctx.clip();
@@ -112,18 +112,24 @@
     if(path?.length>1){ctx.beginPath();path.forEach((p,i)=>{const px=x({x:p[0]}),py=y({y:p[1]});i?ctx.lineTo(px,py):ctx.moveTo(px,py);});ctx.closePath();ctx.fillStyle='rgba(8,127,122,.06)';ctx.fill('evenodd');ctx.strokeStyle='#087f7a';ctx.setLineDash([4,3]);ctx.lineWidth=1.25;ctx.stroke();}
     ctx.restore();
   }
-  function histogram(canvas,stats){
-    if(!canvas?.getClientRects().length||!reference)return;
-    const library=canvas.id==='editLibraryHistogramCanvas',height=editCanvasHeight(canvas,library?92:90,library?54:48),{ctx,width}=canvasContext(canvas,height),m=library?{l:20,r:7,t:7,b:14}:{l:34,r:10,t:7,b:17},max=Math.max(1,...reference.bins.map(b=>b.count)),w=(width-m.l-m.r)/34,h=height-m.t-m.b;
+  function histogram(canvas,stats,target=null,source=null){
+    if(!canvas)return;
+    const referenceData=source?.reference||reference;
+    if(!referenceData){if(!target)root.ECGChartInspection?.unregisterRenderer(canvas);return;}
+    if(!target&&!canvas.getClientRects().length)return;
+    const library=source?.library??(canvas.id==='editLibraryHistogramCanvas'),context=canvasContext(canvas,editCanvasHeight(canvas,library?92:90,library?54:48),target),{ctx,width,height}=context,m=library?{l:20,r:7,t:7,b:14}:{l:34,r:10,t:7,b:17},max=Math.max(1,...referenceData.bins.map(b=>b.count)),w=(width-m.l-m.r)/34,h=height-m.t-m.b;
     ctx.clearRect(0,0,width,height);ctx.fillStyle='#fff';ctx.fillRect(0,0,width,height);
-    reference.bins.forEach((b,i)=>{ctx.fillStyle='#c7dddd';ctx.fillRect(m.l+i*w+1,height-m.b-b.count/max*h,Math.max(1,w-2),b.count/max*h);const selected=stats?.bins[i].count||0;if(selected){ctx.fillStyle='#d68b27';ctx.fillRect(m.l+i*w+1,height-m.b-selected/max*h,Math.max(1,w-2),selected/max*h);}});
+    referenceData.bins.forEach((b,i)=>{ctx.fillStyle='#c7dddd';ctx.fillRect(m.l+i*w+1,height-m.b-b.count/max*h,Math.max(1,w-2),b.count/max*h);const selected=stats?.bins[i].count||0;if(selected){ctx.fillStyle='#d68b27';ctx.fillRect(m.l+i*w+1,height-m.b-selected/max*h,Math.max(1,w-2),selected/max*h);}});
     ctx.fillStyle='#536f7c';ctx.font='11px '+UI_FONT;ctx.fillText('300',m.l,height-3);ctx.textAlign='right';ctx.fillText('2000 ms',width-m.r,height-3);ctx.textAlign='left';
-    canvas.setAttribute('aria-label','全记录相邻 N-N 参考，300至2000毫秒；橙色为所选 N-N 间期，按选中搏终点统计；点击柱筛选该区间');
+    if(!target){
+      canvas.setAttribute('aria-label','全记录相邻 N-N 参考，300至2000毫秒；橙色为所选 N-N 间期，按选中搏终点统计；点击柱筛选该区间');
+      root.ECGChartInspection?.registerRenderer(canvas,(copy,geometry)=>histogram(copy,stats,geometry,{reference:referenceData,library}));
+    }
   }
   function invalidateRowsPresentation(){
     cancelGesture();outline=null;selectionPending=null;selectionError=null;
     rows=[];rowMap=new Map();reference=null;rowsError=null;rowsKey=null;cohort=null;lastCohortKey=null;cardKey=null;cardWaves.clear();
-    for(const id of ['editHistogramCanvas','editLibraryHistogramCanvas']){const canvas=q('#'+id);if(canvas)canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height);}
+    for(const id of ['editHistogramCanvas','editLibraryHistogramCanvas']){const canvas=q('#'+id);if(canvas){root.ECGChartInspection?.unregisterRenderer(canvas);canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height);}}
     q('#templateLinkedCards')?.hidePopover?.();const grid=q('#templateLinkedCardGrid');if(grid)grid.replaceChildren();
   }
   function render(){
@@ -257,8 +263,9 @@
       canvas.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();clear();}});
     }
     bindScatter(q('#editScatterCanvas'));bindScatter(q('#editLibraryScatterCanvas'));
-    const oldScatter=renderEditScatter;renderEditScatter=()=>{oldScatter();scatterOverlay(q('#editScatterCanvas'));};
-    const oldAnalytics=renderEditLibraryAnalytics;renderEditLibraryAnalytics=()=>{oldAnalytics();if(sameRows()){const c=getCohort();histogram(q('#editLibraryHistogramCanvas'),c?.active?nn(rows,c.samples):null);}scatterOverlay(q('#editLibraryScatterCanvas'));};
+    const oldScatter=renderEditScatter;renderEditScatter=(canvas=q('#editScatterCanvas'),target=null)=>{oldScatter(canvas,target);scatterOverlay(canvas,target,false);};
+    const oldLibraryScatter=renderEditLibraryScatter;renderEditLibraryScatter=(canvas=q('#editLibraryScatterCanvas'),target=null)=>{oldLibraryScatter(canvas,target);scatterOverlay(canvas,target,true);};
+    const oldAnalytics=renderEditLibraryAnalytics;renderEditLibraryAnalytics=()=>{oldAnalytics();if(sameRows()){const c=getCohort();histogram(q('#editLibraryHistogramCanvas'),c?.active?nn(rows,c.samples):null);}};
     const oldOverview=renderEditOverview;renderEditOverview=()=>{oldOverview();if(sameRows()){const c=getCohort();histogram(q('#editHistogramCanvas'),c?.active?nn(rows,c.samples):null);}};
     document.addEventListener('change',event=>{if(['editLeadSelect','editLibraryLeadSelect'].includes(event.target.id))schedule();});
     window.addEventListener('resize',()=>{cancelGesture();schedule();});window.addEventListener('blur',()=>{cancelGesture();schedule();});window.addEventListener('wheel',()=>{if(drag){cancelGesture();schedule();}},{passive:true});schedule();
