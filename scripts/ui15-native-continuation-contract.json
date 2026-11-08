@@ -1,0 +1,240 @@
+{
+  "schema": 1,
+  "producing_run": 42493618617,
+  "producing_job": 128771048634,
+  "producing_commit": "ecc5228169c4355e12325ff78385f93d435a056d",
+  "producer_conclusion": "failure",
+  "producer_steps": {
+    "1": {
+      "name": "Set up job",
+      "conclusion": "success"
+    },
+    "2": {
+      "name": "Run actions/checkout@v4",
+      "conclusion": "success"
+    },
+    "3": {
+      "name": "Run actions/setup-python@v5",
+      "conclusion": "success"
+    },
+    "4": {
+      "name": "Run actions/setup-node@v4",
+      "conclusion": "success"
+    },
+    "5": {
+      "name": "Isolated verification controller; never compile the application",
+      "conclusion": "success"
+    },
+    "6": {
+      "name": "Install pinned controller dependencies and system Edge test driver",
+      "conclusion": "success"
+    },
+    "7": {
+      "name": "Verify frozen UI source release and unchanged clinical40",
+      "conclusion": "success"
+    },
+    "8": {
+      "name": "Download and verify exact accepted14 packages and attributed49 plus23",
+      "conclusion": "success"
+    },
+    "9": {
+      "name": "Assemble15 ZIPs from same EXE and every non-UI byte; actual final ZIP PE smoke",
+      "conclusion": "success"
+    },
+    "10": {
+      "name": "Fresh current backend scope and UI regression wrappers",
+      "conclusion": "failure"
+    },
+    "11": {
+      "name": "Fresh request equivalence and latency repetitions",
+      "conclusion": "skipped"
+    },
+    "12": {
+      "name": "Actual15 full interactions and same-schema16 packaging fixture",
+      "conclusion": "skipped"
+    },
+    "13": {
+      "name": "Actual15 P01 source save reopen and update",
+      "conclusion": "skipped"
+    },
+    "14": {
+      "name": "Actual15 current29 ST and AF report flow with independent mathematical oracle",
+      "conclusion": "skipped"
+    },
+    "15": {
+      "name": "Actual14 to15 retains approved report basis acknowledgements and UUID ledger",
+      "conclusion": "skipped"
+    },
+    "16": {
+      "name": "Retain P01 UI15 package; workflow verdict remains separate",
+      "conclusion": "success"
+    },
+    "17": {
+      "name": "Retain M01 full UI15 package",
+      "conclusion": "success"
+    },
+    "18": {
+      "name": "Retain M01 UI15 update",
+      "conclusion": "success"
+    },
+    "19": {
+      "name": "Retain exact unchanged M01 mathematics",
+      "conclusion": "success"
+    },
+    "20": {
+      "name": "Retain15 public synthetic checks, never raw data or work databases",
+      "conclusion": "success"
+    },
+    "38": {
+      "name": "Post Run actions/setup-node@v4",
+      "conclusion": "skipped"
+    },
+    "39": {
+      "name": "Post Run actions/setup-python@v5",
+      "conclusion": "skipped"
+    },
+    "40": {
+      "name": "Post Run actions/checkout@v4",
+      "conclusion": "success"
+    },
+    "41": {
+      "name": "Complete job",
+      "conclusion": "success"
+    }
+  },
+  "producer_normalized_log_sha256": "26ea4482dfdb10e9ebbbbac99a3322aa877f56f7c9a4e06212ef1ceeac9c1067",
+  "sole_failure_log_fragments": [
+    "TypeError [ERR_INVALID_ARG_TYPE]: The \"path\" argument must be of type string or an instance of Buffer or URL. Received undefined",
+    "tests\\node_demo_full_record_overview.cjs:6:29",
+    "Node.js v22.23.4"
+  ],
+  "outer_artifacts": {
+    "CardioInsight-Windows-x64-1.0.15-M01-full": {
+      "id": 13623372945,
+      "digest": "sha256:3065e81763aac57ae5993eb9c452c855c05803bd121dbc712fb207a1bedd479d",
+      "bytes": 202256270,
+      "role": "full"
+    },
+    "Windows-UI15-mathematical-validation": {
+      "id": 13623108870,
+      "digest": "sha256:b505d4fe047ac0f19ac89b89fe68b3d0afef034ec33c40e81db28129ae9fd25f",
+      "bytes": 58640,
+      "role": "original-C5"
+    },
+    "CardioInsight-Windows-x64-1.0.15-P01-software-only": {
+      "id": 13623108839,
+      "digest": "sha256:fd9419f3a0ee7aecfd98eaee794abeff3572355ecf3d65ffce78e59d75747628",
+      "bytes": 38360513,
+      "role": "p01"
+    },
+    "CardioInsight-Windows-x64-1.0.15-software-update": {
+      "id": 13622993957,
+      "digest": "sha256:3d700defd35f0fd99eb0b075501cc8fe7ebe581affc3c2920fb72e2f2441ee11",
+      "bytes": 38360260,
+      "role": "update"
+    },
+    "CardioInsight-Synthetic-M01-24h-v1-for-1.0.15": {
+      "id": 13622884376,
+      "digest": "sha256:78e3ebf9ec4d0df60acd20c41b0195f08f10abbb3bc8416a1bddf92e7dcf9032",
+      "bytes": 163882723,
+      "role": "math"
+    }
+  },
+  "producer_receipt_files": {
+    "ui15-ui/ui-regressions-tests.xml": {
+      "sha256": "7235ca1b6e66b9b9685d1900d28df62e0fc17ad96468d48d48995705215c41be",
+      "bytes": 111168
+    },
+    "ui15-ui/ui-test-summary.json": {
+      "sha256": "f3f1da7ee9763e810b410b24da29e08ff49c93e1b6c1c420505bb88ef03e4c80",
+      "bytes": 30050
+    },
+    "ui15-core/test-scope.json": {
+      "sha256": "34b5c0f81218aa8a920c9ef0e011b673ec92f9467bec40eae5f87af2d11bde9a",
+      "bytes": 198466
+    },
+    "ui15-core/test-summary.json": {
+      "sha256": "0223aa41c7a4b8118cb1ab5e83bb75273630a45e5acca7749eac63882a3822a1",
+      "bytes": 926
+    },
+    "ui15-core/scoped-tests.xml": {
+      "sha256": "5bec23bafcc8b8b4a4dc9f7c0bfb8451b3f2778a6a554329fa68831bae57d2d5",
+      "bytes": 200636
+    },
+    "ui15-core/historical-af.xml": {
+      "sha256": "c59191539c4b87ecc9ff6032770c6d739d73a88c2e99d68cb585e60b5cb20b8b",
+      "bytes": 4914
+    },
+    "ui15-baseline/baseline-proof.json": {
+      "sha256": "0622d7d159a8d80f9038195bc5bf3f6639132794464d0c37e8eeba85e23c41b1",
+      "bytes": 3671
+    }
+  },
+  "package_bytes": {
+    "p01": {
+      "filename": "CardioInsight-DoctorEval-Windows-x64-1.0.15-P01-software.zip",
+      "sha256": "1e1b3c1997ca783ed82467d12ebb3b17b7585bc1d05eb971420d4626fbbb70cf",
+      "bytes": 38358550
+    },
+    "full": {
+      "filename": "CardioInsight-DoctorEval-Windows-x64-1.0.15-full.zip",
+      "sha256": "d8f58b184c4709f99e00dcf22cfa574dd98285868c5d8a96b939bdad252d811d",
+      "bytes": 202243077
+    },
+    "update": {
+      "filename": "CardioInsight-DoctorEval-Windows-x64-1.0.15-software.zip",
+      "sha256": "10c650ebcb484fda0a95944a100a40a41c1db36a54e543ea27c7d546db6d038d",
+      "bytes": 38359692
+    },
+    "math": {
+      "filename": "CardioInsight-Synthetic-M01-24h-v1.zip",
+      "sha256": "3b09e147add5a794800bc0be400ec57c347077c47546cc67c5593b3bedd745d0",
+      "bytes": 163882245
+    }
+  },
+  "EXE_sha256": "f5283fc6a670e4d6dd9553797035458f31d0ea059ef81516f06fcc3ea9c24a73",
+  "common_source_fingerprint": "cac64ad7bb56700090fd8817a0cdecaf065c9bb1e7dc47541904c27a598feaf8",
+  "core_version": "core-9875ef91ba671541",
+  "ui_version": "ui-b69d4322a87d555f",
+  "ui_release_id": "0.12.29-ui-source-render.20261108",
+  "production129_sha256": "7e72a67fa13b73e235afe7ef2a76ee6f95865af40d50bd27efb78825aa01b5a9",
+  "historical_missing_tests": [
+    "test_candidate_thresholds_match_unchanged_frozen_development",
+    "test_current_workstation_cannot_masquerade_as_frozen_development"
+  ],
+  "standalone_Node_commands": [
+    "tests/chart_source_render.cjs",
+    "tests/node_full_record_geometry.cjs",
+    "tests/template_source_render.cjs",
+    "tests/chart_owner_render.cjs",
+    "tests/chart_inspection_lifecycle.cjs",
+    "tests/node_chart_write_owner.cjs"
+  ],
+  "demo_modes": [
+    "parity",
+    "validation",
+    "identity",
+    "concurrency",
+    "abort"
+  ],
+  "QA_allowed_paths": [
+    ".github/workflows/windows-ui-source-render.yml",
+    ".github/workflows/windows-ui15-native-continuation.yml",
+    "scripts/prepare_ui15_native_continuation.py",
+    "scripts/ui15-native-continuation-contract.json"
+  ],
+  "original_four_ZIPs_immutable": true,
+  "producer_backend873_reused_only_with_explicit_C5_attribution": true,
+  "fresh_QA_requirements": [
+    "UI829",
+    "six original standalone Node commands / seven named contract outputs",
+    "five original native Python oracle Demo modes",
+    "request perf three rounds",
+    "actual15 full native41",
+    "actual15 P01 eight",
+    "ST_AF UI12 plus API2",
+    "actual14_to15 reviewed report,basis,acks,UUID ledger unchanged and fifteen source chart surfaces x four zooms"
+  ],
+  "old14_native72_reused_baseline_only": true,
+  "clinical_validation": false
+}

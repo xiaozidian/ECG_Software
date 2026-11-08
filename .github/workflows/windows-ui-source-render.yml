@@ -1,8 +1,6 @@
 name: Windows1.0.15 source-render UI (exact accepted14 runtime; math only)
 
 on:
-  push:
-    branches: ["codex/windows-doctor-deidentified-x64-20261028"]
   workflow_dispatch:
 
 permissions:
@@ -96,7 +94,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/node_chart_write_owner.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node tests/node_demo_full_record_overview.cjs
+          python -m pytest -q tests/test_demo_full_record_overview.py --junitxml="$env:RUNNER_TEMP\ui15-ui\demo-full-record.xml"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Fresh request equivalence and latency repetitions
         run: |
