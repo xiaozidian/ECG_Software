@@ -310,18 +310,42 @@ async def af_geometry(page,case_id):
     return result
 
 
-async def source_chart_readonly(page):
+async def source_chart_readonly(page,diagnostics=None):
     """Real Shift+Enter opens and visible zoom controls on actual15 assets."""
     results=[]
-    async def inspect(selector):
+    progress=dict(status='running',surfaces=[],completed=results,requests=[],active_requests={})
+    def persist():
+        if diagnostics:
+            diagnostics.write_text(json.dumps(progress,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+    async def snapshot(selector,phase,record):
+        record['phase']=phase
+        try:
+            value=await page.evaluate("""s=>{
+              const c=document.querySelector(s),d=document.querySelector('#chartInspectionDialog'),a=document.activeElement;
+              const b=c?.getBoundingClientRect();let current=null,currentError=null;
+              try{current=typeof c?._inspectionCurrent==='function'?Boolean(c._inspectionCurrent()):null;}catch(e){currentError=e.name;}
+              const m=typeof morphologyWorkbench==='undefined'?null:morphologyWorkbench.privateSnapshot();
+              const morph=m?{phase:m.phase,ready:m.ready,partitionGeneration:m.partitionGeneration,viewedScope:m.viewedScope,sourcePopulationCount:m.sourcePopulation?.length??null,linked:m.linked}:null;
+              const flags=Object.fromEntries(['caseLoading','editLoading','editDetailLoading','editRrLoading','editTemplateLoading','reportSaving','reportViewLoading','reportEvidenceLoading'].map(k=>[k,k in state?Boolean(state[k]):null]));
+              return {page:state.currentPage,mode:state.editMode,active:{id:a?.id||'',tag:a?.tagName||''},source:{connected:!!c?.isConnected,marker:c?.hasAttribute('data-inspection-source')??false,aria:c?.getAttribute('aria-keyshortcuts')??null,current,currentError,managed:!!c?._inspectionManaged,bbox:b?{x:b.x,y:b.y,width:b.width,height:b.height}:null},dialog:{exists:!!d,open:!!d?.open},flags,edit:{requestId:state.editRequestId,stripRequestId:state.editStripRequestId,workspaceRequestId:state.editWorkspaceRequestId,templateStrips:state.editTemplateStrips?.length??null,waveMeta:document.querySelector('#editWaveMeta')?.textContent??null,libraryWaveMeta:document.querySelector('#editLibraryWaveMeta')?.textContent??null},morph,linked:globalThis.ECGTemplateLinkedView?.capturePresentation?.()??null,trace:globalThis.__CI_UI15_INSPECTION_OBSERVER__?.events??[],traceCount:globalThis.__CI_UI15_INSPECTION_OBSERVER__?.count??0};
+            }""",selector)
+            record.setdefault('snapshots',[]).append(dict(phase=phase,active_requests=list(progress['active_requests'].values()),**value))
+        except Exception as error:
+            record.setdefault('snapshot_errors',[]).append(dict(phase=phase,error_type=type(error).__name__))
+        persist()
+    async def inspect_body(selector,record):
         surface=page.locator(selector)
         await surface.wait_for(state='visible')
         await page.wait_for_function("s=>{const c=document.querySelector(s);return c?.hasAttribute('data-inspection-source')&&c.getAttribute('aria-keyshortcuts')==='Shift+Enter';}",arg=selector)
+        await snapshot(selector,'registered_before_plain_enter',record)
         before=await page.evaluate("()=>JSON.stringify({start:state.start,editStart:state.editStart,editDuration:state.editDuration,samples:[...state.editSelectedSamples],trace:state.editMorphTraceGeometry,selection:state.editSelection,morph:typeof morphologyWorkbench==='undefined'?null:morphologyWorkbench.privateSnapshot(),linked:globalThis.ECGTemplateLinkedView?.capturePresentation()})")
         await surface.press('Enter')
         require(await page.locator('#chartInspectionDialog[open]').count()==0,'Ordinary Enter unexpectedly opened chart inspection')
+        await snapshot(selector,'after_plain_enter_before_shift_enter',record)
         await surface.press('Shift+Enter')
+        await snapshot(selector,'after_shift_enter_before_dialog_wait',record)
         dialog=page.locator('#chartInspectionDialog[open]');await dialog.wait_for(state='visible')
+        await snapshot(selector,'dialog_visible',record)
         rows=[]
         for factor in ('1','1.5','2','3'):
             await dialog.locator('select').select_option(factor)
@@ -334,15 +358,60 @@ async def source_chart_readonly(page):
         after=await page.evaluate("()=>JSON.stringify({start:state.start,editStart:state.editStart,editDuration:state.editDuration,samples:[...state.editSelectedSamples],trace:state.editMorphTraceGeometry,selection:state.editSelection,morph:typeof morphologyWorkbench==='undefined'?null:morphologyWorkbench.privateSnapshot(),linked:globalThis.ECGTemplateLinkedView?.capturePresentation()})")
         require(before==after,'Native inspection changed source position, selection or original morphology hit geometry')
         results.append(dict(surface=selector,zooms=rows,readonly_source_state_identical=True))
-    for page_name,selectors in [('review',['#ovHistogram','#ovFullHR','#ovFullRR','#ovHourRR']),('trends',['#trendCanvas','#histogramCanvas','#poincareCanvas']),('edit',['#editTrendCanvas','#editHistogramCanvas','#editScatterCanvas','#editDensityPrimary'])]:
-        await nav(page,page_name)
-        if page_name=='edit':
-            await page.locator('[data-edit-mode="cluster"]').click()
-        for selector in selectors:await inspect(selector)
-    await page.locator('[data-edit-mode="library"]').click()
-    for selector in ('#editLibraryHistogramCanvas','#editLibraryTrendCanvas','#editLibraryScatterCanvas','#editLibraryDensityPrimary'):await inspect(selector)
-    await nav(page,'report')
-    return results
+    async def inspect(selector):
+        record=dict(surface=selector,status='running',phase='entry');progress['surfaces'].append(record);persist()
+        try:
+            # Observers only read source/dialog attribute transitions. They do
+            # not redraw, focus, retry, wait, register renderers, or edit state.
+            await page.evaluate("""s=>{
+              const c=document.querySelector(s),d=document.querySelector('#chartInspectionDialog');
+              const trace={events:[],count:0,observers:[]};globalThis.__CI_UI15_INSPECTION_OBSERVER__=trace;
+              const observe=(node,kind)=>{if(!node)return;const observer=new MutationObserver(records=>{for(const r of records){trace.count++;if(trace.events.length<128){let current=null;try{current=typeof c?._inspectionCurrent==='function'?Boolean(c._inspectionCurrent()):null;}catch(_){}trace.events.push({kind,attribute:r.attributeName,oldValue:r.oldValue,open:!!d?.open,sourceCurrent:current,connected:!!c?.isConnected,time:performance.now()});}}});observer.observe(node,{attributes:true,attributeOldValue:true,attributeFilter:kind==='dialog'?['open']:['data-inspection-source','aria-keyshortcuts','tabindex']});trace.observers.push(observer);};
+              observe(c,'source');observe(d,'dialog');
+            }""",selector)
+            await inspect_body(selector,record)
+            record['status']='passed'
+        except Exception as error:
+            record['status']='failed';record['error_type']=type(error).__name__
+            await snapshot(selector,'failure',record)
+            raise
+        finally:
+            await snapshot(selector,'finally',record)
+            try:
+                await page.evaluate("""()=>{const t=globalThis.__CI_UI15_INSPECTION_OBSERVER__;for(const observer of t?.observers||[])observer.disconnect();delete globalThis.__CI_UI15_INSPECTION_OBSERVER__;}""")
+            except Exception as error:
+                record['observer_cleanup_error_type']=type(error).__name__
+            persist()
+    def request_started(request):
+        path=urlsplit(request.url).path
+        if not path.startswith('/api/cases/'):return
+        value=dict(method=request.method,path=path,time=datetime.now(timezone.utc).isoformat())
+        progress['active_requests'][str(id(request))]=value
+        if len(progress['requests'])<256:progress['requests'].append(dict(kind='started',**value))
+        persist()
+    def request_finished(request,kind='finished'):
+        value=progress['active_requests'].pop(str(id(request)),None)
+        if value and len(progress['requests'])<256:progress['requests'].append(dict(kind=kind,completed_time=datetime.now(timezone.utc).isoformat(),**value))
+        persist()
+    def request_failed(request):request_finished(request,'failed')
+    for name,handler in [('request',request_started),('requestfinished',request_finished),('requestfailed',request_failed)]:page.on(name,handler)
+    try:
+        for page_name,selectors in [('review',['#ovHistogram','#ovFullHR','#ovFullRR','#ovHourRR']),('trends',['#trendCanvas','#histogramCanvas','#poincareCanvas']),('edit',['#editTrendCanvas','#editHistogramCanvas','#editScatterCanvas','#editDensityPrimary'])]:
+            await nav(page,page_name)
+            if page_name=='edit':
+                await page.locator('[data-edit-mode="cluster"]').click()
+            for selector in selectors:await inspect(selector)
+        await page.locator('[data-edit-mode="library"]').click()
+        for selector in ('#editLibraryHistogramCanvas','#editLibraryTrendCanvas','#editLibraryScatterCanvas','#editLibraryDensityPrimary'):await inspect(selector)
+        await nav(page,'report')
+        progress['status']='passed';persist()
+        return results
+    except Exception:
+        progress['status']='failed';persist()
+        raise
+    finally:
+        for name,handler in [('request',request_started),('requestfinished',request_finished),('requestfailed',request_failed)]:page.remove_listener(name,handler)
+        persist()
 
 
 async def verify(args,result):
@@ -427,7 +496,7 @@ async def verify(args,result):
                 await nav(page,'report');after=await capture(page,doctor_source.CASE_ID)
                 require(before==after,'UI repack changed engine/basis/reviewed report or selected evidence')
                 result['geometry']=await af_geometry(page,doctor_source.CASE_ID)
-                result['source_chart_inspection']=await source_chart_readonly(page)
+                result['source_chart_inspection']=await source_chart_readonly(page,args.output.parent/'chart-inspection-progress.json')
                 after_geometry=await capture(page,doctor_source.CASE_ID);require(before==after_geometry,'View-only geometry changed approved evidence')
                 await context.close();context=None;await stop(exe1,home)
                 db_after=database_state(database)
