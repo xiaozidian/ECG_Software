@@ -21,6 +21,6 @@ def test_template_twelve_linkage_in_sandboxed_chrome():
     result = json.loads(run.stdout)
     assert result["passed"] and result["chrome_sandbox"]
     assert result["external_requests"] == 0 and not result["page_errors"]
-    assert result["actual_check_count"] == 24
+    assert result["actual_check_count"] == 25
     assert result["actual_check_count"] == len(set(result["checks"]))
     assert len(result["source_sha256"]) == 4

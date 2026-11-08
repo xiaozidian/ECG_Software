@@ -11,7 +11,7 @@ function setup(){
     const ctx=new Proxy({createImageData:(w,h)=>({data:new Uint8ClampedArray(w*h*4)})},{get:(o,k)=>o[k]||(()=>{})});
     return {hidden:true,disabled:false,value:'',textContent:'',dataset:{},attrs,children,listeners:ownListeners,
       getClientRects:()=>[1],getBoundingClientRect:()=>({left:0,top:0,width:300,height:130}),getContext:()=>ctx,
-      setAttribute:(k,v)=>attrs[k]=v,querySelector(s){if(!children.has(s))children.set(s,node());return children.get(s)},querySelectorAll:()=>[],
+      setAttribute:(k,v)=>attrs[k]=String(v),getAttribute:k=>Object.prototype.hasOwnProperty.call(attrs,k)?attrs[k]:null,querySelector(s){if(!children.has(s))children.set(s,node());return children.get(s)},querySelectorAll:()=>[],
       contains(target){return target===this||[...children.values()].some(child=>child.contains(target))},
       addEventListener:(name,fn)=>ownListeners[name]=fn,focus(){},closest:()=>null,
       before(el){nodes.set('#'+el.id,el)},after(el){nodes.set('#'+el.id,el)}};
