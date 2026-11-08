@@ -214,11 +214,20 @@ async function twelve(page, sample, {edge = false, revision = 3, readCount = 1} 
   return s;
 }
 
-async function escapeBack(page) {
-  await page.keyboard.press('Escape');
-  await page.waitForFunction(() => !__state.waveformExpanded && __state.currentPage === 'edit');
-  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+async function waitForEditReturn(page, expectedOccurrenceIndex = null) {
+  // The application restores edit state before awaiting the native fullscreen
+  // exit. Focus outside the native surface remains blocked until that promise
+  // completes; a fixed number of animation frames is not a completion signal.
+  await page.waitForFunction(index => !__state.waveformExpanded && __state.currentPage === 'edit' &&
+    !__state.waveformFullscreenExitPromise && !document.fullscreenElement &&
+    (index === null || document.activeElement?.closest('[data-occ-index]')?.dataset.occIndex === index),
+    expectedOccurrenceIndex === null ? null : String(expectedOccurrenceIndex), {timeout: 3000});
   return snapshot(page);
+}
+
+async function escapeBack(page, expectedOccurrenceIndex = null) {
+  await page.keyboard.press('Escape');
+  return waitForEditReturn(page, expectedOccurrenceIndex);
 }
 
 async function pendingTwelve(page) {
@@ -342,11 +351,44 @@ async function prepareOutsideCohort(page) {
         const before = await snapshot(page);
         await page.locator(selector + ' .occurrence-wave svg').dblclick();
         const full = await twelve(page, 4800); assert.deepEqual(full.selected, [4800]);
-        const after = await escapeBack(page); sameEditContext(before, after);
+        const after = await escapeBack(page, selector.match(/"(\d+)"/)[1]); sameEditContext(before, after);
         assert.equal(after.active, selector.match(/"(\d+)"/)[1]);
         assert.deepEqual(after.errors, []);
       });
     }
+    await check('native-exit-promise-controls-real-original-thumbnail-focus-return', async () => {
+      await fresh(page);
+      const selector = await cardSelector(page, 4800), index = selector.match(/"(\d+)"/)[1];
+      await page.locator(selector + ' .occurrence-open').click();
+      await page.waitForFunction(() => __state.editWaveform?.start_s === 22);
+      const before = await snapshot(page);
+      await page.locator(selector + ' .occurrence-wave svg').dblclick();
+      await twelve(page, 4800);
+      await page.evaluate(() => {
+        const nativeExit = document.exitFullscreen.bind(document);
+        __fixture.nativeExitReleased = false;
+        document.exitFullscreen = () => new Promise((resolve, reject) => {
+          __fixture.releaseNativeExit = () => {
+            __fixture.nativeExitReleased = true;
+            (document.fullscreenElement ? nativeExit() : Promise.resolve()).then(resolve, reject);
+          };
+        });
+      });
+      // The visible production close control invokes the real application exit;
+      // only the browser completion is delayed. The test never focuses a card.
+      await page.locator('#toggleWaveformFullscreen').click();
+      await page.waitForFunction(() => !__state.waveformExpanded && __state.currentPage === 'edit');
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      const pending = await page.evaluate(() => ({promise: !!__state.waveformFullscreenExitPromise,
+        native: !!document.fullscreenElement, released: __fixture.nativeExitReleased,
+        active: document.activeElement?.closest('[data-occ-index]')?.dataset.occIndex || document.activeElement?.id}));
+      assert.equal(pending.promise, true); assert.equal(pending.native, true); assert.equal(pending.released, false);
+      assert.notEqual(pending.active, index, 'Native fullscreen must still block focus outside the active surface');
+      await page.evaluate(() => __fixture.releaseNativeExit());
+      const after = await waitForEditReturn(page, index);
+      sameEditContext(before, after); assert.equal(after.active, index);
+      assert.deepEqual(after.errors, []);
+    });
     await check('linked-selected-svg-dblclick-centres-exact-beat-and-restores-popover-with-independent-checks', async () => {
       await fresh(page);
       await page.evaluate(() => ECGTemplateLinkedView.selectSamples([4800, 5360]));
