@@ -56,23 +56,79 @@ def verify_original15_manifest(root):
 
 
 def load_old_oracles(exe):
+    """Load the complete old measurement dependency closure from the old PE.
+
+    No current ecg_core config, source guard, status helper or algorithm is
+    aliased into this namespace. A missing old dependency fails closed.
+    """
+    import dis
+    import marshal
     from PyInstaller.archive.readers import CArchiveReader
-    from ecg_core import config,source_identity
+    exe=Path(exe).resolve();old_exe_sha=sha256(exe.read_bytes()).hexdigest()
+    require(old_exe_sha=='f5283fc6a670e4d6dd9553797035458f31d0ea059ef81516f06fcc3ea9c24a73','The old measurement oracle requires the exact immutable15 executable')
     reader=CArchiveReader(exe)
     pyzs=[n for n,row in reader.toc.items() if row[-1]=='z'];require(len(pyzs)==1,'Old PE must have one actual embedded PYZ')
     pyz=reader.open_embedded_archive(pyzs[0])
-    name='_actual_immutable_windows15';package=types.ModuleType(name);package.__path__=[];sys.modules[name]=package
-    sys.modules[name+'.config']=config;sys.modules[name+'.source_identity']=source_identity
-    result={}
-    for short in ('stt_records','stt','stt_range'):
-        original='ecg_core.'+short;require(original in pyz.toc,'Old actual PE is missing '+original)
-        code=pyz.extract(original);require(isinstance(code,types.CodeType),'Old PYZ member is not executable code')
-        module=types.ModuleType(name+'.'+short);module.__package__=name;module.__file__='<actual-old15-PE>/' + short+'.py'
-        sys.modules[module.__name__]=module;exec(code,module.__dict__);result[short]=module
+    name='_actual_immutable_windows15';internal=exe.parent/'_internal'
+    for key in list(sys.modules):
+        if key==name or key.startswith(name+'.'):del sys.modules[key]
+    package=types.ModuleType(name);package.__package__=name;package.__path__=[str(internal/'ecg_core')]
+    package.__file__=str(internal/'ecg_core/__init__.py');sys.modules[name]=package
+    dependencies=('core_contract','config','review_workflow','source_identity','evaluation_status','stt_records','stt','stt_range')
+    codes={}
+    for short in ('__init__',*dependencies):
+        original='ecg_core' if short=='__init__' else 'ecg_core.'+short
+        require(original in pyz.toc,'Old actual PE is missing dependency '+original)
+        code=pyz.extract(original);require(isinstance(code,types.CodeType),'Old PYZ dependency is not executable code')
+        codes[short]=code
+    def imports(code):
+        instructions=list(dis.get_instructions(code));found=set()
+        for index,item in enumerate(instructions):
+            if item.opname=='IMPORT_NAME':
+                require(item.argval!='ecg_core' and not item.argval.startswith('ecg_core.'),'Old namespace attempted a current ecg_core absolute import')
+                if index>=2 and instructions[index-2].opname=='LOAD_CONST' and type(instructions[index-2].argval) is int and instructions[index-2].argval>0:
+                    require(instructions[index-2].argval==1 and item.argval,'Unsupported old relative import')
+                    found.add(item.argval.split('.')[0])
+        for value in code.co_consts:
+            if isinstance(value,types.CodeType):found.update(imports(value))
+        return found
+    closure={short:sorted(imports(code)) for short,code in codes.items()}
+    require(set().union(*(set(rows) for rows in closure.values()))<=set(dependencies),'An old relative dependency is missing from the authenticated closure')
+    result={};origins={}
+    def execute(short):
+        code=codes[short];original='ecg_core' if short=='__init__' else 'ecg_core.'+short
+        module=package if short=='__init__' else types.ModuleType(name+'.'+short)
+        module.__package__=name
+        module.__file__=str(internal/'ecg_core'/('__init__.py' if short=='__init__' else short+'.py'))
+        sys.modules[module.__name__]=module
+        if short!='__init__':setattr(package,short,module)
+        code_sha=sha256(marshal.dumps(code)).hexdigest()
+        module.__old_PE_origin__=dict(original_module=original,old_exe_sha256=old_exe_sha,code_sha256=code_sha,
+                                      filename=module.__file__,relative_dependencies=closure[short])
+        exec(code,module.__dict__);origins[original]=module.__old_PE_origin__.copy()
+        if short!='__init__':result[short]=module
+    # The real old package initializer imports config; load its own constants
+    # first, then execute the original initializer and its full ST closure.
+    execute('core_contract');execute('config');execute('__init__')
+    for short in dependencies[2:]:execute(short)
+    require(result['config'].APP_VERSION==OLD_APP and package.APP_VERSION==OLD_APP,'Old oracle config was replaced by current config')
+    require(Path(result['config'].resource_root())==internal,'Old oracle assets no longer resolve inside the original bundle')
+    require(result['source_identity'].ReportConflict is result['review_workflow'].ReportConflict,'Old source guard imported current review code')
     require(result['stt'].ALGORITHM_VERSION=='stt-screening-0.3.2-independent-rhythm','The authentic old15 oracle was replaced by current code')
     require(result['stt_range'].PROFILE_ID=='raw-200hz-fixed16s-st-perbeat-mean-v2','Old actual range method is wrong')
     require(result['stt_records'].METHOD=='stt-hospital-review-v2','Old actual reviewed-method code is wrong')
     require(result['stt_range']._block_measurement is result['stt']._block_measurement,'Old range imported a new rather than old measurement function')
+    require(result['stt'].source_read is result['source_identity'].source_read and
+            result['stt_range'].source_read is result['source_identity'].source_read,'Old measurements imported a current source guard')
+    proof=dict(status='authentic_old15_dependency_closure_loaded_not_a_native_migration_verdict',old_exe_sha256=old_exe_sha,
+               namespace=name,modules=origins,module_count=len(origins),old_resource_root=str(internal),
+               algorithm_version=result['stt'].ALGORITHM_VERSION,range_profile=result['stt_range'].PROFILE_ID,
+               method=result['stt_records'].METHOD,current_ecg_core_modules_aliased=False)
+    destination=os.environ.get('ECG_OLD_ORACLE_PROOF_PATH')
+    if destination:
+        path=Path(destination);require(not path.exists(),'Preserve original old-oracle dependency evidence')
+        path.parent.mkdir(parents=True,exist_ok=True);path.write_text(json.dumps(proof,ensure_ascii=False,indent=2)+'\n')
+    print('ACTUAL_OLD15_ORACLE_DEPENDENCIES_JSON='+json.dumps(proof,ensure_ascii=False))
     return result
 
 

@@ -34,6 +34,8 @@ PRODUCER_JOB = 129252134201
 PRODUCER_JOB_NAME = 'Native Windows x64 package and current workstation acceptance'
 WORKFLOW = '.github/workflows/windows-af-multistrip.yml'
 ACCEPTANCE_WORKFLOW = '.github/workflows/windows-af17-native-continuation.yml'
+MIGRATION_WORKFLOW = '.github/workflows/windows-af17-migration-continuation.yml'
+ACCEPTANCE_WORKFLOWS = (ACCEPTANCE_WORKFLOW, MIGRATION_WORKFLOW)
 APP = '0.12.31-af-multistrip.20261109'
 VERSION = '1.0.17'
 PACKAGE = 'CardioInsight-DoctorEval-Windows-x64'
@@ -217,12 +219,13 @@ def validate_producer_metadata(run, jobs, artifacts):
             'native_steps17_to20_originally_skipped': [steps[n] for n in range(17, 21)]}
 
 
-def validate_acceptance(run, commit, run_id):
+def validate_acceptance(run, commit, run_id, workflow=ACCEPTANCE_WORKFLOW):
+    require(workflow in ACCEPTANCE_WORKFLOWS, 'Acceptance workflow must be explicitly allowlisted')
     require(run['id'] == run_id != PRODUCER and run['head_sha'] == commit != SOURCE_COMPILE_COMMIT and
-            run['path'] == ACCEPTANCE_WORKFLOW and run['repository']['full_name'] == REPO and
+            run['path'] == workflow and run['repository']['full_name'] == REPO and
             run['head_repository']['full_name'] == REPO and run['status'] == 'in_progress' and
             run['conclusion'] is None, 'Current native acceptance run/head/workflow differs')
-    return {'commit': commit, 'run_id': run_id, 'workflow': ACCEPTANCE_WORKFLOW,
+    return {'commit': commit, 'run_id': run_id, 'workflow': workflow,
             'native_gates_status': 'pending', 'source_compile_commit': SOURCE_COMPILE_COMMIT,
             'producer_run_id': PRODUCER}
 
@@ -474,7 +477,7 @@ def _api(path):
     return _gh(['api', '--hostname', 'github.com', '/repos/' + REPO + path])
 
 
-def prepare(output, acceptance_commit, acceptance_run_id):
+def prepare(output, acceptance_commit, acceptance_run_id, acceptance_workflow=ACCEPTANCE_WORKFLOW):
     require(re.fullmatch(r'[0-9a-f]{40}', acceptance_commit or '') and acceptance_commit != SOURCE_COMPILE_COMMIT and
             type(acceptance_run_id) is int and acceptance_run_id > 0 and acceptance_run_id != PRODUCER,
             'Acceptance commit/run must be explicit and separate from original source compile provenance')
@@ -491,7 +494,7 @@ def prepare(output, acceptance_commit, acceptance_run_id):
     producer = validate_producer_metadata(*(loads(raw[k]) for k in ('run', 'jobs', 'artifacts')))
     acceptance_raw = _api(f'/actions/runs/{acceptance_run_id}')
     (evidence / 'acceptance-run-at-preparation.json').write_bytes(acceptance_raw)
-    acceptance = validate_acceptance(loads(acceptance_raw), acceptance_commit, acceptance_run_id)
+    acceptance = validate_acceptance(loads(acceptance_raw), acceptance_commit, acceptance_run_id, acceptance_workflow)
     log_archive = evidence / f'producer-{PRODUCER}-run-logs.zip'
     log_archive.write_bytes(_api(f'/actions/runs/{PRODUCER}/logs'))
     failed16 = validate_failed16_archive(log_archive, loads(raw['jobs']))
@@ -602,8 +605,9 @@ def main(argv=None):
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--acceptance-commit', required=True)
     parser.add_argument('--acceptance-run-id', type=int, required=True)
+    parser.add_argument('--acceptance-workflow', choices=ACCEPTANCE_WORKFLOWS, default=ACCEPTANCE_WORKFLOW)
     args = parser.parse_args(argv)
-    result = prepare(args.output, args.acceptance_commit, args.acceptance_run_id)
+    result = prepare(args.output, args.acceptance_commit, args.acceptance_run_id, args.acceptance_workflow)
     print('WINDOWS17_CONTINUATION_INPUT_JSON=' + json.dumps(result, ensure_ascii=False))
 
 
