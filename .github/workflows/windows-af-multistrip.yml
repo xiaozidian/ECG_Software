@@ -1,5 +1,8 @@
 name: Windows1.0.17 comprehensive ST-T and AF multistrip fresh engine and15 migration
 
+# The mutable-source UUID race fixture uses the existing fallback content guard.
+# Actual Windows read-lease denial tests stay enabled in the full protection scope.
+
 on:
   push:
     branches: ["codex/windows-doctor-deidentified-x64-20261028"]
