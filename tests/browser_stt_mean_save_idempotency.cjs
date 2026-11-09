@@ -63,7 +63,7 @@ function fixture(config={}){
   const bridge={snapshotForSave(){snapshots++;if(config.snapshotThrows&&snapshots>1)throw Error('snapshot stale');return config.pointOnly?null:snapshot;},
     clearAfterSave(value){cleared.push(value);if(state.sttRangeReviewed!==accepted)return false;state.sttRangeReviewed=null;return true;}};
   state.sttRangeBridge=bridge;
-  const ctx=vm.createContext({state,$,URLSearchParams,ECGAnalysisConsistency:C,api,
+  const ctx=vm.createContext({state,$,$$:()=>[],URLSearchParams,ECGAnalysisConsistency:C,api,
     crypto:{randomUUID:()=>`00000000-0000-4000-8000-${String(++uuids).padStart(12,'0')}`},
     clinicalWorkflow:{writable:()=>true,refresh:async()=>{if(config.refreshFail)throw Error('refresh failed');}},
     toast:text=>notices.push(text),updateSttSaveState:()=>{},
@@ -75,7 +75,7 @@ function fixture(config={}){
     ALL_LEADS:['I','II','III','aVR','aVL','aVF','V1','V2','V3','V4','V5','V6'],
     clearSttEvidence:()=>{},setSttWindowState:()=>{},analysisReadStatus:()=>{},loadStt:async()=>{current=true;}});
   vm.runInContext(fs.readFileSync('static/js/stt-review-layout.js','utf8'),ctx);
-  vm.runInContext(['sttDraftState','sttReviewLeadNames','sttReadReviewRange','sttParseClock'].map(actual).join('\n'),ctx);
+  vm.runInContext(['sttDraftState','sttSelectedResultCodes','sttFindingsForSave','sttReviewLeadNames','sttReadReviewRange','sttParseClock'].map(actual).join('\n'),ctx);
   vm.runInContext(section,ctx);
   return {ctx,state,$,calls,cleared,notices,rows,server,result,
     save:()=>ctx.saveSttReviewAnnotation(),posts:()=>postAttempts,snapshots:()=>snapshots,uuids:()=>uuids,
@@ -103,7 +103,7 @@ const cases={
     }
   },
   'edit-is-versioned-PUT-and-does-not-create-another-record':async()=>{
-    const f=fixture({pointOnly:true,editId:42});f.state.sttReview={...f.server};f.state.sttEditingRecord={id:42,details:{physician_note:'old'},stt_review_receipt:{record_version:3}};
+    const f=fixture({pointOnly:true,editId:42});f.state.sttReview={...f.server};f.state.sttEditingRecord={id:42,details:{physician_note:'old'},stt_review_receipt:{record_version:3,result_code:'indeterminate',leads:['II'],range:{start_sample:1040,end_sample:2001},findings:[{result_code:'indeterminate',leads:['II'],start_sample:1040,end_sample:2000}]}};
     await f.save();const call=f.calls.find(x=>x.method==='PUT');assert(call);assert(call.path.endsWith('/annotations/42'));
     assert.equal(JSON.parse(call.body).expected_record_version,3);assert.equal(f.rows.length,1);assert.equal(f.state.sttLastSavedEvent.event_id,'annotation:42');assert.equal(f.state.sttLastSavedEvent.record_version,4);
   },

@@ -143,9 +143,12 @@ def assert_legacy_annotation_and_receipt(returned,saved):
     details=saved['details'];statistics=details['range_statistics'];profile=statistics['method_profile']
     first=saved['sample_index'];end=details['end_sample']+1;event_id='annotation:'+str(saved['id'])
     assert re.fullmatch(r'[0-9a-f]{8}-stt-record-v1-[0-9a-f]{24}',receipt['basis_version'])
-    assert receipt==dict(schema_version='stt-review-record-v1',record_id=event_id,event_id=event_id,
+    assert receipt==dict(schema_version='stt-review-record-v2',record_id=event_id,event_id=event_id,
         annotation_id=saved['id'],record_version=1,review_state='unreviewed',
-        result_code='nonspecific' if details['status']=='confirmed' else 'indeterminate',result_kind='NOTE',
+        result_code='nonspecific' if details['status']=='confirmed' else 'indeterminate',
+        result_codes=['nonspecific' if details['status']=='confirmed' else 'indeterminate'],
+        findings=[dict(result_code='nonspecific' if details['status']=='confirmed' else 'indeterminate',
+                       leads=['II'],start_sample=first,end_sample=end-1)],result_kind='NOTE',
         report_group='pending',status=details['status'],review_extent='point',
         range=dict(start_sample=first,end_sample=end,start_s=first/200,end_s=end/200,duration_s=(end-first)/200),
         basis_version=receipt['basis_version'],measurement_protocol=dict(method_version=profile['id'],

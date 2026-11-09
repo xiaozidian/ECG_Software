@@ -15,7 +15,7 @@ def test_math_payload_contains_native_minute_st_evidence(tmp_path):
     generate(output, 'math-test-only')
     case = json.loads((output / 'case-data.js').read_text().split(' = ', 1)[1].rstrip(';\n'))
     review = case['stt_review']
-    assert review['analysis']['algorithm_version'] == 'stt-screening-0.3.2-independent-rhythm'
+    assert review['analysis']['algorithm_version'] == 'stt-screening-0.4.0-comprehensive-independent'
     assert review['analysis']['trends']['block_seconds'] == 60
     assert set(review['analysis']['trends']['leads']) == {'I','II','III','aVR','aVL','aVF','V1','V2','V3','V4','V5','V6'}
     assert all(len(rows) == 10 for rows in review['analysis']['trends']['leads'].values())
@@ -24,7 +24,7 @@ def test_math_payload_contains_native_minute_st_evidence(tmp_path):
     assert case['stt_review_binding']['beat_revision'] == 0
     assert 'rhythm_exclusions' not in case['stt_review_binding']
     assert case['stt_review_binding']['rhythm_policy'] == 'independent_of_AF_AFL_reviews'
-    assert case['stt_review_binding']['data_version'] == case['stt_review_binding']['beat_version'] + '-stt-independent-v2'
+    assert case['stt_review_binding']['data_version'] == case['stt_review_binding']['beat_version'] + '-stt-comprehensive-v3'
     assert case['stt_review_binding']['patient_inputs_read'] is False
 
 
