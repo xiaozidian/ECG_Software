@@ -1,6 +1,9 @@
 name: Windows1.0.16 comprehensive independent ST-T fresh engine and15 migration
 
 on:
+  push:
+    branches: ["codex/windows-doctor-deidentified-x64-20261028"]
+    paths: [".github/workflows/windows-stt-comprehensive.yml"]
   workflow_dispatch:
 
 permissions:
