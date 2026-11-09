@@ -5,6 +5,7 @@ name: Windows1.0.17 original fresh PE native acceptance continuation
 # native acceptance to the exact original ZIP bytes, not a relabelled rebuild.
 # Raw ZIP member names are checked before Windows ZipInfo normalizes separators.
 # Current ST numeric guards require the signed compact API to omit kernel blocks.
+# Original failed step provenance is read from the authenticated Actions log ZIP.
 
 on:
   push:

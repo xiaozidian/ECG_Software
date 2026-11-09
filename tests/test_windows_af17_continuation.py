@@ -1,5 +1,6 @@
 """Fabricated controller contracts only: no GitHub, PE execution or native pass."""
 import copy
+import json
 from pathlib import Path
 import shutil
 import zipfile
@@ -206,3 +207,97 @@ def test_internal18_updater_fixture_keeps_original17_all_other_payload_bytes(tmp
         release = continuation.loads(data.read(continuation.PACKAGE + '/RELEASE.json'))
         assert release['packaging_version'] == '1.0.18' and release['verification_fixture_only'] is True
         assert release['source_commit'] == continuation.SOURCE_COMPILE_COMMIT
+
+
+@pytest.fixture
+def failed16_log(tmp_path):
+    _, jobs, _ = metadata()
+    job = jobs['jobs'][0]
+    job['name'] = continuation.PRODUCER_JOB_NAME
+    job['steps'][15].update(started_at='2026-11-09T15:57:29Z', completed_at='2026-11-09T15:59:03Z')
+    receipt = dict(status='failed', started_utc='2026-11-09T15:57:29.892610+00:00',
+                   completed_utc='2026-11-09T15:59:03.687804+00:00',
+                   checks=[dict(status='passed') for _ in range(3)] + [dict(status='failed', name='browser-verification-completion',
+                           evidence=dict(error='AssertionError: Native ST method profile changed'))])
+    def line(stamp, body): return (stamp + ' ' + body + '\r\n').encode()
+    member = b''.join([
+        line('2026-11-09T15:57:28.9000000Z', 'passed original build'),
+        line('2026-11-09T15:57:29.1224753Z', '##[group]Run $buildReport = Get-Content "$env:RUNNER_TEMP\\doctor-eval\\build-report.json" -Raw | ConvertFrom-Json'),
+        line('2026-11-09T15:57:29.1226959Z', 'python scripts/verify_windows_doctor_browser.py'),
+        line('2026-11-09T15:57:29.1227532Z', '--package-root "$env:RUNNER_TEMP\\doctor-eval\\verify-package\\' + continuation.PACKAGE + '"'),
+        line('2026-11-09T15:57:29.1228274Z', '--software-archive "$env:RUNNER_TEMP\\doctor-eval\\$upgradeArchive"'),
+        line('2026-11-09T15:57:29.1228856Z', '--output "$env:RUNNER_TEMP\\doctor-eval\\evidence\\browser-validation.json"'),
+        line('2026-11-09T15:59:03.6972103Z', 'DOCTOR_BROWSER_RECEIPT_JSON=' + json.dumps(receipt)),
+        line('2026-11-09T15:59:03.7571873Z', '##[error]Process completed with exit code 1.'),
+        line('2026-11-09T15:59:03.7794762Z', '##[group]Run actions/upload-artifact@v4'),
+    ])
+    return dict(path=tmp_path / 'producer-log.zip', jobs=jobs, receipt=receipt, member=member)
+
+
+def write_failed16_zip(fixture, members=None):
+    name = '0_' + continuation.PRODUCER_JOB_NAME + '.txt'
+    rows = members if members is not None else [(name, fixture['member']), (continuation.PRODUCER_JOB_NAME + '/system.txt', b'fixture-system')]
+    with zipfile.ZipFile(fixture['path'], 'x', zipfile.ZIP_STORED) as archive:
+        for key, value in rows: archive.writestr(key, value)
+
+
+def test_raw_failed16_zip_preserves_original_member_and_exact_slice_in_final_fraction(failed16_log):
+    write_failed16_zip(failed16_log)
+    result = continuation.validate_failed16_archive(failed16_log['path'], failed16_log['jobs'])
+    proof = result['proof']
+    assert result['job_member'] == failed16_log['member'] and result['receipt'] == failed16_log['receipt']
+    offsets = proof['slice_offsets']
+    assert result['slice'] == result['job_member'][offsets['start']:offsets['end_exclusive']]
+    assert result['slice'].endswith(b'##[error]Process completed with exit code 1.\r\n')
+    assert b'upload-artifact' not in result['slice'] and b'passed original build' not in result['slice']
+    assert proof['timestamp_window']['end_exclusive'] == '2026-11-09T15:59:04+00:00'
+    assert proof['raw_run_log_zip']['crc_verified'] and proof['job_id'] == continuation.PRODUCER_JOB
+    assert proof['step_number'] == 16 and proof['producer_head_sha'] == continuation.SOURCE_COMPILE_COMMIT
+    bound = continuation.bind_failed16_qa(result, dict(original_failed_browser16=failed16_log['receipt'], original_failed_browser16_sha256='f' * 64))
+    assert bound == dict(original_QA_receipt_equal=True, original_QA_receipt_file_sha256='f' * 64)
+
+
+@pytest.mark.parametrize('fault', ['missing_member', 'multiple_candidates', 'wrong_step_member', 'traversal', 'symlink',
+                                  'wrong_job', 'wrong_head', 'second_failure', 'passed_gate_skipped', 'wrong_step_name',
+                                  'missing_group', 'multiple_groups', 'missing_exit', 'multiple_exit', 'wrong_script',
+                                  'wrong_profile_error', 'outside_start', 'outside_end', 'outside_receipt_time'])
+def test_raw_failed16_zip_rejects_missing_malicious_ambiguous_or_wrong_step_logs(failed16_log, fault):
+    name = '0_' + continuation.PRODUCER_JOB_NAME + '.txt'
+    member = failed16_log['member']
+    system = (continuation.PRODUCER_JOB_NAME + '/system.txt', b'fixture-system')
+    rows = None
+    if fault == 'missing_member': rows = [system]
+    elif fault == 'multiple_candidates': rows = [(name, member), ('other/' + name, member), system]
+    elif fault == 'wrong_step_member': rows = [('16_' + continuation.STEP_NAMES[16] + '.txt', member), system]
+    elif fault == 'traversal': rows = [(name, member), ('../escape.txt', b'fixture'), system]
+    elif fault == 'symlink':
+        info = zipfile.ZipInfo(name); info.create_system = 3; info.external_attr = 0o120777 << 16
+        rows = [(info, member), system]
+    elif fault == 'wrong_job': failed16_log['jobs']['jobs'][0]['id'] += 1
+    elif fault == 'wrong_head': failed16_log['jobs']['jobs'][0]['head_sha'] = '0' * 40
+    elif fault == 'second_failure': failed16_log['jobs']['jobs'][0]['steps'][16]['conclusion'] = 'failure'
+    elif fault == 'passed_gate_skipped': failed16_log['jobs']['jobs'][0]['steps'][12]['conclusion'] = 'skipped'
+    elif fault == 'wrong_step_name': failed16_log['jobs']['jobs'][0]['steps'][15]['name'] = 'different native stage'
+    elif fault == 'missing_group': member = member.replace(b'##[group]Run $buildReport', b'not-the-group $buildReport')
+    elif fault == 'multiple_groups': member = member + member
+    elif fault == 'missing_exit': member = member.replace(b'##[error]Process completed with exit code 1.', b'exit missing')
+    elif fault == 'multiple_exit': member = member.replace(b'##[error]Process completed with exit code 1.\r\n', b'##[error]Process completed with exit code 1.\r\n2026-11-09T15:59:03.7600000Z ##[error]Process completed with exit code 1.\r\n')
+    elif fault == 'wrong_script': member = member.replace(b'verify_windows_doctor_browser.py', b'verify_wrong_native_controller.py')
+    elif fault == 'wrong_profile_error': member = member.replace(b'Native ST method profile changed', b'different execution error')
+    elif fault == 'outside_start': member = member.replace(b'15:57:29.1224753Z', b'15:57:28.1224753Z')
+    elif fault == 'outside_end': member = member.replace(b'15:59:03.7571873Z', b'15:59:04.7571873Z')
+    elif fault == 'outside_receipt_time': member = member.replace(b'15:57:29.892610+00:00', b'15:57:28.892610+00:00')
+    failed16_log['member'] = member
+    write_failed16_zip(failed16_log, rows)
+    with pytest.raises(ValueError): continuation.validate_failed16_archive(failed16_log['path'], failed16_log['jobs'])
+
+
+def test_raw_failed16_zip_crc_and_independent_original_qa_must_match(failed16_log):
+    write_failed16_zip(failed16_log)
+    result = continuation.validate_failed16_archive(failed16_log['path'], failed16_log['jobs'])
+    different = copy.deepcopy(failed16_log['receipt'])
+    different['checks'][0]['status'] = 'failed'
+    with pytest.raises(ValueError): continuation.bind_failed16_qa(result, dict(original_failed_browser16=different, original_failed_browser16_sha256='f' * 64))
+    raw = failed16_log['path'].read_bytes()
+    failed16_log['path'].write_bytes(raw.replace(b'Native ST method profile changed', b'Native ST method profile changex', 1))
+    with pytest.raises(zipfile.BadZipFile): continuation.validate_failed16_archive(failed16_log['path'], failed16_log['jobs'])

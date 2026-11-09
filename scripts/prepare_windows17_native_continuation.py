@@ -12,7 +12,7 @@ test input. It is not an application release or a user deliverable.
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 from pathlib import Path, PurePosixPath
@@ -31,6 +31,7 @@ REPO = 'xiaozidian/ECG_Software'
 PRODUCER = 42643976501
 SOURCE_COMPILE_COMMIT = 'bdcdf2343a0fb2cecbb157b4a3fba54de6a13333'
 PRODUCER_JOB = 129252134201
+PRODUCER_JOB_NAME = 'Native Windows x64 package and current workstation acceptance'
 WORKFLOW = '.github/workflows/windows-af-multistrip.yml'
 ACCEPTANCE_WORKFLOW = '.github/workflows/windows-af17-native-continuation.yml'
 APP = '0.12.31-af-multistrip.20261109'
@@ -226,6 +227,99 @@ def validate_acceptance(run, commit, run_id):
             'producer_run_id': PRODUCER}
 
 
+def validate_failed16_archive(path, jobs):
+    """Read exact failed16 bytes from the original authenticated run-log ZIP.
+
+    This producer's real archive has a combined job member, not per-step files.
+    Preserve that complete member and an exact byte slice; never reconstruct a
+    log from gh's presentation layer. Metadata times are integral seconds, so
+    the strict time interval includes fractions of the final completed second.
+    """
+    require(jobs['total_count'] == len(jobs['jobs']) == 1, 'Ambiguous producer log job')
+    job = jobs['jobs'][0]
+    require(job['id'] == PRODUCER_JOB and job['run_id'] == PRODUCER and
+            job['head_sha'] == SOURCE_COMPILE_COMMIT and job['run_attempt'] == 1 and
+            job['name'] == PRODUCER_JOB_NAME and job['status'] == 'completed' and job['conclusion'] == 'failure',
+            'Raw log producer/job identity differs')
+    steps = {s['number']: s for s in job['steps']}
+    require(len(steps) == len(job['steps']) and {n for n, s in steps.items() if s['conclusion'] == 'failure'} == {16} and
+            all(steps[n]['conclusion'] == 'success' for n in range(1, 16)) and
+            steps[16]['name'] == STEP_NAMES[16] and steps[16]['status'] == 'completed',
+            'Raw log original unique failed16/passed producer gates differ')
+    step = steps[16]
+    start = datetime.fromisoformat(step['started_at'].replace('Z', '+00:00'))
+    completed = datetime.fromisoformat(step['completed_at'].replace('Z', '+00:00'))
+    require(start.tzinfo is not None and completed.tzinfo is not None and start < completed and
+            start.microsecond == completed.microsecond == 0, 'Unexpected producer step timestamp precision/order')
+    end = completed + timedelta(seconds=1)
+    inventory = validate_zip(path)
+    wanted = '0_' + PRODUCER_JOB_NAME + '.txt'
+    candidates = [n for n in inventory['files'] if PurePosixPath(n).name == wanted]
+    require(candidates == [wanted] and set(inventory['files']) == {wanted, PRODUCER_JOB_NAME + '/system.txt'},
+            'Missing, multiple or wrong original producer job log members')
+    with zipfile.ZipFile(path) as archive:
+        member = archive.read(wanted)
+    pattern = re.compile(rb'^(?:\xef\xbb\xbf)?(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z) (.*?)(?:\r?\n)?$')
+    rows, offset = [], 0
+    for line in member.splitlines(keepends=True):
+        match = pattern.match(line)
+        stamp = match.group(1).decode('ascii') if match else None
+        rows.append({'offset': offset, 'raw': line, 'stamp': stamp,
+                     'time': datetime.fromisoformat(stamp.replace('Z', '+00:00')) if stamp else None,
+                     'body': match.group(2) if match else None})
+        offset += len(line)
+    command = b'##[group]Run $buildReport = Get-Content "$env:RUNNER_TEMP\\doctor-eval\\build-report.json" -Raw | ConvertFrom-Json'
+    groups = [i for i, row in enumerate(rows) if row['body'] == command]
+    require(len(groups) == 1, 'Missing or multiple original browser16 command groups')
+    first = groups[0]
+    following = next((i for i in range(first + 1, len(rows)) if rows[i]['body'] is not None and
+                      rows[i]['body'].startswith(b'##[group]')), len(rows))
+    errors = [i for i in range(first, following) if rows[i]['body'] == b'##[error]Process completed with exit code 1.']
+    require(len(errors) == 1, 'Missing or ambiguous original browser16 exit1')
+    last = errors[0]
+    require(rows[first]['time'].replace(microsecond=0) == start and
+            rows[last]['time'].replace(microsecond=0) == completed and
+            all(row['time'] is not None and start <= row['time'] < end for row in rows[first:last + 1]),
+            'Original browser16 command/error log timestamps are outside the metadata step interval')
+    require(all(not row['raw'].strip() for row in rows[last + 1:following]), 'Unattributed log output after original browser16 exit1')
+    begin, stop = rows[first]['offset'], rows[last]['offset'] + len(rows[last]['raw'])
+    sliced = member[begin:stop]
+    required_commands = [b'python scripts/verify_windows_doctor_browser.py',
+                         b'--package-root "$env:RUNNER_TEMP\\doctor-eval\\verify-package\\' + PACKAGE.encode() + b'"',
+                         b'--software-archive "$env:RUNNER_TEMP\\doctor-eval\\$upgradeArchive"',
+                         b'--output "$env:RUNNER_TEMP\\doctor-eval\\evidence\\browser-validation.json"']
+    require(all(command in sliced for command in required_commands), 'Original browser16 script/input/output command differs')
+    receipts = [row['body'][len(b'DOCTOR_BROWSER_RECEIPT_JSON='):] for row in rows[first:last + 1]
+                if row['body'].startswith(b'DOCTOR_BROWSER_RECEIPT_JSON=')]
+    require(len(receipts) == 1, 'Missing or multiple original browser16 receipt JSON')
+    receipt = loads(receipts[0])
+    require(receipt['status'] == 'failed' and [r['status'] for r in receipt['checks']] == ['passed'] * 3 + ['failed'] and
+            receipt['checks'][-1]['name'] == 'browser-verification-completion' and
+            receipt['checks'][-1]['evidence']['error'] == 'AssertionError: Native ST method profile changed',
+            'Original browser16 profile failure was changed or washed away')
+    for key in ('started_utc', 'completed_utc'):
+        require(start <= datetime.fromisoformat(receipt[key]) < end, 'Original receipt timestamp does not belong to browser16')
+    canonical = hashlib.sha256(json.dumps(receipt, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    proof = {'sha256': hashlib.sha256(sliced).hexdigest(), 'bytes': len(sliced),
+             'producer_run_id': PRODUCER, 'producer_head_sha': SOURCE_COMPILE_COMMIT, 'job_id': PRODUCER_JOB,
+             'step_number': 16, 'step_name': STEP_NAMES[16], 'step_started_at': step['started_at'],
+             'step_completed_at': step['completed_at'],
+             'timestamp_window': {'start_inclusive': start.isoformat(), 'end_exclusive': end.isoformat()},
+             'raw_run_log_zip': {'sha256': inventory['sha256'], 'bytes': inventory['bytes'],
+                                 'crc_verified': True, 'safe_paths_verified': True,
+                                 'endpoint': f'/repos/{REPO}/actions/runs/{PRODUCER}/logs'},
+             'member': {'name': wanted, 'sha256': inventory['files'][wanted]['sha256'], 'bytes': len(member)},
+             'slice_offsets': {'start': begin, 'end_exclusive': stop}, 'browser_receipt_canonical_sha256': canonical}
+    return {'slice': sliced, 'job_member': member, 'receipt': receipt, 'proof': proof}
+
+
+def bind_failed16_qa(failed16, scopes):
+    require(failed16['receipt'] == scopes['original_failed_browser16'],
+            'Original raw browser16 log receipt differs from independent original QA JSON')
+    return {'original_QA_receipt_equal': True,
+            'original_QA_receipt_file_sha256': scopes['original_failed_browser16_sha256']}
+
+
 def junit(path):
     raw = Path(path).read_bytes()
     require(b'<!DOCTYPE' not in raw.upper() and b'<!ENTITY' not in raw.upper(), 'Unsafe JUnit declarations')
@@ -398,13 +492,18 @@ def prepare(output, acceptance_commit, acceptance_run_id):
     acceptance_raw = _api(f'/actions/runs/{acceptance_run_id}')
     (evidence / 'acceptance-run-at-preparation.json').write_bytes(acceptance_raw)
     acceptance = validate_acceptance(loads(acceptance_raw), acceptance_commit, acceptance_run_id)
-    log = _gh(['run', 'view', str(PRODUCER), '--repo', REPO, '--log-failed'])
-    require(log and b'Native ST method profile changed' in log and STEP_NAMES[16].encode() in log,
-            'Missing original failed16 raw log')
+    log_archive = evidence / f'producer-{PRODUCER}-run-logs.zip'
+    log_archive.write_bytes(_api(f'/actions/runs/{PRODUCER}/logs'))
+    failed16 = validate_failed16_archive(log_archive, loads(raw['jobs']))
     log_path = evidence / 'producer-failed-step16-original.log'
-    log_path.write_bytes(log)
-    producer['original_failed16_log'] = {'path': str(log_path), 'sha256': digest(log_path),
-                                        'bytes': len(log), 'origin': 'gh run view --log-failed; exact stdout bytes'}
+    log_path.write_bytes(failed16['slice'])
+    member_path = evidence / f'producer-job-{PRODUCER_JOB}-original.log'
+    member_path.write_bytes(failed16['job_member'])
+    log_proof = failed16['proof']
+    log_proof.update(path=str(log_path), origin='authenticated Actions run-log ZIP; exact original job-member byte slice')
+    log_proof['raw_run_log_zip']['path'] = str(log_archive)
+    log_proof['member']['path'] = str(member_path)
+    producer['original_failed16_log'] = log_proof
     from scripts.verify_public_release import verify
     from scripts.shared_source import snapshot
     production = verify(ROOT)
@@ -443,6 +542,7 @@ def prepare(output, acceptance_commit, acceptance_run_id):
             {p.relative_to(output / 'extracted/qa').as_posix(): digest(p) for p in (output / 'extracted/qa').rglob('*') if p.is_file()},
             'Copying original producer QA changed bytes')
     scopes = validate_qa(original_qa)
+    log_proof.update(bind_failed16_qa(failed16, scopes))
     programs, identities = {}, {}
     for role in ('p01', 'full', 'software'):
         programs[role], identities[role] = verify_program(Path(paths[role]), output / ('unpacked-' + role), role, shared, production)
