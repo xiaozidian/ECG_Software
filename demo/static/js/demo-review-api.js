@@ -281,7 +281,7 @@
 /* Browser-only mathematical review state. No patient, sinus gold standard or clinical certification. */
 globalThis.ECGDemoReviewAPI = (() => {
   const PROFILE = 'fixed-300s-fft-compat-v1', SCOPE = ['case_id','source_digest','data_version','analysis_basis','beat_revision','analysis_revision'], SOURCE=SCOPE.filter(k=>k!=='analysis_revision');
-  const STT_SAVE_KIND='browser-math-content-digest-v1', STT_IDENTITY=['case_id','analysis_basis','analysis_revision','beat_revision'],STT_POLICY='independent_of_AF_AFL_reviews',STT_PROFILE='raw-200hz-fixed16s-st-perbeat-mean-v2';
+  const STT_SAVE_KIND='browser-math-content-digest-v1', STT_IDENTITY=['case_id','analysis_basis','analysis_revision','beat_revision'],STT_POLICY='independent_of_AF_AFL_reviews',STT_PROFILE='raw-200hz-fixed16s-st-perbeat-morphology-v3';
   const clone=value=>JSON.parse(JSON.stringify(value));
   const sorted=value=>Array.isArray(value)?value.map(sorted):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,sorted(value[key])])):value;
   const encode=value=>JSON.stringify(sorted(value));

@@ -103,3 +103,5 @@
 #page-stt[data-stt-hospital].stt-review-layout .stt-review-lead-picker label{display:flex;align-items:center;gap:3px}
 #page-stt[data-stt-hospital].stt-review-layout .stt-review-lead-picker input{min-height:0;height:auto;padding:0}
 #page-stt[data-stt-hospital].stt-review-layout .stt-episode-band{position:absolute;top:0;bottom:0;background:rgba(203,123,28,.09);border-inline:1px solid #cb7b1c;pointer-events:none}
+
+#page-stt[data-stt-hospital].stt-review-layout .stt-finding-picker>div{grid-template-columns:repeat(2,minmax(0,1fr))}

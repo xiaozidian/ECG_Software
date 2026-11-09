@@ -47,39 +47,52 @@
     }
     return hash.map(x=>x.toString(16).padStart(8,'0')).join('');
   }
-  const sttResults=['st_depression','st_elevation','t_change','nonspecific','no_change','artifact','indeterminate'],sttAbnormal=['st_depression','st_elevation','t_change','nonspecific'];
-  function sttResult(d){if(sttResults.includes(d.result_code))return d.result_code;const text=String(d.finding||'');if(text.includes('未见'))return 'no_change';if(text.includes('伪差')||text.includes('体位'))return 'artifact';if(text.includes('无法'))return 'indeterminate';if(text.includes('压低'))return 'st_depression';if(text.includes('抬高'))return 'st_elevation';if(text.includes('T 波')||text.includes('T波')||d.stt_event_evidence?.kind==='t_wave_inversion')return 't_change';return d.status==='confirmed'?'nonspecific':'indeterminate';}
+  const sttSTResults=['st_depression','st_elevation'],sttTResults=['t_change','t_wave_inversion','t_persistent_inversion','t_low_flat','t_biphasic'],sttResults=[...sttSTResults,...sttTResults,'nonspecific','no_change','artifact','indeterminate'],sttAbnormal=[...sttSTResults,...sttTResults,'nonspecific'];
+  function sttFindings(d,first,end,leads){
+    if(d.findings==null)return [{result_code:sttResult(d),leads:[...leads],start_sample:first,end_sample:end}];
+    if(!Array.isArray(d.findings)||!d.findings.length||d.findings.length>48)throw Error('ST-T复核须有1–48项实际结论');
+    const seen=new Set(),result=d.findings.map(child=>{
+      if(!child||typeof child!=='object'||Array.isArray(child)||Object.keys(child).some(k=>!['result_code','leads','start_sample','end_sample'].includes(k)))throw Error('ST-T子项仅接受结论、导联和范围，测量证据由服务器生成');
+      const code=child.result_code,names=child.leads??leads,a=child.start_sample??first,b=child.end_sample??end;
+      if(!sttResults.includes(code))throw Error('ST-T子项结论无效');
+      if(!Array.isArray(names)||!names.length||new Set(names).size!==names.length||names.some(x=>typeof x!=='string'||!leads.includes(x)))throw Error('子项导联须为本次实际复核导联');
+      if(!Number.isSafeInteger(a)||!Number.isSafeInteger(b)||!(first<=a&&a<=b&&b<=end))throw Error('ST-T子项范围须位于完整复核范围内');
+      const key=JSON.stringify([code,[...names].sort(),a,b]);if(seen.has(key))throw Error('ST-T复核子项重复');seen.add(key);return {result_code:code,leads:[...names],start_sample:a,end_sample:b};
+    });if(!result.some(r=>r.result_code===d.result_code))throw Error('主要结论须包含在本次复核子项内');return result;
+  }
+  function sttResult(d){if(sttResults.includes(d.result_code))return d.result_code;const text=String(d.finding||'');if(text.includes('未见'))return 'no_change';if(text.includes('伪差')||text.includes('体位'))return 'artifact';if(text.includes('无法'))return 'indeterminate';if(text.includes('压低'))return 'st_depression';if(text.includes('抬高'))return 'st_elevation';if(text.includes('T 波')||text.includes('T波')||sttTResults.includes(d.stt_event_evidence?.kind))return 't_change';return d.status==='confirmed'?'nonspecific':'indeterminate';}
   function sttProtocol(raw={},extent='point'){
     if(!raw||typeof raw!=='object'||Array.isArray(raw))throw Error('ST-T测量协议须为对象');const ms=raw.measurement_ms??60,mode=raw.extent??extent,baseline=raw.baseline_method??'pre_qrs_stable';
     if(![0,60,80].includes(ms)||!['point','whole'].includes(mode)||!['pre_qrs_stable','manual_iso_point'].includes(baseline))throw Error('ST-T测量协议无效');
-    if((raw.method_version??'stt-hospital-review-v2')!=='stt-hospital-review-v2'||(raw.rhythm_policy??'independent_of_AF_AFL_reviews')!=='independent_of_AF_AFL_reviews')throw Error('ST-T测量方法已变化，请按当前独立分析方法重新核对');
-    return {method_version:'stt-hospital-review-v2',rhythm_policy:'independent_of_AF_AFL_reviews',measurement_ms:ms,extent:mode,baseline_method:baseline,units:'source_device_units',calibration_verified:false};
+    if((raw.method_version??'stt-hospital-review-v3')!=='stt-hospital-review-v3'||(raw.rhythm_policy??'independent_of_AF_AFL_reviews')!=='independent_of_AF_AFL_reviews')throw Error('ST-T测量方法已变化，请按当前独立分析方法重新核对');
+    return {method_version:'stt-hospital-review-v3',rhythm_policy:'independent_of_AF_AFL_reviews',measurement_ms:ms,extent:mode,baseline_method:baseline,units:'source_device_units',calibration_verified:false};
   }
   function sttStoredProtocol(raw){
     if(!raw||typeof raw!=='object'||Array.isArray(raw))return null;
-    try{sttProtocol({...raw,method_version:'stt-hospital-review-v2',rhythm_policy:'independent_of_AF_AFL_reviews'});return structuredClone(raw);}catch{return null;}
+    try{sttProtocol({...raw,method_version:'stt-hospital-review-v3',rhythm_policy:'independent_of_AF_AFL_reviews'});return structuredClone(raw);}catch{return null;}
   }
   function sttCurrentMethod(details){
     const evidence=details.stt_event_evidence||{};
     for(const raw of [details.measurement_protocol,evidence.measurement_protocol])
-      if(raw!=null&&(!sttStoredProtocol(raw)||raw.method_version!=='stt-hospital-review-v2'||raw.rhythm_policy!=='independent_of_AF_AFL_reviews'))return false;
+      if(raw!=null&&(!sttStoredProtocol(raw)||!['stt-hospital-review-v3','stt-hospital-review-v2'].includes(raw.method_version)||raw.rhythm_policy!=='independent_of_AF_AFL_reviews'))return false;
     if(Object.keys(evidence).length&&(evidence.rhythm_policy!=='independent_of_AF_AFL_reviews'||Object.hasOwn(evidence,'rhythm_exclusions_digest')))return false;
     for(const profile of [details.range_statistics?.method_profile,evidence.measurement_protocol?.range_profile])
-      if(profile!=null&&(!profile||typeof profile!=='object'||Array.isArray(profile)||profile.id!=='raw-200hz-fixed16s-st-perbeat-mean-v2'||profile.rhythm_policy!=='independent_of_AF_AFL_reviews'))return false;
+      if(profile!=null&&(!profile||typeof profile!=='object'||Array.isArray(profile)||!['raw-200hz-fixed16s-st-perbeat-morphology-v3','raw-200hz-fixed16s-st-perbeat-mean-v2'].includes(profile.id)||profile.rhythm_policy!=='independent_of_AF_AFL_reviews'))return false;
     return !details.reviewed||!!(details.measurement_protocol&&typeof details.measurement_protocol==='object'&&!Array.isArray(details.measurement_protocol));
   }
   function sttSavedProtocol(details,evidence){
     if(evidence.measurement_protocol&&typeof evidence.measurement_protocol==='object')return sttStoredProtocol(evidence.measurement_protocol);
     if(details.measurement_protocol&&typeof details.measurement_protocol==='object')return sttStoredProtocol(details.measurement_protocol);
     const profile=details.range_statistics?.method_profile;if(!profile||!Number.isInteger(profile.measurement_ms)||![0,60,80].includes(profile.measurement_ms))return null;
-    return {method_version:profile.id??null,measurement_ms:profile.measurement_ms,extent:'whole',baseline_method:['raw-200hz-fixed16s-st-perbeat-mean-v1','raw-200hz-fixed16s-st-perbeat-mean-v2'].includes(profile.id)?'pre_qrs_stable':null,units:profile.units??null,calibration_verified:profile.calibration_verified===true,range_profile:structuredClone(profile)};
+    return {method_version:profile.id??null,measurement_ms:profile.measurement_ms,extent:'whole',baseline_method:['raw-200hz-fixed16s-st-perbeat-mean-v1','raw-200hz-fixed16s-st-perbeat-mean-v2','raw-200hz-fixed16s-st-perbeat-morphology-v3'].includes(profile.id)?'pre_qrs_stable':null,units:profile.units??null,calibration_verified:profile.calibration_verified===true,range_profile:structuredClone(profile)};
   }
   function sttMetadata(a,basis=null){
     const d=a.details||{},code=sttResult(d),explicit=d.reviewed===true,bound=!!(d.review_scope||d.stt_event_evidence?.scope);
     let reviewState=explicit||bound&&['confirmed','excluded'].includes(d.status)?'reviewed':'unreviewed';
     if(reviewState==='reviewed'&&!sttCurrentMethod(d))reviewState='stale';
-    const family=['st_depression','st_elevation'].includes(code)?'ST':code==='t_change'?'T':'NOTE',group=reviewState==='reviewed'&&sttAbnormal.includes(code)&&family!=='NOTE'?family:reviewState==='reviewed'?'ST_NOTE':'pending',first=a.sample_index,end=(d.end_sample??first)+1,evidence=d.stt_event_evidence||{},extent=d.review_extent??(Object.keys(evidence).length?'whole':'point'),eligible=reviewState==='reviewed',table=eligible&&['st_depression','st_elevation','t_change'].includes(code)&&extent==='whole'&&end-first>=12000&&!!Object.keys(evidence).length;
-    return {schema_version:'stt-review-record-v1',record_id:'annotation:'+a.id,event_id:'annotation:'+a.id,annotation_id:a.id,record_version:d.record_version??1,review_state:reviewState,result_code:code,result_kind:family,report_group:group,status:d.status||'pending',review_extent:extent,range:{start_sample:first,end_sample:end,start_s:first/200,end_s:end/200,duration_s:(end-first)/200},basis_version:basis,measurement_protocol:sttSavedProtocol(d,evidence),point_measurement_protocol:sttStoredProtocol(d.measurement_protocol),report_eligibility:{table,text:eligible,strip:eligible},report_use:{table:false,text:false,strip:false},source_scope:structuredClone(d.review_scope||evidence.scope||null),finding:d.finding??a.label??'',note:a.note||'',physician_note:d.physician_note??null,leads:structuredClone(d.review_leads||evidence.leads||(a.lead&&!['全部',''].includes(a.lead)?[a.lead]:[])),legacy:!explicit};
+    const first=a.sample_index,end=(d.end_sample??first)+1,evidence=d.stt_event_evidence||{},leads=d.review_leads||evidence.leads||(a.lead&&!['全部',''].includes(a.lead)?[a.lead]:[]),findings=sttFindings(d,first,end-1,leads),codes=[...new Set(findings.map(row=>row.result_code))];
+    const families=[...new Set(codes.map(c=>sttSTResults.includes(c)?'ST':sttTResults.includes(c)?'T':'NOTE').filter(f=>'NOTE'!==f))],family=families.length>1?'ST_T':families[0]||'NOTE',group=reviewState==='reviewed'&&codes.some(c=>sttAbnormal.includes(c))&&family!=='NOTE'?family:reviewState==='reviewed'?'ST_NOTE':'pending',extent=d.review_extent??(Object.keys(evidence).length?'whole':'point'),eligible=reviewState==='reviewed',proofs=Array.isArray(evidence.findings)?evidence.findings:[evidence],table=eligible&&extent==='whole'&&proofs.some(p=>[...sttSTResults,...sttTResults].includes(p.kind)&&[...sttSTResults,...sttTResults].includes(p.result_code??code)&&(p.end_s??0)-(p.start_s??0)>=60-1e-9);
+    return {schema_version:'stt-review-record-v2',record_id:'annotation:'+a.id,event_id:'annotation:'+a.id,annotation_id:a.id,record_version:d.record_version??1,review_state:reviewState,result_code:code,result_codes:codes,findings:structuredClone(findings),result_kind:family,report_group:group,status:d.status||'pending',review_extent:extent,range:{start_sample:first,end_sample:end,start_s:first/200,end_s:end/200,duration_s:(end-first)/200},basis_version:basis,measurement_protocol:sttSavedProtocol(d,evidence),point_measurement_protocol:sttStoredProtocol(d.measurement_protocol),report_eligibility:{table,text:eligible,strip:eligible},report_use:{table:false,text:false,strip:false},source_scope:structuredClone(d.review_scope||evidence.scope||null),finding:d.finding??a.label??'',note:a.note||'',physician_note:d.physician_note??null,leads:structuredClone(leads),legacy:!explicit};
   }
   function sttDecorate(event,a,beatVersion){
     const d=a.details||{},scope=d.review_scope||d.stt_event_evidence?.scope||{},material=structuredClone([a.id,a.sample_index,d,a.lead||'',a.note||'',a.label||'']);
@@ -87,7 +100,7 @@
     if(material[2].stt_event_evidence?.scope)delete material[2].stt_event_evidence.scope.analysis_revision;
     const basis=beatVersion+'-stt-record-v1-'+sttDigest(material).slice(0,24),receipt=sttMetadata(a,basis);
     if(Array.isArray(d.withdrawn_report_settings)&&d.withdrawn_report_settings.length)event.retained_settings=structuredClone(d.withdrawn_report_settings[0]);
-    return Object.assign(event,{basis_version:basis,stt_review_state:receipt.review_state,stt_result_code:receipt.result_code,stt_result_kind:receipt.result_kind,stt_report_group:receipt.report_group,stt_record_version:receipt.record_version,stt_report_eligibility:receipt.report_eligibility,stt_review_receipt:receipt,stt_source_scope:scope,stt_continuous:receipt.report_eligibility.table,stt_physician_note:d.physician_note??a.note??'',diagnosis_status:receipt.review_state==='reviewed'&&sttAbnormal.includes(receipt.result_code)?'confirmed':'pending'});
+    return Object.assign(event,{basis_version:basis,stt_review_state:receipt.review_state,stt_result_code:receipt.result_code,stt_result_kind:receipt.result_kind,stt_report_group:receipt.report_group,stt_record_version:receipt.record_version,stt_report_eligibility:receipt.report_eligibility,stt_review_receipt:receipt,stt_source_scope:scope,stt_continuous:receipt.report_eligibility.table,stt_physician_note:d.physician_note??a.note??'',diagnosis_status:receipt.review_state==='reviewed'&&receipt.result_codes.some(code=>sttAbnormal.includes(code))?'confirmed':'pending'});
   }
   function sttMarkStale(event){Object.assign(event,{diagnosis_status:'pending',stt_evidence_stale:true,stt_review_state:'stale',stt_report_group:'pending',stt_report_eligibility:{table:false,text:false,strip:false}});Object.assign(event.stt_review_receipt,{review_state:'stale',report_group:'pending',report_eligibility:event.stt_report_eligibility});return event;}
   function sttNormalizedUses(raw){if(!Array.isArray(raw)||raw.length>2000)throw Error('ST-T报告用途须为记录列表');const seen=new Set();return raw.map(row=>{if(!row||!['event_id','basis_version'].every(k=>typeof row[k]==='string'&&row[k])||['table','text','strip'].some(k=>k in row&&typeof row[k]!=='boolean')||seen.has(row.event_id))throw Error('ST-T报告用途字段无效或重复');seen.add(row.event_id);return {event_id:row.event_id,basis_version:row.basis_version,table:row.table??false,text:row.text??false,strip:row.strip??false};});}
@@ -181,7 +194,7 @@
     const rrAliasGroups=new Map(rrGroups.flatMap(e=>e.rr_alias_event_ids.map(id=>[id,e])));
     if(!occurrences&&!ids&&category==='rr_interval')items=rrGroups.filter(e=>rrSource==='all'||e.rr_sources.includes(rrSource));
     else if(!occurrences)items=items.map(e=>{const group=rrAliasGroups.get(e.event_id);return group?{...e,rr_semantic_key:group.rr_semantic_key,rr_alias_event_ids:group.rr_alias_event_ids,rr_aliases:group.rr_aliases,rr_sources:group.rr_sources}:e;});
-    const stt_group=params.stt_group||'all';if(!['all','ST','T','ST_NOTE','pending'].includes(stt_group))throw Error('ST-T复核分组无效');const stt_counts=Object.fromEntries(['ST','T','ST_NOTE','pending'].map(key=>[key,index.events.filter(e=>e.category==='ST'&&e.stt_report_group===key).length]));if(category==='ST'&&!ids&&stt_group!=='all')items=items.filter(e=>e.stt_report_group===stt_group);
+    const stt_group=params.stt_group||'all';if(!['all','ST','T','ST_T','ST_NOTE','pending'].includes(stt_group))throw Error('ST-T复核分组无效');const stt_counts=Object.fromEntries(['ST','T','ST_T','ST_NOTE','pending'].map(key=>[key,index.events.filter(e=>e.category==='ST'&&(e.stt_report_group===key||['ST','T'].includes(key)&&e.stt_report_group==='ST_T')).length]));if(category==='ST'&&!ids&&stt_group!=='all')items=items.filter(e=>e.stt_report_group===stt_group||['ST','T'].includes(stt_group)&&e.stt_report_group==='ST_T');
     const pause_band=params.pause_band||'all';
     if(!['all','over3','2.5to3','b0','b1','b2'].includes(pause_band))throw Error('无效的长 RR 筛选范围');
     const pauses=index.events.filter(e=>e.category==='pause'),pause_counts={all:pauses.length,over3:pauses.filter(e=>e.rr_ms>3000).length,'2.5to3':pauses.filter(e=>e.rr_ms<=3000).length};
@@ -255,7 +268,7 @@
   function normalizeReportSelections(index,entries){
     const engine=globalThis.ECGReportEngine||(typeof require==='function'?require('./report-engine.js'):null),lookup=new Map(index.events.map(e=>[e.event_id,e])),seen=new Set(),ids=new Map();
     const identified=entries.filter(s=>{engine.stripIdentity(s);const key=engine.stripKey(s);if(ids.has(key)){if(ids.get(key)!==s.event_id)throw Error('图条标识不能用于不同事件');return false;}ids.set(key,s.event_id);return true;});
-    return normalizeRRSelections(index,identified).filter(s=>{const e=lookup.get(s.event_id);let key='event|'+s.event_id;if(e?.category==='AF'){if(e.basis_version!==s.basis_version)return true;let range;try{range=engine.resolve(index,e,s);}catch(_){return true;}key=['af',e.event_id,e.basis_version,Math.round(range.start_s*200),Math.round(range.end_s*200)].join('|');}if(seen.has(key))return false;seen.add(key);return true;});
+    return normalizeRRSelections(index,identified).filter(s=>{const e=lookup.get(s.event_id);let key='event|'+s.event_id;if(['AF','ST'].includes(e?.category)){if(e.basis_version!==s.basis_version)return true;let range;try{range=engine.resolve(index,e,s);}catch(_){return true;}key=['af',e.event_id,e.basis_version,Math.round(range.start_s*200),Math.round(range.end_s*200)].join('|');}if(seen.has(key))return false;seen.add(key);return true;});
   }
   function validateReport(index,composition,review,approving=false){
     if('include_hrv' in composition&&typeof composition.include_hrv!=='boolean')throw Error('HRV 入报选项须为布尔值');
@@ -267,5 +280,5 @@
     if(approving&&(composition.diagnosis_blocks||[]).some(b=>b.needs_review))throw Error('请核对保留的人工诊断文字');
     return selected;
   }
-  const api={sttDigest,sttCanonical,sttResult,sttProtocol,sttStoredProtocol,sttCurrentMethod,sttSavedProtocol,sttMetadata,sttDecorate,sttMarkStale,sttNormalizedUses,sttUseFor,categories,reportCategories,rrIntervalGroups,normalizeRRSelections,normalizeReportSelections,patterns,buildIndex,queryIndex,hrvWindows,validateReport,fingerprint,evidenceSelection,evidenceConfirmed,reportUsed};globalThis.ECGClinicalAnalysis=api;if(typeof module!=='undefined')module.exports=api;
+  const api={sttFindings,sttResults,sttAbnormal,sttDigest,sttCanonical,sttResult,sttProtocol,sttStoredProtocol,sttCurrentMethod,sttSavedProtocol,sttMetadata,sttDecorate,sttMarkStale,sttNormalizedUses,sttUseFor,categories,reportCategories,rrIntervalGroups,normalizeRRSelections,normalizeReportSelections,patterns,buildIndex,queryIndex,hrvWindows,validateReport,fingerprint,evidenceSelection,evidenceConfirmed,reportUsed};globalThis.ECGClinicalAnalysis=api;if(typeof module!=='undefined')module.exports=api;
 })();

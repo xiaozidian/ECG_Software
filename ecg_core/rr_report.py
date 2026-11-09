@@ -61,14 +61,14 @@ def deduplicate_rr_selections(index, entries):
         group = groups.get(entry.get('event_id'))
         current = event and event['basis_version'] == entry.get('basis_version')
         key = group['rr_semantic_key'] if group and current else None
-        if current and event.get('category') == 'AF':
+        if current and event.get('category') in ('AF','ST'):
             try:
                 spec = resolve_strip(index,event,entry)
-                key = ('af-strip',event['event_id'],event['basis_version'],round(spec['start_s']*200),round(spec['end_s']*200))
+                key = ('af-strip' if event['category']=='AF' else 'stt-strip',event['event_id'],event['basis_version'],round(spec['start_s']*200),round(spec['end_s']*200))
             except ValueError:
                 # Invalid/stale geometry stays visible for existing recovery.
                 key = None
-        elif event and event.get('category') != 'AF' and not key:
+        elif event and event.get('category') not in ('AF','ST') and not key:
             key = ('event',event['event_id'])
         if key and key in seen:
             merged.append(entry['event_id'])

@@ -614,7 +614,7 @@ class Storage(ReviewWorkflowMixin, EvidenceCandidateMixin, ReportEvidenceMixin):
                         request_sha256, annotation_id=None, expected_record_version=None):
         """One UUID intent, record mutation, report withdrawal and audit transaction."""
         from uuid import UUID
-        from .stt_records import RESULTS, protocol, status_for
+        from .stt_records import RESULTS, protocol, status_for, normalized_findings, ABNORMAL
         from .report_layout import LEADS
         d=dict(payload.get('details') or {})
         identifier=d.get('submission_id')
@@ -627,7 +627,9 @@ class Storage(ReviewWorkflowMixin, EvidenceCandidateMixin, ReportEvidenceMixin):
         if not isinstance(leads,list) or not leads or len(set(leads))!=len(leads) or any(x not in LEADS for x in leads):raise ValueError('请选择实际复核的有效导联')
         d['measurement_protocol']=protocol(d.get('measurement_protocol'))
         if d.get('review_extent','point') not in ('point','whole'):raise ValueError('复核范围类型无效')
-        d['status']=status_for(d['result_code']);d['finding']=str(d.get('finding',payload.get('label','')))[:120]
+        findings=normalized_findings(d,first,end,leads)
+        if 'findings' in d:d['findings']=findings
+        d['status']='confirmed' if any(r['result_code'] in ABNORMAL for r in findings) else status_for(d['result_code']);d['finding']=str(d.get('finding',payload.get('label','')))[:120]
         for name,limit in (('label',120),('note',2000),('lead',16),('category',32)):
             if not isinstance(payload.get(name,''),str) or len(payload.get(name,''))>limit:raise ValueError('ST-T 复核文字无效或过长')
         if payload.get('lead','') not in ('','全部',*LEADS):raise ValueError('ST-T 导联无效')

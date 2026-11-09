@@ -956,7 +956,7 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
             event = next((e for e in index['events'] if e['event_id'] == request.args.get('event_id')), None)
             if not event or event['basis_version'] != request.args.get('basis_version'):
                 raise ReportConflict('图条依据已变化，请重新选择事件')
-            settings = {'leads': _waveform_leads_arg(),
+            settings = {'leads': list(ALL_LEADS) if event.get('category')=='ST' and 'leads' not in request.args else _waveform_leads_arg(),
                         'duration_s': _number_arg('duration', 7, float, 1, 120)}
             if 'range_start_s' in request.args or 'range_end_s' in request.args:
                 for name in ('range_start_s','range_end_s'):
@@ -983,6 +983,22 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
             if not event or event.get('category')!='AF' or ('basis_version' in request.args and request.args['basis_version']!=event['basis_version']):
                 raise ReportConflict('房颤／房扑片段依据已变化，请重新选择')
             return {**af_representatives(index,event,dict(leads=_waveform_leads_arg(),
+                duration_s=strict_query_number('duration',7,1,120))), 'event_id':event['event_id'],
+                'basis_version':event['basis_version']}
+        result=clinical_projection(case,project)
+        linked_read_identity(case,identity)
+        return jsonify(**result,**identity)
+
+    @app.get('/api/cases/<case_id>/report-stt-representatives')
+    def report_stt_representatives(case_id):
+        from ecg_core.report_layout import stt_representatives
+        case=case_or_404(case_id)
+        identity=linked_query_identity(case)
+        def project(index):
+            event=next((e for e in index['events'] if e['event_id']==request.args.get('event_id')),None)
+            if not event or event.get('category')!='ST' or ('basis_version' in request.args and request.args['basis_version']!=event['basis_version']):
+                raise ReportConflict('ST-T复核范围依据已变化，请重新选择')
+            return {**stt_representatives(index,event,dict(leads=_waveform_leads_arg() if 'leads' in request.args else list(ALL_LEADS),
                 duration_s=strict_query_number('duration',7,1,120))), 'event_id':event['event_id'],
                 'basis_version':event['basis_version']}
         result=clinical_projection(case,project)
@@ -1043,6 +1059,18 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
                 value=row[field],units='source_device_units',metric='st_level',measurement_protocol=row['measurement_protocol'],
                 reference_method='nearest_valid_beat_to_event_mean_st_level' if role=='reference' else None,waveform=wave))
         value['st_representatives']=roles
+        t_roles=[]
+        for role,kind,label in [('t_inversion','t_persistent_inversion','持续倒置最负T实际搏'),
+                ('t_low','t_low_flat','低平T最小幅度实际搏'),('t_dynamic','t_wave_inversion','动态T极值实际搏')]:
+            usable=[r for r in value['t_events'] if r['kind']==kind and type(r.get('extreme_t_sample')) is int and isinstance(r.get('extreme_t_amplitude_units'),(int,float))]
+            if not usable:continue
+            row=min(usable,key=lambda r:r['extreme_t_amplitude_units']) if kind in ('t_persistent_inversion','t_low_flat') else max(usable,key=lambda r:abs(r['extreme_t_amplitude_units']))
+            at=row['extreme_t_sample']/200;start=max(0,at-.25);end=min(case['technical']['duration_seconds_raw'],at+.65)
+            t_roles.append(dict(role=role,label=label,lead=row['lead'],sample_index=row['extreme_t_sample'],time_s=at,
+                event_id=row['event_id'],basis_version=row['basis_version'],value=row['extreme_t_amplitude_units'],
+                units='source_device_units',metric='t_amplitude_units',measurement_protocol=row['measurement_protocol'],
+                waveform=read_event_waveform(case['paths']['data'],start,end,[row['lead']],600)))
+        value['t_representatives']=t_roles
         return value
 
     @app.get("/api/cases/<case_id>/report-sections")
@@ -1848,7 +1876,7 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         return items
 
     def save_stt_annotation(case,payload,annotation_id=None):
-        from ecg_core.stt_records import digest,protocol,RESULTS
+        from ecg_core.stt_records import digest,protocol,RESULTS,normalized_findings
         from ecg_core.stt import LEADS
         from uuid import UUID
         details=payload.get('details')
@@ -1893,26 +1921,59 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
             window_start=point_measurement.get('window_start_s');window_duration=point_measurement.get('window_duration_s')
             if any(type(x) not in (int,float) or not math.isfinite(x) for x in (window_start,window_duration)) or not 0<=window_start<window_start+window_duration<=case['technical']['duration_seconds_raw']+1e-8:raise ValueError('ST-T点测量窗口无效')
             if not window_start*200-1<=point_measurement['iso_sample']<point_measurement['measurement_sample']<=(window_start+window_duration)*200+1:raise ValueError('ST-T点测量位置不在显示窗口内')
+        findings=normalized_findings(details,first,end,leads)
+        if 'findings' in details:details['findings']=findings
         extent=details.get('review_extent','point')
         if extent not in ('point','whole'):raise ValueError('ST-T复核作用范围无效')
         if extent=='whole':
             machine_protocol=protocol(dict(measurement_ms=details['measurement_protocol']['measurement_ms'] if details['measurement_protocol']['extent']=='whole' else 60,extent='whole'))
-            kind={'st_depression':'st_depression','st_elevation':'st_elevation','t_change':'t_wave_inversion'}.get(details['result_code'],(chosen or {}).get('kind','stt_review'))
-            exact=chosen is not None and first==round(chosen['start_s']*200) and end+1==round(chosen['end_s']*200) and set(leads)<=set(chosen['leads'])
-            proof={k:chosen[k] for k in ('continuous_target_s','peak_time_s','peak_deviation_units','quality_score') if exact and k in chosen} if chosen else {}
-            proof.update(kind=kind,start_s=first/200,end_s=(end+1)/200,duration_s=(end+1-first)/200,leads=leads,
-                measurement_protocol=machine_protocol,scope=identity,units='source_device_units',
-                source='reviewed_automatic_candidate' if exact else 'physician_selected_range',
-                original_machine_range={k:chosen[k] for k in ('start_s','end_s')} if chosen else None)
-            from ecg_core.stt_records import RHYTHM_POLICY
-            proof['rhythm_policy']=RHYTHM_POLICY
-            if chosen:proof['candidate_id']=chosen['id']
-            if end+1-first>=12000:
-                statistics=stt_range_result(case,dict(scope=identity,start_sample=first,end_sample=end+1,leads=leads,measurement_ms=machine_protocol['measurement_ms']))
-                proof['metrics']=statistics['leads'];proof['coverage']=statistics['coverage'];proof['counts']=statistics['counts']
-                proof['measurement_protocol']['range_profile']=statistics['method_profile']
-            proof['boundary_resolution_s']=16 if exact else .005
-            proof['continuous_target_s']=proof.get('continuous_target_s')
+            from ecg_core.stt_records import RHYTHM_POLICY,ST_RESULTS,T_RESULTS
+            cached_statistics={}
+            def whole_statistics(a,b,names):
+                key=(a,b,tuple(names))
+                if key not in cached_statistics:
+                    cached_statistics[key]=stt_range_result(case,dict(scope=identity,start_sample=a,end_sample=b+1,leads=names,measurement_ms=machine_protocol['measurement_ms']))
+                return cached_statistics[key]
+            child_proofs=[]
+            for finding in findings:
+                code=finding['result_code'];a,b=finding['start_sample'],finding['end_sample'];names=finding['leads']
+                kind=code if code in (*ST_RESULTS,*T_RESULTS) else 'stt_review'
+                exact=(chosen is not None and chosen['kind']==kind and a==round(chosen['start_s']*200)
+                       and b+1==round(chosen['end_s']*200) and set(names)<=set(chosen['leads']))
+                proof={k:chosen[k] for k in ('continuous_target_s','peak_time_s','peak_deviation_units','quality_score',
+                    'criteria','measurement_basis','reference_source','quality_flags','boundary_resolution_s','reference_context',
+                    'peak_st_level_units','peak_t_amplitude_units','polarity_from','polarity_to') if exact and k in chosen} if chosen else {}
+                proof.update(kind=kind,result_code=code,start_s=a/200,end_s=(b+1)/200,duration_s=(b+1-a)/200,leads=list(names),
+                    measurement_protocol=copy.deepcopy(machine_protocol),units='source_device_units',rhythm_policy=RHYTHM_POLICY,
+                    source='reviewed_automatic_candidate' if exact else 'physician_selected_range',
+                    original_machine_range={k:chosen[k] for k in ('start_s','end_s')} if chosen else None)
+                if chosen:proof['candidate_id']=chosen['id']
+                if b+1-a>=12000:
+                    statistics=whole_statistics(a,b,names)
+                    proof['metrics']=statistics['leads'];proof['coverage']=statistics['coverage'];proof['counts']=statistics['counts']
+                    proof['measurement_protocol']['range_profile']=statistics['method_profile']
+                    # Real source anchors, separate from the physician's full event range.
+                    extrema=('minimum_absolute_t_units','minimum_absolute_t_sample') if kind=='t_low_flat' else ('minimum_t_amplitude_units','minimum_t_sample') if kind=='t_persistent_inversion' else None
+                    if extrema and not exact:
+                        usable=[m for m in statistics['leads'] if isinstance(m.get(extrema[0]),(int,float)) and type(m.get(extrema[1])) is int]
+                        if usable:
+                            extreme=min(usable,key=lambda m:m[extrema[0]])
+                            proof['peak_time_s']=extreme[extrema[1]]/200
+                proof.setdefault('boundary_resolution_s',.005 if not exact else chosen.get('boundary_resolution_s'))
+                proof.setdefault('continuous_target_s',None)
+                child_proofs.append(proof)
+            # Keep the familiar flat proof for one finding. Composite records own
+            # independent child ranges without multiplying their report identity.
+            if len(child_proofs)==1:
+                proof=child_proofs[0]
+            else:
+                proof=dict(kind='stt_composite',start_s=first/200,end_s=(end+1)/200,duration_s=(end+1-first)/200,
+                    leads=list(leads),measurement_protocol=machine_protocol,units='source_device_units',rhythm_policy=RHYTHM_POLICY,
+                    source='physician_selected_range',findings=child_proofs)
+                timed=[r for r in child_proofs if isinstance(r.get('peak_time_s'),(int,float))]
+                if timed:proof['peak_time_s']=timed[0]['peak_time_s']
+            proof['scope']=identity
+            if chosen:proof['algorithm_version']=measured['analysis']['algorithm_version']
             details['stt_event_evidence']=proof
         item=storage.save_stt_record(case['case_id'],payload,ACTOR,guard=candidate_guard(case,identity),replay_guard=source_guard,
             request_sha256=request_hash,annotation_id=annotation_id,expected_record_version=payload.get('expected_record_version'))
@@ -1959,6 +2020,8 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
             details['stt_event_evidence']={**{key:candidate[key] for key in ('kind','start_s','end_s','duration_s','continuous_target_s','peak_time_s','peak_deviation_units','leads','quality_score')},
                 'candidate_id':candidate['id'],'algorithm_version':measured['analysis']['algorithm_version'],
                 'measurement_protocol':protocol(dict(extent='whole')),'rhythm_policy':RHYTHM_POLICY,
+                'boundary_resolution_s':candidate.get('boundary_resolution_s'),
+                **{key:candidate[key] for key in ('criteria','measurement_basis','reference_source','quality_flags','peak_st_level_units','peak_t_amplitude_units','polarity_from','polarity_to') if key in candidate},
                 'scope':candidate_identity,'source':'reviewed_automatic_candidate','units':'source_device_units'}
         if statistics is not None:
             if details.get('kind') != 'ST': raise ValueError('ST 区间统计不能用于其他标注类型')
@@ -2038,8 +2101,16 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
             raise ValueError("conclusion 和 status 必须为文本")
         if composition is not None and not isinstance(composition, dict):
             raise ValueError("composition 必须为 JSON 对象")
-        composition=normalize_report_composition(composition if composition is not None else storage.get_report(case_id, "")["composition"])
         index = clinical_index(case_or_404(case_id))
+        raw_composition=copy.deepcopy(composition if composition is not None else storage.get_report(case_id, "")["composition"])
+        # Only newly supplied settings without leads receive the ST/T default.
+        # Existing 1/3/12-lead curation is explicit and remains unchanged.
+        if isinstance(raw_composition.get('selected_events'),list):
+            st_ids={e['event_id'] for e in index['events'] if e.get('category')=='ST'}
+            for selection in raw_composition['selected_events']:
+                if isinstance(selection,dict) and selection.get('event_id') in st_ids and 'leads' not in selection:
+                    selection['leads']=list(ALL_LEADS)
+        composition=normalize_report_composition(raw_composition)
         composition['selected_events'], merged_rr = deduplicate_rr_selections(index, composition.get('selected_events', []))
         validate_report(index,composition,progress,status=="reviewed")
         if composition.get('include_hrv') or any(k.startswith('hrv_') for k in composition.get('included_pages',[])):

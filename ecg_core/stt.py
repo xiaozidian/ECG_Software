@@ -24,7 +24,7 @@ from .config import CHANNEL_COUNT, SAMPLE_RATE
 from .source_identity import require_waveform_file, source_read
 from .stt_records import RHYTHM_POLICY
 
-ALGORITHM_VERSION = "stt-screening-0.3.2-independent-rhythm"
+ALGORITHM_VERSION = "stt-screening-0.4.0-comprehensive-independent"
 LEADS = ("I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6")
 _FRAME = struct.Struct("<8h")
 _CACHE: OrderedDict[tuple, dict] = OrderedDict()
@@ -42,8 +42,23 @@ DEFAULT_CONFIG = {
     "reference_window_minutes": 20,
     "axis_shift_qrs_fraction": 0.35,
     "t_inversion_minimum_units": 75.0,
+    "t_low_maximum_units": 50.0,
+    "t_low_r_ratio": 0.10,
+    "t_low_minimum_r_units": 200.0,
+    "t_biphasic_minimum_units": 50.0,
+    "t_noise_multiplier": 3.0,
+    "stable_reference_minimum_s": 60.0,
     "maximum_trend_points_per_lead": 720,
 }
+
+# These are description contexts, not an inferred diagnosis. In particular a
+# continuously negative aVR is not called an inverted T merely for its sign.
+T_UPRIGHT_LEADS = frozenset(("I", "II", "V3", "V4", "V5", "V6"))
+T_VARIABLE_LEADS = frozenset(("III", "aVL", "aVF", "V1", "V2"))
+
+
+def t_polarity_context(lead):
+    return 'expected_negative' if lead == 'aVR' else 'variable' if lead in T_VARIABLE_LEADS else 'expected_upright'
 
 _ST_T_TERM = re.compile(
     r"(?:(?<![A-Za-z])S\s*[-–—－]?\s*T(?:\s*[-–—－]?\s*T)?(?![A-Za-z])"
@@ -152,68 +167,122 @@ def _sample_frames(buffer, beats, offsets, total_samples):
                      *[channels[..., i] for i in range(2, 8)]), axis=-1)
 
 
-def _block_measurement(buffer, beats, all_count, total_samples, config, *, normal_count=None) -> dict:
-    j_sample, landmark_confidence = _estimate_j_sample(buffer, beats, total_samples)
-    st_offset = j_sample + round(config["st_measurement_ms"] * SAMPLE_RATE / 1000)
-    values = {lead: {key: [] for key in ("baseline", "st", "t", "qrs", "span")} for lead in LEADS}
-    if beats:
-        base_frames = _sample_frames(buffer, beats, range(-40, -23, 4), total_samples)
-        baseline = np.median(base_frames, axis=1)
-        st = np.median(_sample_frames(buffer, beats, range(st_offset-2, st_offset+3), total_samples), axis=1) - baseline
-        qrs_frames = _sample_frames(buffer, beats, range(-8, j_sample+1, 2), total_samples)
-        qrs = np.max(qrs_frames, axis=1) - np.min(qrs_frames, axis=1)
-        span = np.max(base_frames, axis=1) - np.min(base_frames, axis=1)
-        # RR-dependent T endpoints remain per beat. argmax preserves the first
-        # maximum of equal magnitudes, as Python's max(key=abs) did.
-        t = []
-        for index, beat in enumerate(beats):
-            rr_samples = max(round(beat[2] * SAMPLE_RATE / 1000), round(0.45 * SAMPLE_RATE))
-            last = min(j_sample+72, max(j_sample+30, round(rr_samples * 0.62)))
-            frames = _sample_frames(buffer, [beat], range(j_sample+24, last+1, 2), total_samples)[0] - baseline[index]
-            t.append(frames[np.argmax(np.abs(frames), axis=0), np.arange(len(LEADS))])
-        arrays = {'baseline':baseline, 'st':st, 't':np.array(t), 'qrs':qrs, 'span':span}
-        for index, lead in enumerate(LEADS):
-            values[lead] = {key:array[:, index].tolist() for key,array in arrays.items()}
+def _beat_measurements(buffer, beats, total_samples, config, *, j_sample=None, next_samples=None, morphology=True):
+    """Raw per-beat observations; no average can cancel a biphasic T.
 
+    The short J estimation block is not the event support. All qualified beats
+    can be measured using this bounded vectorized batch. next_samples, when
+    supplied, are real next R anchors, not neighbours rebuilt after exclusion.
+    """
+    if not beats:
+        return {}
+    if j_sample is None:
+        j_sample, _ = _estimate_j_sample(buffer, beats, total_samples)
+    base_frames = _sample_frames(buffer, beats, range(-40, -23, 4), total_samples)
+    baseline = np.median(base_frames, axis=1)
+    st_offset = j_sample + round(config["st_measurement_ms"] * SAMPLE_RATE / 1000)
+    st = np.median(_sample_frames(buffer, beats, range(st_offset-2, st_offset+3), total_samples), axis=1)-baseline
+    qrs_frames = _sample_frames(buffer, beats, range(-8, j_sample+1, 2), total_samples)
+    qrs_relative = qrs_frames-baseline[:, None, :]
+    qrs = np.max(qrs_frames, axis=1)-np.min(qrs_frames, axis=1)
+    r = np.maximum(0., np.max(qrs_relative, axis=1))
+    span = np.max(base_frames, axis=1)-np.min(base_frames, axis=1)
+    dense_baseline=_sample_frames(buffer,beats,range(-40,-23),total_samples)
+    noise = np.maximum(1.,np.maximum(
+        1.4826*np.median(np.abs(dense_baseline-baseline[:, None, :]),axis=1),
+        np.median(np.abs(np.diff(dense_baseline,axis=1)),axis=1)/math.sqrt(2)))
+    st_j = np.median(_sample_frames(buffer, beats, range(j_sample-2, j_sample+3), total_samples), axis=1)-baseline
+    st_80 = np.median(_sample_frames(buffer, beats, range(j_sample+14, j_sample+19), total_samples), axis=1)-baseline
+    # The exact same candidate T search as before, with an additional real-next
+    # QRS guard. Preserve both extrema instead of treating signed cancellation
+    # or a negative-dominant biphasic wave as an absent/flat T.
+    offsets = np.arange(j_sample+24, j_sample+73, 2)
+    rr = np.maximum(np.array([b[2] for b in beats])*SAMPLE_RATE/1000, .45*SAMPLE_RATE)
+    last = np.minimum(j_sample+72, np.maximum(j_sample+30, np.rint(rr*.62))).astype(int)
+    if next_samples is not None:
+        last = np.minimum(last, np.array(next_samples, dtype=int)-np.array([b[0] for b in beats])-8)
+    allowed = offsets[None, :] <= last[:, None]
+    t_frames = _sample_frames(buffer, beats, offsets, total_samples)-baseline[:, None, :]
+    # A flat ST plateau at the beginning of this window is not a negative or
+    # positive T lobe. Require a lobe to rise/fall and recover on both sides,
+    # either across the entire T window or in a bounded 50ms neighbourhood.
+    # Keep signed amplitudes relative to ISO; prominence only establishes that
+    # an interior extremum is measurable, not a new voltage baseline.
+    last_indices=np.maximum(0,np.count_nonzero(allowed,axis=1)-1)
+    first=t_frames[:,0,:]
+    final=t_frames[np.arange(len(beats)),last_indices,:]
+    floor=np.maximum(2.,config['t_noise_multiplier']*noise)
+    pos_candidates=[];neg_candidates=[]
+    for k in range(len(offsets)) if morphology else ():
+        value=t_frames[:,k,:]
+        left=t_frames[:,max(0,k-5):k,:]
+        right=t_frames[:,k+1:min(len(offsets),k+6),:]
+        left_min=np.min(left,axis=1) if k else value
+        left_max=np.max(left,axis=1) if k else value
+        if right.shape[1]:
+            right_allowed=allowed[:,k+1:min(len(offsets),k+6),None]
+            right_min=np.min(np.where(right_allowed,right,np.inf),axis=1)
+            right_max=np.max(np.where(right_allowed,right,-np.inf),axis=1)
+        else:right_min=right_max=value
+        positive_prominence=np.maximum(value-np.maximum(first,final),value-np.maximum(left_min,right_min))
+        negative_prominence=np.maximum(np.minimum(first,final)-value,np.minimum(left_max,right_max)-value)
+        pos_candidates.append(np.where(allowed[:,k,None]&(positive_prominence>=floor),np.maximum(value,0.),0.))
+        neg_candidates.append(np.where(allowed[:,k,None]&(negative_prominence>=floor),np.minimum(value,0.),0.))
+    pos_frames=np.stack(pos_candidates,axis=1) if morphology else np.where(allowed[:,:,None],np.maximum(t_frames,0.),0.)
+    neg_frames=np.stack(neg_candidates,axis=1) if morphology else np.where(allowed[:,:,None],np.minimum(t_frames,0.),0.)
+    positive=np.max(pos_frames,axis=1);negative=np.min(neg_frames,axis=1)
+    pos_index=np.argmax(pos_frames,axis=1);neg_index=np.argmin(neg_frames,axis=1)
+    dominant=np.where((positive>-negative)|((positive==-negative)&(pos_index<=neg_index)),positive,negative)
+    raw_peak=np.max(np.where(allowed[:,:,None],np.abs(t_frames),0.),axis=1)
+    unresolved=(positive==0)&(negative==0)&(raw_peak>config['t_low_maximum_units'])
+    measurable = np.count_nonzero(allowed, axis=1) >= 3
+    dominant[~measurable] = np.nan; positive[~measurable] = np.nan; negative[~measurable] = np.nan
+    shape_measurable=measurable[:,None]&~unresolved
+    dominant[~shape_measurable]=np.nan;positive[~shape_measurable]=np.nan;negative[~shape_measurable]=np.nan
+    return dict(baseline=baseline, st=st, st_j=st_j, st_80=st_80,
+                st_slope=(st_80-st_j)/.08, t=dominant, t_positive=positive,
+                t_negative=negative, t_peak_to_peak=positive-negative, r=r,
+                t_to_r=np.divide(np.maximum(positive,-negative),r,out=np.full_like(r,np.nan),where=r>0),
+                noise=noise,qrs=qrs,span=span,t_measurable=measurable,t_shape_measurable=shape_measurable,
+                t_window_end_offset=last,source_clipped=np.any((qrs_frames>=32767)|(qrs_frames<=-32768),axis=1))
+
+
+def _block_measurement(buffer, beats, all_count, total_samples, config, *, normal_count=None, include_morphology=True) -> dict:
+    j_sample, landmark_confidence = _estimate_j_sample(buffer, beats, total_samples)
+    arrays = _beat_measurements(buffer, beats, total_samples, config, j_sample=j_sample,morphology=include_morphology)
     lead_values, lead_scores = {}, []
-    for lead, lead_data in values.items():
-        qrs = _median(lead_data["qrs"])
-        baseline_variation = _mad(lead_data["baseline"]) + _median(lead_data["span"])
-        qrs_variation = _mad(lead_data["qrs"]) / max(qrs, 1.0)
-        noise_ratio = baseline_variation / max(qrs, 40.0)
-        score = max(0.0, min(1.0, 1.0 - min(0.65, noise_ratio) - min(0.35, qrs_variation)))
+    for column, lead in enumerate(LEADS):
+        data = {key: value[:,column].tolist() for key,value in arrays.items()
+                if isinstance(value,np.ndarray) and value.ndim==2}
+        qrs = _median(data.get('qrs',[]))
+        baseline_variation = _mad(data.get('baseline',[]))+_median(data.get('span',[]))
+        qrs_variation = _mad(data.get('qrs',[]))/max(qrs,1.)
+        score = max(0.,min(1.,1.-min(.65,baseline_variation/max(qrs,40.))-min(.35,qrs_variation)))
         lead_scores.append(score)
-        column=LEADS.index(lead)
-        raw_clipped=lead in ('I','II','V1','V2','V3','V4','V5','V6') and bool(beats) and (bool(np.any(qrs_frames[:,:,column]>=32767)) or bool(np.any(qrs_frames[:,:,column]<=-32768)))
-        lead_values[lead] = {
-            "st_level_units": round(_median(lead_data["st"]), 2),
-            "t_amplitude_units": round(_median(lead_data["t"]), 2),
-            "qrs_amplitude_units": round(qrs, 2), "quality_score": round(score, 3),
-            "eligible": qrs>0 and score>=0.42 and not raw_clipped,
-            "availability_reasons": (['flatline'] if qrs<=0 else [])+(['lead_engineering_quality'] if score<0.42 else [])+(['source_clipping'] if raw_clipped else []),
-        }
-    # A derived limb lead can be a genuine zero projection. Its zero is not a
-    # disconnected source channel; availability follows its two measured inputs.
-    limb_available=lead_values['I']['eligible'] and lead_values['II']['eligible']
+        clipped = lead in ('I','II','V1','V2','V3','V4','V5','V6') and bool(beats) and bool(np.any(arrays['source_clipped'][:,column]))
+        measurable = qrs>0 and not clipped
+        lead_values[lead] = dict(
+            st_level_units=round(_median(data.get('st',[])),2),
+            t_amplitude_units=round(_median(data.get('t',[]),default=float('nan')),2) if any(math.isfinite(v) for v in data.get('t',[])) else None,
+            t_positive_units=round(_median(data.get('t_positive',[])),2),
+            t_negative_units=round(_median(data.get('t_negative',[])),2),
+            r_amplitude_units=round(_median(data.get('r',[])),2),
+            noise_units=round(_median(data.get('noise',[])),2),
+            st_slope_units_per_s=round(_median(data.get('st_slope',[])),2),
+            qrs_amplitude_units=round(qrs,2),quality_score=round(score,3),
+            measurable=measurable,eligible=measurable and score>=.42,
+            availability_reasons=(['flatline'] if qrs<=0 else [])+(['lead_engineering_quality'] if score<.42 else [])+(['source_clipping'] if clipped else []))
+    limb_available=lead_values['I']['measurable'] and lead_values['II']['measurable']
     for lead in ('III','aVR','aVL','aVF'):
+        lead_values[lead]['measurable']=limb_available
         lead_values[lead]['eligible']=limb_available and lead_values[lead]['quality_score']>=.42
-        lead_values[lead]['availability_reasons']=[] if lead_values[lead]['eligible'] else ['source_limb_unavailable']
-    # Sampling limits measurement work; it must not reduce the actual normal
-    # beat density used by the existing quality gates.
-    has_population_count = normal_count is not None
+        lead_values[lead]['availability_reasons']=[] if lead_values[lead]['eligible'] else ['source_limb_unavailable' if not limb_available else 'lead_engineering_quality']
     normal_count = len(beats) if normal_count is None else normal_count
-    normal_ratio = normal_count / max(all_count, 1)
-    overall = max(0.0, min(1.0, _median(lead_scores) * min(1.0, normal_ratio / 0.6)))
-    return {
-        "j_offset_ms": round(j_sample * 1000 / SAMPLE_RATE),
-        "landmark_confidence": round(landmark_confidence, 3),
-        "normal_beat_count": normal_count,
-        **({"measurement_beat_count": len(beats)} if has_population_count else {}),
-        "normal_beat_ratio": round(normal_ratio, 3),
-        "quality_score": round(overall, 3),
-        "eligible": normal_ratio >= 0.35 and overall >= 0.42,
-        "leads": lead_values,
-    }
+    normal_ratio=normal_count/max(all_count,1)
+    overall=max(0.,min(1.,_median(lead_scores)*min(1.,normal_ratio/.6)))
+    return dict(j_offset_ms=round(j_sample*1000/SAMPLE_RATE),landmark_confidence=round(landmark_confidence,3),
+                normal_beat_count=normal_count,measurement_beat_count=len(beats),normal_beat_ratio=round(normal_ratio,3),
+                quality_score=round(overall,3),eligible=normal_ratio>=.35 and overall>=.42,leads=lead_values)
 
 
 def _rolling_reference(values: list[dict], key: str, radius: int) -> list[float | None]:
@@ -242,68 +311,158 @@ def _support(point, config):
     return float(point.get("start_s", point.get("time_s", half)-half)), float(point.get("end_s", point.get("time_s", half)+half))
 
 
+def _finite(value):
+    return isinstance(value,(int,float)) and not isinstance(value,bool) and math.isfinite(value)
+
+
+def _compact_support(points,config):
+    result=[]
+    for point in points:
+        start,end=_support(point,config)
+        if result and abs(result[-1]['end_s']-start)<1e-7:result[-1]['end_s']=end
+        else:result.append(dict(start_s=start,end_s=end))
+    return result
+
+
+def _episode(points,lead,config,kind,label,peak,*,continuous=None,criteria=()):
+    start,end=_support(points[0],config)[0],_support(points[-1],config)[1]
+    flags=sorted({reason for p in points for reason in p.get('quality_flags',[])})
+    if any(p.get('axis_shift_suspected') for p in points):flags=sorted(set(flags)|{'axis_shift_suspected'})
+    if kind=='t_persistent_inversion' and lead in T_VARIABLE_LEADS:flags=sorted(set(flags)|{'normal_polarity_variation_possible'})
+    delta=peak.get('deviation_units') if kind.startswith('st_') else (peak.get('t_amplitude_units')-peak.get('t_reference_units') if _finite(peak.get('t_amplitude_units')) and _finite(peak.get('t_reference_units')) else None)
+    row=dict(kind=kind,label=label,start_s=round(start,3),end_s=round(end,3),duration_s=round(end-start,3),
+        continuous_target_s=round(end-start if continuous is None else continuous,3),
+        peak_time_s=round(peak['time_s'],3),peak_deviation_units=round(delta,2) if _finite(delta) else None,
+        peak_st_level_units=peak.get('st_level_units'),peak_t_amplitude_units=peak.get('t_amplitude_units'),
+        leads=[lead],lead=lead,quality_score=round(_median(p.get('quality_score',0) for p in points),3),
+        support_intervals=_compact_support(points,config),axis_shift_suspected='axis_shift_suspected' in flags,
+        quality_flags=flags,review_status='pending',diagnosis=None,criteria=list(criteria),
+        threshold_scale='uncalibrated_source_device_research_units',measurement_basis='raw_per_beat_iso_and_stable_reference',
+        reference_source=copy.deepcopy(peak.get('reference_source')),t_polarity_context=t_polarity_context(lead),
+        boundary_resolution_s=max((p.get('boundary_resolution_s',config['block_seconds']) for p in points),default=config['block_seconds']))
+    if kind=='t_wave_inversion':
+        row['polarity_from']='positive' if peak.get('t_reference_units',0)>0 else 'negative'
+        row['polarity_to']='positive' if peak.get('t_amplitude_units',0)>0 else 'negative'
+    return row
+
+
 def _lead_episodes(points: list[dict], lead: str, config: dict) -> list[dict]:
-    """Per-lead hysteresis with a *continuous* target run, never gap repair."""
-    episodes = []
-    for direction, kind, label in ((-1,"st_depression","ST 段压低候选"),(1,"st_elevation","ST 段抬高候选")):
-        active, below_s, strong_run, longest_run, last_end = [], 0., 0., 0., None
+    """Absolute ST level and dynamic deviation in parallel, with one episode.
+
+    Missing observations break continuity. An observed axis shift is retained
+    as a quality flag for the doctor, not silently deleted from measurements.
+    """
+    episodes=[]
+    for direction,kind,label in ((-1,'st_depression','ST 段压低候选'),(1,'st_elevation','ST 段抬高候选')):
+        active=[];below=strong=longest=0.;last_end=None;criteria=set()
+        def score(point):
+            values=[direction*point[k] for k in ('st_level_units','deviation_units') if _finite(point.get(k))]
+            return max(values) if values else -math.inf
         def finish():
-            if not active or longest_run + 1e-9 < config['minimum_target_duration_s']: return
-            start, end = _support(active[0],config)[0], _support(active[-1],config)[1]
-            if end-start + 1e-9 < config['minimum_target_duration_s']: return
-            peak=max(active,key=lambda row:direction*row['deviation_units'])
-            episodes.append(dict(kind=kind,label=label,start_s=round(start,3),end_s=round(end,3),
-                duration_s=round(end-start,3),continuous_target_s=round(longest_run,3),
-                peak_time_s=round(peak['time_s'],3),peak_deviation_units=round(peak['deviation_units'],1),
-                leads=[lead],lead=lead,quality_score=round(_median(row['quality_score'] for row in active),3),
-                support_intervals=[dict(start_s=_support(row,config)[0],end_s=_support(row,config)[1]) for row in active],
-                axis_shift_suspected=False,review_status='pending',diagnosis=None))
+            if active and longest+1e-9>=config['minimum_target_duration_s']:
+                peak=max(active,key=score)
+                episodes.append(_episode(active,lead,config,kind,label,peak,continuous=longest,criteria=sorted(criteria)))
         for point in points:
             start,end=_support(point,config)
-            value=point.get('deviation_units')
-            valid=(point.get('eligible') and not point.get('axis_shift_suspected')
-                   and isinstance(value,(int,float)) and math.isfinite(value) and end>start)
-            contiguous=last_end is None or abs(start-last_end)<1e-7
-            if not valid or not contiguous:
-                finish();active=[];below_s=strong_run=longest_run=0.
+            valid=point.get('eligible') and end>start and any(_finite(point.get(k)) for k in ('st_level_units','deviation_units'))
+            if not valid or last_end is not None and abs(start-last_end)>1e-7:
+                finish();active=[];below=strong=longest=0.;criteria=set()
             last_end=end
-            if not valid: continue
-            value=direction*value
+            if not valid:continue
+            value=score(point)
             if value>=config['entry_threshold_units']:
-                active.append(point);below_s=0.
-                strong_run=strong_run+(end-start) if value>=config['target_threshold_units'] else 0.
-                longest_run=max(longest_run,strong_run)
+                active.append(point);below=0.
+                strong=strong+end-start if value>=config['target_threshold_units'] else 0.
+                longest=max(longest,strong)
+                for key,name in (('st_level_units','absolute_st_level'),('deviation_units','stable_reference_delta_st')):
+                    if _finite(point.get(key)) and direction*point[key]>=config['target_threshold_units']:criteria.add(name)
             elif active:
-                strong_run=0.;below_s+=end-start
-                if below_s+1e-9>=config['exit_confirmation_s']:
-                    finish();active=[];below_s=strong_run=longest_run=0.
+                strong=0.;below+=end-start
+                if below+1e-9>=config['exit_confirmation_s']:
+                    finish();active=[];below=strong=longest=0.;criteria=set()
         finish()
     return episodes
 
 
-def _t_episodes(points: list[dict], lead: str, config: dict) -> list[dict]:
-    minimum, run, result, last_end = config['t_inversion_minimum_units'], [], [], None
-    def finish():
-        if not run: return
-        start,end=_support(run[0],config)[0],_support(run[-1],config)[1]
-        if end-start+1e-9 < config['minimum_target_duration_s']: return
-        peak=max(run,key=lambda row:abs(row['t_amplitude_units']-row['t_reference_units']))
-        result.append(dict(kind='t_wave_inversion',label='T 波极性反转候选',start_s=round(start,3),end_s=round(end,3),
-            duration_s=round(end-start,3),continuous_target_s=round(end-start,3),peak_time_s=round(peak['time_s'],3),
-            peak_deviation_units=round(peak['t_amplitude_units']-peak['t_reference_units'],1),leads=[lead],lead=lead,
-            quality_score=round(_median(row['quality_score'] for row in run),3),axis_shift_suspected=False,review_status='pending',diagnosis=None))
-    for point in points:
-        start,end=_support(point,config);value,reference=point.get('t_amplitude_units'),point.get('t_reference_units')
-        inverted=(point.get('eligible') and not point.get('axis_shift_suspected')
-            and isinstance(value,(int,float)) and isinstance(reference,(int,float))
-            and math.isfinite(value) and math.isfinite(reference)
-            and abs(value)>=minimum and abs(reference)>=minimum and value*reference<0)
-        if last_end is not None and abs(start-last_end)>1e-7:finish();run=[]
-        if inverted:run.append(point)
-        else:finish();run=[]
-        last_end=end
-    finish()
+def _t_conditions(point,lead,config):
+    value=point.get('t_amplitude_units');reference=point.get('t_reference_units')
+    positive=point.get('t_positive_units',max(0.,value) if _finite(value) else None)
+    negative=point.get('t_negative_units',min(0.,value) if _finite(value) else None)
+    if not point.get('eligible') or point.get('t_measurable') is False or not all(_finite(v) for v in (value,positive,negative)):
+        return set()
+    noise=max(1.,point.get('noise_units',1.))
+    minimum=max(config['t_inversion_minimum_units'],config['t_noise_multiplier']*noise)
+    both=min(positive,-negative)>=max(config['t_biphasic_minimum_units'],config['t_noise_multiplier']*noise)
+    result=set()
+    if _finite(reference) and abs(value)>=minimum and abs(reference)>=minimum and value*reference<0 and not both:
+        result.add('t_wave_inversion')
+    if lead!='aVR' and negative<=-minimum and -negative>positive and not both:
+        result.add('t_persistent_inversion')
+    if both:result.add('t_biphasic')
+    r=point.get('r_amplitude_units');amplitude=max(positive,-negative)
+    if (_finite(r) and r>=max(config['t_low_minimum_r_units'],noise*10)
+            and amplitude<=config['t_low_maximum_units'] and amplitude/r<=config['t_low_r_ratio']
+            and noise<=max(2.,config['t_low_maximum_units']/config['t_noise_multiplier'])
+            and not both):
+        result.add('t_low_flat')
     return result
+
+
+def _t_episodes(points: list[dict], lead: str, config: dict) -> list[dict]:
+    labels={'t_wave_inversion':'T 波极性反转候选','t_persistent_inversion':'T 波持续倒置候选',
+            't_low_flat':'T 波低平候选','t_biphasic':'T 波双相候选'}
+    result=[];runs={kind:[] for kind in labels};last_end=None
+    def finish(kind):
+        run=runs[kind]
+        if not run:return
+        start,end=_support(run[0],config)[0],_support(run[-1],config)[1]
+        if end-start+1e-9<config['minimum_target_duration_s']:return
+        if kind=='t_low_flat':peak=min(run,key=lambda p:max(p.get('t_positive_units',max(0.,p['t_amplitude_units'])),-p.get('t_negative_units',min(0.,p['t_amplitude_units']))))
+        elif kind=='t_persistent_inversion':peak=min(run,key=lambda p:p.get('t_negative_units',p['t_amplitude_units']))
+        elif kind=='t_biphasic':peak=max(run,key=lambda p:min(p.get('t_positive_units',0),-p.get('t_negative_units',0)))
+        else:peak=max(run,key=lambda p:abs(p['t_amplitude_units']-p['t_reference_units']))
+        label='T 波持续负向候选（导联背景待核对）' if kind=='t_persistent_inversion' and lead in T_VARIABLE_LEADS else labels[kind]
+        result.append(_episode(run,lead,config,kind,label,peak,criteria=[kind]))
+    for point in points:
+        start,end=_support(point,config)
+        if last_end is not None and abs(start-last_end)>1e-7:
+            for kind in runs:finish(kind);runs[kind]=[]
+        conditions=_t_conditions(point,lead,config) if end>start else set()
+        for kind in runs:
+            if kind in conditions:runs[kind].append(point)
+            else:finish(kind);runs[kind]=[]
+        last_end=end
+    for kind in runs:finish(kind)
+    return result
+
+
+def _stable_reference(points,key,config,*,prefer=None):
+    """A recorded stable interval, locked for the recording, never self-drifting.
+
+    A compatible interval is preferred, but an observed stable reference is
+    never advertised as clinically normal. Absence remains None, not zero.
+    """
+    minimum=config['stable_reference_minimum_s'];run=[];fallback=None;previous=None
+    for point in points:
+        start,end=_support(point,config)
+        if (not point.get('eligible') or not _finite(point.get(key)) or point.get('axis_shift_suspected')
+                or previous is not None and abs(start-previous)>1e-7):run=[]
+        previous=end
+        if not point.get('eligible') or not _finite(point.get(key)) or point.get('axis_shift_suspected'):continue
+        run.append(point)
+        # Keep a bounded trailing window; high rate cannot grow this list for
+        # an entire day. A mean alone does not establish stable morphology.
+        while len(run)>1 and end-_support(run[1],config)[0]>=minimum:run.pop(0)
+        if end-_support(run[0],config)[0]+1e-9<minimum:continue
+        if fallback is not None and prefer is not None and not prefer(point[key]):continue
+        values=[p[key] for p in run];center=_median(values)
+        tolerance=max(5.,config['entry_threshold_units']/2) if key=='st_level_units' else max(5.,config['t_inversion_minimum_units']/2) if key=='t_amplitude_units' else max(5.,abs(center)*.1)
+        if _mad(values)>tolerance:continue
+        source=dict(method='locked_stable_observed_interval_v1',start_s=_support(run[0],config)[0],end_s=end,
+                    metric=key,value=round(center,2),normality_established=False,quality_verified_by_physician=False)
+        if fallback is None:fallback=(round(center,2),source)
+        if prefer is None or prefer(center):return round(center,2),source
+    return fallback if fallback is not None else (None,None)
 
 
 def _merge_episodes(items: list[dict]) -> list[dict]:
@@ -316,36 +475,43 @@ def _merge_episodes(items: list[dict]) -> list[dict]:
 
 
 def minute_trends(points, duration_s, config):
-    """Duration-weighted complete minute evidence before any display reduction.
+    """Minute display and continuous-event evidence have separate eligibility.
 
-    Partial means are retained separately, but the plotted value is null if any
-    part of the minute is unavailable. A zero remains an actual observed zero.
+    measured_* is finite only for a fully measurable metric across the minute,
+    including observations carrying quality warnings. partial_* is a partial
+    summary, never permission to connect a line across a true missing interval.
     """
     result=[];cursor=0
+    keys=('st_level_units','reference_units','deviation_units','t_amplitude_units','t_reference_units',
+          't_positive_units','t_negative_units','r_amplitude_units','noise_units','st_slope_units_per_s')
     for start in range(0,math.ceil(duration_s),60):
-        end=min(duration_s,start+60);covered=0.;sums={key:0. for key in ('st_level_units','reference_units','deviation_units','t_amplitude_units','t_reference_units')};reasons=set();quality=[]
+        end=min(duration_s,start+60);valid_covered=0.;sums={k:0. for k in keys};covered={k:0. for k in keys};reasons=set();flags=set();quality=[]
         while cursor<len(points) and _support(points[cursor],config)[1]<=start:cursor+=1
         j=cursor
         while j<len(points) and _support(points[j],config)[0]<end:
             point=points[j];a,b=_support(point,config);overlap=max(0.,min(end,b)-max(start,a))
-            valid=point.get('eligible') and not point.get('axis_shift_suspected') and all(isinstance(point.get(k),(int,float)) and math.isfinite(point[k]) for k in sums)
-            if valid:
-                covered+=overlap
-                for key in sums:sums[key]+=point[key]*overlap
-                quality.append(point.get('quality_score',0))
+            measurable=point.get('measurable',point.get('eligible',False))
+            if measurable:
+                for key in keys:
+                    if _finite(point.get(key)):
+                        sums[key]+=point[key]*overlap;covered[key]+=overlap
+            if point.get('eligible') and all(_finite(point.get(k)) for k in ('st_level_units','t_amplitude_units')):
+                valid_covered+=overlap;quality.append(point.get('quality_score',0))
             elif overlap:
-                reasons.add('axis_shift' if point.get('axis_shift_suspected') else 'quality_or_missing')
-                reasons.update(point.get('availability_reasons',[]))
-            j+=1
-        if covered+1e-7<end-start:reasons.add('incomplete_support')
-        complete=covered+1e-7>=end-start and not reasons
+                reasons.update(point.get('availability_reasons',[]) or ['quality_or_missing'])
+            if point.get('axis_shift_suspected'):flags.add('axis_shift_suspected')
+            flags.update(point.get('quality_flags',[]));j+=1
+        if valid_covered+1e-7<end-start:reasons.add('incomplete_support')
+        complete=valid_covered+1e-7>=end-start and not reasons
         row=dict(start_s=float(start),end_s=end,time_s=(start+end)/2,duration_s=end-start,
-            eligible=complete,valid_duration_s=round(covered,3),coverage_pct=round(covered/(end-start)*100,2),
-            quality_score=round(_median(quality),3),quality_reasons=sorted(reasons),axis_shift_suspected='axis_shift' in reasons,
-            lead_availability='available' if complete else 'unavailable',quality_verified_by_physician=False)
-        for key,value in sums.items():
-            mean=round(value/covered,2) if covered else None
-            row[key]=mean if complete else None;row['partial_'+key]=mean
+            eligible=complete,valid_duration_s=round(valid_covered,3),coverage_pct=round(valid_covered/(end-start)*100,2),
+            quality_score=round(_median(quality),3),quality_reasons=sorted(reasons),quality_flags=sorted(flags|reasons),
+            axis_shift_suspected='axis_shift_suspected' in flags,lead_availability='available' if complete else 'unavailable',quality_verified_by_physician=False,
+            metric_coverage_pct={k:round(v/(end-start)*100,2) for k,v in covered.items()})
+        for key in keys:
+            mean=round(sums[key]/covered[key],2) if covered[key] else None
+            full=covered[key]+1e-7>=end-start
+            row[key]=mean if full else None;row['measured_'+key]=row[key];row['partial_'+key]=mean
         result.append(row)
     return result
 
@@ -385,60 +551,99 @@ def analyze_stt(waveform_path: str | Path, records, duration_s: float | None = N
     for row in normalized:
         if 0 <= row[0] < total_samples:
             by_block.setdefault(row[0] // block_samples, []).append(row)
-    blocks = []
-    with path.open("rb") as stream, mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as buffer:
-        for block_index in range(math.ceil(duration / settings["block_seconds"])):
-            rows = by_block.get(block_index, [])
-            usable = []
-            for index, row in enumerate(rows):
-                sample, group, rr = row
-                previous_group = rows[index - 1][1] if index else None
-                next_group = rows[index + 1][1] if index + 1 < len(rows) else None
-                if group == 1 and previous_group not in {3, 34} and next_group not in {3, 34} and 350 <= rr <= 2000 and sample >= 50 and sample + 120 < total_samples:
+    blocks=[]
+    next_anchors={row[0]:normalized[i+1][0] if i+1<len(normalized) else None for i,row in enumerate(normalized)}
+    with path.open("rb") as stream,mmap.mmap(stream.fileno(),0,access=mmap.ACCESS_READ) as buffer:
+        for block_index in range(block_count):
+            rows=by_block.get(block_index,[]);usable=[]
+            for index,row in enumerate(rows):
+                sample,group,rr=row
+                previous_group=rows[index-1][1] if index else None
+                following_group=rows[index+1][1] if index+1<len(rows) else None
+                if group==1 and previous_group not in {3,34} and following_group not in {3,34} and 350<=rr<=2000 and sample>=50 and sample+120<total_samples:
                     usable.append(row)
-            selected = _evenly(usable, settings["maximum_beats_per_block"])
-            all_count = len([row for row in rows if row[1] != 34])
-            block_start=block_index*settings["block_seconds"]
-            block_end=min(duration,block_start+settings["block_seconds"])
-            time_s = (block_start+block_end)/2
+            selected=_evenly(usable,settings['maximum_beats_per_block'])
+            all_count=sum(row[1]!=34 for row in rows)
+            start=block_index*settings['block_seconds'];end=min(duration,start+settings['block_seconds'])
+            base=dict(time_s=(start+end)/2,start_s=start,end_s=end,rows=rows,eligible=False,
+                      quality_score=0.,j_offset_ms=None,landmark_confidence=0.,leads={},observations={},usable=usable,
+                      normal_beat_count=len(usable),measurement_beat_count=len(usable),normal_beat_ratio=round(len(usable)/max(1,all_count),3))
             if block_index in masked_blocks:
-                blocks.append(dict(time_s=time_s,start_s=block_start,end_s=block_end,eligible=False,quality_score=0.,
-                    normal_beat_count=len(usable),measurement_beat_count=0,normal_beat_ratio=round(len(usable)/max(1,all_count),3),
-                    j_offset_ms=None,landmark_confidence=0.,leads={},availability_reasons=['rhythm_exclusion']))
-                continue
-            if len(selected) < settings["minimum_normal_beats"]:
-                blocks.append({"time_s": time_s, "start_s":block_start,"end_s":block_end,"eligible": False, "quality_score": 0.0,
-                               "normal_beat_count": len(usable), "measurement_beat_count": len(selected),
-                               "normal_beat_ratio": round(len(usable) / max(1, all_count), 3),
-                               "j_offset_ms": None, "landmark_confidence": 0.0, "leads": {}})
-                continue
-            measured = _block_measurement(buffer, selected, all_count, total_samples, settings, normal_count=len(usable))
-            measured.update(time_s=time_s,start_s=block_start,end_s=block_end); blocks.append(measured)
+                base['availability_reasons']=['explicit_measurement_exclusion'];blocks.append(base);continue
+            if len(selected)<settings['minimum_normal_beats']:
+                base['availability_reasons']=['insufficient_j_representatives'];blocks.append(base);continue
+            measured=_block_measurement(buffer,selected,all_count,total_samples,settings,normal_count=len(usable),include_morphology=False)
+            # J and engineering quality are estimated on the bounded 16s
+            # representative set; event support uses every qualified real R.
+            j=round(measured['j_offset_ms']*SAMPLE_RATE/1000)
+            nexts=[next_anchors[r[0]] if next_anchors[r[0]] is not None else r[0] for r in usable]
+            observations=_beat_measurements(buffer,usable,total_samples,settings,j_sample=j,next_samples=nexts)
+            base.update(measured);base['measurement_beat_count']=len(usable);base['observations']=observations
+            base['observation_index']={r[0]:i for i,r in enumerate(usable)}
+            blocks.append(base)
 
-    radius = max(1, round(settings["reference_window_minutes"] * 60 / settings["block_seconds"] / 2))
-    lead_points, episodes = {}, []
-    for lead in LEADS:
-        points = []
+    lead_points,episodes={},[]
+    for column,lead in enumerate(LEADS):
+        points=[]
         for block in blocks:
-            measure = block["leads"].get(lead, {})
-            points.append({
-                "time_s": block["time_s"], "start_s":block["start_s"],"end_s":block["end_s"], "eligible": block["eligible"] and measure.get('eligible',False), "quality_score": measure.get('quality_score',0),
-                "availability_reasons":block.get('availability_reasons',measure.get('availability_reasons',['lead_missing'])),
-                "j_offset_ms": block["j_offset_ms"], "landmark_confidence": block["landmark_confidence"],
-                "st_level_units": measure.get("st_level_units"), "t_amplitude_units": measure.get("t_amplitude_units"),
-                "qrs_amplitude_units": measure.get("qrs_amplitude_units"),
-            })
-        st_refs = _rolling_reference(points, "st_level_units", radius)
-        t_refs = _rolling_reference(points, "t_amplitude_units", radius)
-        qrs_refs = _rolling_reference(points, "qrs_amplitude_units", radius)
-        for point, st_ref, t_ref, qrs_ref in zip(points, st_refs, t_refs, qrs_refs):
-            point["reference_units"], point["t_reference_units"] = st_ref, t_ref
-            point["deviation_units"] = round(point["st_level_units"] - st_ref, 2) if point["st_level_units"] is not None and st_ref is not None else None
-            qrs_change = abs(point["qrs_amplitude_units"] - qrs_ref) / max(abs(qrs_ref), 1.0) if point["qrs_amplitude_units"] is not None and qrs_ref is not None else None
-            point["qrs_change_fraction"] = round(qrs_change, 3) if qrs_change is not None else None
-            point["axis_shift_suspected"] = bool(qrs_change is not None and qrs_change >= settings["axis_shift_qrs_fraction"])
-        episodes.extend(_lead_episodes(points, lead, settings)); episodes.extend(_t_episodes(points, lead, settings))
-        lead_points[lead] = minute_trends(points,duration,settings)
+            measure=block['leads'].get(lead,{})
+            observations=block['observations'];positions=block.get('observation_index',{})
+            for row in block['rows']:
+                sample,group,rr=row;next_sample=next_anchors[sample]
+                if next_sample is None:continue  # no invented source-tail interval
+                start,end=sample/SAMPLE_RATE,min(duration,next_sample/SAMPLE_RATE)
+                if start>=duration or end<=start:continue
+                index=positions.get(sample)
+                observed=index is not None and bool(observations) and measure.get('measurable',False)
+                source_fault=None
+                if observed:
+                    if lead in ('III','aVR','aVL','aVF'):
+                        projection_available=bool(observations['qrs'][index,0]>0 and observations['qrs'][index,1]>0)
+                    else:projection_available=bool(observations['qrs'][index,column]>0)
+                    clipped=bool(observations['source_clipped'][index,column]) if lead in ('I','II','V1','V2','V3','V4','V5','V6') else bool(observations['source_clipped'][index,0] or observations['source_clipped'][index,1])
+                    source_fault='flatline' if not projection_available else 'source_clipping' if clipped else None
+                    observed=observed and source_fault is None
+                # 350 milliseconds, not samples. At 200Hz a qualified interval
+                # has 70..400 samples; any real longer gap breaks the evidence.
+                interval_ok=70<=next_sample-sample<=400
+                flags=[]
+                if not block['eligible']:flags.append('engineering_block_quality')
+                if measure and not measure.get('eligible'):flags.append('lead_engineering_quality')
+                if not interval_ok:flags.append('rr_support_gap')
+                p=dict(time_s=start,start_s=start,end_s=end,boundary_resolution_s=(next_sample-sample)/SAMPLE_RATE,
+                    source_sample=sample,next_source_sample=next_sample,measurable=observed,
+                    eligible=observed and interval_ok and block['eligible'] and measure.get('eligible',False),
+                    quality_score=measure.get('quality_score',0),quality_flags=flags,
+                    availability_reasons=block.get('availability_reasons',measure.get('availability_reasons',[]) or (['beat_not_qualified'] if not observed else [])),
+                    j_offset_ms=block['j_offset_ms'],landmark_confidence=block['landmark_confidence'],
+                    t_polarity_context=t_polarity_context(lead))
+                if source_fault:p['availability_reasons']=[source_fault]
+                mappings={'st_level_units':'st','t_amplitude_units':'t','t_positive_units':'t_positive','t_negative_units':'t_negative',
+                          'qrs_amplitude_units':'qrs','r_amplitude_units':'r','noise_units':'noise','st_slope_units_per_s':'st_slope'}
+                for key,source in mappings.items():
+                    value=float(observations[source][index,column]) if observed else None
+                    p[key]=round(value,3) if _finite(value) else None
+                p['t_measurable']=bool(observed and observations['t_shape_measurable'][index,column])
+                if observed and not p['t_measurable']:p['quality_flags'].append('t_window_overlap_or_unavailable')
+                # Real missing/unmeasurable observations remain null. A low
+                # quality measured value is preserved independently of eligibility.
+                if not observed:
+                    p['st_level_units']=p['t_amplitude_units']=None
+                points.append(p)
+        qrs_ref,qrs_source=_stable_reference(points,'qrs_amplitude_units',settings)
+        for point in points:
+            qrs=point.get('qrs_amplitude_units')
+            change=abs(qrs-qrs_ref)/max(abs(qrs_ref),1.) if _finite(qrs) and _finite(qrs_ref) else None
+            point['qrs_change_fraction']=round(change,3) if change is not None else None
+            point['axis_shift_suspected']=bool(change is not None and change>=settings['axis_shift_qrs_fraction'])
+        st_ref,st_source=_stable_reference(points,'st_level_units',settings,prefer=lambda v:abs(v)<settings['entry_threshold_units'])
+        t_ref,t_source=_stable_reference(points,'t_amplitude_units',settings,prefer=lambda v:v>=settings['t_inversion_minimum_units'] if lead in T_UPRIGHT_LEADS else True)
+        for point in points:
+            point['reference_units']=st_ref;point['t_reference_units']=t_ref
+            point['reference_source']=dict(st=st_source,t=t_source,qrs=qrs_source)
+            point['deviation_units']=round(point['st_level_units']-st_ref,3) if _finite(point.get('st_level_units')) and _finite(st_ref) else None
+        episodes.extend(_lead_episodes(points,lead,settings));episodes.extend(_t_episodes(points,lead,settings))
+        lead_points[lead]=minute_trends(points,duration,settings)
 
     candidates = _merge_episodes(episodes)
     eligible_blocks = sum(block["eligible"] for block in blocks)
@@ -450,14 +655,15 @@ def analyze_stt(waveform_path: str | Path, records, duration_s: float | None = N
                     "coverage_pct": round(eligible_blocks * 100 / max(1, len(blocks)), 1),
                     "analyzed_duration_s": round(min(duration, len(blocks) * settings["block_seconds"]), 1),
                     "excluded_blocks": len(blocks) - eligible_blocks,
-                    "gate": "normal-beat density + baseline stability + QRS stability; AF/AFL review annotations do not exclude ST/T measurements; machine J confidence is reported, not a gate"},
+                    "gate": "source beat qualification, actual neighbouring R support and per-lead measurability; AF/AFL annotations never mask data; suspicious measured values retained separately; J and axis flags require physician review"},
         "exclusions":dict(intervals=[dict(start_sample=a,end_sample=b,reason=r) for a,b,r in masks],support_halo_samples=[-40,120],
-            rule='explicit_quality_support_intersection_breaks_fixed_measurement_block_and_continuity',rhythm_policy=RHYTHM_POLICY),
+            rule='explicit_quality_support_intersection_breaks_measurement_and_continuity',rhythm_policy=RHYTHM_POLICY),
         "summary": {"candidate_count": len(candidates),
                     "st_depression_count": sum(item["kind"] == "st_depression" for item in candidates),
                     "st_elevation_count": sum(item["kind"] == "st_elevation" for item in candidates),
-                    "t_wave_count": sum(item["kind"] == "t_wave_inversion" for item in candidates)},
-        "candidates": candidates, "trends": {"block_seconds": 60, "measurement_block_seconds":settings["block_seconds"], "aggregation":"duration_weighted_complete_minute", "leads": lead_points},
+                    "t_wave_count": sum(item["kind"].startswith("t_") for item in candidates),
+                    "by_kind":{kind:sum(item["kind"]==kind for item in candidates) for kind in sorted({item["kind"] for item in candidates})}},
+        "candidates": candidates, "trends": {"block_seconds": 60, "measurement_block_seconds":settings["block_seconds"], "aggregation":"per_beat_duration_weighted_minute_separate_measurability_quality", "leads": lead_points},
     }
     _CACHE[cache_key] = copy.deepcopy(result); _CACHE.move_to_end(cache_key)
     while len(_CACHE) > _CACHE_LIMIT:

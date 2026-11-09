@@ -4,13 +4,13 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),crypto=require('node:crypto');
 const {harness}=require('./browser_demo_feedback_api.cjs');
 const fixture=JSON.parse(fs.readFileSync(process.argv[2],'utf8')),mode=process.argv[3];
-const POLICY='independent_of_AF_AFL_reviews',ALGORITHM='stt-screening-0.3.2-independent-rhythm',PROFILE='raw-200hz-fixed16s-st-perbeat-mean-v2',METHOD='stt-hospital-review-v2';
+const POLICY='independent_of_AF_AFL_reviews',ALGORITHM='stt-screening-0.4.0-comprehensive-independent',PROFILE='raw-200hz-fixed16s-st-perbeat-morphology-v3',METHOD='stt-hospital-review-v3';
 const raw=fs.readFileSync(fixture.raw_path),source={raw,rows:fixture.rows},key='cardioinsight-public-math-4314-v2',clone=v=>JSON.parse(JSON.stringify(v));
 const scope=v=>Object.fromEntries(['case_id','analysis_basis','analysis_revision','beat_revision'].map(k=>[k,v[k]]));
 function bind(h,expectedHash=fixture.raw_sha256){
  const feed=h.context.ECGBeatEngine.materialize(h.input.beats,h.context.ECGBeatEngine.blank(),[]),bv=h.context.ECGClinicalAnalysis.buildIndex({...feed,duration:h.input.technical.duration_seconds_raw}).beat_version;
  h.context.__CARDIOINSIGHT_MATHEMATICAL_CASE__.stt_review=clone(fixture.review);
- h.context.__CARDIOINSIGHT_MATHEMATICAL_CASE__.stt_review_binding={case_id:h.input.case_id,analysis_basis:'public-math-4314-v2:'+h.input.case_id,beat_revision:0,beat_version:bv,data_version:bv+'-stt-independent-v2',rhythm_policy:POLICY,algorithm_version:ALGORITHM,raw_waveform_sha256:expectedHash,python_precomputed:true,patient_inputs_read:false};
+ h.context.__CARDIOINSIGHT_MATHEMATICAL_CASE__.stt_review_binding={case_id:h.input.case_id,analysis_basis:'public-math-4314-v2:'+h.input.case_id,beat_revision:0,beat_version:bv,data_version:bv+'-stt-comprehensive-v3',rhythm_policy:POLICY,algorithm_version:ALGORITHM,raw_waveform_sha256:expectedHash,python_precomputed:true,patient_inputs_read:false};
  return h;
 }
 async function mean(h){return h.call('stt-range','POST',{scope:scope(await h.call('analysis-basis')),start_sample:0,end_sample:24000,leads:['I','II','V6'],measurement_ms:60});}

@@ -258,9 +258,12 @@ def query_index(index,params,occurrences=False):
     elif not occurrences:
         items = [{**e, **{k: rr_aliases[e['event_id']][k] for k in ('rr_semantic_key', 'rr_alias_event_ids', 'rr_aliases', 'rr_sources')}} if e['event_id'] in rr_aliases else e for e in items]
     stt_group=params.get('stt_group','all')
-    if stt_group not in ('all','ST','T','ST_NOTE','pending'):raise ValueError('ST-T 复核分组无效')
-    stt_counts={key:sum(e.get('category')=='ST' and e.get('stt_report_group')==key for e in events) for key in ('ST','T','ST_NOTE','pending')}
-    if category=='ST' and selected_ids is None and stt_group!='all':items=[e for e in items if e.get('stt_report_group')==stt_group]
+    if stt_group not in ('all','ST','T','ST_T','ST_NOTE','pending'):raise ValueError('ST-T 复核分组无效')
+    def in_stt_group(event,key):
+        actual=event.get('stt_report_group')
+        return actual==key or actual=='ST_T' and key in ('ST','T')
+    stt_counts={key:sum(e.get('category')=='ST' and in_stt_group(e,key) for e in events) for key in ('ST','T','ST_T','ST_NOTE','pending')}
+    if category=='ST' and selected_ids is None and stt_group!='all':items=[e for e in items if in_stt_group(e,stt_group)]
     pause_band=params.get('pause_band','all')
     if pause_band not in ('all','over3','2.5to3','b0','b1','b2'):raise ValueError('无效的长 RR 筛选范围')
     pauses=[e for e in events if e['category']=='pause']

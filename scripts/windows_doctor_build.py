@@ -26,6 +26,7 @@ ASSET_FILES = (
     'static/css/report-wave-menu.css',
     'static/js/report-wave-menu.js',
     'static/help/af-afl.html',
+    'static/help/stt.html',
     'shared-source-build.json',
     'static/js/report-evidence-ui.js',
     'static/css/advanced-analysis.css',

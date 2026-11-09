@@ -55,13 +55,13 @@ def generate(output: Path, release_id: str) -> dict:
     case['stt_review'] = build_stt_review(case['conclusion'], waveform,
         feed.records, duration,
         analysis_revision='editor-0|overrides-none')
-    assert ALGORITHM_VERSION == 'stt-screening-0.3.2-independent-rhythm'
+    assert ALGORITHM_VERSION == 'stt-screening-0.4.0-comprehensive-independent'
     assert case['stt_review']['analysis']['algorithm_version'] == ALGORITHM_VERSION
     assert case['stt_review']['analysis']['rhythm_policy'] == RHYTHM_POLICY == 'independent_of_AF_AFL_reviews'
     case['stt_review_binding'] = {'case_id': case_id,
         'analysis_basis': 'public-math-4314-v2:' + case_id,
         'rhythm_policy': RHYTHM_POLICY, 'algorithm_version': ALGORITHM_VERSION,
-        'beat_version':beat_version,'data_version':beat_version+'-stt-independent-v2',
+        'beat_version':beat_version,'data_version':beat_version+'-stt-comprehensive-v3',
         'beat_revision': 0, 'python_precomputed': True,
         'patient_inputs_read': False, 'raw_waveform_sha256': hashlib.sha256(waveform.read_bytes()).hexdigest()}
     from ecg_core.stt_range import analyze_stt_range

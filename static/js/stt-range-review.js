@@ -2,7 +2,7 @@
 /* Read-only range statistics. The calculator owns measurement and quality rules. */
 globalThis.ECGSTTRangeReview = (() => {
   const LEADS = Object.freeze(['I','II','III','aVR','aVL','aVF','V1','V2','V3','V4','V5','V6']);
-  const PROFILE_ID = 'raw-200hz-fixed16s-st-perbeat-mean-v2';
+  const PROFILE_ID = 'raw-200hz-fixed16s-st-perbeat-morphology-v3';
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const copy = value => JSON.parse(JSON.stringify(value));
   function number(value) {

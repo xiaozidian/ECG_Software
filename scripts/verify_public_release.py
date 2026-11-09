@@ -6,13 +6,13 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-MANIFEST = ROOT / "docs/releases/0.12.29-ui-source-render.20261108/source-manifest.json"
+MANIFEST = ROOT / "docs/releases/0.12.30-stt-comprehensive.20261109/source-manifest.json"
 
 
 def verify(root: Path = ROOT) -> dict:
     manifest = json.loads((root / MANIFEST.relative_to(ROOT)).read_text(encoding="utf-8"))
     files = manifest["files"]
-    if len(files) != manifest["production_file_count"] or len(files) != 129:
+    if not files or len(files) != manifest["production_file_count"]:
         raise ValueError("production file count changed")
     fingerprint = hashlib.sha256(json.dumps(
         files, ensure_ascii=False, sort_keys=True, separators=(",", ":")

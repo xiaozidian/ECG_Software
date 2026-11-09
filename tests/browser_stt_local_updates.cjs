@@ -174,7 +174,7 @@ async function saveBusyAndDrafts(){
   h.state.sttMeasurementMs=80;h.state.sttIsoFraction=.27;
   h.basisReads[0].resolve();await tick();assert.equal(h.posts.length,1);
   const payload=JSON.parse(h.posts[0].options.body);
-  assert.equal(payload.label,'ST-T 人工复核：ST 段压低候选');assert.equal(payload.details.finding,'ST 段压低候选');
+  assert.equal(payload.label,'ST-T 人工复核：ST 段压低');assert.equal(payload.details.finding,'ST 段压低');assert.deepEqual(payload.details.findings,[{result_code:'st_depression',leads:['II']}]);
   assert.match(payload.note,/J\+60 ms/);assert.match(payload.note,/信号质量核对：已核对/);assert.match(payload.note,/submitted note/);
   assert.doesNotMatch(payload.note,/edited while checking basis/);
   for(const value of original)assert.match(payload.note,new RegExp(`${value.lead} ${value.delta>=0?'\\+':''}${value.delta.toFixed(0)}`));
