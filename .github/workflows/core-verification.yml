@@ -80,6 +80,8 @@ jobs:
       - name: Verify AF per-episode figure adoption and grouped report output
         run: |
           python -m pytest -q tests/test_af_multistrip_rail.py tests/test_af_multistrip_report_groups.py tests/test_af_confirmed_subtype_counts.py -p no:cacheprovider --junitxml=build/core-verification/af-multistrip-31-junit.xml
+      - name: Verify case navigation clears ST-T results and preserves pending saves
+        run: python -m pytest -q tests/test_case_lifecycle.py::test_browser_case_lifecycle -p no:cacheprovider --junitxml=build/core-verification/case-lifecycle-31-junit.xml
       - name: Verify report concurrency and rollback on an explicit mathematical source
         run: |
           ecgConsistencyMath="$RUNNER_TEMP/af-report-consistency-math"
