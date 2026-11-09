@@ -22,7 +22,7 @@ from .config import CHANNEL_COUNT, SAMPLE_RATE
 from .source_identity import require_waveform_file, source_read
 from .stt_records import RANGE_PROFILE, RHYTHM_POLICY
 from .stt import (DEFAULT_CONFIG, LEADS, _block_measurement, _estimate_j_sample,
-                  _evenly, _normalize_records, _sample_frames)
+                  _evenly, _normalize_records, _sample_frames, _beat_measurements)
 
 SCHEMA_VERSION = "stt-range-mean-v1"
 PROFILE_ID = RANGE_PROFILE
@@ -88,6 +88,9 @@ def method_profile(measurement_ms=60):
         "quality_note": "existing engineering block gate; labels, machine landmarks and signal quality are not physician verified",
         "unit_label": "u", "units": "device_unit", "calibration_verified": False,
         "lead_mapping_verified": False, "filter": "raw source; no display high-pass",
+        "t_measurement": "signed positive/negative lobes require prominence >=max(2,3*noise) against both whole-window ends or both sides of a 5-point neighbourhood; dominant qualifying lobe retains its sign; original RR-dependent window ends at least 8 samples before next real R; >=3 T samples required; no qualifying lobe with raw peak>50 is unmeasurable, not flat",
+        "t_shape_statistics": "separate extrema, actual R amplitude, baseline MAD noise, T/R and minimum absolute T; no signed cancellation implies flat T",
+        "slope": "(five-point ST80 minus five-point STJ)/0.08 seconds, raw u/s",
         "diagnosis_generated": False, "mean_proves_sustained_depression": False,
     }
 
@@ -202,6 +205,8 @@ def _calculate(buffer, total_samples, records, *, start_sample, end_sample,
     lead_indices = [LEADS.index(x) for x in chosen]
     values = {lead: [] for lead in chosen}
     anchors={lead:[] for lead in chosen};t_values={lead:[] for lead in chosen};t_anchors={lead:[] for lead in chosen}
+    t_features={lead:{key:[] for key in ('positive','negative','absolute','r','ratio','noise','slope')} for lead in chosen}
+    next_anchors={row[0]:normalized[i+1][0] if i+1<len(normalized) else row[0] for i,row in enumerate(normalized)}
     reasons, statuses, mask_flags = Counter(), Counter(), Counter()
     flag_definitions = {}
     detail_blocks, used_anchors, eligible_samples = [], [], 0
@@ -265,7 +270,7 @@ def _calculate(buffer, total_samples, records, *, start_sample, end_sample,
                     actual.append(row)
             population = sum(r[1] != 34 and not mask_index.hits(r[0], r[0]+1) for r in rows)
             measurement = _block_measurement(buffer, representatives, population, total_samples,
-                                              settings, normal_count=len(actual))
+                                              settings, normal_count=len(actual),include_morphology=False)
             block.update(j_offset_samples=j, j_offset_ms=j*5,
                          landmark_confidence=measurement["landmark_confidence"],
                          quality_score=measurement["quality_score"],
@@ -294,15 +299,20 @@ def _calculate(buffer, total_samples, records, *, start_sample, end_sample,
                 block_values[lead] = differences[:, column].tolist()
                 values[lead].extend(block_values[lead])
                 anchors[lead].extend(r[0] for r in used)
+            observation=_beat_measurements(buffer,used,total_samples,settings,j_sample=j,
+                                           next_samples=[next_anchors[r[0]] for r in used])
             for i,beat in enumerate(used):
-                rr_samples=max(round(beat[2]*SAMPLE_RATE/1000),round(.45*SAMPLE_RATE))
-                last=min(j+72,max(j+30,round(rr_samples*.62)))
-                if mask_index.hits(beat[0]+j+24,beat[0]+last+1):continue
-                frames=_sample_frames(buffer,[beat],range(j+24,last+1,2),total_samples)[0]-baseline[i]
+                last=int(observation['t_window_end_offset'][i])
+                if not observation['t_measurable'][i] or mask_index.hits(beat[0]+j+24,beat[0]+last+1):continue
                 for column,lead in zip(lead_indices,chosen):
-                    if not measurement['leads'][lead].get('eligible',False):continue
-                    samples=frames[:,column];value=float(samples[np.argmax(np.abs(samples))])
+                    if not measurement['leads'][lead].get('measurable',False) or not observation['t_shape_measurable'][i,column]:continue
+                    value=float(observation['t'][i,column])
                     t_values[lead].append(value);t_anchors[lead].append(beat[0])
+                    f=t_features[lead]
+                    for name,key in (('positive','t_positive'),('negative','t_negative'),('r','r'),('noise','noise'),('slope','st_slope')):
+                        f[name].append(float(observation[key][i,column]))
+                    f['absolute'].append(max(f['positive'][-1],-f['negative'][-1]))
+                    ratio=float(observation['t_to_r'][i,column]);f['ratio'].append(ratio if math.isfinite(ratio) else None)
             used_anchors.extend(r[0] for r in used)
         block_status, block_reasons, block_flags = Counter(), Counter(), Counter()
         for row in selected_rows:
@@ -345,6 +355,19 @@ def _calculate(buffer, total_samples, records, *, start_sample, end_sample,
         "coverage_is_signal_quality": False,
         "definition": "intersection of eligible fixed 16s blocks with selected range, less union of explicit masks; does not certify each second or infer undetected beats",
     }
+    def t_metrics(lead):
+        f=t_features[lead];positions=t_anchors[lead]
+        def mean(v):return math.fsum(x for x in v if x is not None)/sum(x is not None for x in v) if any(x is not None for x in v) else None
+        def anchor(v,extreme):return positions[v.index(extreme(v))] if v else None
+        return dict(mean_t_positive_units=mean(f['positive']),mean_t_negative_units=mean(f['negative']),
+                    minimum_t_amplitude_units=min(f['negative']) if f['negative'] else None,
+                    minimum_t_sample=anchor(f['negative'],min),maximum_t_amplitude_units=max(f['positive']) if f['positive'] else None,
+                    maximum_t_sample=anchor(f['positive'],max),minimum_absolute_t_units=min(f['absolute']) if f['absolute'] else None,
+                    minimum_absolute_t_sample=anchor(f['absolute'],min),mean_r_amplitude_units=mean(f['r']),
+                    mean_t_to_r_ratio=mean(f['ratio']),mean_noise_units=mean(f['noise']),
+                    mean_st_slope_units_per_s=mean(f['slope']),t_measurable_count=len(positions),
+                    biphasic_beat_count=sum(min(a,-b)>=max(settings['t_biphasic_minimum_units'],settings['t_noise_multiplier']*n)
+                                             for a,b,n in zip(f['positive'],f['negative'],f['noise'])))
     result = {
         "schema_version": SCHEMA_VERSION, "scope": scope, "method_profile": profile,
         "range": {"start_sample": start, "end_sample": end, "start_s": start/SAMPLE_RATE,
@@ -354,7 +377,7 @@ def _calculate(buffer, total_samples, records, *, start_sample, end_sample,
         "mask_reason_counts": [{**flag_definitions[key], "beat_count": value}
                                for key, value in sorted(mask_flags.items())],
         "count_definition": "used/excluded/missing and primary reason counts are mutually exclusive per detected R; mask reason flags may overlap and never invent undetected beats",
-        "leads": [{"lead": lead, "mean_units": math.fsum(v)/len(v) if v else None,
+        "leads": [{**t_metrics(lead), "lead": lead, "mean_units": math.fsum(v)/len(v) if v else None,
                    "mean_st_level_units":math.fsum(v)/len(v) if v else None,
                    "minimum_st_level_units":min(v) if v else None,"maximum_st_level_units":max(v) if v else None,
                    "minimum_st_sample":anchors[lead][v.index(min(v))] if v else None,
@@ -364,7 +387,7 @@ def _calculate(buffer, total_samples, records, *, start_sample, end_sample,
                    "mean_t_amplitude_units":math.fsum(t_values[lead])/len(t_values[lead]) if t_values[lead] else None,
                    "extreme_t_amplitude_units":max(t_values[lead],key=abs) if t_values[lead] else None,
                    "extreme_t_sample":t_anchors[lead][max(range(len(t_values[lead])),key=lambda i:abs(t_values[lead][i]))] if t_values[lead] else None,
-                   "t_used_count":len(t_values[lead]),"slope":None,"calibrated_mm":None,
+                   "t_used_count":len(t_values[lead]),"slope":t_metrics(lead)["mean_st_slope_units_per_s"],"slope_unit":"u/s","calibrated_mm":None,
                    "availability":"available" if v else "unavailable",
                    "used_count": len(v), "excluded_count": counts["excluded_count"],
                    "missing_count": counts["missing_count"], "reason_counts": counts["reason_counts"].copy()}

@@ -721,7 +721,7 @@ async function selectCase(caseId, destination = "review") {
     state.sttSelectedCandidate=null;state.sttLastSavedEvent=false;state.sttEditingRecord=null;state.sttDraftDirty=false;state.sttReviewLeads=["II"];
     state.sttIsoFraction=.34;state.sttJFraction=.52;state.sttMeasurementMs=60;
     const note=$('#sttReviewNote'),checked=$('#sttSignalChecked'),finding=$('#sttFinding'),point=$('#sttMeasurementPoint');
-    if(note)note.value='';if(checked)checked.checked=false;if(finding)finding.value='';if(point)point.value='60';
+    if(note)note.value='';sttSetResultCodes([]);if(checked)checked.checked=false;if(finding)finding.value='';if(point)point.value='60';
   }
   state.sttFullscreenReturn=null;state.editFullscreenReturn=null;globalThis.ecgSttReviewLayout?.clear("正在切换病例…");
   state.editRequestId += 1;
@@ -1892,7 +1892,17 @@ function sttMeasurementValues() {
   });
 }
 
-function sttDraftState() {return {finding:$('#sttFinding')?.value||'',note:$('#sttReviewNote')?.value||'',checked:!!$('#sttSignalChecked')?.checked,start:$('#sttEpisodeStart')?.value||'',end:$('#sttEpisodeEnd')?.value||'',leads:sttReviewLeadNames().join(','),iso:state.sttIsoFraction,j:state.sttJFraction,measurement:state.sttMeasurementMs};}
+function sttDraftState() {return {findings:sttSelectedResultCodes().join(','),finding:$('#sttFinding')?.value||'',note:$('#sttReviewNote')?.value||'',checked:!!$('#sttSignalChecked')?.checked,start:$('#sttEpisodeStart')?.value||'',end:$('#sttEpisodeEnd')?.value||'',leads:sttReviewLeadNames().join(','),iso:state.sttIsoFraction,j:state.sttJFraction,measurement:state.sttMeasurementMs};}
+function sttSelectedResultCodes() {return globalThis.ECGSttReviewLayout?.resultCodes($('#sttFinding')?.value||'', $$('[data-stt-extra-finding]:checked').map(node=>node.value))||[];}
+function sttSetResultCodes(codes) {
+  const tools=globalThis.ECGSttReviewLayout;codes=tools?.resultCodes(tools.outcomes?.[codes[0]]||'',codes.slice(1))||[];const primary=codes[0];
+  $('#sttFinding').value=tools?.outcomes?.[primary]||'';
+  $$('[data-stt-extra-finding]').forEach(node=>{node.checked=codes.includes(node.value)&&node.value!==primary;node.disabled=!tools?.abnormalCodes?.includes(primary)||node.value===primary;});
+}
+function sttFindingsForSave(first,end,leads) {
+  const codes=sttSelectedResultCodes(),old=state.sttEditingRecord?.stt_review_receipt,unchanged=old&&old.range.start_sample===first&&old.range.end_sample===end+1&&JSON.stringify([...old.leads].sort())===JSON.stringify([...leads].sort());
+  return codes.flatMap(result_code=>{const preserved=unchanged&&old.findings?.filter(row=>row.result_code===result_code);return preserved?.length?preserved.map(row=>({result_code,leads:[...row.leads],start_sample:row.start_sample,end_sample:row.end_sample})):[{result_code,leads:[...leads]}];});
+}
 function sttSavedRows() {return Array.isArray(state.sttReview?.review_records)?state.sttReview.review_records:state.sttReview?.review_records?.items||[];}
 function sttClock(seconds) {return globalThis.ECGRhythmRangeEditor?.boundaryClock(seconds,state.caseData?.metadata?.start_time)||'+'+Number(seconds).toFixed(3);}
 function sttParseClock(text) {
@@ -1920,7 +1930,7 @@ function sttSetReviewTarget(item,record=null) {
   state.sttEditingRecord=record;state.sttLastSavedEvent=null;state.sttDraftDirty=false;
   state.sttReviewLeads=(receipt?.leads?.length?receipt.leads:item.leads?.length?item.leads:['II']).filter(lead=>ALL_LEADS.includes(lead));
   const tools=globalThis.ECGSttReviewLayout,code=receipt?.result_code;
-  $('#sttFinding').value=record?(tools?.outcomes?.[code]||record.details?.finding||''):'';
+  sttSetResultCodes(record?(receipt?.result_codes?.length?receipt.result_codes:[code]):[tools?.candidateKind(item)].filter(Boolean));
   $('#sttReviewNote').value=record?.details?.physician_note??record?.note??'';$('#sttSignalChecked').checked=false;
   state.sttDraftDirty=false;renderSttCandidateSelection();state.sttDraftBase=JSON.stringify(sttDraftState());renderSttCapability();
   const target=state.sttReviewLeads[0]||'II';state.sttLeads=[target,...['II','V1','V5'].filter(lead=>lead!==target)].slice(0,3);
@@ -1942,7 +1952,7 @@ function renderSttRecordList() {
   const review=state.sttReview;if(!review)return;
   const filter=$('#sttRecordFilter')?.value||'all',records=sttSavedRows(),items=review.automatic_candidates?.items||[];
   const saved=records.map(row=>({row,receipt:row.stt_review_receipt}));
-  let entries=filter==='candidates'?[]:saved.filter(({receipt})=>filter!=='notes'||receipt?.report_group==='ST_NOTE'||receipt?.review_state!=='reviewed').map(({row,receipt})=>({type:'record',id:row.id,start:receipt?.range?.start_s??row.sample_index/200,label:globalThis.ECGSttReviewLayout?.outcomes[receipt?.result_code]||row.details?.finding||row.label,status:receipt?.review_state==='stale'?'依据变化':receipt?.review_state==='reviewed'?'已复核':'历史待定',leads:receipt?.leads||[],duration:receipt?.range?.duration_s||((row.details?.end_sample??row.sample_index)+1-row.sample_index)/200}));
+  let entries=filter==='candidates'?[]:saved.filter(({receipt})=>filter!=='notes'||receipt?.report_group==='ST_NOTE'||receipt?.review_state!=='reviewed').map(({row,receipt})=>({type:'record',id:row.id,start:receipt?.range?.start_s??row.sample_index/200,label:globalThis.ECGSttReviewLayout?.resultText(receipt)||row.details?.finding||row.label,status:receipt?.review_state==='stale'?'依据变化':receipt?.review_state==='reviewed'?'已复核':'历史待定',leads:receipt?.leads||[],duration:receipt?.range?.duration_s||((row.details?.end_sample??row.sample_index)+1-row.sample_index)/200}));
   if(['all','candidates'].includes(filter))entries.push(...items.map(item=>({type:'candidate',id:item.id,start:item.start_s,label:item.label,status:'机器候选',leads:item.leads||[],duration:item.end_s-item.start_s})));
   entries.sort((a,b)=>a.start-b.start||String(a.id).localeCompare(String(b.id)));
   const host=$('#sttCandidateList');host.innerHTML=entries.length?`<table class="stt-event-table"><thead><tr><th>时间 / 导联</th><th>类型 / 结果</th><th>时长 / 状态</th></tr></thead><tbody>${entries.map(e=>`<tr tabindex="0" data-stt-row-kind="${e.type}" data-stt-row-id="${escapeHtml(e.id)}" aria-selected="${e.type==='record'?String(state.sttEditingRecord?.id)===String(e.id):state.sttSelectedCandidate?.item.id===e.id}"><td>${escapeHtml(ECGReviewTools.clockLabel(state.caseData?.metadata?.start_time,e.start))}<br>${escapeHtml(e.leads.join('/'))}</td><td>${escapeHtml(e.label)}</td><td>${(e.duration/60).toFixed(2)} 分<br>${e.status}</td></tr>`).join('')}</tbody></table>`:'<p class="stt-unavailable-state">当前无匹配记录。可从波形自选区间复核。</p>';
@@ -1987,14 +1997,14 @@ function renderSttTrendRows() {
   const bounds=sttTrendBounds();state.sttTrendRenderedBounds=JSON.stringify([bounds,state.sttTrendMode]);const length=Math.max(.005,bounds.end-bounds.start),left=Math.max(0,Math.min(100,(state.sttStart-bounds.start)/length*100)),width=Math.max(0,Math.min(100-left,state.sttDuration/length*100));
   const mode=globalThis.ECGSttReviewLayout?.trendMetric(state.sttTrendMode)||{field:'deviation_units',label:'ΔST'},trends=state.sttReview?.analysis?.trends?.leads||{};
   $('#sttTrendNote').textContent=`${mode.label} · u · ${ECGReviewTools.clockLabel(state.caseData?.metadata?.start_time,bounds.start)}–${ECGReviewTools.clockLabel(state.caseData?.metadata?.start_time,bounds.end)} · 缺口断线`;
-  const validPoint=point=>point.eligible!==false&&!point.axis_shift_suspected&&Number.isFinite(point[mode.field]);
-  let limit=1;for(const points of Object.values(trends))for(const point of points)if(validPoint(point)&&point.time_s>=bounds.start&&point.time_s<=bounds.end)limit=Math.max(limit,Math.abs(point[mode.field]));
+  const trendValue=point=>globalThis.ECGSttReviewLayout?.trendValue(point,mode.field)??null,validPoint=point=>trendValue(point)!==null;
+  let limit=1;for(const points of Object.values(trends))for(const point of points)if(validPoint(point)&&point.time_s>=bounds.start&&point.time_s<=bounds.end)limit=Math.max(limit,Math.abs(trendValue(point)));
   $('#sttTrendRows').innerHTML=ALL_LEADS.map(lead=>{
-    const points=trends[lead]||[];let d='',pen=false,used=0;
-    for(const point of points){if(!validPoint(point)||point.time_s<bounds.start||point.time_s>bounds.end){pen=false;continue;}d+=`${pen?'L':'M'}${((point.time_s-bounds.start)/length*100).toFixed(3)},${(8-point[mode.field]/limit*6).toFixed(3)} `;pen=true;used++;}
-    const target=state.sttStart+state.sttDuration/2,current=points.find(p=>(p.start_s??p.time_s-30)<=target&&(p.end_s??p.time_s+30)>target),value=current&&validPoint(current)?current[mode.field]:null;
+    const points=trends[lead]||[],suspected=point=>point?.eligible===false||!!point?.axis_shift_suspected||!!point?.quality_flags?.length;let d='',suspectD='',pen=false,suspectPen=false,used=0;
+    points.forEach((point,index)=>{if(!validPoint(point)||point.time_s<bounds.start||point.time_s>bounds.end){pen=false;suspectPen=false;return;}const coordinate=`${((point.time_s-bounds.start)/length*100).toFixed(3)},${(8-trendValue(point)/limit*6).toFixed(3)} `;if(suspected(point))pen=false;else{d+=`${pen?'L':'M'}${coordinate}`;pen=true;}if(suspected(point)||suspected(points[index-1])||suspected(points[index+1])){suspectD+=`${suspectPen?'L':'M'}${coordinate}`;suspectPen=true;}else suspectPen=false;used++;});
+    const target=state.sttStart+state.sttDuration/2,current=points.find(p=>(p.start_s??p.time_s-30)<=target&&(p.end_s??p.time_s+30)>target),value=current?trendValue(current):null;
     const item=state.sttSelectedCandidate?.item,a=item?Math.max(0,Math.min(100,(item.start_s-bounds.start)/length*100)):0,b=item?Math.max(0,Math.min(100,(item.end_s-bounds.start)/length*100)):0;
-    return `<div class="stt-trend-row"><strong>${lead}</strong><div class="stt-trend-track" data-trend-start="${bounds.start}" data-trend-end="${bounds.end}" style="--window-left:${left}%;--window-width:${width}%"><svg data-inspect-chart data-inspect-kind="st-trend" data-inspect-title="${lead} ${mode.label}" data-inspect-metric="${mode.label}" data-inspect-unit="设备单位 u" data-inspect-bin-seconds="60" data-inspect-start="${bounds.start}" data-inspect-duration="${length}" data-inspect-limit="${limit}" viewBox="0 0 100 16" preserveAspectRatio="none" role="img" aria-label="${lead} ${mode.label}，u${used?'':'，无有效分钟'}"><line x1="0" y1="8" x2="100" y2="8"></line><path d="${d}" fill="none" stroke="currentColor" vector-effect="non-scaling-stroke" stroke-width="1"></path></svg>${item?`<em class="stt-episode-band" style="left:${a}%;width:${Math.max(0,b-a)}%" title="完整复核范围"></em>`:''}<span title="当前原始波形窗"></span><i></i></div><small>${value===null?'—':(value>=0?'+':'')+value.toFixed(0)}</small></div>`;
+    return `<div class="stt-trend-row"><strong>${lead}</strong><div class="stt-trend-track" data-trend-start="${bounds.start}" data-trend-end="${bounds.end}" style="--window-left:${left}%;--window-width:${width}%"><svg data-inspect-chart data-inspect-kind="st-trend" data-inspect-title="${lead} ${mode.label}" data-inspect-metric="${mode.label}" data-inspect-unit="设备单位 u" data-inspect-bin-seconds="60" data-inspect-start="${bounds.start}" data-inspect-duration="${length}" data-inspect-limit="${limit}" viewBox="0 0 100 16" preserveAspectRatio="none" role="img" aria-label="${lead} ${mode.label}，u${used?'':'，无有效分钟'}"><line x1="0" y1="8" x2="100" y2="8"></line><path d="${d}" fill="none" stroke="currentColor" vector-effect="non-scaling-stroke" stroke-width="1"></path><path d="${suspectD}" fill="none" stroke="#657f8a" stroke-dasharray="3 2" vector-effect="non-scaling-stroke" stroke-width="1" aria-label="质量可疑测量"></path></svg>${item?`<em class="stt-episode-band" style="left:${a}%;width:${Math.max(0,b-a)}%" title="完整复核范围"></em>`:''}<span title="当前原始波形窗"></span><i></i></div><small>${value===null?'—':(value>=0?'+':'')+value.toFixed(0)}</small></div>`;
   }).join('');
   $$('#sttTrendRows .stt-trend-track').forEach(track=>{track.setAttribute('role','button');track.tabIndex=0;track.setAttribute('aria-label',track.parentElement.querySelector('strong').textContent+' '+mode.label+' 趋势定位');});
 }
@@ -2002,7 +2012,7 @@ function updateSttTrendWindow() {
   if(!state.caseData||!sttEvidenceMatches())return;
   const bounds=sttTrendBounds();if(state.sttTrendRenderedBounds!==JSON.stringify([bounds,state.sttTrendMode])){renderSttTrendRows();return;}
   const length=Math.max(.005,bounds.end-bounds.start),left=Math.max(0,Math.min(100,(state.sttStart-bounds.start)/length*100)),width=Math.max(0,Math.min(100-left,state.sttDuration/length*100)),target=state.sttStart+state.sttDuration/2,field=globalThis.ECGSttReviewLayout?.trendMetric(state.sttTrendMode).field||'deviation_units';
-  $$('#sttTrendRows .stt-trend-row').forEach(row=>{const track=$('.stt-trend-track',row);if(!track)return;track.style.setProperty('--window-left',left+'%');track.style.setProperty('--window-width',width+'%');const lead=$('strong',row)?.textContent,points=state.sttReview?.analysis?.trends?.leads?.[lead]||[],point=points.find(p=>(p.start_s??p.time_s-30)<=target&&(p.end_s??p.time_s+30)>target),value=point?.eligible!==false&&!point?.axis_shift_suspected&&Number.isFinite(point?.[field])?point[field]:null,label=$('small',row);if(label)label.textContent=value===null?'—':(value>=0?'+':'')+value.toFixed(0);});
+  $$('#sttTrendRows .stt-trend-row').forEach(row=>{const track=$('.stt-trend-track',row);if(!track)return;track.style.setProperty('--window-left',left+'%');track.style.setProperty('--window-width',width+'%');const lead=$('strong',row)?.textContent,points=state.sttReview?.analysis?.trends?.leads?.[lead]||[],point=points.find(p=>(p.start_s??p.time_s-30)<=target&&(p.end_s??p.time_s+30)>target),value=globalThis.ECGSttReviewLayout?.trendValue(point,field)??null,label=$('small',row);if(label)label.textContent=value===null?'—':(value>=0?'+':'')+value.toFixed(0);});
 }
 
 function renderSttOverview(canvas=$("#sttOverviewCanvas"),target=null) {
@@ -2315,7 +2325,7 @@ async function saveSttReviewAnnotation() {
   const draft={note:$('#sttReviewNote').value,finding,qualityChecked,iso:state.sttIsoFraction,j:state.sttJFraction,measurementMs:state.sttMeasurementMs,hospital:JSON.stringify(sttDraftState())};
   const pointLabel=state.sttMeasurementMs===0?'J 点':`J+${state.sttMeasurementMs} ms`,values=sttMeasurementValues(),rawValues=values.map(item=>`${item.lead} ${item.delta===null?'—':`${item.delta>=0?'+':''}${item.delta.toFixed(0)}`}`).join('，'),freeNote=draft.note.trim();
   const sampleRate=Number(state.sttWaveform.sample_rate_hz)||200,sampleIndex=Math.round((state.sttStart+sttLandmarkFractions().j*state.sttDuration)*sampleRate),note=[`方法：手工 ISO → ${pointLabel}`,`显示导联：${sttVisibleLeads().join(' / ')}`,`相对差值（设备原始单位）：${rawValues}`,`信号质量核对：${qualityChecked?'已核对':'未核对'}`,freeNote].filter(Boolean).join('；').slice(0,2000);
-  const payload={sample_index:sampleIndex,lead:sttVisibleLeads().length===1?sttVisibleLeads()[0]:'全部',category:'note',label:`ST-T 人工复核：${finding}`,note,details:{kind:'ST',reviewed:true,result_code:resultCode,physician_note:freeNote,review_scope:{case_id:state.caseId,...ECGAnalysisConsistency.identity(state.sttReview||basis),beat_revision:state.sttReview?.beat_revision??rangeStatistics?.scope?.beat_revision},review_leads:sttReviewLeadNames(),review_extent:'point',measurement_protocol:{measurement_ms:state.sttMeasurementMs,extent:'point',baseline_method:'manual_iso_point',method_version:'stt-hospital-review-v2',rhythm_policy:'independent_of_AF_AFL_reviews'},status:resultCode==='indeterminate'?'pending':['no_change','artifact'].includes(resultCode)?'excluded':'confirmed',end_sample:Math.min(Math.round(state.caseData.technical.duration_seconds_raw*200)-1,Math.round((state.sttStart+state.sttDuration)*200)),finding}};
+  const payload={sample_index:sampleIndex,lead:sttVisibleLeads().length===1?sttVisibleLeads()[0]:'全部',category:'note',label:`ST-T 人工复核：${finding}`,note,details:{kind:'ST',reviewed:true,result_code:resultCode,physician_note:freeNote,review_scope:{case_id:state.caseId,...ECGAnalysisConsistency.identity(state.sttReview||basis),beat_revision:state.sttReview?.beat_revision??rangeStatistics?.scope?.beat_revision},review_leads:sttReviewLeadNames(),review_extent:'point',measurement_protocol:{measurement_ms:state.sttMeasurementMs,extent:'point',baseline_method:'manual_iso_point',method_version:'stt-hospital-review-v3',rhythm_policy:'independent_of_AF_AFL_reviews'},status:resultCode==='indeterminate'?'pending':['no_change','artifact'].includes(resultCode)?'excluded':'confirmed',end_sample:Math.min(Math.round(state.caseData.technical.duration_seconds_raw*200)-1,Math.round((state.sttStart+state.sttDuration)*200)),finding}};
   if(!payload.details.review_leads.length)throw Error('请选择本次实际复核的导联');
   payload.details.point_measurement_sample_index=sampleIndex;
   const marks=sttLandmarkFractions();payload.details.point_measurement={window_start_s:state.sttStart,window_duration_s:state.sttDuration,iso_sample:Math.round((state.sttStart+marks.iso*state.sttDuration)*200),j_sample:sampleIndex,measurement_sample:Math.round((state.sttStart+marks.st*state.sttDuration)*200),measurement_ms:state.sttMeasurementMs,leads:sttVisibleLeads()};
@@ -2337,6 +2347,8 @@ async function saveSttReviewAnnotation() {
     payload.details.point_measurement_sample_index=sampleIndex;
   const marks=sttLandmarkFractions();payload.details.point_measurement={window_start_s:state.sttStart,window_duration_s:state.sttDuration,iso_sample:Math.round((state.sttStart+marks.iso*state.sttDuration)*200),j_sample:sampleIndex,measurement_sample:Math.round((state.sttStart+marks.st*state.sttDuration)*200),measurement_ms:state.sttMeasurementMs,leads:sttVisibleLeads()};
   }
+  payload.details.findings=sttFindingsForSave(payload.sample_index,payload.details.end_sample,payload.details.review_leads);
+  const resultText=payload.details.findings.map(row=>globalThis.ECGSttReviewLayout.outcomes[row.result_code]).join('＋');payload.details.finding=resultText;payload.label='ST-T 人工复核：'+resultText;
   const annotationId=state.sttEditingRecord?.id;if(annotationId)payload.expected_record_version=state.sttEditingRecord.stt_review_receipt.record_version;
   const context={selection,basis,rangeStatistics,draft,target,annotationId,acceptedMean:state.sttRangeReviewed};
   const entry=sttMeanSubmission(payload,context);
@@ -3285,6 +3297,7 @@ function bindSttInteraction() {
   $('#sttNewRange')?.addEventListener('click',()=>{const lead=state.sttActiveLead||sttVisibleLeads()[0]||'II';sttSetReviewTarget({start_s:state.sttStart,end_s:Math.min(Number(state.caseData.technical.duration_seconds_raw),state.sttStart+state.sttDuration),leads:[lead],label:'自选区间'});});
   const markDraft=()=>{state.sttDraftDirty=true;state.sttDraftRevision=(state.sttDraftRevision||0)+1;const status=$('#sttReviewState');if(status)status.textContent='修改未保存';const receipt=state.sttEditingRecord?.stt_review_receipt,code=globalThis.ECGSttReviewLayout?.resultCode($('#sttFinding').value),impact=$('#sttSaveImpact');if(impact){const used=receipt&&Object.values(receipt.report_use||{}).some(Boolean);impact.hidden=!used;impact.textContent=used&&['no_change','artifact','indeterminate'].includes(code)?'保存后撤出本条异常事件用途；复核记录保留。':used?'保存后核对本条既有报告用途与图条范围。':'';}};
   $('#sttReviewForm')?.addEventListener('input',markDraft);
+  $('#sttFinding')?.addEventListener('change',()=>{const primary=globalThis.ECGSttReviewLayout?.resultCode($('#sttFinding').value),codes=[primary,...$$('[data-stt-extra-finding]:checked').map(node=>node.value)].filter(Boolean);sttSetResultCodes(codes);markDraft();});
   for(const selector of ['#sttEpisodeStart','#sttEpisodeEnd'])$(selector)?.addEventListener('change',()=>{try{const range=sttReadReviewRange();if(range){Object.assign(state.sttSelectedCandidate.item,range);markDraft();renderSttTrendRows();const label=$('#sttEpisodeDuration');if(label)label.textContent=(range.end_s-range.start_s).toFixed(3)+' 秒';}}catch(error){toast(error.message,'error');}});
   sttRoot?.addEventListener('click',event=>{
     const mode=event.target.closest?.('[data-stt-trend-mode]');if(mode){state.sttTrendMode=mode.dataset.sttTrendMode;$$('[data-stt-trend-mode]').forEach(node=>node.setAttribute('aria-pressed',String(node===mode)));renderSttTrendRows();}
@@ -3463,7 +3476,7 @@ function bindEvents() {
 }
 
 async function init() {
-  const uiBuild=document.createElement('small');uiBuild.id='uiBuild';uiBuild.textContent='UI 20261108';uiBuild.title='源数据重绘 · 0.12.29-ui-source-render.20261108';
+  const uiBuild=document.createElement('small');uiBuild.id='uiBuild';uiBuild.textContent='UI 20261109';uiBuild.title='ST-T 综合识别 · 0.12.30-stt-comprehensive.20261109';
   document.querySelector('.sidebar-version')?.append(document.createElement('br'),uiBuild);
   globalThis.ecgChartInspection=globalThis.ECGChartInspection?.mount({getScope:()=>JSON.stringify([state.caseId,state.caseRequestId,state.currentPage,state.editMode,state.caseData?.analysis_basis,state.caseData?.analysis_revision,state.caseData?.review_workflow?.beat_revision,state.waveform?.analysis_revision,state.sttWaveform?.analysis_revision,state.editRequestId,state.trendsRequestId,state.reportRequestId])});
   initRhythmRangeEditor();

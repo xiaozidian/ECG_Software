@@ -200,6 +200,71 @@ def af_representatives(index, event, settings=None):
                 units='seconds', minimum_visible_beats=5, requested_duration_s=length)
 
 
+def stt_representatives(index, event, settings=None):
+    """Recommend actual start/extreme/end evidence without adopting report uses.
+
+    The legacy representative role ``middle`` denotes the actual measured
+    extreme here. This keeps saved strip identities compatible; anchor_kind
+    and label explicitly describe the position instead of claiming a midpoint.
+    """
+    if event.get('category') != 'ST':
+        raise ValueError('仅 ST-T 复核记录支持此代表图条推荐')
+    settings = strip_settings(settings)
+    settings.pop('range_start_s', None)
+    settings.pop('range_end_s', None)
+    a = event['start_sample'] / 200
+    b = event.get('end_s', event.get('end_sample', event['start_sample']) / 200)
+    if not b > a:
+        raise ValueError('ST-T 复核范围无效')
+    proof = event.get('stt_event_evidence') or {}
+    extreme = proof.get('peak_time_s')
+    if not isinstance(extreme, (int, float)) or isinstance(extreme, bool) or not math.isfinite(extreme) or not a <= extreme < b:
+        children = proof.get('findings') or []
+        extreme = next((c['peak_time_s'] for c in children
+                        if isinstance(c.get('peak_time_s'), (int, float))
+                        and not isinstance(c.get('peak_time_s'), bool)
+                        and math.isfinite(c['peak_time_s']) and a <= c['peak_time_s'] < b), None)
+    # No synthetic extreme: a midpoint is labelled as such if no whole-event
+    # measurement provides a real peak (for example a short doctor's note).
+    anchor_kind = 'extreme' if extreme is not None else 'middle'
+    length = settings['duration_s']
+    anchors = dict(start=a + min(length, b-a)/2,
+                   middle=extreme if extreme is not None else (a+b)/2,
+                   end=b - min(length, b-a)/2)
+    positions = {}
+    for role, anchor in anchors.items():
+        # Use the common resolver's real five-beat expansion. Remove the ST
+        # automatic peak override only in this temporary, unpersisted view.
+        view = {**event, 'start_sample': math.floor(anchor*200+.5)}
+        view.pop('stt_event_evidence', None)
+        spec = resolve_strip(index, view, settings)
+        selectable = spec['visible_beat_count'] >= 5 and spec['actual_duration_s'] <= 120
+        positions[role] = dict(
+            representative_role=role, anchor_kind=anchor_kind if role == 'middle' else role,
+            label=('极值' if anchor_kind == 'extreme' else '段中') if role == 'middle' else '起始' if role == 'start' else '末尾',
+            start_s=spec['start_s'], end_s=spec['end_s'], duration_s=spec['actual_duration_s'],
+            visible_beat_count=spec['visible_beat_count'], selectable=selectable,
+            warning=spec['warning'] if spec['actual_duration_s'] <= 120 else '包含 5 搏所需范围超过 120 秒，请人工选择图条')
+    available = {k: v for k, v in positions.items() if v['selectable']}
+    covering = next((available[r] for r in ('middle', 'start', 'end') if r in available
+                     and available[r]['start_s'] <= a and available[r]['end_s'] >= b), None)
+    items = [covering] if covering else []
+    if not covering:
+        for role in ('start', 'end', 'middle'):
+            p = available.get(role)
+            if not p:
+                continue
+            cursor = p['start_s']
+            for previous in sorted(items, key=lambda q: q['start_s']):
+                if previous['start_s'] <= cursor:
+                    cursor = max(cursor, previous['end_s'])
+            if cursor < p['end_s']:
+                items.append(p)
+        items.sort(key=lambda p: ('start', 'middle', 'end').index(p['representative_role']))
+    return dict(items=items, positions=positions, episode_start_s=a, episode_end_s=b,
+                units='seconds', minimum_visible_beats=5, requested_duration_s=length)
+
+
 def report_statistics(index, start_time, settings, pause_edges_ms=None):
     """Beat counts by actual clock hour; pattern episodes assigned to onset hour.
 

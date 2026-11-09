@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ST-T 复核与入报说明 · CardioInsight</title>
+  <style>
+    :root{color-scheme:light;font:15px/1.7 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;color:#243f4b;background:#f3f7f8}
+    *{box-sizing:border-box}body{margin:0}header{background:#193b48;color:#f2f8f8;padding:16px max(20px,calc((100% - 880px)/2));border-bottom:1px solid #b7ced2}
+    header span{font-size:13px;color:#c4d8dd}h1{font-size:23px;line-height:1.4;margin:3px 0;font-weight:650}
+    main{max-width:920px;margin:0 auto;padding:22px 20px 50px}nav{display:flex;gap:8px 20px;flex-wrap:wrap;padding-bottom:14px;border-bottom:1px solid #cddce0}a{color:#086f70;text-underline-offset:3px}a:focus-visible{outline:2px solid #087777;outline-offset:3px}
+    h2{font-size:18px;line-height:1.5;margin:26px 0 8px;color:#193b48;scroll-margin-top:12px}h3{font-size:15px;margin:18px 0 5px}p{margin:7px 0}ol,ul{padding-left:24px;margin:8px 0}li{margin:5px 0}strong{font-weight:650}table{width:100%;border-collapse:collapse;margin:12px 0;background:#fff}th,td{padding:9px 11px;text-align:left;vertical-align:top;border:1px solid #cddce0}th{background:#e7f0f1}small{font-size:13px;color:#526773}footer{margin-top:28px;border-top:1px solid #cddce0;padding-top:12px;color:#526773;font-size:13px}::selection{background:#b8dfda;color:#173d45}
+    @media(max-width:540px){:root{font-size:14px}h1{font-size:20px}main{padding:16px 14px 30px}th,td{padding:7px}nav{gap:6px 14px}}
+  </style>
+</head>
+<body>
+<header><span>CardioInsight 使用说明</span><h1>ST-T 识别、复核与入报</h1></header>
+<main>
+<nav aria-label="本页目录"><a href="#types">识别类型</a><a href="#duration">连续事件</a><a href="#review">保存与入报</a><a href="#measurement">测量依据</a></nav>
+<h2 id="types">识别类型</h2>
+<table><thead><tr><th scope="col">类型</th><th scope="col">含义</th></tr></thead><tbody>
+<tr><td>ST 压低／抬高</td><td>分别检查相对等电位基线的水平，以及相对稳定参考的动态 ΔST。持续改变不会因没有前一段正常参考而被忽略。</td></tr>
+<tr><td>T 持续倒置</td><td>持续负向 T，不要求记录中先出现正向 T。按导联背景保留判定依据，负值不自动等于疾病。</td></tr>
+<tr><td>T 低平</td><td>综合 T 幅度、R 振幅和噪声判断。导联脱落、平线、噪声遮蔽分别标记，不能当作低平。</td></tr>
+<tr><td>双相 T／极性反转</td><td>正负峰分别保留；双相 T 不按正负平均抵消为低平。反转表示相对稳定参考发生极性变化。</td></tr>
+</tbody></table>
+<p>同一段可以同时记录 ST 与 T 改变。医生结果中的“并存改变”可添加其他类型；复核导联与当前查看导联分别选择。</p>
+<h2 id="duration">以一分钟为最短持续事件</h2>
+<p>自动候选连续满足条件至少 60 秒。分钟是趋势汇总单位，事件保留实际起止和持续时长；7 分 34 秒仍是一段 7 分 34 秒，跨小时或午夜不会拆段。真实缺失不能拼接成连续事件。</p>
+<p>短于 60 秒的人工观察仍可保存文字或图条，但不计入持续事件表。记录开头或末尾的事件标注截断范围。</p>
+<h2 id="review">一次保存复核，再选择入报</h2>
+<ol><li>从候选或“自选区间”打开范围。</li><li>查看起始、极值及末尾，调整起止与复核导联。</li><li>选择医生结果，必要时增加“并存改变”，核对信号后点击“保存复核”。</li><li>进入“报告筛选”，分别选择事件表、报告文字、代表图条。</li></ol>
+<p>保存复核不会自动加入报告。未见改变、伪差与无法判读也保存在复核记录中，不计异常事件。不要求把全部候选逐条确认；最终审核检查本报告实际采用的内容。</p>
+<p>整段事件与证据图条分开。代表图条默认 12 导联，图条时长不代替事件时长；最快、最慢心率及 RR 图条仍默认 3 导联。取消图条直接移除对应采用，表格和文字用途独立。多导联或 ST/T 重叠按时间并集统计，不能简单相加。</p>
+<h2 id="measurement">与房颤独立，测量可追溯</h2>
+<p>新增、调整、确认或排除房颤／房扑不会屏蔽 ST-T。原始心搏和信号可测性另外评估。可疑但可测的趋势保留质量标志；真正无测量值显示缺口，不补零。</p>
+<p>测量保留等电位基线、J／ST60／ST80、参考来源、T 正负峰、R 振幅、噪声、质量与算法版本。显示增益不是设备校准；未经核验的数据以原始设备单位 u 表示，不能直接当作 mV 或 mm 阈值。</p>
+<p>自动输出为复核候选。医生保存的是本次范围和结论；历史已审核报告保留原测量方法和快照，重新分析不会替换已签署的结果。</p>
+<footer>ST-T 综合识别 · 0.12.30-stt-comprehensive.20261109</footer>
+</main></body></html>

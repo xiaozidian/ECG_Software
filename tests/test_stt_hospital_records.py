@@ -129,7 +129,9 @@ def test_whole_machine_protocol_and_attached_mean_dont_replace_event_range(st_ap
     response=client.get(base+'/report-sections');assert response.status_code==200,response.json
     sections=response.json;assert len(sections['st_events'])==1
     row=sections['st_events'][0];assert row['mean_st_level_units'] is not None and row['used_beat_count']>7
-    assert row['slope'] is None and row['calibrated_mm'] is None
+    # The raw plateau is130u at ST80 versus0u at J, over80ms.
+    assert row['slope']==pytest.approx(130/.08) and row['slope_unit']=='u/s'
+    assert row['calibrated_mm'] is None
     assert sections['st_summary']['confirmed_lead_event_count']==1
     assert r.json['details']['range_statistics']['range']['start_sample']!=r.json['sample_index']
     assert r.json['details']['range_statistics']['method_profile']['measurement_ms']==80

@@ -80,35 +80,48 @@ from .evaluation_status import stt_status
 from .stt import LEADS as ST_LEADS
 
 def st_report_events(index, family='ST'):
+    from .stt_records import ST_RESULTS,T_RESULTS,evidence_findings
     result=[]
     for event in index['events']:
         if event.get('category')!='ST' or event.get('stt_review_state','reviewed' if event.get('diagnosis_status')=='confirmed' else 'unreviewed')!='reviewed' or event.get('stt_evidence_stale'):continue
-        proof=event.get('stt_event_evidence') or {}
-        label=event.get('label','')
-        if proof.get('kind') not in (('t_wave_inversion',) if family=='T' else ('st_depression','st_elevation')):continue
-        start,end=event['time_s'],event.get('end_s',event['time_s'])
-        if end-start<60-1e-9:continue  # Point review is not a duration claim.
-        if event.get('stt_result_code') in ('no_change','artifact','indeterminate','nonspecific'):continue
-        leads=(event.get('stt_review_receipt') or {}).get('leads') or proof.get('leads') or ([event['lead']] if event.get('lead') in ST_LEADS else [])
-        for lead in leads:
-            m=next((row for row in proof.get('metrics',[]) if row['lead']==lead),{})
-            depressed=proof.get('kind')=='st_depression';extreme=m.get('minimum_st_level_units' if depressed else 'maximum_st_level_units')
-            anchor=m.get('minimum_st_sample' if depressed else 'maximum_st_sample')
-            result.append(dict(event_id=event['event_id'],record_id=event['event_id'],row_id=event['event_id']+':'+lead,basis_version=event['basis_version'],label=label,
-            lead=lead,kind=proof.get('kind'),result_code=event.get('stt_result_code'),review_state='reviewed',
-            start_s=start,end_s=end,duration_s=round(end-start,3),leads=[lead],
-            peak_deviation_units=proof.get('peak_deviation_units'),peak_time_s=proof.get('peak_time_s'),
-            source=proof.get('source','physician_selected_range'),review_status='confirmed',
-            continuous_target_s=proof.get('continuous_target_s'),measurement_protocol=proof.get('measurement_protocol'),
-            units='source_device_units',slope=None,calibrated_mm=None,mean_st_level_units=m.get('mean_st_level_units'),
-            extreme_st_level_units=extreme,extreme_st_time_s=anchor/200 if anchor is not None else None,
-            extreme_st_sample=anchor,minimum_st_sample=m.get('minimum_st_sample'),maximum_st_sample=m.get('maximum_st_sample'),
-            minimum_st_level_units=m.get('minimum_st_level_units'),maximum_st_level_units=m.get('maximum_st_level_units'),
-            reference_sample=m.get('reference_sample'),reference_st_level_units=m.get('reference_st_level_units'),
-            mean_t_amplitude_units=m.get('mean_t_amplitude_units'),extreme_t_amplitude_units=m.get('extreme_t_amplitude_units'),
-            extreme_t_time_s=m['extreme_t_sample']/200 if m.get('extreme_t_sample') is not None else None,
-            t_reference_units=proof.get('t_reference_units'),used_beat_count=m.get('t_used_count' if family=='T' else 'used_count'),
-            coverage=proof.get('coverage'),boundary_resolution_s=proof.get('boundary_resolution_s',16)))
+        receipt=event.get('stt_review_receipt') or {}
+        for number,proof in enumerate(evidence_findings(event)):
+            kind=proof.get('kind')
+            if kind not in (T_RESULTS if family=='T' else ST_RESULTS):continue
+            code=proof.get('result_code',event.get('stt_result_code'))
+            if code in ('no_change','artifact','indeterminate','nonspecific'):continue
+            start=proof.get('start_s',event['time_s']);end=proof.get('end_s',event.get('end_s',event['time_s']))
+            if end-start<60-1e-9:continue  # Point review is not a duration claim.
+            leads=proof.get('leads') or receipt.get('leads') or ([event['lead']] if event.get('lead') in ST_LEADS else [])
+            for lead in leads:
+                m=next((row for row in proof.get('metrics',[]) if row['lead']==lead),{})
+                depressed=kind=='st_depression';extreme=m.get('minimum_st_level_units' if depressed else 'maximum_st_level_units')
+                anchor=m.get('minimum_st_sample' if depressed else 'maximum_st_sample')
+                t_value,t_anchor=m.get('extreme_t_amplitude_units'),m.get('extreme_t_sample')
+                if kind=='t_persistent_inversion':t_value,t_anchor=m.get('minimum_t_amplitude_units',t_value),m.get('minimum_t_sample',t_anchor)
+                elif kind=='t_low_flat':t_value,t_anchor=m.get('minimum_absolute_t_units',t_value),m.get('minimum_absolute_t_sample',t_anchor)
+                result.append(dict(event_id=event['event_id'],selection_event_id=event['event_id'],record_id=event['event_id'],
+                    row_id=event['event_id']+':'+lead+(':'+str(number)+':'+kind if (event.get('stt_event_evidence') or {}).get('findings') else ''),
+                    basis_version=event['basis_version'],label=event.get('label',''),note=event.get('note',''),physician_note=event.get('stt_physician_note',event.get('note','')),lead=lead,kind=kind,result_code=code,review_state='reviewed',
+                    start_s=start,end_s=end,duration_s=round(end-start,3),leads=[lead],
+                    peak_deviation_units=proof.get('peak_deviation_units'),peak_time_s=proof.get('peak_time_s'),
+                    source=proof.get('source','physician_selected_range'),review_status='confirmed',
+                    continuous_target_s=proof.get('continuous_target_s'),measurement_protocol=proof.get('measurement_protocol'),
+                    units='source_device_units',slope=m.get('mean_st_slope_units_per_s'),slope_unit='u/s' if m.get('mean_st_slope_units_per_s') is not None else None,
+                    calibrated_mm=None,mean_st_level_units=m.get('mean_st_level_units'),extreme_st_level_units=extreme,
+                    extreme_st_time_s=anchor/200 if anchor is not None else None,extreme_st_sample=anchor,
+                    minimum_st_sample=m.get('minimum_st_sample'),maximum_st_sample=m.get('maximum_st_sample'),
+                    minimum_st_level_units=m.get('minimum_st_level_units'),maximum_st_level_units=m.get('maximum_st_level_units'),
+                    reference_sample=m.get('reference_sample'),reference_st_level_units=m.get('reference_st_level_units'),
+                    mean_t_amplitude_units=m.get('mean_t_amplitude_units'),extreme_t_amplitude_units=t_value,
+                    extreme_t_sample=t_anchor,extreme_t_time_s=t_anchor/200 if t_anchor is not None else None,
+                    mean_t_positive_units=m.get('mean_t_positive_units'),mean_t_negative_units=m.get('mean_t_negative_units'),
+                    mean_r_amplitude_units=m.get('mean_r_amplitude_units'),mean_t_to_r_ratio=m.get('mean_t_to_r_ratio'),
+                    biphasic_beat_count=m.get('biphasic_beat_count'),t_measurable_count=m.get('t_measurable_count'),
+                    t_reference_units=proof.get('t_reference_units'),used_beat_count=m.get('t_used_count' if family=='T' else 'used_count'),
+                    coverage=proof.get('coverage'),boundary_resolution_s=proof.get('boundary_resolution_s'),
+                    criteria=proof.get('criteria'),measurement_basis=proof.get('measurement_basis'),reference_source=proof.get('reference_source'),
+                    quality_flags=proof.get('quality_flags',[])))
     return result
 
 def st_review_notes(index):
@@ -116,7 +129,7 @@ def st_review_notes(index):
         start_s=e['time_s'],end_s=e.get('end_s',e['time_s']),
         review_kind='whole_review' if (e.get('stt_review_receipt') or {}).get('review_extent')=='whole' else 'range_mean' if e.get('range_statistics') else 'point_or_legacy_range',
         review_status=e.get('stt_review_state',e.get('diagnosis_status','pending')),review_state=e.get('stt_review_state'),
-        result_code=e.get('stt_result_code'),report_group=e.get('stt_report_group'),note=e.get('note',''),physician_note=e.get('stt_physician_note',e.get('note','')),
+        result_code=e.get('stt_result_code'),result_codes=(e.get('stt_review_receipt') or {}).get('result_codes'),findings=(e.get('stt_review_receipt') or {}).get('findings'),report_group=e.get('stt_report_group'),note=e.get('note',''),physician_note=e.get('stt_physician_note',e.get('note','')),
         measurement_protocol=(e.get('stt_review_receipt') or {}).get('measurement_protocol')) for e in index['events']
         if e.get('category')=='ST' and not e.get('stt_report_eligibility',{}).get('table')]
 
@@ -153,7 +166,9 @@ def evidence(index, st=None):
     stride=max(1,(len(points)+7999)//8000)
     counts=Counter(r['class_code'] for r in rows if r['class_code'] in ('P','PA','PV','PD','PF'))
     st=st or {};raw_trends=(st.get('analysis') or {}).get('trends',{}).get('leads',{})
-    trends={lead:[{**p,**({key:None for key in ('st_level_units','reference_units','deviation_units','t_amplitude_units','t_reference_units')} if p.get('eligible') is False or p.get('axis_shift_suspected') else {})} for p in raw_trends.get(lead,[])] for lead in ST_LEADS}
+    # Eligibility is not a licence to erase observed numbers. True missing
+    # measurements stay null; source quality and coverage travel with each point.
+    trends={lead:[dict(p) for p in raw_trends.get(lead,[])] for lead in ST_LEADS}
     return dict(st_evaluation=stt_status(st.get('automatic_candidates')),sections=[dict(key=k,title=v,available=k not in UNAVAILABLE,reason=UNAVAILABLE.get(k,'')) for k,v in PAGE_TITLES.items()],scatter=dict(points=points[::stride],total=len(points),stride=stride),pacing=dict(counts=dict(counts),total=sum(counts.values()),method='仅统计当前起搏类型标记；不检测夺获失败、感知异常或器械故障。'),af_summary=summary,af=[dict(time_s=e['time_s'],end_s=e['end_s'],label=e['label'],status=e.get('rhythm_status',e['diagnosis_status'])) for e in af],st_trends=trends,st_events=st_report_events(index),t_events=st_report_events(index,'T'),st_summary=st_summary(st_report_events(index)),t_summary=st_summary(st_report_events(index,'T')),st_representatives=[],st_review_notes=st_review_notes(index),st_measurement_protocol=stt_protocol(dict(measurement_ms=60,extent='whole')),units='source_device_units',st_trend_resolution_s=60,heart_rate_trend=report_heart_rate(rows,index['duration_s']),heart_rate_method='current_detected_nonartifact_beats_per_actual_60s_bin_support',**derivatives)
 
 def validate_pages(composition):

@@ -9,13 +9,17 @@
     return `D${Math.floor(seconds / 86400) + 1} ${String(Math.floor(seconds / 3600) % 24).padStart(2, '0')}:${String(Math.floor(seconds / 60) % 60).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}.${String(milliseconds % 1000).padStart(3, '0')}`;
   };
   const pointLabel = value => value === 0 ? 'J 点' : number(value) !== null ? `J+${value} ms` : '测量点未提供';
-  const outcomes = Object.freeze({st_depression:'ST 段压低',st_elevation:'ST 段抬高',t_change:'T 波改变',nonspecific:'非特异性 ST-T 改变',no_change:'未见明确动态 ST-T 改变',artifact:'伪差或体位改变',indeterminate:'无法判读'});
-  const resultCode = finding => Object.keys(outcomes).find(key=>outcomes[key]===finding)||({'ST 段压低候选':'st_depression','ST 段抬高候选':'st_elevation','T 波形态异常候选':'t_change','T 波极性反转候选':'t_change'}[finding])||null;
-  const candidateKind = item => ({st_depression:'st_depression',st_elevation:'st_elevation',t_wave_inversion:'t_change'}[item?.kind])||null;
+  const outcomes = Object.freeze({st_depression:'ST 段压低',st_elevation:'ST 段抬高',t_change:'T 波改变',t_wave_inversion:'T 波极性反转',t_persistent_inversion:'T 波持续倒置',t_low_flat:'T 波低平',t_biphasic:'双相 T 波',nonspecific:'非特异性 ST-T 改变',no_change:'未见明确动态 ST-T 改变',artifact:'伪差或体位改变',indeterminate:'无法判读'});
+  const resultCode = finding => Object.keys(outcomes).find(key=>outcomes[key]===finding)||({'ST 段压低候选':'st_depression','ST 段抬高候选':'st_elevation','T 波形态异常候选':'t_change','T 波极性反转候选':'t_wave_inversion','T 波持续倒置候选':'t_persistent_inversion','T 波低平候选':'t_low_flat','双相 T 波候选':'t_biphasic'}[finding])||null;
+  const abnormalCodes=Object.freeze(['st_depression','st_elevation','t_change','t_wave_inversion','t_persistent_inversion','t_low_flat','t_biphasic']);
+  const candidateKind = item => abnormalCodes.includes(item?.kind)?item.kind:null;
+  const resultCodes = (primary,extra=[]) => {const first=resultCode(primary);return first?[first,...(abnormalCodes.includes(first)?extra.filter(code=>abnormalCodes.includes(code)&&code!==first):[])].filter((code,index,all)=>all.indexOf(code)===index):[];};
+  const resultText = receipt => (receipt?.result_codes?.length?receipt.result_codes:[receipt?.result_code]).map(code=>outcomes[code]).filter(Boolean).join('＋');
+  const trendValue = (point,field) => number(point?.[field])??number(point?.['measured_'+field]);
   function receiptText(receipt) {
     if(!receipt)return '';
     if(receipt.review_state==='stale')return '已保存历史复核，当前依据需重核。';
-    const result=outcomes[receipt.result_code]||'人工复核',whole=receipt.range?.duration_s>=60;
+    const result=resultText(receipt)||'人工复核',whole=receipt.range?.duration_s>=60;
     if(receipt.result_code==='artifact'||receipt.result_code==='no_change')return `${result}已保存 · 复核记录 · 未计入异常事件。`;
     if(receipt.result_code==='indeterminate')return '无法判读意见已保存 · 复核记录 · 未计入异常事件。';
     return `${result}${whole?'整段':'复核'}已保存 · 尚未选入报告。`;
@@ -120,5 +124,5 @@
       destroy() {root?.removeEventListener('click', click); root?.removeEventListener('keydown', keydown); render(null); root?.classList.remove('stt-review-layout');},
     };
   }
-  global.ECGSttReviewLayout = Object.freeze({mount, context, outcomes, resultCode, candidateKind, receiptText, trendMetric, waveGeometry});
+  global.ECGSttReviewLayout = Object.freeze({mount, context, outcomes, abnormalCodes, resultCode, resultCodes, resultText, trendValue, candidateKind, receiptText, trendMetric, waveGeometry});
 })(globalThis);

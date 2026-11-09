@@ -73,7 +73,8 @@ def test_twelve_leads_share_one_page_and_absolute_ST_is_not_Delta_or_abs():
     assert len(py_docs(m,['st_trend']))==1
     assert [r['lead'] for r in doc['trend_rows']]==LEADS
     assert doc['metric']=='st_level_units' and doc['trend_rows'][0]['points'][0]['y']==10
-    assert doc['trend_rows'][0]['points'][1]['y'] is None
+    assert doc['trend_rows'][0]['points'][1]['y']==999
+    assert doc['trend_rows'][0]['points'][1]['quality_suspected'] is True
     assert doc['heart_rate'][1]['y'] is None
     m['report']['composition']['stt_trend_metric']='delta'
     delta=py_docs(m,['st_trend'])[0]

@@ -2,7 +2,7 @@
 
 /* Browser-only mathematical API. No uploaded or patient dataset is consumed. */
 (() => {
-  const STT_RHYTHM_POLICY='independent_of_AF_AFL_reviews',STT_ALGORITHM='stt-screening-0.3.2-independent-rhythm',STT_RANGE_PROFILE='raw-200hz-fixed16s-st-perbeat-mean-v2',STT_METHOD='stt-hospital-review-v2';
+  const STT_RHYTHM_POLICY='independent_of_AF_AFL_reviews',STT_ALGORITHM='stt-screening-0.4.0-comprehensive-independent',STT_RANGE_PROFILE='raw-200hz-fixed16s-st-perbeat-morphology-v3',STT_METHOD='stt-hospital-review-v3';
   const RATE=200,COUNT=1,STORE_KEY=window.__CARDIOINSIGHT_SOURCE_VERSION__?.source_fingerprint?"cardioinsight.math."+window.__CARDIOINSIGHT_SOURCE_VERSION__.source_fingerprint:"cardioinsight-public-math-4314-v2";
   const rawSignalMetadata=()=>({units:'device_unit',unit_label:'设备单位',calibration_verified:false,calibration_note:'u = 设备单位，电压未校准；显示放大不等于 mm/mV 标定。',signal_profile:{id:'data-int16le-8ch-200hz-v1',sample_rate_hz:RATE,channel_count:8,sample_format:'little-endian int16',stored_leads:['I','II','V1','V2','V3','V4','V5','V6'],derived_leads:{III:'II-I',aVR:'-(I+II)/2',aVL:'I-II/2',aVF:'II-I/2'},basis:'当前支持的 DATA 导入格式；采样率与通道映射尚未经设备资料核验',device_verified:false}});
   const TEMPLATE_FAMILIES=new Set(["全部","单发","成对","房速","二联律","三联律(NPN)","三联律(NNP)","连续三发","连续多发","室速","三联律(NPP)","四联律","自定义"]),TEMPLATE_LEADS=new Set(["I","II","III","aVR","aVL","aVF","V1","V2","V3","V4","V5","V6"]);
@@ -130,7 +130,7 @@
     const [a,b]=pair,event={event_id:'report-longest-rr',category:'rr_candidate',subtype:'rr_measurement',label:`最长 RR ${(b.rr_ms/1000).toFixed(3)} s（当前可分析记录）`,sample_index:b.sample_index,start_sample:b.sample_index,end_sample:b.sample_index,time_s:b.sample_index/200,end_s:b.sample_index/200,rr_ms:b.rr_ms,hr:b.hr,target_samples:[b.sample_index],beat_count:1,templates:[],evidence_only:true,diagnosis_status:'pending',candidate_scope:reportIdentity(),candidate_context:{rr_start_sample:a.sample_index,rr_end_sample:b.sample_index,rr_start_id:a.id,rr_end_id:b.id,rr_ms:b.rr_ms,start_s:a.sample_index/200,end_s:b.sample_index/200}};
     event.basis_version='report-rr-v1:'+reportHash(reportDescriptor(index,event));return attachReportEvidence(index,event);
   }
-  const currentSttProtocol=p=>p?.rhythm_policy===STT_RHYTHM_POLICY&&[STT_METHOD,STT_RANGE_PROFILE].includes(p.method_version??p.id);
+  const currentSttProtocol=p=>p?.rhythm_policy===STT_RHYTHM_POLICY&&[STT_METHOD,STT_RANGE_PROFILE,'stt-hospital-review-v2','raw-200hz-fixed16s-st-perbeat-mean-v2'].includes(p.method_version??p.id);
   function clinicalBaseIndex(){
     const index={...ECGClinicalAnalysis.buildIndex({...editedFeed(),duration},templateList(),annotationList(),workflow()),start_time:sourceCase.metadata.start_iso||sourceCase.metadata.start_time},identity=reportIdentity();
     for(const event of index.events){if(event.category!=='ST')continue;const scope=event.stt_source_scope||{},binding=saved.sttRecordBindings?.[caseId]?.[event.event_id],proof=event.stt_event_evidence;
@@ -249,7 +249,7 @@
   }
   function sttReview(){
     if(sourceCase.stt_review){
-      const binding=sourceCase.stt_review_binding||{},value=copy(sourceCase.stt_review),identity=reportIdentity(),policyCurrent=binding.rhythm_policy===STT_RHYTHM_POLICY&&binding.algorithm_version===STT_ALGORITHM&&value.analysis?.algorithm_version===STT_ALGORITHM&&value.analysis?.rhythm_policy===STT_RHYTHM_POLICY,valid=binding.case_id===caseId&&binding.analysis_basis===identity.analysis_basis&&binding.beat_revision===editorValue().revision&&!overrideList().length&&policyCurrent&&!!sttRawDigest&&sttRawDigest===binding.raw_waveform_sha256&&binding.beat_version===clinicalBaseIndex().beat_version&&binding.data_version===binding.beat_version+'-stt-independent-v2';
+      const binding=sourceCase.stt_review_binding||{},value=copy(sourceCase.stt_review),identity=reportIdentity(),policyCurrent=binding.rhythm_policy===STT_RHYTHM_POLICY&&binding.algorithm_version===STT_ALGORITHM&&value.analysis?.algorithm_version===STT_ALGORITHM&&value.analysis?.rhythm_policy===STT_RHYTHM_POLICY,valid=binding.case_id===caseId&&binding.analysis_basis===identity.analysis_basis&&binding.beat_revision===editorValue().revision&&!overrideList().length&&policyCurrent&&!!sttRawDigest&&sttRawDigest===binding.raw_waveform_sha256&&binding.beat_version===clinicalBaseIndex().beat_version&&binding.data_version===binding.beat_version+'-stt-comprehensive-v3';
       value.simulation={python_precomputed:true,browser_recomputed:false,patient_inputs_read:false,precomputed_binding:copy(binding)};
       if(valid)return {...value,...identity,review_records:annotationItems().filter(a=>['ST','ST_REVIEW_NOTE'].includes(a.details?.kind))};
       return {...value,case_id:binding.case_id,analysis_basis:binding.analysis_basis,beat_revision:binding.beat_revision,analysis_revision:0,current_scope:identity,review_records:annotationItems().filter(a=>['ST','ST_REVIEW_NOTE'].includes(a.details?.kind)),stale:true,analysis:null,
@@ -335,7 +335,7 @@
     try{return {case_id:caseId,source_digest:'unverified-browser-math-labels:'+ECGClinicalAnalysis.fingerprint(JSON.stringify(sourceCase.beats)),data_version:clinicalBaseIndex().data_version,analysis_basis:'public-math-4314-v2:'+caseId,beat_revision:editorValue().revision,analysis_revision:workflow().revision};}
     finally{activeEdited=previous;}
   }
-  function demoSttScope(){return {...demoReviewScope(),source_digest:'raw-sha256:'+sttRawDigest,data_version:clinicalBaseIndex().beat_version+'-stt-independent-v2'};}
+  function demoSttScope(){return {...demoReviewScope(),source_digest:'raw-sha256:'+sttRawDigest,data_version:clinicalBaseIndex().beat_version+'-stt-comprehensive-v3'};}
   function demoReviewChanged(action){
     workflow();if(action!=='report_evidence.confirmed')saved.reviews[caseId].revision++;
     const value=saved.reports[caseId];if(value){value.status='draft';value.reviewed_by='';value.version++;value.updated_at=now();}
@@ -368,7 +368,7 @@
     const sourceStorageBefore=localStorage.getItem(STORE_KEY);
     await prepareDemoSttSource();
     if(sourceStorageBefore!==localStorage.getItem(STORE_KEY))sttFailure('核对原始波形期间病例已变化，未保存；请重新读取后核对',409);
-    const A=ECGClinicalAnalysis,payload=copy(raw),d=payload.details,results=['st_depression','st_elevation','t_change','nonspecific','no_change','artifact','indeterminate'];
+    const A=ECGClinicalAnalysis,payload=copy(raw),d=payload.details,results=A.sttResults;
     if(!d||d.kind!=='ST'||d.reviewed!==true||!results.includes(d.result_code))sttFailure('请选择并保存本条医生复核结果');
     if(typeof d.submission_id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(d.submission_id))sttFailure('ST-T提交编号须为规范UUID');
     if(!d.review_scope||['case_id','analysis_basis','analysis_revision','beat_revision'].some(k=>!Object.hasOwn(d.review_scope,k)))sttFailure('ST-T保存缺少当前完整依据');
@@ -383,22 +383,32 @@
     if(annotationId!==null&&(!before||!['ST','ST_REVIEW_NOTE'].includes(before.details?.kind)))sttFailure('原ST-T复核记录不存在，未创建另一条',409);
     if(before&&(!Number.isSafeInteger(payload.expected_record_version)||payload.expected_record_version!==(before.details.record_version||1)))sttFailure('ST-T记录版本已变化，请载入本条后重新核对',409);
     if(d.measurement_protocol?.method_version&&d.measurement_protocol.method_version!==STT_METHOD)sttFailure('旧ST-T测量方法须重新核对，未改签旧记录');
-    d.measurement_protocol=A.sttProtocol(d.measurement_protocol);if(!currentSttProtocol(d.measurement_protocol))sttFailure('当前ST-T测量协议未加载，请刷新后复核');if(d.measurement_protocol.extent==='whole'&&d.measurement_protocol.baseline_method==='manual_iso_point')sttFailure('整段统计不能把单搏手工ISO应用到全部心搏');d.status=['st_depression','st_elevation','t_change','nonspecific'].includes(d.result_code)?'confirmed':['no_change','artifact'].includes(d.result_code)?'excluded':'pending';
+    d.measurement_protocol=A.sttProtocol(d.measurement_protocol);if(!currentSttProtocol(d.measurement_protocol))sttFailure('当前ST-T测量协议未加载，请刷新后复核');if(d.measurement_protocol.extent==='whole'&&d.measurement_protocol.baseline_method==='manual_iso_point')sttFailure('整段统计不能把单搏手工ISO应用到全部心搏');d.status=A.sttAbnormal.includes(d.result_code)?'confirmed':['no_change','artifact'].includes(d.result_code)?'excluded':'pending';
     const point=d.point_measurement;if(point){if(typeof point!=='object'||['iso_sample','j_sample','measurement_sample'].some(k=>!Number.isSafeInteger(point[k])||point[k]<0||point[k]>=total)||!(point.iso_sample<point.j_sample&&point.j_sample<=point.measurement_sample)||point.measurement_ms!==d.measurement_protocol.measurement_ms||Math.abs(point.measurement_sample-point.j_sample-d.measurement_protocol.measurement_ms/5)>1)sttFailure('ST-T手工点测量位置或协议无效');}
     const extent=d.review_extent??'point';if(!['point','whole'].includes(extent))sttFailure('ST-T复核作用范围无效');d.review_extent=extent;
     let chosen=null,measured=null;
     if(d.stt_candidate_id){reportScope(d.stt_candidate_scope||{},true);measured=sttReview();if(measured.stale)sttFailure('心搏、来源或测量方法已变化，数学Demo预计算ST-T候选已失效',409);chosen=measured.automatic_candidates?.items?.find(c=>c.id===d.stt_candidate_id);if(!chosen)sttFailure('原ST-T候选已变化，请重选后核对',409);}
     if(d.range_statistics)await demoReview().validateSttRangeSave(payload);
+    d.findings=A.sttFindings(d,first,end,d.review_leads);
     if(extent==='whole'){
-      const exact=chosen&&first===Math.round(chosen.start_s*RATE)&&end+1===Math.round(chosen.end_s*RATE)&&d.review_leads.every(l=>chosen.leads.includes(l)),machineProtocol=A.sttProtocol({measurement_ms:d.measurement_protocol.extent==='whole'?d.measurement_protocol.measurement_ms:60,extent:'whole'}),kind=({st_depression:'st_depression',st_elevation:'st_elevation',t_change:'t_wave_inversion'}[d.result_code])||chosen?.kind||'stt_review';
-      const proof={...(exact?Object.fromEntries(['continuous_target_s','peak_time_s','peak_deviation_units','quality_score'].filter(k=>Object.hasOwn(chosen,k)).map(k=>[k,chosen[k]])):{}),kind,start_s:first/RATE,end_s:(end+1)/RATE,duration_s:(end+1-first)/RATE,leads:d.review_leads.slice(),measurement_protocol:machineProtocol,scope:identity,units:'source_device_units',source:exact?'reviewed_automatic_candidate':'physician_selected_range',original_machine_range:chosen?{start_s:chosen.start_s,end_s:chosen.end_s}:null,boundary_resolution_s:exact?16:.005,continuous_target_s:exact?chosen.continuous_target_s??null:null};
-      if(chosen)proof.candidate_id=chosen.id;
-      if(end+1-first>=12000){
-        const cached=chosen?.whole_statistics,useCached=exact&&cached&&machineProtocol.measurement_ms===60&&currentSttProtocol(cached.method_profile)&&!cached.exclusions?.intervals?.length;
-        const statistics=useCached?cached:await demoReview().route(new URL(`/api/cases/${caseId}/stt-range`,location.href),'POST',{scope:demoSttScope(),start_sample:first,end_sample:end+1,leads:d.review_leads,measurement_ms:machineProtocol.measurement_ms});
-        proof.metrics=copy(statistics.leads.filter(r=>d.review_leads.includes(r.lead)));proof.coverage=copy(statistics.coverage);proof.counts=copy(statistics.counts);proof.measurement_protocol.range_profile=copy(statistics.method_profile);
+      const childProofs=[];
+      for(const finding of d.findings){
+        const a=finding.start_sample,b=finding.end_sample,names=finding.leads,kind=['st_depression','st_elevation','t_change','t_wave_inversion','t_persistent_inversion','t_low_flat','t_biphasic'].includes(finding.result_code)?finding.result_code:'stt_review',exact=chosen&&kind===chosen.kind&&a===Math.round(chosen.start_s*RATE)&&b+1===Math.round(chosen.end_s*RATE)&&names.every(l=>chosen.leads.includes(l));
+        const machineProtocol=A.sttProtocol({measurement_ms:d.measurement_protocol.extent==='whole'?d.measurement_protocol.measurement_ms:60,extent:'whole'});
+        const proof={...(exact?Object.fromEntries(['continuous_target_s','peak_time_s','peak_deviation_units','quality_score','criteria','measurement_basis','reference_source','quality_flags','reference_context'].filter(k=>Object.hasOwn(chosen,k)).map(k=>[k,chosen[k]])):{}),kind,result_code:finding.result_code,start_s:a/RATE,end_s:(b+1)/RATE,duration_s:(b+1-a)/RATE,leads:names.slice(),measurement_protocol:machineProtocol,units:'source_device_units',source:exact?'reviewed_automatic_candidate':'physician_selected_range',original_machine_range:chosen?{start_s:chosen.start_s,end_s:chosen.end_s}:null,boundary_resolution_s:exact?chosen.boundary_resolution_s??.005:.005,continuous_target_s:exact?chosen.continuous_target_s??null:null,rhythm_policy:STT_RHYTHM_POLICY};
+        if(chosen)proof.candidate_id=chosen.id;
+        if(b+1-a>=12000){
+          const cached=chosen?.whole_statistics,useCached=exact&&cached&&machineProtocol.measurement_ms===60&&cached.method_profile?.id===STT_RANGE_PROFILE&&!cached.exclusions?.intervals?.length;
+          const statistics=useCached?cached:await demoReview().route(new URL(`/api/cases/${caseId}/stt-range`,location.href),'POST',{scope:demoSttScope(),start_sample:a,end_sample:b+1,leads:names,measurement_ms:machineProtocol.measurement_ms});
+          proof.metrics=copy(statistics.leads.filter(r=>names.includes(r.lead)));proof.coverage=copy(statistics.coverage);proof.counts=copy(statistics.counts);proof.measurement_protocol.range_profile=copy(statistics.method_profile);
+          const extrema=kind==='t_low_flat'?['minimum_absolute_t_units','minimum_absolute_t_sample']:kind==='t_persistent_inversion'?['minimum_t_amplitude_units','minimum_t_sample']:null;
+          if(extrema&&!exact){const usable=statistics.leads.filter(m=>Number.isFinite(m[extrema[0]])&&Number.isSafeInteger(m[extrema[1]])).sort((x,y)=>x[extrema[0]]-y[extrema[0]]);if(usable.length)proof.peak_time_s=usable[0][extrema[1]]/RATE;}
+        }
+        childProofs.push(proof);
       }
-      proof.rhythm_policy=STT_RHYTHM_POLICY;d.stt_event_evidence=proof;
+      d.stt_event_evidence=childProofs.length===1?childProofs[0]:{kind:'stt_composite',start_s:first/RATE,end_s:(end+1)/RATE,duration_s:(end+1-first)/RATE,leads:d.review_leads.slice(),measurement_protocol:A.sttProtocol({measurement_ms:d.measurement_protocol.extent==='whole'?d.measurement_protocol.measurement_ms:60,extent:'whole'}),scope:identity,units:'source_device_units',rhythm_policy:STT_RHYTHM_POLICY,source:'physician_selected_range',findings:childProofs};
+      d.stt_event_evidence.scope=identity;if(chosen)d.stt_event_evidence.algorithm_version=measured.analysis.algorithm_version;
+      if(!d.stt_event_evidence.peak_time_s){const timed=childProofs.find(p=>Number.isFinite(p.peak_time_s));if(timed)d.stt_event_evidence.peak_time_s=timed.peak_time_s;}
     }
     if(storageBefore!==localStorage.getItem(STORE_KEY)){
       saved={...copy(savedDefault),...JSON.parse(localStorage.getItem(STORE_KEY)||'{}')};const concurrent=sttReplay(raw,annotationId,requestHash);if(concurrent)return concurrent;sttFailure('验证期间病例已变化，未保存；请重新读取后核对',409);
@@ -523,15 +533,31 @@
       }catch(error){return failure(error.message)}
     }
     if(action==="report-statistics"){const feed={...editedFeed(),duration},result=ECGReportEngine.statistics(clinicalIndex(),sourceCase.metadata.start_iso||sourceCase.metadata.start_time,feed.document.settings);result.hrv=engine.hrv(feed,duration);return response(result)}
-    if(action==="report-sections")return response(ECGReportSections.evidence(clinicalIndex(),sttReview()));
-    if(['report-af-representatives','report-strip-preview'].includes(action)){
+    if(action==="report-sections"){
+      const own=reportIdentity(),value=ECGReportSections.evidence(clinicalIndex(),sttReview()),params=new URLSearchParams({whole:'1',filter:'raw'});
+      value.st_representatives=[];
+      for(const [role,field,anchor,label] of [['st_min','minimum_st_level_units','minimum_st_sample','最深ST电平实际搏'],['st_max','maximum_st_level_units','maximum_st_sample','最高ST电平实际搏'],['reference','reference_st_level_units','reference_sample','范围均值附近实际参考搏']]){
+        const usable=value.st_events.filter(r=>Number.isFinite(r[field])&&Number.isSafeInteger(r[anchor]));if(!usable.length)continue;
+        const row=role==='st_min'?usable.reduce((a,b)=>a[field]<=b[field]?a:b):role==='st_max'?usable.reduce((a,b)=>a[field]>=b[field]?a:b):usable[0],at=row[anchor]/RATE,start=Math.max(0,at-.25),end=Math.min(duration,at+.65);
+        value.st_representatives.push({role,label,lead:row.lead,sample_index:row[anchor],time_s:at,event_id:row.event_id,basis_version:row.basis_version,value:row[field],units:'source_device_units',metric:'st_level',measurement_protocol:row.measurement_protocol,reference_method:role==='reference'?'nearest_valid_beat_to_event_mean_st_level':null,waveform:await waveform(params,{start,duration:end-start,leads:[row.lead],maxPoints:600,filter:'raw'})});
+      }
+      value.t_representatives=[];
+      for(const [role,kind,label] of [['t_inversion','t_persistent_inversion','持续倒置最负T实际搏'],['t_low','t_low_flat','低平T最小幅度实际搏'],['t_dynamic','t_wave_inversion','动态T极值实际搏']]){
+        const usable=value.t_events.filter(r=>r.kind===kind&&Number.isSafeInteger(r.extreme_t_sample)&&Number.isFinite(r.extreme_t_amplitude_units));if(!usable.length)continue;
+        const row=kind==='t_wave_inversion'?usable.reduce((a,b)=>Math.abs(a.extreme_t_amplitude_units)>=Math.abs(b.extreme_t_amplitude_units)?a:b):usable.reduce((a,b)=>a.extreme_t_amplitude_units<=b.extreme_t_amplitude_units?a:b),at=row.extreme_t_sample/RATE,start=Math.max(0,at-.25),end=Math.min(duration,at+.65);
+        value.t_representatives.push({role,label,lead:row.lead,sample_index:row.extreme_t_sample,time_s:at,event_id:row.event_id,basis_version:row.basis_version,value:row.extreme_t_amplitude_units,units:'source_device_units',metric:'t_amplitude_units',measurement_protocol:row.measurement_protocol,waveform:await waveform(params,{start,duration:end-start,leads:[row.lead],maxPoints:600,filter:'raw'})});
+      }
+      reportScope(own,true);return response(value);
+    }
+    if(['report-af-representatives','report-stt-representatives','report-strip-preview'].includes(action)){
       if(method!=='GET')return failure('此图条接口仅支持只读GET',405);
       try{
         const own=reportScope(Object.fromEntries(url.searchParams)),index=clinicalIndex(),raw={duration_s:Number(url.searchParams.get('duration')||7)},leadArg=url.searchParams.get('leads');if(leadArg)raw.leads=leadArg.split(',');
-        if(action==='report-af-representatives'){
+        if(['report-af-representatives','report-stt-representatives'].includes(action)){
           const event=index.events.find(e=>e.event_id===url.searchParams.get('event_id'));
-          if(!event||event.category!=='AF'||url.searchParams.has('basis_version')&&url.searchParams.get('basis_version')!==event.basis_version)return failure('房颤／房扑片段依据已变化，请重新选择',409);
-          return response({...ECGReportEngine.afRepresentatives(index,event,raw),event_id:event.event_id,basis_version:event.basis_version,...own});
+          if(!event||event.category!==(action==='report-stt-representatives'?'ST':'AF')||url.searchParams.has('basis_version')&&url.searchParams.get('basis_version')!==event.basis_version)return failure('房颤／房扑片段依据已变化，请重新选择',409);
+          if(action==='report-stt-representatives'&&!leadArg)raw.leads=[...ECGReportEngine.leads];
+          return response({...ECGReportEngine[action==='report-stt-representatives'?'sttRepresentatives':'afRepresentatives'](index,event,raw),event_id:event.event_id,basis_version:event.basis_version,...own});
         }
         const time=Number(url.searchParams.get('time_s')??url.searchParams.get('time')??0);number(time,'留图定位时间',0,Math.max(0,duration-.005));
         if(url.searchParams.has('range_start_s')||url.searchParams.has('range_end_s'))for(const key of ['range_start_s','range_end_s']){if(!url.searchParams.has(key))throw Error('人工区间须同时提供起止时间');raw[key]=Number(url.searchParams.get(key));}
@@ -544,7 +570,7 @@
     if(action==="report-strip"){
       const index=clinicalIndex(),event=index.events.find(e=>e.event_id===url.searchParams.get('event_id'));
       if(!event||event.basis_version!==url.searchParams.get('basis_version'))return failure('图条依据已变化，请重新选择事件',409);
-      try{const manual=url.searchParams.has('range_start_s')||url.searchParams.has('range_end_s')?{range_start_s:Number(url.searchParams.get('range_start_s')),range_end_s:Number(url.searchParams.get('range_end_s'))}:{};const spec=ECGReportEngine.resolve(index,event,{leads:String(url.searchParams.get('leads')||'II,V1,V5').split(','),duration_s:Number(url.searchParams.get('duration')||7),...manual}),params=new URLSearchParams({whole:'1',filter:'raw'});
+      try{const manual=url.searchParams.has('range_start_s')||url.searchParams.has('range_end_s')?{range_start_s:Number(url.searchParams.get('range_start_s')),range_end_s:Number(url.searchParams.get('range_end_s'))}:{};const spec=ECGReportEngine.resolve(index,event,{leads:String(url.searchParams.get('leads')||(event.category==='ST'?ECGReportEngine.leads.join(','):'II,V1,V5')).split(','),duration_s:Number(url.searchParams.get('duration')||7),...manual}),params=new URLSearchParams({whole:'1',filter:'raw'});
         const wave=await waveform(params,{start:spec.start_s,duration:spec.actual_duration_s,leads:spec.leads,maxPoints:12000,filter:'raw'});wave.beats=spec.visible_beats;
         const context=await waveform(params,{start:spec.context_start_s,duration:spec.context_duration_s,leads:['II'],maxPoints:1600,filter:'raw'});
         return response({...event,strip:spec,waveform:wave,context});
@@ -624,7 +650,7 @@
         if(Object.hasOwn(composition,'stt_trend_metric')&&!['st_level','delta'].includes(composition.stt_trend_metric))throw Error('ST趋势指标须为ST电平或ΔST');
         if(Object.hasOwn(composition,'stt_report_use'))composition.stt_report_use=ECGClinicalAnalysis.sttNormalizedUses(composition.stt_report_use);
         composition.strip_defaults=ECGReportEngine.settings(composition.strip_defaults);
-        const entries=(composition.selected_events||[]).map(s=>({...s,...ECGReportEngine.settings(s)})),index=clinicalIndex();
+        const index=clinicalIndex(),lookup=new Map(index.events.map(e=>[e.event_id,e])),entries=(composition.selected_events||[]).map(s=>({...s,...ECGReportEngine.settings(lookup.get(s.event_id)?.category==='ST'&&!Object.hasOwn(s,'leads')?{...s,leads:[...ECGReportEngine.leads]}:s)}));
         composition.selected_events=ECGClinicalAnalysis.normalizeReportSelections(index,entries);
         if(composition.selected_events.some(s=>s.strip_id!==undefined||s.representative_role!==undefined))composition.schema_version=3;
         const retained=new Set(composition.selected_events);mergedRR=entries.filter(s=>!retained.has(s)).map(s=>s.event_id);
@@ -638,7 +664,7 @@
   }
 
   // Browser demo identity is a local revision, not a verified raw-file fingerprint.
-  const clinicalReads=new Set(['','analysis-basis','report','overview','rhythm-review','trend','rr-visuals','scatter','hrv','hrv-windows','hrv-analysis','stt-review','report-statistics','report-sections','template-occurrences','report-events','waveform','waveform-overview','event-waveform','event-waveforms','report-strip','report-af-representatives','report-strip-preview','evidence-candidates','report-rr-evidence','report-evidence/preview','waveform-density','scatter-selection','waveform-strips','rr-review','rr-review/locate','hrv-review','stt-range']);
+  const clinicalReads=new Set(['','analysis-basis','report','overview','rhythm-review','trend','rr-visuals','scatter','hrv','hrv-windows','hrv-analysis','stt-review','report-statistics','report-sections','template-occurrences','report-events','waveform','waveform-overview','event-waveform','event-waveforms','report-strip','report-af-representatives','report-stt-representatives','report-strip-preview','evidence-candidates','report-rr-evidence','report-evidence/preview','waveform-density','scatter-selection','waveform-strips','rr-review','rr-review/locate','hrv-review','stt-range']);
   async function clinicalRoute(url,options){
     const match=url.pathname.match(/^\/api\/cases\/([^/]+)(?:\/(.*))?$/),action=match?.[2]||'',method=String(options.method||'GET').toUpperCase();
     if(!match||decodeURIComponent(match[1])!==caseId||!clinicalReads.has(action)||(method!=='GET'&&!(['event-waveforms','waveform-density','scatter-selection','waveform-strips','rr-review/locate','stt-range','report-evidence/preview'].includes(action)&&method==='POST')))return route(url,options);

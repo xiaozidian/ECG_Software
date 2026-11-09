@@ -7,12 +7,16 @@ import struct
 from hashlib import sha256
 
 ST_KINDS = ('ST', 'ST_REVIEW_NOTE')
-RESULTS = ('st_depression','st_elevation','t_change','nonspecific','no_change','artifact','indeterminate')
-ABNORMAL = ('st_depression','st_elevation','t_change','nonspecific')
-SCHEMA = 'stt-review-record-v1'
-METHOD = 'stt-hospital-review-v2'
+ST_RESULTS = ('st_depression','st_elevation')
+T_RESULTS = ('t_change','t_wave_inversion','t_persistent_inversion','t_low_flat','t_biphasic')
+RESULTS = (*ST_RESULTS,*T_RESULTS,'nonspecific','no_change','artifact','indeterminate')
+ABNORMAL = (*ST_RESULTS,*T_RESULTS,'nonspecific')
+SCHEMA = 'stt-review-record-v2'
+METHOD = 'stt-hospital-review-v3'
+HISTORICAL_METHODS = ('stt-hospital-review-v2',)
 RHYTHM_POLICY = 'independent_of_AF_AFL_reviews'
-RANGE_PROFILE = 'raw-200hz-fixed16s-st-perbeat-mean-v2'
+RANGE_PROFILE = 'raw-200hz-fixed16s-st-perbeat-morphology-v3'
+HISTORICAL_RANGE_PROFILES = ('raw-200hz-fixed16s-st-perbeat-mean-v2',)
 LEGACY_RANGE_PROFILE = 'raw-200hz-fixed16s-st-perbeat-mean-v1'
 
 
@@ -61,9 +65,45 @@ def result_code(details):
     if '无法' in text:return 'indeterminate'
     if '压低' in text:return 'st_depression'
     if '抬高' in text:return 'st_elevation'
-    if 'T 波' in text or 'T波' in text or (details.get('stt_event_evidence') or {}).get('kind')=='t_wave_inversion':return 't_change'
+    if 'T 波' in text or 'T波' in text or (details.get('stt_event_evidence') or {}).get('kind') in T_RESULTS:return 't_change'
     return 'nonspecific' if details.get('status')=='confirmed' else 'indeterminate'
 
+
+
+def result_family(code):
+    return 'ST' if code in ST_RESULTS else 'T' if code in T_RESULTS else 'NOTE'
+
+
+def normalized_findings(details, first, end, leads):
+    """Validate doctor findings; end samples use the parent's inclusive contract.
+
+    Evidence and measurements are never accepted inside a client finding.
+    A parent identity owns all child findings and all report uses.
+    """
+    raw=details.get('findings')
+    if raw is None:
+        return [dict(result_code=result_code(details),leads=list(leads),start_sample=first,end_sample=end)]
+    if not isinstance(raw,list) or not 1<=len(raw)<=48:raise ValueError('ST-T复核须有1–48项实际结论')
+    result=[];seen=set()
+    for child in raw:
+        if not isinstance(child,dict) or set(child)-{'result_code','leads','start_sample','end_sample'}:raise ValueError('ST-T子项仅接受结论、导联和范围，测量证据由服务器生成')
+        code=child.get('result_code');names=child.get('leads',leads)
+        a,b=child.get('start_sample',first),child.get('end_sample',end)
+        if code not in RESULTS:raise ValueError('ST-T子项结论无效')
+        if not isinstance(names,list) or not names or any(not isinstance(x,str) or x not in leads for x in names) or len(set(names))!=len(names):raise ValueError('子项导联须为本次实际复核导联')
+        if type(a) is not int or type(b) is not int or not first<=a<=b<=end:raise ValueError('ST-T子项范围须位于完整复核范围内')
+        key=(code,tuple(sorted(names)),a,b)
+        if key in seen:raise ValueError('ST-T复核子项重复')
+        seen.add(key);result.append(dict(result_code=code,leads=list(names),start_sample=a,end_sample=b))
+    if details.get('result_code') not in {r['result_code'] for r in result}:raise ValueError('主要结论须包含在本次复核子项内')
+    return result
+
+
+def evidence_findings(event):
+    """Expose stored child proofs without changing historical records."""
+    proof=event.get('stt_event_evidence') or {}
+    if isinstance(proof.get('findings'),list):return proof['findings']
+    return [proof] if proof else []
 
 def protocol(raw=None, *, extent='point'):
     raw=raw or {}
@@ -92,13 +132,13 @@ def current_method(details):
     """An old mask-based record remains readable, but is never silently re-signed."""
     evidence=details.get('stt_event_evidence') or {}
     for raw in (details.get('measurement_protocol'),evidence.get('measurement_protocol')):
-        if raw is not None and (stored_protocol(raw) is None or raw.get('method_version')!=METHOD
+        if raw is not None and (stored_protocol(raw) is None or raw.get('method_version') not in (METHOD,*HISTORICAL_METHODS)
                                 or raw.get('rhythm_policy')!=RHYTHM_POLICY):return False
     if evidence and (evidence.get('rhythm_policy')!=RHYTHM_POLICY or 'rhythm_exclusions_digest' in evidence):return False
     profiles=[(details.get('range_statistics') or {}).get('method_profile'),
               (evidence.get('measurement_protocol') or {}).get('range_profile')]
     for profile in profiles:
-        if profile is not None and (not isinstance(profile,dict) or profile.get('id')!=RANGE_PROFILE
+        if profile is not None and (not isinstance(profile,dict) or profile.get('id') not in (RANGE_PROFILE,*HISTORICAL_RANGE_PROFILES)
                                     or profile.get('rhythm_policy')!=RHYTHM_POLICY):return False
     return not details.get('reviewed') or isinstance(details.get('measurement_protocol'),dict)
 
@@ -115,7 +155,7 @@ def saved_protocol(details,evidence):
     # Historical signed means have their own declared method. Neither a
     # default ST60 point nor the new review method may replace that evidence.
     return dict(method_version=profile.get('id'),measurement_ms=profile['measurement_ms'],extent='whole',
-        baseline_method='pre_qrs_stable' if profile.get('id') in (LEGACY_RANGE_PROFILE,RANGE_PROFILE) else None,
+        baseline_method='pre_qrs_stable' if profile.get('id') in (LEGACY_RANGE_PROFILE,RANGE_PROFILE,*HISTORICAL_RANGE_PROFILES) else None,
         units=profile.get('units'),calibration_verified=profile.get('calibration_verified') is True,
         range_profile=copy.deepcopy(profile))
 
@@ -127,17 +167,21 @@ def review_metadata(annotation, *, basis_version=None, stale=False):
     state='reviewed' if explicit or bound and d.get('status') in ('confirmed','excluded') else 'unreviewed'
     if state=='reviewed' and not current_method(d):state='stale'
     if stale:state='stale'
-    family='ST' if code in ('st_depression','st_elevation') else 'T' if code=='t_change' else 'NOTE'
-    group=family if state=='reviewed' and code in ABNORMAL and family!='NOTE' else 'ST_NOTE' if state=='reviewed' else 'pending'
     first=annotation['sample_index'];end=int(d.get('end_sample',first))+1
+    findings=normalized_findings(d,first,end-1,d.get('review_leads') or (d.get('stt_event_evidence') or {}).get('leads') or ([annotation['lead']] if annotation.get('lead') not in (None,'','全部') else []))
+    codes=list(dict.fromkeys(r['result_code'] for r in findings))
+    families={result_family(c) for c in codes}-{"NOTE"}
+    family='ST_T' if len(families)>1 else next(iter(families),'NOTE')
+    group=family if state=='reviewed' and any(c in ABNORMAL for c in codes) and family!='NOTE' else 'ST_NOTE' if state=='reviewed' else 'pending'
     evidence=d.get('stt_event_evidence') or {}
     extent=d.get('review_extent','whole' if evidence else 'point')
     actual=saved_protocol(d,evidence)
     eligible=state=='reviewed'
-    table=eligible and code in ('st_depression','st_elevation','t_change') and extent=='whole' and end-first>=12000 and bool(evidence)
+    child_proofs=evidence.get('findings') if isinstance(evidence.get('findings'),list) else [evidence]
+    table=eligible and extent=='whole' and any(r.get('kind') in (*ST_RESULTS,*T_RESULTS) and r.get('result_code',code) in (*ST_RESULTS,*T_RESULTS) and (r.get('end_s',0)-r.get('start_s',0))>=60-1e-9 for r in child_proofs if isinstance(r,dict))
     return dict(schema_version=SCHEMA,record_id='annotation:'+str(annotation['id']),event_id='annotation:'+str(annotation['id']),
         annotation_id=annotation['id'],record_version=int(d.get('record_version',1)),review_state=state,
-        result_code=code,result_kind=family,report_group=group,status=d.get('status','pending'),review_extent=extent,
+        result_code=code,result_codes=codes,findings=copy.deepcopy(findings),result_kind=family,report_group=group,status=d.get('status','pending'),review_extent=extent,
         range=dict(start_sample=first,end_sample=end,start_s=first/200,end_s=end/200,duration_s=(end-first)/200),
         basis_version=basis_version,measurement_protocol=copy.deepcopy(actual),
         point_measurement_protocol=stored_protocol(d.get('measurement_protocol')),
@@ -166,7 +210,7 @@ def decorate_event(event, annotation, beat_version):
         stt_review_receipt=receipt,stt_source_scope=scope,stt_continuous=receipt['report_eligibility']['table'])
     event['stt_physician_note']=d.get('physician_note',annotation.get('note',''))
     if d.get('withdrawn_report_settings'):event['retained_settings']=copy.deepcopy(d['withdrawn_report_settings'][0])
-    event['diagnosis_status']='confirmed' if receipt['review_state']=='reviewed' and receipt['result_code'] in ABNORMAL else 'pending'
+    event['diagnosis_status']='confirmed' if receipt['review_state']=='reviewed' and any(c in ABNORMAL for c in receipt['result_codes']) else 'pending'
     return event
 
 

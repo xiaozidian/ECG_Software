@@ -63,6 +63,22 @@
     if(whole)items=[whole];else{items=['start','end'].map(role=>positions[role]).filter(p=>p.selectable).filter((p,i,list)=>!list.slice(0,i).some(q=>equal(p,q)));const middle=positions.middle;let covered=middle.start_s;for(const p of [...items].sort((x,y)=>x.start_s-y.start_s)){if(p.start_s>covered+1e-8)break;covered=Math.max(covered,p.end_s);}if(middle.selectable&&covered<middle.end_s-1e-8&&!items.some(p=>equal(p,middle)))items.push(middle);items.sort((x,y)=>roles.indexOf(x.representative_role)-roles.indexOf(y.representative_role));}
     return {items,positions,requested_duration_s:L,episode_start_s:a,episode_end_s:b,units:'seconds',minimum_visible_beats:5};
   }
+  function sttRepresentatives(index,event,raw={}){
+    if(event?.category!=='ST')throw Error('仅 ST-T 复核记录支持此代表图条推荐');
+    const spec=settings(raw);delete spec.range_start_s;delete spec.range_end_s;
+    const a=event.start_sample/200,b=event.end_s??(event.end_sample??event.start_sample)/200;if(!(b>a))throw Error('ST-T 复核范围无效');
+    const proof=event.stt_event_evidence||{};let extreme=proof.peak_time_s;
+    if(!Number.isFinite(extreme)||!(a<=extreme&&extreme<b))extreme=(proof.findings||[]).find(c=>Number.isFinite(c.peak_time_s)&&a<=c.peak_time_s&&c.peak_time_s<b)?.peak_time_s??null;
+    const anchorKind=extreme===null?'middle':'extreme',length=spec.duration_s,anchors={start:a+Math.min(length,b-a)/2,middle:extreme??(a+b)/2,end:b-Math.min(length,b-a)/2},positions={};
+    for(const [role,anchor] of Object.entries(anchors)){
+      const view={...event,start_sample:Math.floor(anchor*200+.5)};delete view.stt_event_evidence;
+      const value=resolve(index,view,spec),selectable=value.visible_beat_count>=5&&value.actual_duration_s<=120;
+      positions[role]={representative_role:role,anchor_kind:role==='middle'?anchorKind:role,label:role==='middle'?(anchorKind==='extreme'?'极值':'段中'):role==='start'?'起始':'末尾',start_s:value.start_s,end_s:value.end_s,duration_s:value.actual_duration_s,visible_beat_count:value.visible_beat_count,selectable,warning:value.actual_duration_s<=120?value.warning:'包含 5 搏所需范围超过 120 秒，请人工选择图条'};
+    }
+    const available=Object.fromEntries(Object.entries(positions).filter(([,p])=>p.selectable)),covering=['middle','start','end'].map(role=>available[role]).find(p=>p&&p.start_s<=a&&p.end_s>=b);let items=covering?[covering]:[];
+    if(!covering){for(const role of ['start','end','middle']){const p=available[role];if(!p)continue;let cursor=p.start_s;for(const previous of [...items].sort((x,y)=>x.start_s-y.start_s))if(previous.start_s<=cursor)cursor=Math.max(cursor,previous.end_s);if(cursor<p.end_s)items.push(p);}items.sort((x,y)=>['start','middle','end'].indexOf(x.representative_role)-['start','middle','end'].indexOf(y.representative_role));}
+    return {items,positions,episode_start_s:a,episode_end_s:b,units:'seconds',minimum_visible_beats:5,requested_duration_s:length};
+  }
   function statistics(index,startTime,opts,pauseEdges=null){
     const rows=beatRows(index),parsed=Date.parse(String(startTime).replace(' ','T').slice(0,19)+'Z'),clock=Number.isFinite(parsed)?parsed:null,round=x=>Math.round(x*100)/100;
     const quality=globalThis.ECGRRQuality||(typeof require==='function'?require('./rr-quality.js'):null);
@@ -83,5 +99,5 @@
     const pause_distribution=quality.rrDistribution(index.rows,index.duration_s,pauseEdges);pause_distribution.bins.forEach(b=>delete b.samples);
     return {pause_distribution,summary:aggregate(0,index.duration_s),hourly,settings:opts,method:'当前修订逐搏统计；心率由有效 RR 计算。成对、短阵和联律按起点计次，模式可重叠，不与总心搏相加；长 RR 为阈值候选，房颤/房扑仅计医生已确认片段。'};
   }
-  const api={leads,defaults,stripKey,stripIdentity,settingsForEvent,reviewNote,intervalPairs,settings,resolve,afRepresentatives,statistics};globalThis.ECGReportEngine=api;if(typeof module!=='undefined')module.exports=api;
+  const api={leads,defaults,stripKey,stripIdentity,settingsForEvent,reviewNote,intervalPairs,settings,resolve,afRepresentatives,sttRepresentatives,statistics};globalThis.ECGReportEngine=api;if(typeof module!=='undefined')module.exports=api;
 })();

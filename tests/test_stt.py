@@ -104,7 +104,12 @@ def test_short_transient_does_not_pass_the_persistence_rule(tmp_path):
 
     result = analyze_stt(waveform, records, duration, analysis_revision="short-v1")
 
-    assert result["candidates"] == []
+    # The 25s ST shift is still below the sustained-event requirement. The
+    # expanded detector separately observes that this mathematical waveform
+    # has no T deflection despite a preserved R; do not suppress that finding.
+    assert not any(item['kind'] in ('st_depression','st_elevation') for item in result['candidates'])
+    assert any(item['kind']=='t_low_flat' for item in result['candidates'])
+    assert all(item['review_status']=='pending' and item['diagnosis'] is None for item in result['candidates'])
 
 
 def test_stt_review_endpoint_rejects_unknown_case(client):

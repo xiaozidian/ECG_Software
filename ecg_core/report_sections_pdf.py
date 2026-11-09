@@ -48,7 +48,7 @@ def _summary(e,composition,family='ST'):
 def _protocol(e):
     profile=e.get('st_measurement_protocol') or {};measurement=profile.get('measurement_ms',profile.get('st_measurement_ms'))
     label=('STJ' if measurement==0 else 'ST'+_st_number(measurement)) if _finite(measurement) else '测量点见复核记录'
-    return label+' · 逐分钟完整证据；缺失处断线'
+    return label+' · 逐分钟测量；可疑值标记，缺失处断线'
 
 
 def _trend_document(case,report,key):
@@ -58,7 +58,9 @@ def _trend_document(case,report,key):
     trends=e.get('st_trends') or {};rows=[]
     for lead in ST_LEADS:
         source=trends.get(lead,[])
-        points=[dict(x=p['time_s']/3600 if _finite(p.get('time_s')) else None,y=None if p.get('eligible') is False or p.get('axis_shift_suspected') or not _finite(p.get(metric)) else p[metric]) for p in source]
+        points=[dict(x=p['time_s']/3600 if _finite(p.get('time_s')) else None,y=p.get(metric) if _finite(p.get(metric)) else None,
+            quality_suspected=p.get('eligible') is False or bool(p.get('axis_shift_suspected')) or bool(p.get('quality_flags')),
+            coverage_pct=p.get('coverage_pct'),quality_flags=p.get('quality_flags',[])) for p in source]
         rows.append(dict(lead=lead,points=points,valid_minutes=sum(_finite(p['y']) for p in points),total_minutes=len(source)))
     heart=[]
     for p in e.get('heart_rate_trend',[]):
@@ -75,10 +77,12 @@ def _trend_document(case,report,key):
     for role in roles:
         rep=next((r for r in e.get('st_representatives',[]) if r.get('role')==role and (metric!='deviation_units' or r.get('metric')=='deviation_units')),None)
         reps.append({**rep,'role':role,'label':rep.get('label') or labels[role],'clock':_st_clock(meta,rep.get('time_s')) if _finite(rep.get('time_s')) else '—'} if rep else dict(role=role,label=labels[role],lead=None,time_s=None,clock='—',waveform=None))
+    if family=='T':
+        reps=[{**rep,'clock':_st_clock(meta,rep.get('time_s')) if _finite(rep.get('time_s')) else '—'} for rep in e.get('t_representatives',[])[:3]]
     ticks=[]
     for i in range(7):
         t=_st_clock(meta,xmax*i/6*3600);ticks.append(dict(x=xmax*i/6,label=t[:-3] if len(t)>=3 and t[-3:-2]==':' else t))
-    return dict(key=key,title='十二导联 T 波幅度趋势' if family=='T' else '十二导联 ST 分析',paragraphs=[f"{label} · {unit}"+('（电压未标定）' if unit=='u' else ''),_protocol(e)],charts=[],rows=[],layout='stt_trend',metric=metric,metric_label=label,unit=unit,x_max=xmax,time_ticks=ticks,trend_rows=rows,heart_rate=heart,summary_lines=_summary(e,composition,family),representatives=reps)
+    return dict(key=key,title='十二导联 T 波幅度趋势' if family=='T' else '十二导联 ST 分析',paragraphs=[f"{label} · {unit}"+('（电压未标定）' if unit=='u' else ''),_protocol(e)+'；灰色虚线为可疑测量'],charts=[],rows=[],layout='stt_trend',metric=metric,metric_label=label,unit=unit,x_max=xmax,time_ticks=ticks,trend_rows=rows,heart_rate=heart,summary_lines=_summary(e,composition,family),representatives=reps)
 
 
 def _st_event_documents(case,report):
@@ -89,14 +93,14 @@ def _st_event_documents(case,report):
         columns=['导联','类型','起止时间','持续时间',f'平均{family} ({unit})',f'极值{family} ({unit})',f"最大{'ΔST' if family=='ST' else 'ΔT'} ({unit})"]+(['斜率'] if family=='ST' else [])
         rows=[]
         for row in chosen:
-            kind=dict(st_depression='ST压低',st_elevation='ST抬高',t_wave_inversion='T改变',t_change='T改变').get(row.get('kind',row.get('result_kind')),'T改变' if family=='T' else 'ST改变')
+            kind=dict(st_depression='ST压低',st_elevation='ST抬高',t_wave_inversion='T极性反转',t_change='T改变（未细分）',t_persistent_inversion='T持续倒置',t_low_flat='T低平',t_biphasic='双相T').get(row.get('kind',row.get('result_kind')),'T改变' if family=='T' else 'ST改变')
             cells=[row.get('lead') or '/'.join(row.get('leads',[])) or '—',kind,_st_clock(meta,row.get('start_s'))+'\n'+_st_clock(meta,row.get('end_s')),_duration(row.get('duration_s')),
                 _st_number(row.get('mean_st_level_units' if family=='ST' else 'mean_t_amplitude_units')),_st_number(row.get('extreme_st_level_units' if family=='ST' else 'extreme_t_amplitude_units')),_st_number(row.get('peak_deviation_units'))]
             if family=='ST':cells.append(_st_number(row['slope'])+' '+row['slope_unit'] if _finite(row.get('slope')) and row.get('slope_unit') else '—')
             rows.append(dict(event_id=row['event_id'],basis_version=row['basis_version'],row_id=row.get('row_id',row['event_id']),cells=cells))
         for i in range(0,max(1,len(rows)),24):
             part=rows[i:i+24]
-            docs.append(dict(key='st_events',title=family+'事件明细'+('（续）' if i else ''),paragraphs=[*_summary(e,composition,family),f"完整事件起止独立于代表图条；幅度 {unit}"+('，非mV' if unit=='u' else '')+'；— 表示未提供可靠测量。'],charts=[],rows=[' · '.join(r['cells']) for r in part] if part else [f'当前没有选用的已确认{family}事件；不表示正常或已排除。'],layout='stt_table',columns=columns,table_rows=part))
+            docs.append(dict(key='st_events',title=family+'事件明细'+('（续）' if i else ''),paragraphs=[*_summary(e,composition,family),f"完整事件起止独立于代表图条；幅度 {unit}"+('，非mV' if unit=='u' else '')+'；— 表示未提供测量；低平T极值为最小绝对幅度。'],charts=[],rows=[' · '.join(r['cells']) for r in part] if part else [f'当前没有选用的已确认{family}事件；不表示正常或已排除。'],layout='stt_table',columns=columns,table_rows=part))
     records={}
     for row in e.get('st_review_notes',[])+e.get('st_events',[])+e.get('t_events',[]):records.setdefault((row['event_id'],row['basis_version']),row)
     notes=[r for r in records.values() if _use(composition,r,'text')]
@@ -198,11 +202,16 @@ def make_supplement_pages(c,font,case,report,keys):
             for tick in doc['time_ticks']:c.line(px(tick['x']),py(y0),px(tick['x']),py(y0+height))
             if lo<=0<=hi:
                 c.setStrokeGray(.65);c.setDash(1,1);c.line(px(0),py(value_y(0)),px(xmax),py(value_y(0)));c.setDash()
-            c.setStrokeGray(0);c.setLineWidth(.45);path=c.beginPath();pen=False;valid=[]
+            normal=c.beginPath();suspect=c.beginPath();previous=None;valid=[]
             for point in points:
-                if not _finite(point.get('x')) or not _finite(point.get('y')):pen=False;continue
-                (path.lineTo if pen else path.moveTo)(px(point['x']),py(value_y(point['y'])));pen=True;valid.append(point)
-            c.drawPath(path)
+                if not _finite(point.get('x')) or not _finite(point.get('y')):previous=None;continue
+                if previous is not None:
+                    path=suspect if point.get('quality_suspected') or previous.get('quality_suspected') else normal
+                    path.moveTo(px(previous['x']),py(value_y(previous['y'])))
+                    path.lineTo(px(point['x']),py(value_y(point['y'])))
+                previous=point;valid.append(point)
+            c.setStrokeGray(0);c.setLineWidth(.45);c.drawPath(normal)
+            c.setStrokeGray(.5);c.setDash(1,1);c.drawPath(suspect);c.setDash()
             if len(valid)==1:c.circle(px(valid[0]['x']),py(value_y(valid[0]['y'])),.3*mm,stroke=0,fill=1)
             if not valid:text(left+3,y0+height/2-1,'无有效测量',6)
         row('心率',doc['heart_rate'],top,hr_height,0,hr_bound)

@@ -39,7 +39,7 @@ def test_weak_values_cannot_sum_short_target_runs_to_sixty_seconds():
     assert len(result)==1 and result[0]['end_s']==96 and result[0]['continuous_target_s']==64
 
 
-@pytest.mark.parametrize('fault',[{'eligible':False},{'axis_shift_suspected':True},{'deviation_units':None}])
+@pytest.mark.parametrize('fault',[{'eligible':False},{'deviation_units':None,'st_level_units':None}])
 def test_quality_or_missing_cuts_and_never_remerges(fault):
     bad=point(64,80);bad.update(fault)
     result=_lead_episodes([point(0,64),bad,point(80,144)],'II',DEFAULT_CONFIG)
@@ -47,6 +47,20 @@ def test_quality_or_missing_cuts_and_never_remerges(fault):
     assert [(r['start_s'],r['end_s']) for r in merged]==[(0,64),(80,144)]
     other=_lead_episodes([point(48,112)],'V5',DEFAULT_CONFIG)
     assert len(_merge_episodes(result+other))==3
+
+
+def test_axis_warning_and_missing_delta_do_not_delete_actual_absolute_ST():
+    warning=point(64,80);warning['axis_shift_suspected']=True
+    result=_lead_episodes([point(0,64),warning,point(80,144)],'II',DEFAULT_CONFIG)
+    assert len(result)==1 and (result[0]['start_s'],result[0]['end_s'])==(0,144)
+    assert result[0]['axis_shift_suspected'] is True
+    assert 'axis_shift_suspected' in result[0]['quality_flags']
+    assert result[0]['diagnosis'] is None and result[0]['review_status']=='pending'
+    absolute=point(0,80);absolute['deviation_units']=None
+    result=_lead_episodes([absolute],'II',DEFAULT_CONFIG)
+    assert len(result)==1 and result[0]['duration_s']==80
+    assert result[0]['criteria']==['absolute_st_level']
+    assert result[0]['peak_deviation_units'] is None
 
 
 def test_hour_boundaries_do_not_split_and_source_tail_uses_actual_support():
