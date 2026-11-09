@@ -2,6 +2,8 @@ name: Windows1.0.17 comprehensive ST-T and AF multistrip fresh engine and15 migr
 
 # The mutable-source UUID race fixture uses the existing fallback content guard.
 # Actual Windows read-lease denial tests stay enabled in the full protection scope.
+# Lifecycle VM tests load the actual ST-T result reset helper and layout module.
+# All nine original lifecycle scenarios remain enabled before the fresh PE build.
 
 on:
   push:

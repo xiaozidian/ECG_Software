@@ -13,13 +13,14 @@ function harness(){
   }
   const $=key=>{if(key==='#caseLoadingPanel')return elements.get(key)||null;if(!elements.has(key))elements.set(key,node(key.slice(1)));return elements.get(key)};
   const pages=['dashboard','patients','edit','review','report'].map(x=>node('page-'+x));
+  const extraFindings=['st_depression','t_low_flat'].map(value=>Object.assign(node(),{value,checked:false,disabled:false}));
   const state={caseRequestId:0,currentPage:'dashboard',reportDirty:false,reportSaving:false,reportStale:false,
     waveformRequestId:0,sttRequestId:0,editRequestId:0,editStripRequestId:0,trendsRequestId:0,eventsRequestId:0,
     reportRequestId:0,scatterRequestId:0,scatterSelectionRequestId:0,duration:20,sttDuration:20,report:null};
   const remote=(id,version=1)=>({case_id:id,metadata:{name:'合成病例'},calculated:{first_beat_time_s:0},summary:{},
     technical:{duration_seconds_raw:3600},report_workflow:{version,review_revision:version,conclusion:'已保存正文',composition:{selected_events:[]}},review_workflow:{}});
   const noop=()=>{},asyncLoad=key=>async()=>{loads.push(key)};
-  const ctx=vm.createContext({state,$,$$:selector=>selector==='.page'?pages:[],document:{createElement:()=>node(),body:node()},
+  const ctx=vm.createContext({state,$,$$:selector=>selector==='.page'?pages:selector==='[data-stt-extra-finding]'?extraFindings:selector==='[data-stt-extra-finding]:checked'?extraFindings.filter(n=>n.checked):[],document:{createElement:()=>node(),body:node()},
     window:{scrollTo:noop},CASE_WORKFLOW_STEPS:[{page:'report',label:'报告'},{page:'edit',label:'模板编辑'}],
     clinicalWorkflow:{allowLeave:()=>!state.reportSaving,reset:noop,receive:noop},resolveWorkstationLeave:async()=>!state.reportSaving,
     ECGReviewTools:require('../static/js/clinical-review-tools.js'),loadCaseWorkflow:()=>new Set(),clearScatterSelection:noop,
@@ -34,11 +35,25 @@ function harness(){
     }});
   vm.runInContext(fs.readFileSync('static/js/report-consistency.js','utf8'),ctx);
   const source=fs.readFileSync('static/js/app.js','utf8');
+  vm.runInContext(fs.readFileSync('static/js/stt-review-layout.js','utf8'),ctx);
+  const resultSetterStart=source.indexOf('function sttSetResultCodes('),resultSetterEnd=source.indexOf('function sttFindingsForSave(');
+  assert.ok(resultSetterStart>=0&&resultSetterEnd>resultSetterStart,'the shipped ST-T result setter must be available');
+  vm.runInContext(source.slice(resultSetterStart,resultSetterEnd),ctx);
   vm.runInContext(source.match(/function caseDisplayId\([^)]*\)\s*\{[^}]*\}/)[0],ctx);
   vm.runInContext(source.slice(source.indexOf('function renderCurrentAnalysisSettings()'),source.indexOf('function loadCaseWorkflow(')),ctx);
   vm.runInContext(source.slice(source.indexOf('function renderCaseLoading()'),source.indexOf('function waveformRequestLeads()')),ctx);
   const add=id=>{const server={open:gate(),data:gate(),version:1};servers.set(id,server);return server};
-  return {ctx,state,loads,elements,add};
+  return {ctx,state,loads,elements,add,sttPrimary:$('#sttFinding'),sttExtras:extraFindings};
+}
+function seedSttDraft(h){
+  h.ctx.sttSetResultCodes(['st_depression','t_low_flat']);
+  assert.equal(h.sttPrimary.value,h.ctx.ECGSttReviewLayout.outcomes.st_depression);
+  assert.deepEqual(h.sttExtras.filter(n=>n.checked).map(n=>n.value),['t_low_flat']);
+}
+function assertSttCleared(h){
+  assert.equal(h.sttPrimary.value,'');
+  assert.deepEqual(h.sttExtras.filter(n=>n.checked).map(n=>n.value),[]);
+  assert.ok(h.sttExtras.every(n=>n.disabled));
 }
 async function run(which){
   const h=harness(),{ctx,state,loads,elements}=h,s=h.add('A');
@@ -54,9 +69,12 @@ async function run(which){
     return;
   }
   if(which==='saving-navigation'){
-    state.reportSaving=true;state.caseId='old';await ctx.selectCase('A');assert.equal(state.caseId,'old');assert.equal(state.caseLoading,undefined);return;
+    seedSttDraft(h);state.reportSaving=true;state.caseId='old';await ctx.selectCase('A');assert.equal(state.caseId,'old');assert.equal(state.caseLoading,undefined);
+    assert.equal(h.sttPrimary.value,h.ctx.ECGSttReviewLayout.outcomes.st_depression);assert.deepEqual(h.sttExtras.filter(n=>n.checked).map(n=>n.value),['t_low_flat']);return;
   }
+  seedSttDraft(h);
   const first=ctx.selectCase('A','edit');await tick();assert.equal(elements.get('#caseLoadingPanel').hidden,false);
+  assertSttCleared(h);
   if(which==='last-intent'){
     ctx.goPage('review');ctx.goPage('report');assert.deepEqual(loads,[]);
     assert.match(elements.get('#caseLoadingPanel').querySelector('p').textContent,/报告/);
@@ -66,8 +84,9 @@ async function run(which){
     ctx.goPage('dashboard');assert.equal(state.caseId,null);s.open.resolve();s.data.resolve();await first;
     assert.equal(state.currentPage,'dashboard');assert.equal(state.caseData,null);assert.deepEqual(loads,['Dashboard']);
   }else if(which==='replace-case'){
-    s.open.resolve();await tick();const b=h.add('B'),second=ctx.selectCase('B','report');
+    s.open.resolve();await tick();seedSttDraft(h);const b=h.add('B'),second=ctx.selectCase('B','report');
     b.open.resolve();b.data.resolve();await second;s.data.resolve();await first;
+    assertSttCleared(h);
     assert.equal(state.caseId,'B');assert.equal(state.caseData.case_id,'B');assert.equal(state.currentPage,'report');assert.deepEqual(loads,['Report']);
   }else if(which==='failed-load'){
     s.open.resolve();s.data.reject(Error('network failed'));await assert.rejects(first,/network failed/);
