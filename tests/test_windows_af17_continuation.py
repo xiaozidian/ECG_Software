@@ -80,10 +80,23 @@ def test_invalid_provenance_and_existing_attempt_do_not_reach_network(tmp_path, 
 
 
 @pytest.mark.parametrize('names', [['../escape'], ['/absolute'], ['x\\y'], ['x:stream'], ['CON.txt'], ['A', 'a'], ['a', 'a/b']])
-def test_original_zip_unsafe_paths_and_duplicates_fail(tmp_path, names):
+def test_original_zip_unsafe_paths_and_duplicates_fail(tmp_path, names, monkeypatch):
     path = tmp_path / 'unsafe.zip'
     with zipfile.ZipFile(path, 'x') as archive:
-        for name in names: archive.writestr(name, b'fabricated')
+        for name in names: archive.writestr(name.replace('\\', '/'), b'fabricated')
+    if names == ['x\\y']:
+        raw = path.read_bytes()
+        assert raw.count(b'x/y') == 2  # Local and central header filenames.
+        legal = tmp_path / 'legal-separator.zip'
+        legal.write_bytes(raw)
+        path.write_bytes(raw.replace(b'x/y', b'x\\y'))
+        monkeypatch.setattr(zipfile.os, 'sep', '\\')
+        assert set(continuation.validate_zip(legal)['files']) == {'x/y'}
+        with zipfile.ZipFile(path) as archive:
+            info = archive.infolist()[0]
+            assert info.orig_filename == 'x\\y' and '\\' in info.orig_filename
+            assert info.filename == 'x/y'  # Windows normalizes only this field.
+            assert archive.read(info) == b'fabricated'  # Both headers match; CRC is intact.
     with pytest.raises(ValueError): continuation.validate_zip(path)
 
 

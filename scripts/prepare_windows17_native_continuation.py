@@ -145,6 +145,7 @@ def validate_zip(path, expected_sha=None, expected_bytes=None):
         require(0 < len(archive.infolist()) <= 100000, 'Invalid ZIP entry count')
         require(sum(i.file_size for i in archive.infolist()) <= 16 * 1024**3, 'ZIP exceeds uncompressed limit')
         for info in archive.infolist():
+            _safe(info.orig_filename)
             key = _safe(info.filename)
             require(key not in keys, 'Duplicate/colliding ZIP member: ' + info.filename)
             require(stat.S_IFMT(info.external_attr >> 16) in (0, stat.S_IFREG, stat.S_IFDIR) and not info.flag_bits & 1,
