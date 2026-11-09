@@ -4,6 +4,7 @@ name: Windows1.0.17 original fresh PE native acceptance continuation
 # Its old native controller failed; this run preserves that result and binds new
 # native acceptance to the exact original ZIP bytes, not a relabelled rebuild.
 # Raw ZIP member names are checked before Windows ZipInfo normalizes separators.
+# Current ST numeric guards require the signed compact API to omit kernel blocks.
 
 on:
   push:

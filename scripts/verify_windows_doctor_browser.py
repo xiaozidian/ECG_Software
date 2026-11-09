@@ -594,13 +594,19 @@ def assert_native_stt_contract(native, request, oracle):
         if wanted is not None:
             require(type(actual) in (int,float) and math.isfinite(actual) and abs(actual-wanted)<1e-10,
                     'Native ST mean differs from independent raw scalar arithmetic for '+lead)
-    actual_blocks=[(b['block_index'],b['j_offset_samples'],b['j_representative_samples']) for b in native['blocks']]
-    expected_blocks=[(b['block_index'],b['j_offset_samples'],b['j_representative_samples']) for b in oracle['blocks']]
-    require(actual_blocks==expected_blocks,'Native J landmarks differ from independently derived complete fixed blocks')
-    require(native.get('save_receipt',{}).get('kind')=='native-stt-range-hmac-v1','Native ST receipt missing')
-    return dict(scope='independent stdlib complete-source ST mean/count/J, not T morphology or clinical accuracy',
+    # The signed API intentionally omits kernel block details and rejects a
+    # client that adds them back. J/reps below belong only to the independent
+    # source oracle; they are not fields observed from the compact API result.
+    require('blocks' not in native,'Native ST API must retain its compact, block-free receipt protocol')
+    receipt=native.get('save_receipt',{})
+    require(receipt.get('kind')=='native-stt-range-hmac-v1' and
+            re.fullmatch(r'[0-9a-f]{64}',str(receipt.get('digest',''))) is not None,
+            'Native ST compact receipt missing or malformed')
+    return dict(scope='independent stdlib complete-source ST mean/count; J/reps computed only by oracle, not returned by compact API; not T morphology or clinical accuracy',
                 counts=oracle['counts'],means_units={lead:supplied[lead]['mean_units'] for lead in supplied},
-                j_offsets_samples=[b[1] for b in actual_blocks],profile=profile['id'],raw_unit='u')
+                oracle_j_offsets_samples=[b['j_offset_samples'] for b in oracle['blocks']],
+                native_J_blocks_exposed=False,profile=profile['id'],raw_unit='u')
+
 
 
 def independent_source_st_oracle(source_root):
@@ -878,23 +884,36 @@ async def fault_checks(page, result, editor_selector, sample):
         row = page.locator("#sttTrendRows .stt-trend-row").filter(has=page.locator("strong", has_text=re.compile("^V6$")))
         require(await row.locator("small").inner_text() == "—", "Missing V6 minute evidence was presented as a normal numeric trend")
         graph = row.locator(".stt-trend-track svg")
-        require(await graph.count() == 1 and "无有效分钟" in (await graph.get_attribute("aria-label") or ""),
-                "Missing V6 minute evidence lost its explicit accessible missing-data state")
-        require(await graph.locator("path").count() == 1 and not (await graph.locator("path").get_attribute("d") or "").strip(),
-                "Missing V6 minute evidence retained a normal numeric trend graph")
+        require(await graph.count() == 1 and "无实际测量" in (await graph.get_attribute("aria-label") or ""),
+                "Missing V6 evidence lost its explicit accessible missing-data state")
+        paths = await graph.locator("path").evaluate_all("nodes=>nodes.map(n=>n.getAttribute('d')||'')")
+        require(paths and all(not value.strip() for value in paths) and
+                await graph.locator("circle,polyline,polygon").count()==0,
+                "Missing V6 evidence retained a complete, suspicious or partial numeric trace")
         axis = await graph.locator("line").evaluate_all("nodes => nodes.map(n => ['x1','y1','x2','y2'].map(k=>n.getAttribute(k)))")
-        require(axis == [["0", "8", "100", "8"]] and await graph.locator(":scope > *").count() == 2,
-                "Missing V6 evidence must retain only the shared baseline and empty curve path")
+        require(axis == [["0", "8", "100", "8"]],
+                "Missing V6 evidence lost the shared baseline")
         other_rendered = await page.evaluate("""() => {
             const field=ECGSttReviewLayout.trendMetric(state.sttTrendMode).field,bounds=sttTrendBounds();
             return [...document.querySelectorAll('#sttTrendRows .stt-trend-row')].filter(row=>row.querySelector('strong').textContent!=='V6').map(row=>{
                 const lead=row.querySelector('strong').textContent,points=state.sttReview.analysis.trends.leads[lead];
-                return {lead,valid:points.filter(p=>p.eligible!==false&&!p.axis_shift_suspected&&Number.isFinite(p[field])&&p.time_s>=bounds.start&&p.time_s<=bounds.end).length,
-                    path:row.querySelector('.stt-trend-track svg path')?.getAttribute('d')??null};
+                const observations=points.filter(p=>Number.isFinite(p.time_s)&&p.time_s>=bounds.start&&p.time_s<=bounds.end)
+                    .map(p=>ECGSttReviewLayout.trendObservation(p,field)).filter(o=>Number.isFinite(o.value));
+                const graph=row.querySelector('.stt-trend-track svg'),paths=[...graph.querySelectorAll('path')],
+                    outer=graph.querySelector('[data-stt-partial]'),core=graph.querySelector('[data-stt-partial-core]');
+                return {lead,valid:observations.length,partial:observations.filter(o=>o.partial).length,
+                    suspiciousComplete:observations.filter(o=>!o.partial&&o.qualitySuspected).length,
+                    anyDrawing:paths.some(n=>(n.getAttribute('d')||'').trim()),
+                    partialCount:outer?Number(outer.dataset.sttPartialCount):0,
+                    partialPath:outer?.getAttribute('d')||'',partialCore:core?.getAttribute('d')||'',
+                    suspiciousDrawing:[...graph.querySelectorAll('path[stroke-dasharray]')].some(n=>(n.getAttribute('d')||'').trim())};
             });
         }""")
-        require(len(other_rendered) == 11 and all(row["path"] is not None and bool(row["path"].strip()) == (row["valid"] > 0) for row in other_rendered),
-                "One missing lead suppressed valid original traces or fabricated another lead's missing curve")
+        require(len(other_rendered)==11 and all(row['anyDrawing']==(row['valid']>0) and
+                row['partialCount']==row['partial'] and bool(row['partialPath'].strip())==(row['partial']>0) and
+                row['partialPath']==row['partialCore'] and
+                (not row['suspiciousComplete'] or row['suspiciousDrawing']) for row in other_rendered),
+                "One missing lead suppressed complete/partial/suspicious original measurements or fabricated a missing curve")
         require(await page.locator("#sttTrendRows .stt-trend-row").count() == 12, "Partial response removed another lead's capability row")
         require(await page.locator("#sttMeasurementList").inner_text() != "", "Partial trend response removed manual measurements")
         require(await page.locator("#sttCapabilityBadge").inner_text() == expected_capability, "One missing trend changed the actual native capability state")

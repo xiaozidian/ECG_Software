@@ -24,9 +24,9 @@ def fixture():
                    t_shape_statistics="separate extrema", slope="raw u/s")
     native = dict(schema_version="stt-range-mean-v1", range=copy.deepcopy(expected["range"]),
                   method_profile=profile, counts=copy.deepcopy(expected["counts"]),
-                  exclusions={"intervals": []}, blocks=copy.deepcopy(expected["blocks"]),
+                  exclusions={"intervals": []},
                   leads=[copy.deepcopy(row) for row in expected["leads"] if row["lead"] in leads],
-                  save_receipt={"kind": "native-stt-range-hmac-v1"})
+                  save_receipt={"kind": "native-stt-range-hmac-v1", "digest": "a" * 64})
     return native, request, expected
 
 
@@ -36,15 +36,16 @@ def test_current_native_contract_requires_v3_and_independent_numeric_ST_evidence
     assert proof["counts"] == dict(detected_count=68, used_count=67, excluded_count=1,
                                   missing_count=0, reason_counts={"rr_outside_legacy_bounds": 1})
     assert proof["means_units"]["II"] == -5.029850746268656
-    assert proof["j_offsets_samples"] == [14, 14, 14, 14]
+    assert proof["oracle_j_offsets_samples"] == [14, 14, 14, 14]
+    assert "blocks" not in native and proof["native_J_blocks_exposed"] is False
 
 
 @pytest.mark.parametrize("fault", ["v2", "AF_mask", "wrong_range", "wrong_offset",
                                   "sampled_mean", "display_filter", "calibrated",
                                   "wrong_baseline", "wrong_ST_support", "missing_T_method",
                                   "zero_replaced_mean", "wrong_mean", "nan_mean", "missing_mean",
-                                  "wrong_count", "wrong_lead_count", "wrong_lead", "wrong_J",
-                                  "wrong_representatives", "wrong_receipt"])
+                                  "wrong_count", "wrong_lead_count", "wrong_lead", "unattested_blocks",
+                                  "invalid_receipt_digest", "wrong_receipt"])
 def test_native_contract_rejects_metadata_or_arithmetic_substitution(fault):
     native, request, expected = fixture()
     p = native["method_profile"]
@@ -65,8 +66,8 @@ def test_native_contract_rejects_metadata_or_arithmetic_substitution(fault):
     elif fault == "wrong_count": native["counts"]["used_count"] -= 1
     elif fault == "wrong_lead_count": native["leads"].append(copy.deepcopy(native["leads"][0]))
     elif fault == "wrong_lead": native["leads"][0]["lead"] = "I"
-    elif fault == "wrong_J": native["blocks"][0]["j_offset_samples"] += 1
-    elif fault == "wrong_representatives": native["blocks"][0]["j_representative_samples"].pop()
+    elif fault == "unattested_blocks": native["blocks"] = []
+    elif fault == "invalid_receipt_digest": native["save_receipt"]["digest"] = "z" * 64
     else: native["save_receipt"]["kind"] = "unsigned"
     with pytest.raises(AssertionError):
         assert_native_stt_contract(native, request, expected)
