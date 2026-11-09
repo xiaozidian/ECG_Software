@@ -15,6 +15,8 @@ from ctypes import wintypes
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
+import math
+import mmap
 import os
 from pathlib import Path, PurePosixPath
 import platform
@@ -555,7 +557,62 @@ async def editor_round(page, result):
     return time.perf_counter() - started, selector, candidate["sample"]
 
 
-async def stt_range(page):
+def assert_native_stt_contract(native, request, oracle):
+    """Compare actual PE output with independent complete-input ST arithmetic."""
+    require(native['schema_version']=='stt-range-mean-v1','ST schema changed')
+    require(native['range']['start_sample']==request['start_sample']==0 and
+            native['range']['end_sample']==request['end_sample']==12000,
+            'ST range must cover the exact complete source minute')
+    profile=native['method_profile']
+    require(profile['id']=='raw-200hz-fixed16s-st-perbeat-morphology-v3' and
+            profile['sample_rate_hz']==200,'Fresh17 must use only the comprehensive morphology-v3 profile')
+    require(profile['rhythm_policy']=='independent_of_AF_AFL_reviews','Native ST method retained cross-rhythm masking')
+    require(profile['measurement_ms']==request['measurement_ms']==60 and profile['block_seconds']==16,
+            'Native ST landmark protocol differs from the actual request')
+    require(profile['baseline_offsets_samples']==[-40,-36,-32,-28,-24] and
+            profile['st_window_offsets_samples']==[-2,-1,0,1,2],'Native five-point ST support changed')
+    require(profile['filter']=='raw source; no display high-pass' and profile['mean_beat_limit'] is None and
+            profile['aggregate']=='arithmetic_mean_of_used_per_beat_st_minus_baseline',
+            'Display filtering or beat sampling replaced the raw complete-range ST mean')
+    require(profile['unit_label']=='u' and profile['calibration_verified'] is False and
+            profile['diagnosis_generated'] is False,'Raw ST arithmetic was relabelled as calibrated diagnosis')
+    require('prominence' in profile['t_measurement'] and 'next real R' in profile['t_measurement'] and
+            'separate extrema' in profile['t_shape_statistics'] and 'raw u/s' in profile['slope'],
+            'Comprehensive T morphology and slope method declaration is incomplete')
+    require(not native['exclusions']['intervals'],'Fresh mathematical range unexpectedly acquired an exclusion mask')
+    require(native['counts']==oracle['counts'],'Native ST counts differ from independent full-input scalar arithmetic')
+    require(native['counts']['used_count']>0 and native['counts']['detected_count']==sum(native['counts'][key] for key in ('used_count','excluded_count','missing_count')),
+            'ST count accounting failed')
+    supplied={row['lead']:row for row in native['leads']};expected={row['lead']:row for row in oracle['leads']}
+    require(len(supplied)==len(native['leads']) and set(supplied)==set(request['leads']),
+            'Native ST result omitted, duplicated or substituted selected leads')
+    for lead,row in supplied.items():
+        target=expected[lead]
+        require(row['used_count']==target['used_count'],'Native per-lead used count differs from independent arithmetic')
+        actual,wanted=row['mean_units'],target['mean_units']
+        require((actual is None)==(wanted is None),'Native ST missingness differs from independent arithmetic')
+        if wanted is not None:
+            require(type(actual) in (int,float) and math.isfinite(actual) and abs(actual-wanted)<1e-10,
+                    'Native ST mean differs from independent raw scalar arithmetic for '+lead)
+    actual_blocks=[(b['block_index'],b['j_offset_samples'],b['j_representative_samples']) for b in native['blocks']]
+    expected_blocks=[(b['block_index'],b['j_offset_samples'],b['j_representative_samples']) for b in oracle['blocks']]
+    require(actual_blocks==expected_blocks,'Native J landmarks differ from independently derived complete fixed blocks')
+    require(native.get('save_receipt',{}).get('kind')=='native-stt-range-hmac-v1','Native ST receipt missing')
+    return dict(scope='independent stdlib complete-source ST mean/count/J, not T morphology or clinical accuracy',
+                counts=oracle['counts'],means_units={lead:supplied[lead]['mean_units'] for lead in supplied},
+                j_offsets_samples=[b[1] for b in actual_blocks],profile=profile['id'],raw_unit='u')
+
+
+def independent_source_st_oracle(source_root):
+    from importlib.util import spec_from_file_location, module_from_spec
+    spec=spec_from_file_location('windows17_independent_ST_oracle',Path(__file__).with_name('windows17_st_mean_scalar_oracle.py'))
+    oracle=module_from_spec(spec);spec.loader.exec_module(oracle)
+    raw,records=oracle.verify_source(Path(source_root))
+    with raw.open('rb') as stream,mmap.mmap(stream.fileno(),0,access=mmap.ACCESS_READ) as buffer:
+        return oracle.calculate(lambda sample:oracle.derived(oracle.FRAME.unpack_from(buffer,sample*16)),records,17280000)
+
+
+async def stt_range(page, *, scalar_oracle):
     started = time.perf_counter()
     await navigate(page, "stt")
     await page.wait_for_function("() => state.sttEvidence && document.querySelector('#sttWaveCanvasWrap').dataset.sttWaveState==='ready'")
@@ -580,15 +637,8 @@ async def stt_range(page):
     require(native["schema_version"] == "stt-range-mean-v1", "ST mean must come from the native full-input algorithm")
     require(native["range"]["end_sample"] - native["range"]["start_sample"] == 12000, "ST range must cover a complete minute")
     require(native["range"]["start_sample"] == 0 and native["range"]["end_sample"] == 12000, "Native ST result substituted a different source range")
-    profile = native["method_profile"]
-    require(profile["id"] == "raw-200hz-fixed16s-st-perbeat-mean-v2" and profile["sample_rate_hz"] == 200, "Native ST method profile changed")
-    require(profile["rhythm_policy"] == "independent_of_AF_AFL_reviews", "Native ST method retained cross-rhythm masking")
-    require(profile["measurement_ms"] == request["measurement_ms"] == 60 and profile["block_seconds"] == 16, "Native ST landmark protocol differs from the actual request")
-    require(profile["filter"] == "raw source; no display high-pass" and profile["mean_beat_limit"] is None, "Display filtering or beat sampling replaced the raw complete-range ST mean")
-    counts = native["counts"]
-    require(counts["detected_count"] == counts["used_count"] + counts["excluded_count"] + counts["missing_count"], "ST count accounting failed")
-    require(counts["used_count"] > 0, "Mathematical minute has no usable native ST measurements")
-    require(native.get("save_receipt", {}).get("kind") == "native-stt-range-hmac-v1", "Native ST receipt missing")
+    scalar_evidence=assert_native_stt_contract(native,request,scalar_oracle)
+    counts=native['counts']
     require(await page.locator("[data-sttr-mean]").count() == len(native["leads"]), "ST UI omitted supplied native leads")
     for row in native["leads"]:
         text = await page.locator('[data-sttr-mean="' + row["lead"] + '"]').inner_text()
@@ -597,7 +647,7 @@ async def stt_range(page):
             displayed = float(text)
             require(abs(displayed - row["mean_units"]) <= 0.0005001, "ST displayed mean differs from the supplied native measurement")
         require(int(await page.locator('[data-sttr-used="' + row["lead"] + '"]').inner_text()) == row["used_count"], "ST displayed used-beat count differs from native evidence")
-    return time.perf_counter() - started, {"duration_s": 60, "lead_count": len(native["leads"]), "counts": counts, "receipt_kind": native["save_receipt"]["kind"]}
+    return time.perf_counter() - started, {"duration_s": 60, "lead_count": len(native["leads"]), "counts": counts, "receipt_kind": native["save_receipt"]["kind"], "independent_ST_oracle":scalar_evidence}
 
 
 async def hrv_round(page):
@@ -877,6 +927,9 @@ async def verify(args, receipt):
     original_exe = package / "CardioInsightDoctorEval.exe"
     require(original_exe.is_file() and pe_is_x64(original_exe), "Expected package-root/CardioInsightDoctorEval.exe x64")
     source_root, manifest, initial_sources = source_snapshot(package)
+    # Hash/read the independent full-input oracle once, outside all native latency rounds.
+    scalar_oracle=independent_source_st_oracle(source_root)
+    receipt["independent_ST_oracle"]=dict(scope="raw stdlib ST arithmetic only; no clinical/T morphology claim",range=scalar_oracle["range"],counts=scalar_oracle["counts"],leads=scalar_oracle["leads"])
     receipt["source"] = {"source_id": "M01", "version": manifest["source_version"], "wholly_synthetic": True, "duration_seconds": 86400, "sample_rate_hz": 200, "sample_count": 17280000, "raw_bytes": SOURCE_BYTES, "manifest_sha256": initial_sources["source-manifest.json"]}
     receipt["runtime"] = {"frozen_executable": True, "pe_machine": "AMD64", "python_resolvable_in_runtime_path": False, "python_environment_removed": True, "process_images_match_frozen_exe": True}
     screenshots = args.output.parent / "browser-screenshots"
@@ -995,7 +1048,7 @@ async def verify(args, receipt):
                         source_selection_before = (home / "source-selection.json").read_bytes()
                         first = {"manager_start": start_seconds, "case_open": await open_case(page)}
                         first["editor"], selector, sample = await editor_round(page, receipt)
-                        first["stt_60s"], stt_evidence = await stt_range(page)
+                        first["stt_60s"], stt_evidence = await stt_range(page,scalar_oracle=scalar_oracle)
                         record(receipt, "native-one-minute-full-input-stt", stt_evidence)
                         first["hrv_24h"], hrv_evidence = await hrv_round(page)
                         record(receipt, "native-24h-hrv-continuous-and-final-a4", hrv_evidence)
@@ -1007,7 +1060,7 @@ async def verify(args, receipt):
                         warm = round_metrics["warm"]
                         warm["case_open"] = await open_case(page)
                         warm["editor"], _, _ = await editor_round(page, receipt)
-                        warm["stt_60s"], _ = await stt_range(page)
+                        warm["stt_60s"], _ = await stt_range(page,scalar_oracle=scalar_oracle)
                         warm["hrv_24h"], _ = await hrv_round(page)
                         receipt["performance"]["completed_repeats"] = len(rounds)
                         receipt["performance"]["summary"] = metric_summary(rounds)

@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import sys
 import tempfile
 import types
@@ -101,6 +102,30 @@ def program_identity(old,new):
     return proof
 
 
+
+def bind_acceptance_provenance(package, *, source_compile_commit, producer_run_id,
+                               controller_commit, acceptance_run_id):
+    """Bind a later native controller to an immutable, genuinely compiled PE.
+
+    This changes only acceptance provenance; RELEASE.json and all original
+    software/source ZIPs keep the producer commit and original byte hashes.
+    """
+    require(re.fullmatch(r'[0-9a-f]{40}',str(source_compile_commit)) is not None,
+            'Source compile commit must be an exact Git commit')
+    require(re.fullmatch(r'[0-9a-f]{40}',str(controller_commit)) is not None,
+            'Native controller commit must be an exact Git commit')
+    require(package['source_commit']==source_compile_commit,
+            'Actual original PE source commit differs from the compiled producer')
+    require(source_compile_commit!=controller_commit,
+            'Native continuation must distinguish source compilation from acceptance')
+    require(type(producer_run_id) is int and producer_run_id>0 and
+            type(acceptance_run_id) is int and acceptance_run_id>0 and
+            producer_run_id!=acceptance_run_id,'Native acceptance run must be distinct from the producer')
+    return dict(source_compile_commit=source_compile_commit,producer_run_id=producer_run_id,
+                controller_commit=controller_commit,acceptance_run_id=acceptance_run_id,
+                original_PE_recompiled=False,original_delivery_ZIPs_repacked=False)
+
+
 def compare_api(before,after,package):
     from verify_windows_stt_independent_upgrade import current_basis,invalidated_composition
     old,new=before['report'],after['report'];b0,b1=old['current_analysis_basis'],new['current_analysis_basis']
@@ -154,6 +179,9 @@ async def run(args,result):
             require(sha256(args.base_software_archive.read_bytes()).hexdigest()==OLD_P01_SHA,'Old15 immutable original P01 ZIP mismatch')
             old=unpack(args.base_software_archive,work/'old');verify_original15_manifest(old)
         package=program_identity(old,new);result['package_identity']=package
+        if getattr(args,'source_compile_commit',None) is not None:
+            result['acceptance_provenance']=bind_acceptance_provenance(package,source_compile_commit=args.source_compile_commit,producer_run_id=args.producer_run_id,controller_commit=args.controller_commit,acceptance_run_id=args.acceptance_run_id)
+            require(os.environ.get('GITHUB_SHA')==args.controller_commit and os.environ.get('GITHUB_RUN_ID')==str(args.acceptance_run_id),'Native continuation CI identity differs from the actual controller invocation')
         exe=new/'CardioInsightDoctorEval.exe';require(pe_is_x64(exe),'New actual EXE is not AMD64 PE')
         result['embedded_new_runtime']=embedded_modules(exe,ROOT)
         if old is None:
@@ -254,7 +282,12 @@ async def run(args,result):
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--software-archive',type=Path,required=True)
     p.add_argument('--base-software-archive',type=Path);p.add_argument('--output',type=Path,required=True)
-    a=p.parse_args();require(not a.output.exists(),'Preserve original native attempts');a.output.parent.mkdir(parents=True,exist_ok=True)
+    p.add_argument('--source-compile-commit');p.add_argument('--producer-run-id',type=int)
+    p.add_argument('--controller-commit');p.add_argument('--acceptance-run-id',type=int)
+    a=p.parse_args()
+    provenance=(a.source_compile_commit,a.producer_run_id,a.controller_commit,a.acceptance_run_id)
+    require(not any(v is not None for v in provenance) or all(v is not None for v in provenance),'Native continuation requires complete producer and acceptance identities')
+    require(not a.output.exists(),'Preserve original native attempts');a.output.parent.mkdir(parents=True,exist_ok=True)
     result=dict(status='running',mode='actual15-to17-upgrade' if a.base_software_archive else 'actual-fresh17-comprehensive-STT-and-AF-multistrip-doctor-flow',checks=[],
                 patient_inputs_read=False,clinical_validation=False,pdf_operations=0,physical_hospital_Windows10_verified=False)
     try:asyncio.run(run(a,result))
