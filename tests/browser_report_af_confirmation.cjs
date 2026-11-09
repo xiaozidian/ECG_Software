@@ -22,4 +22,13 @@ vm.runInContext(region('  const reportCategories=','  function projectRRSelectio
  await ctx.confirmReportRhythm(e);assert.equal(writes,1);assert.equal(receipts,1);assert.equal(dialogs,1);assert(saves>=2);assert.deepEqual(forgotten,['af-new-choice']);
  const picks=state.reportComposition.selected_events;assert.equal(picks.length,4);for(const old of [first,middle]){const next=picks.find(s=>s.strip_id===old.strip_id);assert.deepEqual({...next,basis_version:old.basis_version},old);assert.equal(next.basis_version,fresh.basis_version);}assert.deepEqual(picks.find(s=>s.strip_id==='old-stale'),stale,'whole confirmation revived an earlier stale sibling');const added=picks.find(s=>!['first','middle','old-stale'].includes(s.strip_id));assert.equal(added.range_start_s,250);assert.equal(added.range_end_s,257);assert.equal(added.leads.length,12);assert.equal(committed.document.episodes[0].start_s,100);assert.equal(committed.document.episodes[0].end_s,400);
  console.log('AF confirmation: one dialog/write, lost receipt recovery, all current siblings rebased without changing curation, stale sibling retained and new middle range independent passed');
+ for(const initial of [[first,middle,stale],[]]){
+  writes=0;receipts=0;dialogs=0;committed=null;forgotten.length=0;state.reportComposition.selected_events=structuredClone(initial);lookup.set(e.event_id,e);ctx.reportData={analysis_basis:'math-source',analysis_revision:1};
+  ctx.ECGUnsavedNavigation.resolve=async options=>{dialogs++;assert.equal(options.title,'确认整段房颤');assert(!options.detail.includes('本次图条'));await options.save();return true;};
+  await ctx.confirmReportRhythm(e,null,{adopt:false});assert.equal(writes,1);assert.equal(dialogs,1);assert.equal(state.reportComposition.selected_events.length,initial.length,'whole confirmation adopted another strip');
+  for(const old of initial){const next=state.reportComposition.selected_events.find(s=>s.strip_id===old.strip_id);assert.deepEqual({...next,basis_version:old.basis_version},old);assert.equal(next.basis_version,old.basis_version==='before-confirm'?'after-confirm':old.basis_version);}
+  assert.deepEqual(forgotten,[],'whole-only confirmation discarded a range choice');
+ }
+ console.log('Whole-only AF confirmation: zero stays zero, three siblings stay three with original IDs/curation, no per-strip adoption and no discarded range passed');
+
 })().catch(error=>{console.error(error);process.exitCode=1;});

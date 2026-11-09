@@ -7,7 +7,7 @@ import re
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.pdfgen.canvas import Canvas
-from .report_layout import DEFAULT_LEADS, paper_segments, strip_review_note
+from .report_layout import DEFAULT_LEADS, paper_segments, strip_review_note, group_af_report_strips
 from .signal_profile import calibrated_uv_per_unit, paper_uv_per_unit, normalize_voltage_estimate
 
 
@@ -49,6 +49,16 @@ def clock(meta, seconds=0):
     except (ValueError, TypeError):
         s = int(seconds)
         return f'D{s // 86400 + 1} {s % 86400 // 3600:02}:{s % 3600 // 60:02}:{s % 60:02}'
+
+
+def clock_ms(meta, seconds):
+    """Keep the selected episode/figure's sample-aligned time in its heading."""
+    try:
+        dt = datetime.fromisoformat(str(meta.get('start_iso') or meta.get('start_time')).replace('Z', '+00:00'))
+        return (dt + timedelta(seconds=seconds)).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+    except (ValueError, TypeError):
+        rounded = round(seconds * 1000)
+        return clock({}, rounded // 1000) + f'.{rounded % 1000:03}'
 
 
 def conclusion_text(report):
@@ -204,7 +214,16 @@ def build_paper_pdf(case, report, font):
         segment=entry.get('paper_segment',{})
         start=segment.get('start_s',wave['start_s']);duration=segment.get('duration_s',wave['duration_s'])
         millis=round((start-int(start))*1000)
-        text(12,top,clock(meta,start)+(f'.{millis:03}' if millis else ''),8)
+        group=entry.get('af_report_group')
+        if group:
+            name='房扑' if group['kind']=='AFL' else '房颤'
+            text(0,top,f"{name}片段 {group['episode_number']} · {group['strip_count']} 张代表图",8.5)
+            text(0,top+4.5,f"整段 {clock_ms(meta,group['episode_start_s'])} — {clock_ms(meta,group['episode_end_s'])} · 持续 {group['episode_duration_s']:g} 秒",7.5)
+            top+=10;height-=10
+            role={'start':'起始','middle':'中间','end':'末尾'}.get(group.get('representative_role'),'自选')
+            text(12,top,f"图 {group['strip_index']}/{group['strip_count']} · {role} · {clock_ms(meta,start)} — {clock_ms(meta,start+duration)}",7.5)
+        else:
+            text(12,top,clock(meta,start)+(f'.{millis:03}' if millis else ''),8)
         text(100,top+4.5,entry.get('display_caption') or entry.get('caption') or entry.get('label','心电图条'),9,'center')
         text(187,top,'HR: '+bpm(entry.get('hr'))+' bpm',8,'right')
         left,w=12,segment.get('width_mm',175)
@@ -282,7 +301,7 @@ def build_paper_pdf(case, report, font):
                 position+=u*83
         pages.append(sheet);batch=[];units=0
     caption_notes=[]
-    for i,original in enumerate(report.get('selected_waveforms',[])):
+    for i,original in enumerate(group_af_report_strips(report.get('selected_waveforms',[]))):
         if original.get('print_enabled') is False:continue
         mode=report.get('composition',{}).get('fast_slow_mode','rr')
         if original.get('category') in ('fastest','slowest') and mode!='both' and original.get('subtype')!=mode.upper():continue

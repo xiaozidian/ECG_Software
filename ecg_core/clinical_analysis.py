@@ -341,9 +341,11 @@ def query_index(index,params,occurrences=False):
         if params.get('locate_basis') != target_basis:raise ValueError('目标事件依据已变化，请重新选择')
         offset = target//limit*limit
         focus = dict(focus_index=target)
+    # These parent-episode facts use explicit whole-rhythm confirmation. They
+    # are independent of the global EDIT checkpoint and of figure adoption.
     page=items[offset:offset+limit]
     if raw_occurrences:page=[occurrence_item(r,index,code,template) for r in page]
-    return dict(**focus,stt_group=stt_group,stt_counts=stt_counts,rr_source=rr_source,rr_source_counts=rr_source_counts,candidate_spacing_s=spacing,candidate_unspaced_total=unspaced_total,candidate_hidden_count=unspaced_total-len(items),time_bins=time_bins,time_filter=bounds,unfiltered_total=unfiltered_total,pause_counts=pause_counts,pause_distribution=pause_distribution,pause_band=pause_band,sort_order=sort_order,candidate_limit=EXTREME_CANDIDATE_LIMIT if rate_candidates else None,confirmed_category_counts=confirmed_counts,confirmed_beat_counts=confirmed_beats,time_counts=dict(time_counts),items=page,total=len(items),offset=offset,limit=limit,category_counts=counts,subtype_counts=dict(subtypes),beat_counts=dict(beats),basis_versions=index['basis_versions'],data_version=index['data_version'])
+    return dict(**focus,stt_group=stt_group,stt_counts=stt_counts,rr_source=rr_source,rr_source_counts=rr_source_counts,candidate_spacing_s=spacing,candidate_unspaced_total=unspaced_total,candidate_hidden_count=unspaced_total-len(items),time_bins=time_bins,time_filter=bounds,unfiltered_total=unfiltered_total,pause_counts=pause_counts,pause_distribution=pause_distribution,pause_band=pause_band,sort_order=sort_order,candidate_limit=EXTREME_CANDIDATE_LIMIT if rate_candidates else None,confirmed_category_counts=confirmed_counts,confirmed_beat_counts=confirmed_beats,af_confirmed_subtype_counts={kind:sum(e['category']=='AF' and e.get('rhythm_status')=='confirmed' and e['subtype']==kind for e in events) for kind in ('AF','AFL')},time_counts=dict(time_counts),items=page,total=len(items),offset=offset,limit=limit,category_counts=counts,subtype_counts=dict(subtypes),beat_counts=dict(beats),basis_versions=index['basis_versions'],data_version=index['data_version'])
 
 def hrv_windows(feed,start_time,window=0):
     """NN intervals must lie wholly inside a statistical window; gaps break differences."""

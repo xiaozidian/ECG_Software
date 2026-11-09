@@ -1,0 +1,531 @@
+{
+  "app_version": "0.12.31-af-multistrip.20261109",
+  "base_release_id": "0.12.30-stt-comprehensive.20261109",
+  "base_source_sha256": "b374df82922395c8f379911fbad7e23a6dfe9241678cfb4c61d05d4e993ba252",
+  "files": {
+    "CardioInsightMacCandidate.spec": {
+      "bytes": 2129,
+      "sha256": "f0843b50184126bd437b8d6d13391427f23d04f0d416b2b302a4f32f08bbb3a3"
+    },
+    "app.py": {
+      "bytes": 134658,
+      "sha256": "dd838e7d823ab4ac753a4a33ce0c283314a7f140907d4fc94309c0db4c72babb"
+    },
+    "ecg_core/__init__.py": {
+      "bytes": 190,
+      "sha256": "81dd81fdaba67c0690fb1a78be18508a66c9033db4307fb235f72b842c11ccdf"
+    },
+    "ecg_core/advanced_analysis.py": {
+      "bytes": 27254,
+      "sha256": "df2ba3ca3e9020149133299c2255aad466f4f2e1d505ba2f981b25bf7ab16c3f"
+    },
+    "ecg_core/analysis_provenance.py": {
+      "bytes": 10010,
+      "sha256": "e2c157d5fdb9ef75a5b0b7a24f13a89e855ef7abddd9b6f952719cab7299135c"
+    },
+    "ecg_core/beat_editor.py": {
+      "bytes": 20273,
+      "sha256": "e3a7e351a95ac4f78c8dceedda5a21c135737d4aebb0485d1c4af442bb7b5ff1"
+    },
+    "ecg_core/clinical_analysis.py": {
+      "bytes": 35356,
+      "sha256": "7a7c0c7a114843e45d7fa1c3ee7d64601991f7508dbca7d072004b839dfbc261"
+    },
+    "ecg_core/clinical_query_cache.py": {
+      "bytes": 6306,
+      "sha256": "b0ca1934769f72dc372bb79a5d6f3308fc658553356169ce08f03279261d1a16"
+    },
+    "ecg_core/config.py": {
+      "bytes": 5519,
+      "sha256": "e6e4f5c1813ba0ff5d2ef73bd71c3f2f84309b379af7720431fa60db1135fdde"
+    },
+    "ecg_core/core_contract.py": {
+      "bytes": 289,
+      "sha256": "d701dc3f4e31dde1955072e3d0521e9f3282bfc7fb60888b18cdcd40662c747a"
+    },
+    "ecg_core/ebi.py": {
+      "bytes": 19850,
+      "sha256": "80dd8f1b4a59063fb96a0f848107cacbfee9b61264432964edbf97edccabdc80"
+    },
+    "ecg_core/evaluation_status.py": {
+      "bytes": 1403,
+      "sha256": "a0f5c23bcb1de66f72b31bbd4b0c1005f708c56664cc199eeace8346b0a1757f"
+    },
+    "ecg_core/hrv_analysis.py": {
+      "bytes": 17259,
+      "sha256": "b651ea7f92b19e94dcc7e8a405e402ee16201b2948c3736e5baa84d5d3bf55cf"
+    },
+    "ecg_core/hrv_report_pdf.py": {
+      "bytes": 12496,
+      "sha256": "638d51c26e5316b663c97fabbe3b6045b28f6956ad8a1c5f74d408ce41c6fa70"
+    },
+    "ecg_core/hrv_review.py": {
+      "bytes": 20435,
+      "sha256": "b8d28e6f852728546e87f3f2480af7c68332f354f732782cb4e97c232c2e2983"
+    },
+    "ecg_core/lps_parser.py": {
+      "bytes": 5516,
+      "sha256": "9b2688e2668492f5e2b987b5a64798d4bcbd5062583a2c318b6637b2aa2e4c81"
+    },
+    "ecg_core/overview.py": {
+      "bytes": 17652,
+      "sha256": "6715f00c5816ff531b2b8126c6438fd6f89c259115cb4ba83328ad15d2dee1c1"
+    },
+    "ecg_core/report_curation.py": {
+      "bytes": 2155,
+      "sha256": "4ea19df99d2986cd2d35dc3df307066844b793a43c080fbf13e809fcc2aa6ca6"
+    },
+    "ecg_core/report_evidence.py": {
+      "bytes": 10046,
+      "sha256": "702a7b36eef61ea8d4109780d312d2961293d88c536596ec86b4cd6e156287f8"
+    },
+    "ecg_core/report_layout.py": {
+      "bytes": 22784,
+      "sha256": "b0e5bf7cbf0e4cddc1833f295df2e16cf7b3097c15744715d937b8cc80ab9e3f"
+    },
+    "ecg_core/report_paper_pdf.py": {
+      "bytes": 21632,
+      "sha256": "64691886644719f024b9f6442588fe8ec976fd91d58d7afb2d904c7b23de577e"
+    },
+    "ecg_core/report_pdf.py": {
+      "bytes": 9773,
+      "sha256": "e3f3bffe904da896e81fd94fb17f9da495c38003af9e093cd289bce7b5caf5ea"
+    },
+    "ecg_core/report_sections.py": {
+      "bytes": 15436,
+      "sha256": "91a364c5f34dc0f7b18e7593b95b2ea0cf3f405a3cbf41d5f00ba78ed3044fcd"
+    },
+    "ecg_core/report_sections_pdf.py": {
+      "bytes": 23621,
+      "sha256": "50028cc4e95216703f1ff59a9d5d07ac95a0ec27100e3c8453cd7f1d4b67f345"
+    },
+    "ecg_core/repository.py": {
+      "bytes": 6013,
+      "sha256": "e17f3bd5c8fdba4891eb082b9d383124283650d1f4641a15702c04b4585b1b81"
+    },
+    "ecg_core/review_candidates.py": {
+      "bytes": 14699,
+      "sha256": "f43b50ac39ec2bdba573dcb88c96d11900df8e1e722e39e155e8fad924536f26"
+    },
+    "ecg_core/review_workflow.py": {
+      "bytes": 9185,
+      "sha256": "6e2d6bd87504692ea07f6f4b835a2d82a33db1f9d0905b10e9f5b5f3ee75ff8e"
+    },
+    "ecg_core/rr_quality.py": {
+      "bytes": 7044,
+      "sha256": "fa9d5dafc3d851e411886ac6ea789a5958153c523e13575b912ba9f9cc29361c"
+    },
+    "ecg_core/rr_report.py": {
+      "bytes": 3907,
+      "sha256": "87e1ecba4cd3fb6bbdcffb2d4a1ac182556de083536c85afe8d9c556195d69f7"
+    },
+    "ecg_core/rr_review.py": {
+      "bytes": 29410,
+      "sha256": "609acd9c66e256ce5a42767532d6195970defb1564f2b0e216b7ca0037e884bd"
+    },
+    "ecg_core/signal_profile.py": {
+      "bytes": 2876,
+      "sha256": "6a33721d4e3b38d09228d8ce4604675b89a1a92bdb98c6e675824db164ec88c6"
+    },
+    "ecg_core/source_identity.py": {
+      "bytes": 3861,
+      "sha256": "bea31d5a28a03dec00b662d13227dfe0714fca2b8db6257c08711cf554dbd68b"
+    },
+    "ecg_core/storage.py": {
+      "bytes": 50721,
+      "sha256": "25ffb29707cdc58e77e26e041d5fa1f1468b4ff2260112c44a39c127ae3829cc"
+    },
+    "ecg_core/stt.py": {
+      "bytes": 46273,
+      "sha256": "179dd01cd0c441d876bbf100a6125c742250fc3fd3847d8acf01a85e570b0f2f"
+    },
+    "ecg_core/stt_range.py": {
+      "bytes": 26463,
+      "sha256": "bffaab3c22f6cf48372f66ea0a074127b02dbc3f8441b1287a1b931c76f8ef49"
+    },
+    "ecg_core/stt_records.py": {
+      "bytes": 17390,
+      "sha256": "34703e862507136fad000d3ff9d02d0ed61d1dac1c49fc94ff085b678ad16f5b"
+    },
+    "ecg_core/terminology.py": {
+      "bytes": 20079,
+      "sha256": "70f0b680b4b96a85d9e7d9044ba071a06841965f229324c32789b04de6b607e0"
+    },
+    "ecg_core/waveform.py": {
+      "bytes": 10375,
+      "sha256": "52d0c3dfc40ea0e8129bbd997974dfff54974782eb0b953561f81e1f16a4fbf7"
+    },
+    "ecg_core/workspace_backup.py": {
+      "bytes": 20162,
+      "sha256": "446bb87d46e073e9087d0f52a0eeecf924805b7ad1e6867c151ded9f09189361"
+    },
+    "mac_release.py": {
+      "bytes": 212,
+      "sha256": "82bcbf57ce571f7394e37c4af03908ebee035248af987ddb9fa7818d331b294d"
+    },
+    "scripts/mac_release_command.sh": {
+      "bytes": 393,
+      "sha256": "eec5d4ae30ee015a648e5618ad34e47b28cc23485807c4843cf9398e4b2e6b58"
+    },
+    "scripts/mac_release_runtime.py": {
+      "bytes": 28309,
+      "sha256": "49e5a12a71aec044b530745893afcdf4ba07a8abe88c731e65a8f5eb64bdbb8c"
+    },
+    "scripts/mac_release_synthetic.py": {
+      "bytes": 2449,
+      "sha256": "0a78df12b54cc6f5889de698d0098c9591cc166fce3ac1e4ea551cbe724321f7"
+    },
+    "scripts/serve_local_review.py": {
+      "bytes": 8619,
+      "sha256": "4b0d3b901cb3d8c31f7fb2455d11c8f37fa0659a85f481dee0787fcd362bea9a"
+    },
+    "static/css/advanced-analysis.css": {
+      "bytes": 4652,
+      "sha256": "b25d07434cf5ed56f2c830d84167708f2203e4458af3fd7d584bb0c70681111d"
+    },
+    "static/css/app.css": {
+      "bytes": 121489,
+      "sha256": "e4dc18e4daec856157c6b17b430e70c2f6d4e3834e810e19d80e0be79e1e1e8c"
+    },
+    "static/css/beat-editor.css": {
+      "bytes": 5400,
+      "sha256": "26fb1d2c093b5a0469a6a6fd8b61ebc7c9396ab35438768d4cd421bb19f07b8f"
+    },
+    "static/css/chart-inspection.css": {
+      "bytes": 3553,
+      "sha256": "5226e2ab702c553c139173093aed6a975ca07461d76c6edeab858468264962b3"
+    },
+    "static/css/clinical-review-tools.css": {
+      "bytes": 4110,
+      "sha256": "d5a82f03bd5397e43db99822ebe9d9dc5da11fdd3b687b5321b66c34a377d77a"
+    },
+    "static/css/clinical-ui.css": {
+      "bytes": 24389,
+      "sha256": "c012242bf0cc18342657be14623ac25138a7a74e128699ab3a6c3bec1b2488ae"
+    },
+    "static/css/clinical-workflow.css": {
+      "bytes": 15566,
+      "sha256": "7ec358503f2a98374658491a45a33d4933753bcd28c8cdd44c4a22ec304e875d"
+    },
+    "static/css/dashboard-icons.css": {
+      "bytes": 2864,
+      "sha256": "6b09a6e8aa929584b650c8059ad339be819bd5b463ef72f11d5a562cc5ab0155"
+    },
+    "static/css/desktop-workspace.css": {
+      "bytes": 53441,
+      "sha256": "12994a593146972ec1327a8b58d5e2b887c72bcb73142ffbc4bfca3e951b0960"
+    },
+    "static/css/hrv-review-editor.css": {
+      "bytes": 4119,
+      "sha256": "68ab0ac7cc3dedf62fc0d7b03ca5586e1960b82956a9b0b00f72e2caa50de933"
+    },
+    "static/css/hrv-review-evidence.css": {
+      "bytes": 13620,
+      "sha256": "831d9436aefd8881aad841bfa5acaae0f3ad08809dab3b2f1861c4d716385654"
+    },
+    "static/css/morphology-workbench.css": {
+      "bytes": 14501,
+      "sha256": "db46cebc522231c0b96b69a91942e4f5d0ece0f7165c8bccf586cec411f81357"
+    },
+    "static/css/overview-workbench.css": {
+      "bytes": 62207,
+      "sha256": "24ee88475fded99b5d581f5a2312e26a6d34ffa2398a7a0f1c003da40b552c3d"
+    },
+    "static/css/report-curation.css": {
+      "bytes": 8407,
+      "sha256": "7643444c22f3d9509cdbceeb2d1d4c7218272e5095145780ef3c79459ed242e7"
+    },
+    "static/css/report-paper.css": {
+      "bytes": 14566,
+      "sha256": "40f3f00e506cc761ac152cbbf00da22fabd8078e1b3c350ab978e98ad408eb12"
+    },
+    "static/css/report-wave-menu.css": {
+      "bytes": 2473,
+      "sha256": "6cb2d9917d3168a6c5ab5c6335efcc259c12aa70352f357a598e31fe7f63a565"
+    },
+    "static/css/report-workspace.css": {
+      "bytes": 101000,
+      "sha256": "7f64b65d7de489fa3aa58a1b48640440356d1bde8477de6820cb5fd53b37ccbe"
+    },
+    "static/css/review-candidates.css": {
+      "bytes": 2856,
+      "sha256": "b08509cc295d05dd82da88f9d81741a54344243595db61583e526a2de6e2b417"
+    },
+    "static/css/rhythm-range-editor.css": {
+      "bytes": 2814,
+      "sha256": "af2875f108168f466976772f25f0033f7c991048ab917984db3a4a34c4e1950c"
+    },
+    "static/css/rr-review-workbench.css": {
+      "bytes": 12063,
+      "sha256": "f8dc625221d1b8e6d2f044ed971efb5e9e2df22c9158b1035a70c478d14e682c"
+    },
+    "static/css/shared-ui-review.css": {
+      "bytes": 1701,
+      "sha256": "8d802a4eae3f0b81ccff576713cdee6e0f4a0c54d0d6007c0d99606003a41025"
+    },
+    "static/css/sidebar-workflow.css": {
+      "bytes": 1155,
+      "sha256": "6a296d8454ee17f56058ab1f6a851b1adca444b9f530e86d1b6dd05152fa49de"
+    },
+    "static/css/stt-range-review.css": {
+      "bytes": 4225,
+      "sha256": "25d83c7315e4e20fbd704da479a3a286707a730aeaffaa27f690515bc5e656d9"
+    },
+    "static/css/stt-review-layout.css": {
+      "bytes": 14775,
+      "sha256": "3474b5a371c78ef6fcad29e5f2493e9e7ec80f22d5685d0931c453c630ecdc43"
+    },
+    "static/css/terminology-tree.css": {
+      "bytes": 3880,
+      "sha256": "4eb5f3e9b8cf293e662099ec93b0b0284c4b22992695b85f933fd4c5bbec18c6"
+    },
+    "static/css/visual-refresh.css": {
+      "bytes": 19178,
+      "sha256": "ee2f7e825594df2311186210916c149ec32d92c93107042b43b686218f37b1fe"
+    },
+    "static/css/voltage-estimate.css": {
+      "bytes": 2603,
+      "sha256": "1012ab83a16a362ac21e4f8c8e65da817f0744c9b5e0a2eb5365207978ded31e"
+    },
+    "static/help/af-afl.html": {
+      "bytes": 10230,
+      "sha256": "d737d3b31b46f549b3ffc0806b595695bbfef79ca6ed662925725b30a08dc5c8"
+    },
+    "static/help/stt.html": {
+      "bytes": 5632,
+      "sha256": "5c9c76d563d0afefa52186091d8495804498cef400d880ff42757407af02369b"
+    },
+    "static/icon.svg": {
+      "bytes": 304,
+      "sha256": "e04d9eb149fc04433a0be582a3ead0e66736a890130d4b3aa5bb0912d1b13d2e"
+    },
+    "static/js/advanced-analysis.js": {
+      "bytes": 24185,
+      "sha256": "b6254795c78f8867bc566c8b28049887e39511e52b104ea9c78abb9a2b33d686"
+    },
+    "static/js/af-coverage.js": {
+      "bytes": 3973,
+      "sha256": "343bb912786359ef9461105a60b057fc32f7d478c5171c792b85fb30fda64e36"
+    },
+    "static/js/analysis-consistency.js": {
+      "bytes": 1544,
+      "sha256": "fb20b4aa33e0cd2cc5fae8bf8a2a7968b22f8506cdc012ae507c465ea59da3ee"
+    },
+    "static/js/app.js": {
+      "bytes": 316807,
+      "sha256": "75c14cfd98fda463479b75c4709f091c52729291eea0f1aa80ef76e0558d6a6e"
+    },
+    "static/js/beat-editor-ui.js": {
+      "bytes": 46712,
+      "sha256": "fa6ad68ec0233b67fd85487e41e680d6c654f9221e60d8c9c294c11435a0c4c8"
+    },
+    "static/js/beat-engine.js": {
+      "bytes": 12953,
+      "sha256": "a8aea660c1e344636e4407167935c8410e7eafeee29eb07c2a8e1f9983158b95"
+    },
+    "static/js/chart-inspection.js": {
+      "bytes": 18968,
+      "sha256": "887e9dc9f36c13a7f570659e1096c861f8bc4111395ef5b4217bf2617d3d5afd"
+    },
+    "static/js/clinical-analysis.js": {
+      "bytes": 44578,
+      "sha256": "d6d30dd636717a2b3b7067edd4b636d91937b04957b43e77f08f943fc374dee1"
+    },
+    "static/js/clinical-review-tools.js": {
+      "bytes": 11730,
+      "sha256": "a6388fe03f33d7e58efdbf0a962794231b1d291d14940b6aedc91305edcd4330"
+    },
+    "static/js/clinical-ui.js": {
+      "bytes": 271691,
+      "sha256": "ea23df030dc6d768abbd3894bbcdd6ab2a26500e402636fb9fe709379ef27004"
+    },
+    "static/js/clinical-workflow.js": {
+      "bytes": 15193,
+      "sha256": "7be3b6827194f63da2ad0b8c0aceb85285a688b8d71c6fb73cee012703a4fc69"
+    },
+    "static/js/desktop-workspace.js": {
+      "bytes": 21338,
+      "sha256": "118f105ed4a34a878f20b2adda69a96c0644e26dd9c587223bb160e5513291a0"
+    },
+    "static/js/full-record-retain.js": {
+      "bytes": 13979,
+      "sha256": "32e82b94d52b29ce489ba03a351bc1a899a7f83a79d079edf44892bdd4c57e5f"
+    },
+    "static/js/hrv-analysis.js": {
+      "bytes": 6159,
+      "sha256": "9a4898e4549c0466e6ddc40e7b7ae111f6243c3ed5cde88bee9829dc7e39617c"
+    },
+    "static/js/hrv-report.js": {
+      "bytes": 12953,
+      "sha256": "96e967936824426e35974d0495e1a65fc2d94d5ae6c7185ebab6659e4851bcb6"
+    },
+    "static/js/hrv-review-editor.js": {
+      "bytes": 28993,
+      "sha256": "b9c79a4bba3125aad1bfcdf5cbe719a4426cde25b5cd8b865090cba5156f775e"
+    },
+    "static/js/hrv-review-evidence.js": {
+      "bytes": 11871,
+      "sha256": "d1a63aee15f44184e14207d390faea95a2ed60917fc6f4938b48f6904e5cc91d"
+    },
+    "static/js/linked-selection.js": {
+      "bytes": 8846,
+      "sha256": "0f88f4766d92a83937f5df10322a049d6d94c0cb0fff0094e7ee141d203083e9"
+    },
+    "static/js/morphology-groups.js": {
+      "bytes": 1525,
+      "sha256": "9a179f05c75c44034dba3c4a0f84de7dfe87a5e0e1bf00ee57dee611856b1c13"
+    },
+    "static/js/morphology-workbench.js": {
+      "bytes": 57289,
+      "sha256": "6568a6a48468c9cf0627f47c183d4a855c1bcbeccaea2e7b3276828faf6fedcd"
+    },
+    "static/js/occurrence-card.js": {
+      "bytes": 15968,
+      "sha256": "8941807489f6dea221e062457dd2814ab1a16d7da3feee702d6c03e64d7eee76"
+    },
+    "static/js/overview-engine.js": {
+      "bytes": 12938,
+      "sha256": "dee7642451506b1ae365afe2a705b5fc5efc84586a116f1c8a676531ec9312cb"
+    },
+    "static/js/overview-linked-view.js": {
+      "bytes": 24106,
+      "sha256": "7026c9b3e01ed16b02f35f1b11939156ede296c06fdd9ff3ceae2de334d164b6"
+    },
+    "static/js/overview-workbench.js": {
+      "bytes": 126590,
+      "sha256": "520bcce9987211c10d657d51b92af299f21701487291de860dad7c643d85a92a"
+    },
+    "static/js/read-requests.js": {
+      "bytes": 2715,
+      "sha256": "3535afa898d368f398d60a2b400fb1dfa3271aa295f98c3d8da90b757a295677"
+    },
+    "static/js/report-consistency.js": {
+      "bytes": 1418,
+      "sha256": "cecd82cec4eb79739a28778c26d884beac28a0ddbc93dae80bb832b86fffc5c1"
+    },
+    "static/js/report-engine.js": {
+      "bytes": 13994,
+      "sha256": "7bf764d76551bdff09d484e87fae7572870c707abe475271f0eb23b71e7647b6"
+    },
+    "static/js/report-evidence-ui.js": {
+      "bytes": 10285,
+      "sha256": "d8a62fe1e4e5a4aaf80656d8c919aa3a4e5516cd22f3d471107b26370e15de57"
+    },
+    "static/js/report-narrative-templates.js": {
+      "bytes": 12813,
+      "sha256": "11647a6a5f4920650b0a1ecf67316048ce515c7809ff72c55f7cc2c0edffbec7"
+    },
+    "static/js/report-paper.js": {
+      "bytes": 17661,
+      "sha256": "227e861cb5225889487c24cea8e2ded71d19ab5befc55424cdf349add1230055"
+    },
+    "static/js/report-range-editor.js": {
+      "bytes": 18432,
+      "sha256": "e85bba7ce6e5b1a61da132929c20503eb2506702dbd6b71cda46afd39613405f"
+    },
+    "static/js/report-sections.js": {
+      "bytes": 35748,
+      "sha256": "bb4c9a73e543b3368450afac59cc133958c152679eed4f07876147bfb75951ea"
+    },
+    "static/js/report-strip-editor.js": {
+      "bytes": 11674,
+      "sha256": "db9862654a8952ef7450940278d693c9e6db732fa18082b490380c1c3ffcc4fe"
+    },
+    "static/js/report-wave-menu.js": {
+      "bytes": 16144,
+      "sha256": "ca20b335ef61a95402d5a70f6ad6ff2a79833e045508a5510e917aab17cb806c"
+    },
+    "static/js/report-workspace.js": {
+      "bytes": 64799,
+      "sha256": "f3648e77c35d05161f94f84ec054776dcbe6836cef275fedfcf5b12fcf1f8f79"
+    },
+    "static/js/review-candidate-ui.js": {
+      "bytes": 7804,
+      "sha256": "d783fcfec3d629e235ae4288eb2da78e591479e42d88960bf2253952992b8851"
+    },
+    "static/js/rhythm-range-editor.js": {
+      "bytes": 34669,
+      "sha256": "bd7a59d970c5224241760cf88b7560d0c60196547037d6c2c615ae3a76dbc75a"
+    },
+    "static/js/rr-quality.js": {
+      "bytes": 5523,
+      "sha256": "ba6b33a48005e9f50881ed549c8527b47d50fe0829809aee1a74f8f4f7ef3c04"
+    },
+    "static/js/rr-review-bridge.js": {
+      "bytes": 8921,
+      "sha256": "d408173aac17e704aba5f8e9d98f01718fdf75f46d7600c73a53811af0ea43a3"
+    },
+    "static/js/rr-review-workbench.js": {
+      "bytes": 47690,
+      "sha256": "4590c8ca234ac80ecb1578d0cfed29b028fdbb9ca810646603391f7c564da31f"
+    },
+    "static/js/source-group-evidence.js": {
+      "bytes": 5370,
+      "sha256": "c4f15738861dfcf5155f9ad356a5d3f4a690b28bdb29654ba92a5b5dae85547b"
+    },
+    "static/js/stt-range-bridge.js": {
+      "bytes": 16851,
+      "sha256": "fbe52943eae7f23bb1caced30d8cbdaf8f3641cfa3adb5fd898c73b098e888bd"
+    },
+    "static/js/stt-range-review.js": {
+      "bytes": 25332,
+      "sha256": "50290959d94c692aace6af02f32421955d73a69ca14fcaf870f8524359ee4d09"
+    },
+    "static/js/stt-review-layout.js": {
+      "bytes": 12287,
+      "sha256": "f9bf1178be6915b4e5594888bd33bddac90bfc51dcc67278f9364e17720daecd"
+    },
+    "static/js/template-linked-view.js": {
+      "bytes": 35398,
+      "sha256": "1d075747b16cdf56fd8693e912b1e6ee8f0a286913d23b97a96a494d7f79da5d"
+    },
+    "static/js/terminology-tree.js": {
+      "bytes": 28666,
+      "sha256": "f646c56ca46125a874ce4134e43932065eadd3f00f2b685d92d36bbc5db27912"
+    },
+    "static/js/voltage-estimate.js": {
+      "bytes": 4643,
+      "sha256": "ebece9fe1e46df89508eea6ef34924d2a6aedebb57d0cc783565dd181abcf085"
+    },
+    "static/js/waveform-loader.js": {
+      "bytes": 3167,
+      "sha256": "ea72b3ac0d47f649a365edec9ec51fa7ec5aa95244b9f6444878fc5a87695472"
+    },
+    "static/js/workspace-backup.js": {
+      "bytes": 3572,
+      "sha256": "6e44bac5c5c32bd637007d82ba1a9e4f5544a74e5d2e7cebd775f0e7d82edd8b"
+    },
+    "static/terminology/builtin-draft-v1.json": {
+      "bytes": 19459,
+      "sha256": "ef1988abc91dd81b85d87f7c00b933c6efdc2101cb8915ce939f62c412f5ebcf"
+    },
+    "templates/index.html": {
+      "bytes": 83814,
+      "sha256": "06777d78b4407ffd422e1cea8c6813f2109501e969f47e6522e976cb0796921f"
+    },
+    "停止Mac评估版.command": {
+      "bytes": 125,
+      "sha256": "83196726779f732d81c4c67055da8a5aebef0e53d820a46ed882a7859b5f07ad"
+    },
+    "初始化Mac评估版.command": {
+      "bytes": 125,
+      "sha256": "5f08359bf1b8aee415fc5051f34899c2637358cac9bbb44b29d6b0daba998d47"
+    },
+    "启动Mac评估版.command": {
+      "bytes": 127,
+      "sha256": "39006330b0359d2859d9a7fc080fec67b6f4476fbb61809042d6e092f250e4c2"
+    },
+    "恢复Mac评估工作.command": {
+      "bytes": 126,
+      "sha256": "86ff2ee4807137348ec1dc5fd7c93411bf82cfd768ff17b529fc8c9ae316af8e"
+    },
+    "检查Mac评估版.command": {
+      "bytes": 112,
+      "sha256": "418c669b1c5bf1c2e3f952635363c63a27e20c528d2c24312101e014d122a6ee"
+    }
+  },
+  "production_file_count": 130,
+  "release_id": "0.12.31-af-multistrip.20261109",
+  "schema": 1,
+  "source_sha256": "32ecd39539b7d6d37990529098c97ec72f8b26c17ba871934ab8fdfe8510ea37"
+}

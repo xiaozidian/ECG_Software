@@ -38,7 +38,7 @@ def test_case_edit_advances_all_report_states(tmp_path,status):
 def test_mutation_and_invalidation_rollback_together(tmp_path,monkeypatch,action):
     store=Storage(tmp_path/'consistency.db')
     old=store.save_report('test','before','draft','tester')
-    def fail(*args):raise RuntimeError('simulated audit failure')
+    def fail(*args,**kwargs):raise RuntimeError('simulated audit failure')
     monkeypatch.setattr(store,'_audit',fail)
     with pytest.raises(RuntimeError):
         if action=='annotation':store.create_annotation('test',dict(sample_index=200,label='test'),'tester')

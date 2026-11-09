@@ -73,6 +73,20 @@ jobs:
         run: |
           python -m pip install "playwright==1.63.0"
           python scripts/verify_stt_web.py --output build/core-verification/stt-comprehensive-web
+      - name: Verify observed partial ST-T values retain coverage without joining gaps
+        run: python -m pytest -q tests/test_stt_partial_display.py -p no:cacheprovider --junitxml=build/core-verification/stt-partial-display-31-junit.xml
+      - name: Verify native ST-T scalar parity and independent analytic T morphology oracles
+        run: python -m pytest -q tests/test_performance_equivalence.py -p no:cacheprovider --junitxml=build/core-verification/stt-scalar-parity-31-junit.xml
+      - name: Verify AF per-episode figure adoption and grouped report output
+        run: |
+          python -m pytest -q tests/test_af_multistrip_rail.py tests/test_af_multistrip_report_groups.py tests/test_af_confirmed_subtype_counts.py -p no:cacheprovider --junitxml=build/core-verification/af-multistrip-31-junit.xml
+      - name: Verify report concurrency and rollback on an explicit mathematical source
+        run: |
+          ecgConsistencyMath="$RUNNER_TEMP/af-report-consistency-math"
+          python scripts/generate_stt_comprehensive_math.py --output "$ecgConsistencyMath"
+          ECG_DATA_ROOT="$ecgConsistencyMath" ECG_APP_DATA_ROOT="$RUNNER_TEMP/af-report-consistency-runtime" ECG_CONFIG_PATH="$RUNNER_TEMP/af-report-consistency-unused.json" python -m pytest -q tests/test_report_consistency.py -p no:cacheprovider --junitxml=build/core-verification/report-consistency-31-junit.xml
+      - name: Verify actual mathematical AF candidate and multi-figure workflow in Chromium
+        run: python scripts/verify_af_multistrip_ui.py --output build/core-verification/af-multistrip-web
       - name: Retain source identity and test evidence
         if: always()
         uses: actions/upload-artifact@v4

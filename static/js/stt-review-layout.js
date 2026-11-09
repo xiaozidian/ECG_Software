@@ -16,6 +16,24 @@
   const resultCodes = (primary,extra=[]) => {const first=resultCode(primary);return first?[first,...(abnormalCodes.includes(first)?extra.filter(code=>abnormalCodes.includes(code)&&code!==first):[])].filter((code,index,all)=>all.indexOf(code)===index):[];};
   const resultText = receipt => (receipt?.result_codes?.length?receipt.result_codes:[receipt?.result_code]).map(code=>outcomes[code]).filter(Boolean).join('＋');
   const trendValue = (point,field) => number(point?.[field])??number(point?.['measured_'+field]);
+  // A partial minute is a display observation, never a complete minute or
+  // continuous-event proof. Retain the source fields and metric-specific
+  // coverage separately from engineering-quality coverage.
+  const trendObservation = (point,field) => {
+    const complete=trendValue(point,field),partial=complete===null?number(point?.['partial_'+field]):null;
+    const coverage=number(point?.metric_coverage_pct?.[field]);
+    return {value:complete??partial,partial:complete===null&&partial!==null,
+      coveragePct:coverage===null?(complete===null?null:100):Math.max(0,Math.min(100,coverage)),
+      qualitySuspected:point?.eligible===false||!!point?.axis_shift_suspected||!!point?.quality_flags?.length};
+  };
+  const trendLabel = (point,field) => {
+    const observation=trendObservation(point,field),value=observation.value;
+    const format=v=>v.toFixed(2).replace(/\.?0+$/,'');
+    if(value===null)return {text:'—',title:'无实际测量值；未补零',...observation};
+    const coverage=observation.coveragePct===null?'未提供':format(observation.coveragePct)+'%';
+    return {text:(value>=0?'+':'')+value.toFixed(0)+(observation.partial?'*':''),
+      title:`${observation.partial?'部分实测':observation.qualitySuspected?'可疑实测':'实测'} ${format(value)} u · 实测覆盖 ${coverage}${observation.partial?'；未作为完整分钟，缺口未连接':''}`,...observation};
+  };
   function receiptText(receipt) {
     if(!receipt)return '';
     if(receipt.review_state==='stale')return '已保存历史复核，当前依据需重核。';
@@ -111,7 +129,7 @@
           track.setAttribute('role', 'button');
           track.setAttribute('tabindex', '0');
           track.setAttribute('aria-label', `${leadOf(track)} ST 趋势定位；左右方向键移动 16 秒`);
-          track.setAttribute('title', '点击定位原始波形；左右方向键移动 16 秒');
+          track.setAttribute('title', track.dataset?.trendHint || '点击定位原始波形；左右方向键移动 16 秒');
         } else {
           for (const name of ['role','tabindex','aria-label','title']) track.removeAttribute(name);
         }
@@ -124,5 +142,5 @@
       destroy() {root?.removeEventListener('click', click); root?.removeEventListener('keydown', keydown); render(null); root?.classList.remove('stt-review-layout');},
     };
   }
-  global.ECGSttReviewLayout = Object.freeze({mount, context, outcomes, abnormalCodes, resultCode, resultCodes, resultText, trendValue, candidateKind, receiptText, trendMetric, waveGeometry});
+  global.ECGSttReviewLayout = Object.freeze({mount, context, outcomes, abnormalCodes, resultCode, resultCodes, resultText, trendValue, trendObservation, trendLabel, candidateKind, receiptText, trendMetric, waveGeometry});
 })(globalThis);

@@ -48,7 +48,15 @@ def _summary(e,composition,family='ST'):
 def _protocol(e):
     profile=e.get('st_measurement_protocol') or {};measurement=profile.get('measurement_ms',profile.get('st_measurement_ms'))
     label=('STJ' if measurement==0 else 'ST'+_st_number(measurement)) if _finite(measurement) else '测量点见复核记录'
-    return label+' · 逐分钟测量；可疑值标记，缺失处断线'
+    return label+' · 逐分钟测量；虚线为可疑实测，空心点为部分实测；缺口不连'
+
+
+def _trend_observation(point,metric):
+    complete=next((point[k] for k in (metric,'measured_'+metric) if _finite(point.get(k))),None)
+    partial=point.get('partial_'+metric) if complete is None and _finite(point.get('partial_'+metric)) else None
+    coverage=(point.get('metric_coverage_pct') or {}).get(metric)
+    coverage=max(0,min(100,coverage)) if _finite(coverage) else 100 if complete is not None else None
+    return dict(y=complete if complete is not None else partial,partial=complete is None and partial is not None,metric_coverage_pct=coverage)
 
 
 def _trend_document(case,report,key):
@@ -58,10 +66,19 @@ def _trend_document(case,report,key):
     trends=e.get('st_trends') or {};rows=[]
     for lead in ST_LEADS:
         source=trends.get(lead,[])
-        points=[dict(x=p['time_s']/3600 if _finite(p.get('time_s')) else None,y=p.get(metric) if _finite(p.get(metric)) else None,
+        points=[dict(x=p['time_s']/3600 if _finite(p.get('time_s')) else None,**_trend_observation(p,metric),
             quality_suspected=p.get('eligible') is False or bool(p.get('axis_shift_suspected')) or bool(p.get('quality_flags')),
             coverage_pct=p.get('coverage_pct'),quality_flags=p.get('quality_flags',[])) for p in source]
         rows.append(dict(lead=lead,points=points,valid_minutes=sum(_finite(p['y']) for p in points),total_minutes=len(source)))
+    partial_coverage=[]
+    for row in rows:
+        partial=[p for p in row['points'] if p['partial'] and _finite(p.get('y'))]
+        if not partial:continue
+        percentages=[p['metric_coverage_pct'] for p in partial if _finite(p.get('metric_coverage_pct'))]
+        lower,upper=(min(percentages),max(percentages)) if percentages else (None,None)
+        coverage=(_st_number(lower)+('–'+_st_number(upper) if lower!=upper else '')+'%') if lower is not None else '未提供'
+        partial_coverage.append(f"{row['lead']} {coverage}（{len(partial)}点）")
+    coverage_lines=['部分实测覆盖率：'+' · '.join(partial_coverage[i:i+4]) for i in range(0,len(partial_coverage),4)]
     heart=[]
     for p in e.get('heart_rate_trend',[]):
         value=p.get('hr',p.get('bpm'))
@@ -82,7 +99,7 @@ def _trend_document(case,report,key):
     ticks=[]
     for i in range(7):
         t=_st_clock(meta,xmax*i/6*3600);ticks.append(dict(x=xmax*i/6,label=t[:-3] if len(t)>=3 and t[-3:-2]==':' else t))
-    return dict(key=key,title='十二导联 T 波幅度趋势' if family=='T' else '十二导联 ST 分析',paragraphs=[f"{label} · {unit}"+('（电压未标定）' if unit=='u' else ''),_protocol(e)+'；灰色虚线为可疑测量'],charts=[],rows=[],layout='stt_trend',metric=metric,metric_label=label,unit=unit,x_max=xmax,time_ticks=ticks,trend_rows=rows,heart_rate=heart,summary_lines=_summary(e,composition,family),representatives=reps)
+    return dict(key=key,title='十二导联 T 波幅度趋势' if family=='T' else '十二导联 ST 分析',paragraphs=[f"{label} · {unit}"+('（电压未标定）' if unit=='u' else ''),_protocol(e)],charts=[],rows=[],layout='stt_trend',metric=metric,metric_label=label,unit=unit,x_max=xmax,time_ticks=ticks,trend_rows=rows,heart_rate=heart,summary_lines=_summary(e,composition,family),partial_coverage_lines=coverage_lines,representatives=reps)
 
 
 def _st_event_documents(case,report):
@@ -202,9 +219,11 @@ def make_supplement_pages(c,font,case,report,keys):
             for tick in doc['time_ticks']:c.line(px(tick['x']),py(y0),px(tick['x']),py(y0+height))
             if lo<=0<=hi:
                 c.setStrokeGray(.65);c.setDash(1,1);c.line(px(0),py(value_y(0)),px(xmax),py(value_y(0)));c.setDash()
-            normal=c.beginPath();suspect=c.beginPath();previous=None;valid=[]
+            normal=c.beginPath();suspect=c.beginPath();previous=None;valid=[];partial=[]
             for point in points:
                 if not _finite(point.get('x')) or not _finite(point.get('y')):previous=None;continue
+                if point.get('partial'):
+                    partial.append(point);previous=None;continue
                 if previous is not None:
                     path=suspect if point.get('quality_suspected') or previous.get('quality_suspected') else normal
                     path.moveTo(px(previous['x']),py(value_y(previous['y'])))
@@ -212,8 +231,15 @@ def make_supplement_pages(c,font,case,report,keys):
                 previous=point;valid.append(point)
             c.setStrokeGray(0);c.setLineWidth(.45);c.drawPath(normal)
             c.setStrokeGray(.5);c.setDash(1,1);c.drawPath(suspect);c.setDash()
-            if len(valid)==1:c.circle(px(valid[0]['x']),py(value_y(valid[0]['y'])),.3*mm,stroke=0,fill=1)
-            if not valid:text(left+3,y0+height/2-1,'无有效测量',6)
+            c.setFillGray(0)
+            for index,point in enumerate(points):
+                if not _finite(point.get('x')) or not _finite(point.get('y')) or point.get('partial'):continue
+                neighbour=lambda p:bool(p and _finite(p.get('x')) and _finite(p.get('y')) and not p.get('partial'))
+                if not neighbour(points[index-1] if index else None) and not neighbour(points[index+1] if index+1<len(points) else None):
+                    c.circle(px(point['x']),py(value_y(point['y'])),.25*mm,stroke=0,fill=1)
+            c.setFillGray(1);c.setStrokeGray(.4);c.setLineWidth(.4)
+            for point in partial:c.circle(px(point['x']),py(value_y(point['y'])),.4*mm,stroke=1,fill=1)
+            if not valid and not partial:text(left+3,y0+height/2-1,'无有效测量',6)
         row('心率',doc['heart_rate'],top,hr_height,0,hr_bound)
         for i,r in enumerate(doc['trend_rows']):row(r['lead'],r['points'],top+hr_height+i*row_height,row_height,-bound,bound)
         y=top+hr_height+len(doc['trend_rows'])*row_height
@@ -224,6 +250,7 @@ def make_supplement_pages(c,font,case,report,keys):
             text(x,y+1,label,6)
         y+=9
         for line in doc['summary_lines']:text(0,y,line,7);y+=4.5
+        for line in doc.get('partial_coverage_lines',[]):text(0,y,line,6);y+=4
         reps=doc['representatives']
         if not reps:return
         y+=2;cell=190/len(reps)
