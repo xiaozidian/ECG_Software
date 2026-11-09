@@ -34,7 +34,7 @@ async function install(page) {
         range: {start_sample: request.start_sample, end_sample: request.end_sample,
           start_s: request.start_sample / 200, end_s: request.end_sample / 200,
           duration_s: duration, half_open: true},
-        method_profile: {id: 'raw-200hz-fixed16s-st-perbeat-mean-v2', rhythm_policy:'independent_of_AF_AFL_reviews', sample_rate_hz: 200,
+        method_profile: {id: 'raw-200hz-fixed16s-st-perbeat-morphology-v3', rhythm_policy:'independent_of_AF_AFL_reviews', sample_rate_hz: 200,
           measurement_ms: request.measurement_ms, baseline_offsets_samples: [-40,-36,-32,-28,-24],
           st_window_offsets_samples: [-2,-1,0,1,2],
           aggregate: 'arithmetic_mean_of_used_per_beat_st_minus_baseline',

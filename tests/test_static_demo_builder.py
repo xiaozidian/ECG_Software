@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-MANIFEST = ROOT / 'docs/releases/0.12.30-stt-comprehensive.20261109/source-manifest.json'
+MANIFEST = ROOT / 'docs/releases/0.12.31-af-multistrip.20261109/source-manifest.json'
 
 
 def digest(path: Path) -> str:

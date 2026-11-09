@@ -229,6 +229,7 @@
       const ids=new Set(kept.map(e=>e.event_id));items=items.filter(e=>ids.has(e.event_id));
     }
     const candidate_hidden_count=candidate_unspaced_total-items.length;
+    const af_confirmed_subtype_counts=Object.fromEntries(['AF','AFL'].map(kind=>[kind,index.events.filter(e=>e.category==='AF'&&e.rhythm_status==='confirmed'&&e.subtype===kind).length]));
     const confirmed_category_counts={},confirmed_beat_counts={};for(const [key] of categories){const rows=index.events.filter(e=>e.category===key&&!e.pattern_only&&e.diagnosis_status==='confirmed'&&(!['fastest','slowest'].includes(key)||fast==='BOTH'||e.subtype===fast));confirmed_category_counts[key]=rows.length;confirmed_beat_counts[key]=new Set(rows.flatMap(e=>e.target_samples)).size}
     const confirmedIds=new Set(index.events.filter(e=>e.diagnosis_status==='confirmed').map(e=>e.event_id)),confirmedRR=rrGroups.filter(e=>e.rr_alias_event_ids.some(id=>confirmedIds.has(id)));confirmed_category_counts.rr_interval=confirmedRR.length;confirmed_beat_counts.rr_interval=new Set(confirmedRR.flatMap(e=>e.target_samples)).size;
     let pageOffset=offset;const focus={};
@@ -251,7 +252,7 @@
     }
     let page=items.slice(pageOffset,pageOffset+limit);
     if(rawOccurrences)page=page.map(r=>({event_id:'beat:'+r.id,class_code:r.class_code,category:code,subtype:'beat',label:r.name||r.class_code,sample_index:r.sample_index,start_sample:r.sample_index,end_sample:r.sample_index,time_s:r.sample_index/200,end_s:r.sample_index/200,target_samples:[r.sample_index],beat_count:1,hr:r.hr??null,rr_ms:r.rr_ms??null,basis_version:index.beat_version,templates:template?[{id:String(template.id),name:template.name}]:[],diagnosis_status:r.source_sample!==r.sample_index||r.class_code!==({1:'N',2:'S',3:'V',34:'X'}[r.source_group]||'OTHER')?'edited':'pending'}));
-    return {...focus,stt_group,stt_counts,rr_source:rrSource,rr_source_counts,candidate_spacing_s,candidate_unspaced_total,candidate_hidden_count,time_bins,time_filter,unfiltered_total,pause_counts,pause_distribution,pause_band,sort_order:sortOrder,candidate_limit:rateCandidates?200:null,confirmed_category_counts,confirmed_beat_counts,time_counts,items:page,total:items.length,offset:pageOffset,limit,category_counts:counts,subtype_counts:subtypes,beat_counts:beats,basis_versions:index.basis_versions,data_version:index.data_version};
+    return {...focus,stt_group,stt_counts,rr_source:rrSource,rr_source_counts,candidate_spacing_s,candidate_unspaced_total,candidate_hidden_count,time_bins,time_filter,unfiltered_total,pause_counts,pause_distribution,pause_band,sort_order:sortOrder,candidate_limit:rateCandidates?200:null,confirmed_category_counts,confirmed_beat_counts,af_confirmed_subtype_counts,time_counts,items:page,total:items.length,offset:pageOffset,limit,category_counts:counts,subtype_counts:subtypes,beat_counts:beats,basis_versions:index.basis_versions,data_version:index.data_version};
   }
   const mean=a=>a.length?a.reduce((a,b)=>a+b,0)/a.length:null,sd=a=>{if(a.length<2)return null;const m=mean(a);return Math.sqrt(a.reduce((s,x)=>s+(x-m)**2,0)/(a.length-1))},round=x=>x===null?null:Math.round((x+Number.EPSILON)*100)/100;
   function hrvWindows(feed,startTime,window=0){

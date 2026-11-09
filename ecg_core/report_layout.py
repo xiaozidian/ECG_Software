@@ -23,6 +23,72 @@ def strip_review_note(entry):
     return f'{name}片段待复核 · 非确诊'
 
 
+def group_af_report_strips(entries):
+    """Arrange printable AF figures under their unchanged parent episode.
+
+    This is a presentation projection: it never writes a selection, changes a
+    strip identity or supplies an episode to the diagnostic statistics. An old
+    selection without a guarded event identity keeps its existing presentation.
+    """
+    printable = list(entries)
+    groups = {}
+    keys = {}
+    for position, entry in enumerate(printable):
+        event, basis = entry.get('event_id'), entry.get('basis_version')
+        if entry.get('print_enabled') is False or entry.get('category') != 'AF' or not isinstance(event, str) or not event or not isinstance(basis, str) or not basis:
+            continue
+        key = (event, basis)
+        groups.setdefault(key, []).append((position, entry))
+        keys[position] = key
+
+    def finite(value):
+        return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+    def bounds(entry):
+        strip, wave = entry.get('strip') or {}, entry.get('waveform') or {}
+        start = strip.get('start_s', wave.get('start_s', entry.get('range_start_s')))
+        end = strip.get('end_s', entry.get('range_end_s'))
+        if not finite(end) and finite(start):
+            duration = strip.get('actual_duration_s', wave.get('duration_s'))
+            end = start + duration if finite(duration) else None
+        return start, end
+
+    result, emitted = [], set()
+    episode_number = 0
+    for position, original in enumerate(printable):
+        key = keys.get(position)
+        if key is None:
+            result.append(original)
+            continue
+        if key in emitted:
+            continue
+        emitted.add(key)
+        episode_number += 1
+        members = groups[key]
+        members.sort(key=lambda item: (
+            bounds(item[1])[0] if finite(bounds(item[1])[0]) else math.inf,
+            bounds(item[1])[1] if finite(bounds(item[1])[1]) else math.inf,
+            item[0]))
+        parent = members[0][1]
+        first_sample, end = parent.get('start_sample'), parent.get('end_s')
+        start = first_sample / 200 if finite(first_sample) else parent.get('time_s')
+        if not finite(start) or not finite(end) or end <= start:
+            # Do not manufacture a whole-episode range from one short figure.
+            result.extend(entry for _, entry in members)
+            continue
+        for strip_index, (_, entry) in enumerate(members, 1):
+            strip_start, strip_end = bounds(entry)
+            result.append({**entry, 'af_report_group': dict(
+                event_id=key[0], basis_version=key[1],
+                rhythm_episode_id=parent.get('rhythm_episode_id'),
+                episode_number=episode_number, kind=parent.get('subtype', 'AF'),
+                episode_start_s=start, episode_end_s=end, episode_duration_s=end - start,
+                strip_index=strip_index, strip_count=len(members),
+                representative_role=entry.get('representative_role'),
+                strip_start_s=strip_start, strip_end_s=strip_end)})
+    return result
+
+
 def valid_rr_pairs(rows, duration):
     """Project exact endpoints using the unchanged shared interval quality rules.
 

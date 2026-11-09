@@ -1,5 +1,14 @@
-"""Exact differential checks against the pre-turn scalar ST-T implementation."""
+"""Independent arithmetic protection across the comprehensive ST-T upgrade.
+
+The frozen scalar oracle still owns the unchanged J, ISO/ST, QRS and engineering
+quality arithmetic. Its old global-extremum T measurement remains a differential
+check of the explicit non-morphology path. The default morphology path has a new
+contract: preserve signed lobes, reject an unresolved plateau and guard the next
+actual QRS. Analytic source samples below test that contract independently of the
+production implementation; the old oracle is deliberately not rewritten.
+"""
 import importlib.util
+import math
 from pathlib import Path
 import random
 import subprocess
@@ -13,6 +22,46 @@ from ecg_core.rr_quality import NNWindowIndex
 spec = importlib.util.spec_from_file_location('stt_scalar', Path(__file__).parent/'oracles/stt_scalar.py')
 scalar = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(scalar)
+
+
+def assert_unchanged_scalar_contract(actual, expected, beats, *, legacy_t=False):
+    """Compare every unchanged numerical field, plus explicit new availability.
+
+    Availability now separates a measurable quality-warning signal from a
+    genuinely unavailable source. This changes derived-lead warning wording,
+    while retaining the original numerical projections and quality scores.
+    """
+    assert set(actual) == set(expected) | {'measurement_beat_count'}
+    assert actual['measurement_beat_count'] == len(beats)
+    for key in set(expected) - {'leads'}:
+        assert actual[key] == expected[key], key
+    assert tuple(actual['leads']) == scalar.LEADS
+    assert set(actual['leads']) == set(expected['leads'])
+    source_measurable = {
+        name: (expected['leads'][name]['qrs_amplitude_units'] > 0
+               and 'source_clipping' not in expected['leads'][name]['availability_reasons'])
+        for name in scalar.STORED_LEADS
+    }
+    for name, old in expected['leads'].items():
+        lead = actual['leads'][name]
+        for key in ('st_level_units', 'qrs_amplitude_units', 'quality_score'):
+            assert lead[key] == old[key], (name, key)
+        measurable = (source_measurable[name] if name in scalar.STORED_LEADS
+                      else source_measurable['I'] and source_measurable['II'])
+        assert lead['measurable'] is measurable, name
+        assert lead['eligible'] is (measurable and old['quality_score'] >= .42), name
+        if name in scalar.STORED_LEADS:
+            assert lead['availability_reasons'] == old['availability_reasons'], name
+        else:
+            reason = ([] if lead['eligible'] else
+                      ['lead_engineering_quality'] if measurable else ['source_limb_unavailable'])
+            assert lead['availability_reasons'] == reason, name
+        if legacy_t:
+            # No observations is missing, not an invented zero T measurement.
+            assert lead['t_amplitude_units'] == (old['t_amplitude_units'] if beats else None), name
+        assert lead['t_positive_units'] >= 0 and lead['t_negative_units'] <= 0
+        assert lead['r_amplitude_units'] >= 0 and lead['noise_units'] >= 0
+        assert lead['t_amplitude_units'] is None or math.isfinite(lead['t_amplitude_units'])
 
 
 @pytest.mark.parametrize('kind', ['random', 'extreme', 'flat', 'ties'])
@@ -38,7 +87,12 @@ def test_batched_landmarks_and_all_leads_match_scalar(kind, measurement_ms):
              [(int(s), 1, int(rr)) for s, rr in zip(rng.integers(0, 600, 7), rng.integers(350, 2001, 7))]]
     for beats in cases:
         assert stt._estimate_j_sample(buffer, beats, 600) == scalar._estimate_j_sample(buffer, beats, 600)
-        assert stt._block_measurement(buffer, beats, max(9, len(beats)), 600, config) == scalar._block_measurement(buffer, beats, max(9, len(beats)), 600, config)
+        expected = scalar._block_measurement(buffer, beats, max(9, len(beats)), 600, config)
+        assert_unchanged_scalar_contract(
+            stt._block_measurement(buffer, beats, max(9, len(beats)), 600, config), expected, beats)
+        assert_unchanged_scalar_contract(
+            stt._block_measurement(buffer, beats, max(9, len(beats)), 600, config,
+                                   include_morphology=False), expected, beats, legacy_t=True)
 
 
 def lead_availability_fixture():
@@ -53,7 +107,7 @@ def compare_availability(frames, beats):
     buffer = frames.astype('<i2').tobytes()
     actual = stt._block_measurement(buffer, beats, len(beats), len(frames), stt.DEFAULT_CONFIG)
     expected = scalar._block_measurement(buffer, beats, len(beats), len(frames), stt.DEFAULT_CONFIG)
-    assert actual == expected  # Keep every original numeric and boundary field.
+    assert_unchanged_scalar_contract(actual, expected, beats)
     return actual['leads']
 
 
@@ -107,6 +161,69 @@ def test_noisy_baseline_has_finite_measurements_but_fails_the_lead_quality_gate(
     assert leads['II']['eligible'] is False and leads['II']['availability_reasons'] == ['lead_engineering_quality']
     assert leads['II']['st_level_units'] == -1900
     assert leads['I']['eligible'] is True and leads['V1']['eligible'] is True
+    # The derived numbers remain real measurements despite noisy measured II.
+    for name in ('III', 'aVR', 'aVL', 'aVF'):
+        assert leads[name]['measurable'] is True
+        assert leads[name]['eligible'] is False
+        assert leads[name]['availability_reasons'] == ['lead_engineering_quality']
+
+
+@pytest.mark.parametrize('positive,negative,dominant', [
+    (120, 0, 120), (0, -140, -140), (120, -140, -140),
+    (140, -120, 140), (120, -120, 120), (0, 0, 0),
+])
+def test_signed_t_lobes_follow_analytic_samples_without_cancellation(positive, negative, dominant):
+    # Fixed J=8; source T samples contain isolated interior lobes at offsets
+    # 42 and 52. Expected signed amplitudes are specified directly, not obtained
+    # from the scalar oracle or a second implementation of prominence logic.
+    frames = np.zeros((500, 8), dtype='<i2')
+    frames[200] = 1000
+    frames[242, 6] = positive
+    frames[252, 6] = negative
+    data = stt._beat_measurements(frames.tobytes(), [(200, 1, 1000)], len(frames),
+                                  stt.DEFAULT_CONFIG, j_sample=8, next_samples=[400])
+    col = scalar.LEADS.index('V5')
+    assert data['t'][0, col] == dominant
+    assert data['t_positive'][0, col] == positive
+    assert data['t_negative'][0, col] == negative
+    assert data['t_peak_to_peak'][0, col] == positive-negative
+    assert data['r'][0, col] == 1000
+    assert data['noise'][0, col] == 1
+    assert data['t_to_r'][0, col] == max(positive, -negative)/1000
+    assert bool(data['t_shape_measurable'][0, col]) is True
+
+
+def test_st_platform_is_not_a_t_lobe_or_a_false_flat_measurement():
+    frames = np.zeros((500, 8), dtype='<i2')
+    frames[200] = 1000
+    frames[232:281, 6] = -120
+    data = stt._beat_measurements(frames.tobytes(), [(200, 1, 1000)], len(frames),
+                                  stt.DEFAULT_CONFIG, j_sample=8, next_samples=[400])
+    col = scalar.LEADS.index('V5')
+    assert bool(data['t_measurable'][0]) is True
+    assert bool(data['t_shape_measurable'][0, col]) is False
+    assert math.isnan(data['t'][0, col])
+    assert math.isnan(data['t_positive'][0, col])
+    assert math.isnan(data['t_negative'][0, col])
+
+
+@pytest.mark.parametrize('next_sample,expected', [(244, 80), (234, None)])
+def test_actual_next_qrs_limits_t_search_and_insufficient_window_is_missing(next_sample, expected):
+    frames = np.zeros((500, 8), dtype='<i2')
+    frames[200] = 1000
+    frames[234, 6] = 80
+    frames[next_sample, 6] = 4000
+    data = stt._beat_measurements(frames.tobytes(), [(200, 1, 1000)], len(frames),
+                                  stt.DEFAULT_CONFIG, j_sample=8, next_samples=[next_sample])
+    col = scalar.LEADS.index('V5')
+    assert data['t_window_end_offset'][0] == next_sample-200-8
+    if expected is None:
+        assert bool(data['t_measurable'][0]) is False
+        assert math.isnan(data['t'][0, col])
+    else:
+        assert bool(data['t_shape_measurable'][0, col]) is True
+        assert data['t'][0, col] == expected
+        assert data['t_positive'][0, col] == expected  # next QRS is 4000, not T.
 
 
 @pytest.mark.parametrize('radius', [0, 1, 4, 75, 1000])

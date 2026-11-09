@@ -21,7 +21,7 @@ async function fixture(page, overrides={}) {
     window.response=request=>({schema_version:'stt-range-mean-v1',scope:structuredClone(request.scope),
       server_identity:{case_id:request.scope.case_id,analysis_basis:request.scope.analysis_basis,
         analysis_revision:request.scope.analysis_revision,beat_revision:request.scope.beat_revision,source_digest:'b'.repeat(64)},
-      method_profile:{id:'raw-200hz-fixed16s-st-perbeat-mean-v2',rhythm_policy:'independent_of_AF_AFL_reviews',sample_rate_hz:200,measurement_ms:request.measurement_ms,
+      method_profile:{id:'raw-200hz-fixed16s-st-perbeat-morphology-v3',rhythm_policy:'independent_of_AF_AFL_reviews',sample_rate_hz:200,measurement_ms:request.measurement_ms,
         baseline_offsets_samples:[-40,-36,-32,-28,-24],st_window_offsets_samples:[-2,-1,0,1,2],
         aggregate:'arithmetic_mean_of_used_per_beat_st_minus_baseline',j_basis:'fixed_16s_machine_estimate_after_explicit_masks',
         unit_label:'u',calibration_verified:false,quality_note:'数学质量标记未经医生核对。'},
