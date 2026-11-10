@@ -209,9 +209,9 @@
       "sha256": "8a60a34d9d4216a4c43e2961e23827786a7a6aa5eb41ae24c842b10e8fe57518"
     },
     "scripts/build_static_demo.py": {
-      "bytes": 12185,
+      "bytes": 12190,
       "component": "build",
-      "sha256": "30478a4bc3713f641049e04f3faaf01d213214065c9bc62d0f6064fe809e5662"
+      "sha256": "f677f691ffd82b5e15054e268632a82bdabb77dbb43357a81e1d915a4750139a"
     },
     "scripts/generate_synthetic_demo.py": {
       "bytes": 16740,
@@ -394,9 +394,9 @@
       "sha256": "fb20b4aa33e0cd2cc5fae8bf8a2a7968b22f8506cdc012ae507c465ea59da3ee"
     },
     "static/js/app.js": {
-      "bytes": 316807,
+      "bytes": 316814,
       "component": "ui",
-      "sha256": "75c14cfd98fda463479b75c4709f091c52729291eea0f1aa80ef76e0558d6a6e"
+      "sha256": "a87bf409ec63bae11e65a88bbd710dc63725f9964a158b8b5108177bb4320da8"
     },
     "static/js/beat-editor-ui.js": {
       "bytes": 46712,
@@ -424,9 +424,9 @@
       "sha256": "a6388fe03f33d7e58efdbf0a962794231b1d291d14940b6aedc91305edcd4330"
     },
     "static/js/clinical-ui.js": {
-      "bytes": 271691,
+      "bytes": 273472,
       "component": "ui",
-      "sha256": "ea23df030dc6d768abbd3894bbcdd6ab2a26500e402636fb9fe709379ef27004"
+      "sha256": "4c8fff8b7cac02f36d7cde9ae1b18112869c11a7fadb03f639906ea139ae657f"
     },
     "static/js/clinical-workflow.js": {
       "bytes": 15193,
@@ -635,7 +635,7 @@
     }
   },
   "schema": 1,
-  "source_fingerprint": "570d7ef2717cae89e8729c3d58ca6fd433115be41b5df2c193044977d723e5e8",
+  "source_fingerprint": "bb1b19586a27e4e1500614dc3f169f4512fbc6ac7700b20328681fa275cde9c0",
   "source_revision": null,
-  "ui_version": "ui-86157739dc69afa0"
+  "ui_version": "ui-cfc82e6e0ac87525"
 }
