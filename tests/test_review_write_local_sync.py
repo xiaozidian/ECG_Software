@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 @pytest.mark.parametrize("scenario", [
     "known-adapter", "unknown-adapter", "failed-adapter", "incremental-success",
     "sourceChanged", "concurrent", "endRace", "beatChanged", "badReceipt",
-    "badUuid", "badWindow", "badLeads", "departed", "finish-fallback", "finish-read-failure",
+    "badUuid", "badWindow", "badLeads", "departed", "finish-fallback", "finish-read-failure", "save-base-order",
 ])
 def test_review_write_local_sync(scenario):
     subprocess.run(["node", "tests/review_write_local_sync.cjs", scenario],

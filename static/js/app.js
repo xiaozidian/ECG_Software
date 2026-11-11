@@ -2389,7 +2389,13 @@ async function finishSttReviewSave(context,ownsSave,reconciled=false) {
   if(!ownsSave()||!sttSelectionMatches(selection))return;
   preserveMean=preserveMean||Boolean(rangeStatistics&&state.sttRangeReviewed&&state.sttRangeReviewed!==acceptedMean);
   const unchanged=!preserveMean&&wasUnchanged&&(state.sttDraftRevision||0)===draftGeneration&&sttSubmittedDraftIsUnchanged({...draft,hospital:null});
-  if(unchanged){$('#sttReviewNote').value='';state.sttDraftDirty=false;state.sttDraftBase=JSON.stringify(sttDraftState());}
+  if(unchanged){
+    $('#sttReviewNote').value='';state.sttDraftDirty=false;
+    // The acknowledged target has been cleared. Render its cleared bounds
+    // before capturing the clean baseline, so the next candidate is not a
+    // fictitious unsaved edit. Later drafts never enter this reset branch.
+    renderSttCandidateSelection();state.sttDraftBase=JSON.stringify(sttDraftState());
+  }
   renderSttCandidateSelection();renderSttRecordList();toast(state.sttLastSavedEvent?globalThis.ECGSttReviewLayout.receiptText(state.sttLastSavedEvent):message(unchanged));
 }
 async function resumeUncertainSttMean(entry) {

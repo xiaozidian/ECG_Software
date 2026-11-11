@@ -313,8 +313,8 @@
       "sha256": "fb20b4aa33e0cd2cc5fae8bf8a2a7968b22f8506cdc012ae507c465ea59da3ee"
     },
     "static/js/app.js": {
-      "bytes": 324461,
-      "sha256": "ef56b515274a69b5ceb50a776880fbf11b2a43bc99ad24a9955c3a49abcfde08"
+      "bytes": 324730,
+      "sha256": "95db99f237528f0931f7096d3a4b56f9ba85c682b6ade9ffac0ea1314362f0dd"
     },
     "static/js/beat-editor-ui.js": {
       "bytes": 46712,
@@ -527,7 +527,7 @@
   },
   "production_file_count": 130,
   "release_id": "0.12.32-ui-saveflow.20261111",
-  "shared_source_fingerprint": "fc6f5e77135e501f071c24df63b55c6f8cb0301a94333220921eff89e094bcb7",
-  "source_sha256": "d60018acf0416a9277eda276169a6794fe203456f591139a7c37ec2379037aef",
+  "shared_source_fingerprint": "76d570c7e12a517b40fc9c7e7b63bd4eb527b90c35c3e4e927acbe0377c161ef",
+  "source_sha256": "ea7572c5fffa175a2f987f516637b5b49f094a7d58ad8238052b8c368f944007",
   "ui_build": "UI 20261111"
 }

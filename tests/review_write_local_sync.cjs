@@ -1,7 +1,7 @@
 'use strict';
 // Shipped adapter/save synchronizer, disposable protocol data, no clinical I/O.
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
-const C=require('../static/js/analysis-consistency.js'),source=fs.readFileSync('static/js/app.js','utf8');
+const C=require('../static/js/analysis-consistency.js'),source=fs.readFileSync(process.env.ECG_APP_SOURCE||'static/js/app.js','utf8');
 const declarations=[...source.matchAll(/^(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/gm)];
 function actual(name){const i=declarations.findIndex(x=>x[1]===name);assert(i>=0,name);return source.slice(declarations[i].index,declarations[i+1]?.index??source.length);}
 const clone=x=>JSON.parse(JSON.stringify(x)),tick=()=>new Promise(resolve=>setImmediate(resolve));
@@ -78,5 +78,25 @@ async function finishReadFailure(){
   await assert.rejects(ctx.finishSttReviewSave({selection:{caseId:'engineering-A'},draft:{}},()=>true),/复核已保存.*display offline/);
   assert.deepEqual(events,['clear','error'],'a display failure automatically repeated the whole read');assert.equal(typeof retry,'function');await retry();assert.deepEqual(events,['clear','error','full-read']);
 }
-const cases={'known-adapter':knownAdapter,'unknown-adapter':unknownAdapter,'failed-adapter':failedAdapter,'incremental-success':incrementalSuccess,'departed':departed,'finish-fallback':finishFallback,'finish-read-failure':finishReadFailure,...Object.fromEntries(['sourceChanged','concurrent','endRace','beatChanged','badReceipt','badUuid','badWindow','badLeads'].map(name=>[name,()=>rejectTransition(name)]))};
+async function savedBaseOrder(){
+  for(const later of [false,true]){
+    const nodes=new Map(),node=key=>{if(!nodes.has(key))nodes.set(key,{value:'',checked:false});return nodes.get(key);};
+    node('#sttReviewNote').value=later?'newer unsaved note':'submitted note';node('#sttEpisodeStart').value='100';node('#sttEpisodeEnd').value='180';
+    const target={item:{id:'first',start_s:100,end_s:180,leads:['I']},scope:{...scope}},next={id:'second',start_s:220,end_s:320,leads:['V2'],kind:'t_low_flat'};
+    const state={caseId:scope.case_id,sttDraftRevision:later?2:1,sttDraftDirty:later,sttSelectedCandidate:target,sttEditingRecord:null,sttDuration:10,sttReview:{...scope},sttSaving:null};
+    let confirms=0;
+    const ctx=vm.createContext({state,$:node,ALL_LEADS:['I','II','V1','V2','V5'],window:{confirm(){confirms++;return false;}},
+      sttDraftState:()=>({note:node('#sttReviewNote').value,start:node('#sttEpisodeStart').value,end:node('#sttEpisodeEnd').value}),
+      sttSubmittedDraftIsUnchanged:()=>!later,sttSelectionMatches:()=>true,syncSavedSttReview:async()=>true,
+      renderSttCandidateSelection(){const item=state.sttSelectedCandidate?.item;node('#sttEpisodeStart').value=item?String(item.start_s):'';node('#sttEpisodeEnd').value=item?String(item.end_s):'';},
+      renderSttRecordList(){},renderSttCapability(){},sttSetResultCodes:codes=>{state.codes=codes;},setSttStart:value=>{state.sttStart=value;},
+      ECGSttReviewLayout:{receiptText:()=> 'saved',candidateKind:item=>item?.kind},clinicalWorkflow:{refresh:async()=>{}},toast(){}});
+    vm.runInContext([actual('sttReviewHasUnsavedNote'),actual('sttSetReviewTarget'),actual('finishSttReviewSave')].join('\n'),ctx);
+    state.sttSaving={};ctx.sttSetReviewTarget(next);assert.equal(state.sttSelectedCandidate,target,'pending save accepted another candidate');assert.equal(confirms,0);state.sttSaving=null;
+    await ctx.finishSttReviewSave({selection:{caseId:scope.case_id},draft:{},target,savedAnnotation:{stt_review_receipt:{event_id:'annotation:1'}}},()=>true);
+    if(later){assert.equal(node('#sttReviewNote').value,'newer unsaved note');assert.equal(state.sttSelectedCandidate,target);assert.equal(state.sttDraftDirty,true);assert.equal(ctx.sttReviewHasUnsavedNote(),true);}
+    else{assert.equal(state.sttDraftBase,JSON.stringify(ctx.sttDraftState()),'saved baseline captured bounds before acknowledged target was cleared');assert.equal(ctx.sttReviewHasUnsavedNote(),false);ctx.sttSetReviewTarget(next);assert.equal(confirms,0,'next candidate was mistaken for an unsaved edit');assert.equal(state.sttSelectedCandidate.item.id,'second');assert.deepEqual(JSON.parse(JSON.stringify(state.codes)),['t_low_flat']);assert.equal(node('#sttEpisodeStart').value,'220');}
+  }
+}
+const cases={'known-adapter':knownAdapter,'unknown-adapter':unknownAdapter,'failed-adapter':failedAdapter,'incremental-success':incrementalSuccess,'departed':departed,'finish-fallback':finishFallback,'finish-read-failure':finishReadFailure,'save-base-order':savedBaseOrder,...Object.fromEntries(['sourceChanged','concurrent','endRace','beatChanged','badReceipt','badUuid','badWindow','badLeads'].map(name=>[name,()=>rejectTransition(name)]))};
 (async()=>{const scenario=process.argv[2];if(scenario){assert(cases[scenario],scenario);await cases[scenario]();}else for(const run of Object.values(cases))await run();process.stdout.write('review-write local synchronization checks passed\n');})().catch(error=>{console.error(error);process.exitCode=1;});

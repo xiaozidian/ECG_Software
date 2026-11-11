@@ -85,7 +85,7 @@ jobs:
       - name: Verify ST-T controls after A4 preview and pending-save intents
         run: python -m pytest -q tests/test_report_preview_interactions.py tests/test_stt_use_save_wait.py tests/test_stt_membership_remount.py tests/test_rate_candidates.py::test_rate_controls_are_wired_to_backend_sort_and_pagination -p no:cacheprovider --junitxml=build/core-verification/stt-report-buttons-32-junit.xml
       - name: Frontend-only ST-T AF save refresh and report-card interaction guards
-        run: python -m pytest -q tests/test_review_write_local_sync.py tests/test_af_review_write_refresh.py tests/test_report_card_and_stt_controls.py -p no:cacheprovider --junitxml=build/core-verification/ui-saveflow-20261111-junit.xml
+        run: python -m pytest -q tests/test_review_write_local_sync.py tests/test_af_review_write_refresh.py tests/test_report_card_and_stt_controls.py tests/test_overview_identity_refresh_fallback.py -p no:cacheprovider --junitxml=build/core-verification/ui-saveflow-20261111-junit.xml
       - name: Verify report concurrency and rollback on an explicit mathematical source
         run: |
           ecgConsistencyMath="$RUNNER_TEMP/af-report-consistency-math"
