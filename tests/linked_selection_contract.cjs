@@ -53,4 +53,22 @@ focusReentrant.subscribe(s=>{if(s.focusSample===100&&!refocused){refocused=true;
 focusReentrant.subscribe(s=>focusDelivered.push(s.focusSample));
 focusReentrant.select({samples:[100,200],focusSample:100},{expectedScope:scope});
 assert.deepEqual(focusDelivered,[200]);
+const review=create();review.setScope(scope);
+review.select({samples:[400,800],focusSample:800,timeBounds:{start_s:2,end_s:5},origin:'box'},{expectedScope:scope});
+const membership=review.snapshot(),pendingReview=review.beginLane('overview.strips','held');
+for(const invalid of [{...scope,analysis_basis:'changed'},{...scope,beatRevision:3},
+  {...scope,analysis_revision:6},{...scope,caseToken:2}]){
+  assert.equal(review.advanceReviewScope(invalid,{expectedScope:scope}),false);
+  assert.equal(review.snapshot().samples,membership.samples);
+}
+const nextReview={...scope,analysis_revision:5};
+assert.equal(review.advanceReviewScope(nextReview,{expectedScope:{...scope,analysis_revision:3}}),false);
+assert.equal(review.advanceReviewScope(nextReview,{expectedScope:scope}),true);
+assert.equal(review.isCurrent(pendingReview,'held'),false);
+assert.equal(review.snapshot().samples,membership.samples);
+assert.equal(review.snapshot().focusSample,800);assert.equal(review.snapshot().timeBounds,membership.timeBounds);
+assert.equal(review.snapshot().selectionGeneration,membership.selectionGeneration);
+assert.equal(review.advanceReviewScope(nextReview,{expectedScope:scope}),false);
+// Ordinary (unverified) source/beat changes still clear the exact selection.
+review.setScope({...nextReview,beatRevision:3});assert.equal(review.snapshot().kind,'none');
 console.log(JSON.stringify({passed:true,emptyIsExact:true,focusPreservesCohort:true,heldResponsesRejected:true,crossCaseIsolated:true,reentrantConsumersSeeLatestOnly:true,events:observed.length}));

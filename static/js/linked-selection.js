@@ -69,6 +69,16 @@
          (next.analysis_revision<scope.analysis_revision||next.beatRevision<scope.beatRevision))return false;
       reset(next,'scope','clinical-basis-change');return true;
     }
+    // Only a caller that has verified its own metadata write may advance one
+    // review revision without discarding the doctor's exact sample selection.
+    // Pending reads still belong to the previous revision and are cancelled.
+    function advanceReviewScope(value,{expectedScope}={}) {
+      if(!expectedScope||!currentExpected(expectedScope))return false;
+      const next=normalizeScope(value);
+      if(!active(next)||['caseId','caseToken','analysis_basis','beatRevision'].some(k=>next[k]!==scope[k])
+        ||next.analysis_revision!==scope.analysis_revision+1)return false;
+      abortWhere(()=>true);scope=next;notify('review');return true;
+    }
     function select(value,{expectedScope=null}={}) {
       if(!currentExpected(expectedScope))return false;
       if(!value||!Array.isArray(value.samples))throw new TypeError('An exact sample array is required');
@@ -109,7 +119,7 @@
     }
     function cancelLane(name){abortWhere(n=>n===String(name));}
     function cancelPresentationLanes(prefix){const prefixes=Array.isArray(prefix)?prefix:[prefix];abortWhere(name=>prefixes.some(p=>name.startsWith(String(p))));}
-    return Object.freeze({setScope,select,focus,clear,beginLane,isCurrent,cancelLane,cancelPresentationLanes,
+    return Object.freeze({setScope,advanceReviewScope,select,focus,clear,beginLane,isCurrent,cancelLane,cancelPresentationLanes,
       snapshot:()=>{syncActive();return rawSnapshot();},
       subscribe:fn=>{if(typeof fn!=='function')throw new TypeError('A listener is required');subscribers.add(fn);return ()=>subscribers.delete(fn);}});
   }

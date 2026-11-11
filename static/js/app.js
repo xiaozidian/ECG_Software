@@ -345,7 +345,23 @@ function caseDisplayId(item) {
 async function api(path, options = {}) {
   if(path.startsWith("/api/cases/"))path+=(path.includes("?")?"&":"?")+"analysis=edited";
   const requestCase=state.caseId,requestCaseToken=state.caseRequestId;
-  const {readLane='',...fetchOptions}=options;
+  const {readLane='',reviewWrite='',...fetchOptions}=options;
+  // Only callers that reconcile one known review mutation may retain painted
+  // signal evidence. This option never reaches fetch or relaxes server guards.
+  const reviewMutation=(()=>{
+    if(!['stt','rhythm'].includes(reviewWrite)||!requestCase)return false;
+    let body;try{body=JSON.parse(options.body);}catch(_){return false;}
+    const route=path.split('?')[0],base='/api/cases/'+encodeURIComponent(requestCase),method=(options.method||'GET').toUpperCase();
+    const uuid=value=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value);
+    const scope=reviewWrite==='stt'?body?.details?.review_scope:body;
+    if(scope?.case_id!==requestCase||typeof scope.analysis_basis!=='string'||!scope.analysis_basis
+      ||!Number.isSafeInteger(scope.analysis_revision)||scope.analysis_revision<0
+      ||!Number.isSafeInteger(scope.beat_revision)||scope.beat_revision<0)return false;
+    if(reviewWrite==='rhythm')return route===base+'/rhythm-review'&&method==='PUT'&&body.confirmed===true
+      &&uuid(body.request_id)&&Number.isSafeInteger(body.revision)&&body.revision>=0&&['save','undo','redo'].includes(body.operation||'save');
+    return (method==='POST'&&route===base+'/annotations'||method==='PUT'&&route.startsWith(base+'/annotations/')&&/^\d+$/.test(route.slice((base+'/annotations/').length)))
+      &&body.details.kind==='ST'&&body.details.reviewed===true&&uuid(body.details.submission_id);
+  })();
   const readRequest=async signal=>{
   const response = await fetch(path, {
     ...fetchOptions, ...(signal?{signal}:{}),
@@ -363,14 +379,29 @@ async function api(path, options = {}) {
   const reportOnly=/\/report(?:\?|$)/.test(path);
   // Saving report curation does not change clinical waveforms. Keep visible
   // reads alive across autosave; report receivers already reject older versions.
-  if(isWrite&&!reportOnly&&!evidencePick){state.editReadCache=null;globalThis.ECGChartInspection?.clearRenderers();globalThis.ECGFullRecordRetain?.invalidate();reads?.clear();}
+  if(isWrite&&!reportOnly&&!evidencePick&&!reviewMutation){state.editReadCache=null;globalThis.ECGChartInspection?.clearRenderers();globalThis.ECGFullRecordRetain?.invalidate();reads?.clear();}
   const scope=JSON.stringify([requestCase,state.caseRequestId,state.currentPage]);
   const reportMetadata=/\/(?:report|report-events|report-rr-evidence|evidence-candidates)(?:\?|$)/.test(path);
   const readKey=reportMetadata?path+'|report-evidence:'+String(state.reportEvidenceEpoch||0):path;
-  const payload=method==='GET'&&reads?await reads.read(scope,readKey,readRequest,readLane,options.signal):await readRequest(options.signal);
-  if(isWrite&&!reportOnly&&!evidencePick&&requestCase===state.caseId&&requestCaseToken===state.caseRequestId){globalThis.ECGChartInspection?.clearRenderers();globalThis.ECGFullRecordRetain?.invalidate();reads?.clear();if(typeof overviewWorkbench!=='undefined')overviewWorkbench.invalidateAfterWrite(requestCase,requestCaseToken);}
+  let payload;
+  try{payload=method==='GET'&&reads?await reads.read(scope,readKey,readRequest,readLane,options.signal):await readRequest(options.signal);}
+  catch(error){
+    // A rejected/lost response has no verified own-write transition. Keep the
+    // UUID reconciliation path, and conservatively invalidate live evidence.
+    if(reviewMutation&&requestCase===state.caseId&&requestCaseToken===state.caseRequestId){
+      state.editReadCache=null;globalThis.ECGChartInspection?.clearRenderers();globalThis.ECGFullRecordRetain?.invalidate();reads?.clear();
+      if(typeof overviewWorkbench!=='undefined')overviewWorkbench.invalidateAfterWrite(requestCase,requestCaseToken);
+    }
+    throw error;
+  }
+  if(reviewMutation&&requestCase===state.caseId&&requestCaseToken===state.caseRequestId){
+    // Stop older consumers without erasing the already verified signal pixels.
+    reads?.clear();state.editReadCache=null;state.reportComposer=null;state.reportStale=true;
+    state.reportEvidenceEpoch=(state.reportEvidenceEpoch||0)+1;
+  }
+  if(isWrite&&!reportOnly&&!evidencePick&&!reviewMutation&&requestCase===state.caseId&&requestCaseToken===state.caseRequestId){globalThis.ECGChartInspection?.clearRenderers();globalThis.ECGFullRecordRetain?.invalidate();reads?.clear();if(typeof overviewWorkbench!=='undefined')overviewWorkbench.invalidateAfterWrite(requestCase,requestCaseToken);}
   if(isWrite&&(evidencePick||reportOnly)&&requestCase===state.caseId&&requestCaseToken===state.caseRequestId)state.reportEvidenceEpoch=(state.reportEvidenceEpoch||0)+1;
-  if(requestCase===state.caseId&&/^(PUT|PATCH|DELETE|POST)$/.test(options.method||"")&&/\/(beat-overrides|beat-templates|annotations|patient)(\/|$)/.test(path)){
+  if(!reviewMutation&&requestCase===state.caseId&&/^(PUT|PATCH|DELETE|POST)$/.test(options.method||"")&&/\/(beat-overrides|beat-templates|annotations|patient)(\/|$)/.test(path)){
     state.reportComposer=null;
     await clinicalWorkflow.refresh(requestCase).catch(()=>{clinicalWorkflow.receive(null);toast("修改已保存，但复核状态读取失败，请刷新后继续审核","error",6000);});
   }
@@ -1838,7 +1869,7 @@ function updateSttSaveState() {
   const button=$('#sttReviewForm button[type="submit"]');if(!button)return;
   const busy=Boolean(state.sttSaving);
   button.disabled=busy||!clinicalWorkflow.writable()||!sttWaveformIsCurrent();
-  button.textContent=busy?'正在保存…':'保存复核';
+  button.textContent=busy?(state.sttSaving.committed?'已保存，正在更新…':'正在保存…'):'保存复核';
   button.setAttribute?.('aria-busy',String(busy));if(button.dataset)button.dataset.sttSaveState=busy?'saving':'idle';
 }
 
@@ -2257,6 +2288,56 @@ async function reconcileSttMeanSubmission(entry,ownsSave) {
     throw Error('保存后已有其他复核修改，不能确认旧统计为当前依据；已有标注保留，请回看并重新计算');
   return {item:matches[0]||null,scope:after};
 }
+async function syncSavedSttReview(context,ownsSave) {
+  const {selection,basis,savedAnnotation}=context,C=ECGAnalysisConsistency,evidence=state.sttEvidence;
+  const oldScope=savedAnnotation?.details?.review_scope,oldReview=state.sttReview,oldTrend=state.trend;
+  if(!ownsSave()||!sttSelectionMatches(selection)||!evidence||!oldReview?.analysis||!oldScope
+    ||oldScope.case_id!==selection.caseId||oldScope.analysis_basis!==basis.analysis_basis
+    ||oldScope.analysis_revision!==basis.analysis_revision||oldReview.beat_revision!==oldScope.beat_revision
+    ||!Number.isSafeInteger(oldScope.beat_revision)||!savedAnnotation.stt_review_receipt)return false;
+  try{for(const value of [evidence.basis,evidence.caseData,evidence.trend,evidence.review,oldTrend,oldReview])C.assertSame(basis,value);}
+  catch(_){return false;}
+  const privacyRequestId=state.privacyRequestId,requestId=++state.sttRequestId;
+  state.sttAbort?.abort();state.sttAbort=null;
+  const current=()=>ownsSave()&&requestId===state.sttRequestId&&sttSelectionMatches(selection);
+  const assertCurrent=()=>{if(!current())throw Object.assign(Error('复核显示更新已取消'),{name:'AbortError'});};
+  const read=async path=>{assertCurrent();const value=await api(path,{readLane:'stt-review-sync:'+path.split('?')[0]});assertCurrent();return value;};
+  const fresh=C.identity(await read(C.url(selection.caseId,'analysis-basis')));
+  if(fresh.analysis_basis!==basis.analysis_basis||fresh.analysis_revision!==basis.analysis_revision+1)return false;
+  let records;
+  const [caseData,waveform]=await C.read(read,selection.caseId,[
+    anchor=>read(withPhi(C.url(selection.caseId,'',{},anchor))),
+    anchor=>read(C.url(selection.caseId,'waveform',{start:selection.start.toFixed(3),duration:selection.duration,leads:selection.leads,max_points:4000,filter:'raw'},anchor)),
+    async anchor=>{records=await read(C.url(selection.caseId,'annotations',{},anchor));return null;},
+  ],fresh);
+  assertCurrent();
+  // A metadata revision may reuse signal/trend arrays only after fresh source,
+  // beat and exact-window reads agree. The old response objects stay untouched.
+  if(caseData.case_id!==selection.caseId||caseData.beat_editor_history?.revision!==oldScope.beat_revision
+    ||!Array.isArray(records?.items))return false;
+  const saved=records.items.find(row=>row.id===savedAnnotation.id),receipt=saved?.stt_review_receipt;
+  if(!saved||saved.details?.submission_id!==savedAnnotation.details.submission_id
+    ||receipt?.basis_version!==savedAnnotation.stt_review_receipt.basis_version
+    ||receipt?.record_version!==savedAnnotation.stt_review_receipt.record_version
+    ||receipt?.review_state!=='reviewed')return false;
+  const names=Object.keys(waveform.leads||{}),wanted=selection.leads.split(','),tolerance=1/Math.max(1,Number(waveform.sample_rate_hz)||200)+.001;
+  if(!Number.isFinite(waveform.start_s)||Math.abs(waveform.start_s-selection.start)>tolerance
+    ||!Number.isFinite(waveform.duration_s)||Math.abs(waveform.duration_s-selection.duration)>tolerance
+    ||names.length!==wanted.length||wanted.some(lead=>!Array.isArray(waveform.leads?.[lead])||!waveform.leads[lead].length))return false;
+  preserveCurrentIdentity(caseData,privacyRequestId);
+  const review={...oldReview,...fresh,beat_revision:oldScope.beat_revision,
+    ...(oldReview.server_identity?{server_identity:{...oldReview.server_identity,...fresh,beat_revision:oldScope.beat_revision}}:{}),
+    review_records:records.items.filter(row=>['ST','ST_REVIEW_NOTE'].includes(row.details?.kind))};
+  const trend={...oldTrend,...fresh};
+  state.caseData=caseData;state.trend=trend;state.sttReview=review;state.sttWaveform=waveform;
+  state.sttWaveformSelection=sttSelectionSnapshot();
+  state.sttEvidence={...evidence,basis:fresh,caseData,trend,review};
+  state.sttLastSavedEvent=JSON.parse(JSON.stringify(receipt));
+  const worklistCase=state.cases?.find(row=>row.case_id===selection.caseId);if(worklistCase)worklistCase.review_workflow=caseData.review_workflow;
+  ECGReportConsistency.receive(state,caseData.report_workflow);clinicalWorkflow.receive(caseData.review_workflow);
+  renderSttOverview();renderSttWaveform();state.sttRangeBridge?.sync();
+  return true;
+}
 async function finishSttReviewSave(context,ownsSave,reconciled=false) {
   if(!ownsSave())return;
   const {selection,draft,rangeStatistics,acceptedMean}=context,draftGeneration=state.sttDraftRevision||0,wasUnchanged=sttSubmittedDraftIsUnchanged(draft);
@@ -2288,10 +2369,23 @@ async function finishSttReviewSave(context,ownsSave,reconciled=false) {
     }
     return;
   }
-  await clinicalWorkflow.refresh(selection.caseId);
+  let synced=false;
+  try{if(!reconciled&&!context.uncertainSave)synced=await syncSavedSttReview(context,ownsSave);}
+  catch(error){
+    if(!ownsSave()||!sttSelectionMatches(selection))return;
+    // The mutation is already acknowledged. Do not automatically retry a failed
+    // display read or leave the old revision enabled for another clinical save.
+    clearSttEvidence('复核已保存，当前显示更新未完成。');setSttWindowState('error','复核已保存，请重新读取当前显示。');
+    analysisReadStatus('#sttAnalysisStatus','复核已保存，显示更新失败：'+error.message,()=>{if(sttSelectionMatches(selection))return loadStt();});
+    throw Error('复核已保存，显示更新失败：'+error.message,{cause:error});
+  }
   if(!ownsSave()||!sttSelectionMatches(selection))return;
   preserveMean=preserveMean||Boolean(rangeStatistics&&state.sttRangeReviewed&&state.sttRangeReviewed!==acceptedMean);
-  clearSttEvidence('复核已保存，正在核对当前修订依据。');setSttWindowState('loading','复核已保存，正在读取当前波形…');await loadStt();
+  if(!synced){
+    await clinicalWorkflow.refresh(selection.caseId);
+    if(!ownsSave()||!sttSelectionMatches(selection))return;
+    clearSttEvidence('复核已保存，正在核对当前修订依据。');setSttWindowState('loading','复核已保存，正在读取当前波形…');await loadStt();
+  }
   if(!ownsSave()||!sttSelectionMatches(selection))return;
   preserveMean=preserveMean||Boolean(rangeStatistics&&state.sttRangeReviewed&&state.sttRangeReviewed!==acceptedMean);
   const unchanged=!preserveMean&&wasUnchanged&&(state.sttDraftRevision||0)===draftGeneration&&sttSubmittedDraftIsUnchanged({...draft,hospital:null});
@@ -2384,10 +2478,11 @@ async function saveSttReviewAnnotation() {
     if(!ownsSave()||requestId!==state.sttRequestId||!sttSelectionMatches(selection)||state.sttWaveform!==waveform||!sttWaveformIsCurrent())return;
     if(entry)entry.uncertain=true;
     try{
-      const item=await api(entry.operation.path,{method:entry.operation.method,body:JSON.stringify(entry.payload)});
+      const item=await api(entry.operation.path,{method:entry.operation.method,body:JSON.stringify(entry.payload),reviewWrite:'stt'});
       if(!sttMeanStoredMatches(item,entry)||!item.stt_review_receipt)throw Error('保存响应未能核实本次复核记录');
       context.savedAnnotation=item;
     }catch(error){
+      context.uncertainSave=true;
       if(!entry)throw error;
       if(!ownsSave())return;
       try{
@@ -2399,6 +2494,7 @@ async function saveSttReviewAnnotation() {
       }
     }
     if(entry){entry.uncertain=false;entry.saved=true;}
+    if(ownsSave()){saving.committed=true;updateSttSaveState();}
     if(ownsSave())await finishSttReviewSave(context,ownsSave,false);
   }catch(error){if(ownsSave())throw error;}
   finally{if(state.sttSaving===saving){state.sttSaving=null;updateSttSaveState();}}
@@ -3487,7 +3583,7 @@ function bindEvents() {
 }
 
 async function init() {
-  const uiBuild=document.createElement('small');uiBuild.id='uiBuild';uiBuild.textContent='UI 20261110';uiBuild.title='ST-T 入报交互修复 · 0.12.32-stt-report-buttons.20261110';
+  const uiBuild=document.createElement('small');uiBuild.id='uiBuild';uiBuild.textContent='UI 20261111';uiBuild.title='保存流程与图条右键优化 · 20261111-saveflow · 后端 0.12.32';
   document.querySelector('.sidebar-version')?.append(document.createElement('br'),uiBuild);
   globalThis.ecgChartInspection=globalThis.ECGChartInspection?.mount({getScope:()=>JSON.stringify([state.caseId,state.caseRequestId,state.currentPage,state.editMode,state.caseData?.analysis_basis,state.caseData?.analysis_revision,state.caseData?.review_workflow?.beat_revision,state.waveform?.analysis_revision,state.sttWaveform?.analysis_revision,state.editRequestId,state.trendsRequestId,state.reportRequestId])});
   initRhythmRangeEditor();
