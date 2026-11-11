@@ -71,6 +71,7 @@ async function removeUndoPreservesLaterChoices(){
 }
 async function printAndPagesCallbacks(){
  const x=setup(),e=x.events[0];x.ctx.active=e;await x.ctx.setSTTUse(e,'text',true);await x.ctx.setSTTUse(e,'strip',true);
+ vm.runInContext(between('  function gainHtml(){','  function changePaperSettings('),x.ctx);
  x.ctx.category='strips';vm.runInContext(between('  async function renderReportBody(){','  function mountSavedSTNote('),x.ctx);
  await x.ctx.renderReportBody();let options=x.calls.compose;assert(options);options.onStripPrint(0,false);await x.settle();assert.equal(x.state.reportComposition.selected_events[0].print_enabled,false);assert.equal(x.state.reportComposition.stt_report_use[0].strip,false);assert.equal(x.state.reportComposition.stt_report_use[0].text,true);
  options=x.calls.compose;options.onStripPrint(0,true);await x.settle();assert.equal(x.state.reportComposition.selected_events[0].print_enabled,true);assert.equal(x.state.reportComposition.stt_report_use[0].strip,true);
