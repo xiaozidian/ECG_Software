@@ -157,7 +157,7 @@ def test_new_workflow_runs_scoped_guards_and_actual_fresh19_and_original18():
     assert workflow.count('scripts/verify_windows_ui_saveflow_native.py') == 2
     assert '--base-software-archive' in workflow and 'upgrade18-to19-native.json' in workflow
     assert 'verification-upgrade-version "auto"' in workflow
-    assert 'scripts/verify_windows_doctor_browser.py' in workflow and 'scripts/verify_windows_p01.py' in workflow
+    assert 'scripts/verify_windows_doctor_browser_ui19.py' in workflow and 'scripts/verify_windows_p01.py' in workflow
     assert 'run_windows_release_tests.py' not in workflow and 'run_windows_ui_tests.py' not in workflow
     assert '  push:' not in workflow and '  workflow_dispatch:' in workflow
     assert baseline.RUN == 42936491344 and baseline.HEAD == 'f559f7ee07ef79fb6f3e69f737618b41032e7f36'
@@ -176,3 +176,15 @@ def test_native_wrapper_has_no_patient_or_PDF_scope_and_actual_runtime_guards():
                  'pdf_operations=0', 'physical_hospital_Windows10_verified=False'):
         assert text in source
     assert 'load_old_oracles(' not in source and 'monkeypatch' not in source
+
+
+def test_ui19_browser_driver_keeps_all_legacy_protections_and_selects_explicit_AF_adapter():
+    old = (ROOT / 'scripts/verify_windows_doctor_browser.py').read_text()
+    new = (ROOT / 'scripts/verify_windows_doctor_browser_ui19.py').read_text()
+    original = 'from verify_windows_af_editor import verify_af_editor'
+    adapted = 'from verify_windows_af_editor_ui19 import verify_af_editor'
+    assert old.count(original) == new.count(adapted) == 1
+    assert new.replace(adapted, original) == old
+    workflow = (ROOT / '.github/workflows/windows-ui-saveflow.yml').read_text()
+    assert 'tests/test_windows_af_editor_ui19.py' in workflow
+    assert 'scripts/verify_windows_doctor_browser_ui19.py' in workflow

@@ -81,7 +81,7 @@ jobs:
           "ECG_APP_DATA_ROOT=$env:RUNNER_TEMP\doctor-regression-work" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Frontend save-flow and retained report guards on actual system Edge
         run: |
-          python -m pytest -p no:cacheprovider -q tests/test_review_write_local_sync.py tests/test_af_review_write_refresh.py tests/test_report_card_and_stt_controls.py tests/test_overview_identity.py tests/test_overview_identity_refresh_fallback.py tests/test_unsaved_navigation.py tests/test_report_wave_menu.py tests/test_report_preview_interactions.py tests/test_stt_use_save_wait.py tests/test_stt_membership_remount.py tests/test_windows_ui_saveflow_controller.py tests/test_windows_ui_saveflow_interactions.py tests/test_shared_source.py tests/test_static_demo_builder.py --junitxml="$env:RUNNER_TEMP\doctor19-ui-saveflow-tests.xml"
+          python -m pytest -p no:cacheprovider -q tests/test_review_write_local_sync.py tests/test_af_review_write_refresh.py tests/test_report_card_and_stt_controls.py tests/test_overview_identity.py tests/test_overview_identity_refresh_fallback.py tests/test_unsaved_navigation.py tests/test_report_wave_menu.py tests/test_report_preview_interactions.py tests/test_stt_use_save_wait.py tests/test_stt_membership_remount.py tests/test_windows_ui_saveflow_controller.py tests/test_windows_ui_saveflow_interactions.py tests/test_windows_af_editor_ui19.py tests/test_shared_source.py tests/test_static_demo_builder.py --junitxml="$env:RUNNER_TEMP\doctor19-ui-saveflow-tests.xml"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Native directory build, generated 24h source and final ZIP smoke
         id: nativebuild
@@ -107,7 +107,7 @@ jobs:
         run: |
           $buildReport = Get-Content "$env:RUNNER_TEMP\doctor-eval\build-report.json" -Raw | ConvertFrom-Json
           $upgradeArchive = $buildReport.verification_upgrade_fixture.archive
-          python scripts/verify_windows_doctor_browser.py `
+          python scripts/verify_windows_doctor_browser_ui19.py `
             --package-root "$env:RUNNER_TEMP\doctor-eval\verify-package\CardioInsight-DoctorEval-Windows-x64" `
             --software-archive "$env:RUNNER_TEMP\doctor-eval\$upgradeArchive" `
             --output "$env:RUNNER_TEMP\doctor-eval\evidence\browser-validation.json"
