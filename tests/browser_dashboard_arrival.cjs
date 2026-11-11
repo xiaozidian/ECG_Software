@@ -64,7 +64,7 @@ async function run(which) {
     if(which==='filter-during-load') state.workspaceReady=true;
     const pending=which==='filter-during-load'?ctx.loadDashboard():null;
     state.search='B';$('#globalSearch').value='B';
-    const rows=[caseRow('A'),caseRow('B',{summary:{avg_hr:52},review_workflow:{next_step:'report'}})];
+    const rows=[caseRow('A'),caseRow('B',{summary:{avg_hr:52},review_workflow:{next_step:which==='filtered-open'?'edit':'report'}})];
     if(pending){ctx.renderWorklist();assert.equal($('#openFirstCase').disabled,true);requests.at(-1).resolve(payload(rows));await pending;}
     else await h.ready(rows);
     assert.match($('#worklistStatus').textContent,/1 \/ 2/);await ctx.openWorklistCase('A');assert.equal(opened.length,0);
@@ -73,7 +73,7 @@ async function run(which) {
       assert.equal($('#resetWorklistFilters').hidden,false);ctx.resetWorklistFilters();
       assert.equal($('#globalSearch').value,'');assert.equal($('#worklistFilter').value,'all');
       assert.equal($('#openFirstCase').disabled,false);assert.equal(ctx.focus,'#worklistStatus');
-    } else {await ctx.openWorklistCase('B');assert.deepEqual(opened,[{id:'B',destination:'report'}]);}
+    } else {await ctx.openWorklistCase('B');assert.deepEqual(opened,[{id:'B',destination:'review'}]);}
   } else if(which==='clinical-filters') {
     await h.ready([caseRow('A'),caseRow('B',{summary:{avg_hr:52,ventricular_beats:2}}),caseRow('C',{summary:{avg_hr:null}})]);
     $('#worklistFilter').value='abnormal';ctx.renderWorklist();assert.match($('#worklistStatus').textContent,/1 \/ 3/);

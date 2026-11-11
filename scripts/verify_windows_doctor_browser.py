@@ -401,26 +401,14 @@ async def worklist_ready(page):
     require(await page.locator("#metricCases").inner_text() == "1", "Native worklist must contain one mathematical case")
 
 
-async def open_case(page):
-    # The real worklist resumes its pending review step (edit, stt, or report).
-    # Do not wait for the overview page or override the physician workflow.
+async def open_case(page, selector="#openFirstCase"):
     await worklist_ready(page)
-    destination = await page.evaluate("() => state.cases.find(item=>item.case_id==='9900000000000001')?.review_workflow?.next_step||'review'")
     started = time.perf_counter()
-    await page.locator("#openFirstCase").click()
-    await page.wait_for_function("""(destination) => state.caseId==='9900000000000001'
+    await page.locator(selector).click()
+    await page.wait_for_function("""() => state.caseId==='9900000000000001'
         && !state.caseLoading && state.caseData?.technical?.duration_seconds_raw===86400
-        && state.currentPage===destination""", arg=destination)
-    if destination == "edit":
-        await wait_edit(page)
-    elif destination == "stt":
-        await page.wait_for_function("() => state.sttEvidence && document.querySelector('#sttWaveCanvasWrap').dataset.sttWaveState==='ready'")
-    elif destination == "report":
-        await page.wait_for_function("() => state.report && !state.reportSaving && !state.reportLoading")
-    elif destination == "review":
-        await page.wait_for_function("() => state.waveform?.leads")
-    else:
-        require(False, "Unexpected native worklist review destination")
+        && state.currentPage==='review' && overviewWorkbench.waveformBasis()
+        && Object.keys(state.waveform?.leads || {}).length>0""")
     require(await page.evaluate("() => state.demoReadonly===false && state.includePhi===false"), "Native writable and private doctor mode is required")
     require(await page.evaluate("() => state.caseData.technical.sample_rate_hz") == 200, "Native case must retain 200Hz")
     return time.perf_counter() - started
@@ -1077,7 +1065,16 @@ async def verify(args, receipt):
                         receipt["performance"]["summary"] = metric_summary(rounds)
                         await navigate(page, "dashboard")
                         warm = round_metrics["warm"]
-                        warm["case_open"] = await open_case(page)
+                        row_selector = '.row-action[data-case-destination="review"]'
+                        warm["case_open"] = await open_case(page, row_selector)
+                        entry = await page.evaluate("""() => ({
+                            page: state.currentPage, leads: Object.keys(state.waveform.leads),
+                            case_id: state.caseId, pending_step: filteredCases()[0]?.review_workflow?.next_step
+                        })""")
+                        record(receipt, "top-and-row-default-to-overview-repeat-" + str(iteration + 1),
+                               dict(top_selector="#openFirstCase", row_selector=row_selector, **entry))
+                        if iteration == 0:
+                            await page.screenshot(path=str(screenshots / "packaged-case-overview.png"))
                         warm["editor"], _, _ = await editor_round(page, receipt)
                         warm["stt_60s"], _ = await stt_range(page,scalar_oracle=scalar_oracle)
                         warm["hrv_24h"], _ = await hrv_round(page)

@@ -113,6 +113,20 @@ const beatEditor=(()=>{
     menu.hidden=false;positionBeatRelabelMenu(menu,context.x,context.y);
     try{if(!menu.matches(":popover-open"))menu.showPopover()}catch(_){}
   }
+  function savesSingleBeatDirectly(code, count){
+    return count===1&&["N","S","V","X"].includes(code);
+  }
+  function quickBeatHint(code){
+    return savesSingleBeatDirectly(code,state.editSelectedSamples.size)?'修改这一搏并保存，可撤销':'预览所选心搏的改型，确认后保存';
+  }
+  function updateQuickBeatControls(reading){
+    const reason=busy||committing?'正在处理当前修订，请等待完成':!clinicalWorkflow.writable()?'当前版本只读':reading?'当前列表尚未读取完成，请重试后选择心搏':!state.editSelectedSamples?.size?'请先用 Ctrl / ⌘ 点击或空格选择要处理的心搏':'';
+    document.querySelectorAll('[data-clinical-beat]').forEach(button=>{
+      button.disabled=Boolean(reason);
+      button.title=reason||quickBeatHint(button.dataset.clinicalBeat);
+    });
+    return reason;
+  }
   function renderOccurrenceToolbar(summary){
     const heading=$("#editGalleryTitle")?.closest('.edit-panel-heading');if(!heading)return;
     if(!occurrenceSummary||['sourceLabel','totalRecords','revision'].some(k=>occurrenceSummary[k]!==summary[k]))occurrenceUniverseCount=null;occurrenceSummary=summary;
@@ -131,8 +145,8 @@ const beatEditor=(()=>{
     const readState=$("#editTemplateGallery")?.dataset?.readState;
     const reading=['loading','error','cancelled'].includes(readState);
     if(reading)toolbar.querySelector('[data-occurrence-scope]').textContent=summary.sourceLabel+' · '+({loading:'正在读取，数量待核对',error:'读取失败，数量尚未核对',cancelled:'已取消读取，数量尚未核对'})[readState]+' · 所选操作暂不可用';
-    const reason=busy||committing?'正在处理当前修订，请等待完成':reading?'当前列表尚未读取完成，请重试后选择心搏':!state.editSelectedSamples.size?'请先用 Ctrl / ⌘ 点击或空格选择要处理的心搏':'';
-    toolbar.querySelectorAll('button').forEach(b=>{b.disabled=Boolean(reason);b.title=reason||(b.dataset.occurrenceCode?'预览修改所选心搏的分类，确认后保存':b.dataset.occurrenceTool==='restore'?'恢复所选心搏的源类型与位置，先预览确认':b.dataset.occurrenceTool==='clear'?'仅清除当前选择，不修改心搏或模板':'打开所选心搏的完整操作菜单');});
+    const reason=updateQuickBeatControls(reading);
+    toolbar.querySelectorAll('button').forEach(b=>{b.disabled=Boolean(reason);b.title=reason||(b.dataset.occurrenceCode?quickBeatHint(b.dataset.occurrenceCode):b.dataset.occurrenceTool==='restore'?'恢复所选心搏的源类型与位置，先预览确认':b.dataset.occurrenceTool==='clear'?'仅清除当前选择，不修改心搏或模板':'打开所选心搏的完整操作菜单');});
     const rhythm=$("#occDisease");if(rhythm){const supported=['S','V','A','C'].includes(summary.code||state.editSelectedClass?.slice(7));rhythm.disabled=Boolean(reason)||!supported||summary.savingRhythm;rhythm.title=summary.savingRhythm?'正在保存当前节律确认，请等待':reason||(!supported?'当前类别没有此节律确认入口，请选择 S、V、房颤或房扑目标':'记录所选区间的医生节律判断；不改变心搏分类，仍需独立确认');}
   }
   function clearOccurrenceSelection(){if(busy||committing)return;begin({caseId:state.caseId,surface:'edit'});selected.clear();state.editSelectedSamples.clear();syncSelection();}
@@ -216,7 +230,7 @@ const beatEditor=(()=>{
       if(["undo","redo"].includes(operation)){await commit(payload,scope);return}
       const preview=await request("/preview","POST",payload);
       requireOwner(scope);
-      if(quick&&scope.samples.length===1&&["N","S","V","X"].includes(extra.class_code)){await commit(payload,scope);return}
+      if(quick&&savesSingleBeatDirectly(extra.class_code,scope.samples.length)){await commit(payload,scope);return}
       let warning="基于已保存修订 r"+info.revision+"；已选 "+scope.samples.length+" 搏；将影响 "+preview.affected+" 个标记。修订后需重新确认相关复核环节；源 DATA / EBI 不会改写。";
       if(E.types[extra.class_code]?.kind==="nonbeat")warning+=" 该类型不是 QRS，原标记将从心搏和 NN 统计中排除。";
       if(E.types[extra.class_code]?.kind==="rhythm")warning+=" 这是医生指定的逐搏节律属性，不是自动房颤 / 房扑识别或完整发作负荷分析。";
@@ -301,6 +315,7 @@ const beatEditor=(()=>{
     historyBusy(busy||committing);
   }
   function historyBusy(on){
+    updateQuickBeatControls(['loading','error','cancelled'].includes($("#editTemplateGallery")?.dataset?.readState));
     const value=currentHistory(),readonly=!clinicalWorkflow.writable();
     document.querySelectorAll('[data-history]').forEach(button=>{const action=button.dataset?.history||'undo',allowed=value?.['can_'+action];button.disabled=on||readonly||!allowed;button.title=on?'正在保存修订并更新结果，请等待':readonly?'当前版本只读':!value?'请等待当前病例读取并核对修订历史':!allowed?`当前没有可${action==='undo'?'撤销':'重做'}的心搏修订`:`${action==='undo'?'撤销最近心搏修订（⌘ / Ctrl+Z）':'重做心搏修订（⌘ / Ctrl+Shift+Z）'}；保留审计`;});
     document.querySelectorAll('[data-editor-status]').forEach(el=>{el.textContent=on?'更新修订…':!value?'历史待核对':!value.can_undo&&!value.can_redo?'暂无修订历史':'心搏修订 '+value.revision;el.title='右击波形或按 Shift+F10 编辑；撤销 / 重做均保留审计';});

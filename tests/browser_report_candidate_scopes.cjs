@@ -22,7 +22,7 @@ async function rowsOnlyView(){
 }
 function memberContext(category,entries=[]){
  const composition={selected_events:entries,category_reviews:{},diagnosis_blocks:[]},state={caseId:'math',caseRequestId:1,currentPage:'report',reportDisplayedCategory:category,reportComposition:composition},counts={dirty:0,confirmed:0};
- const ctx=vm.createContext({A:{categories:[['AF','房颤'],['pause','长RR'],['rr_candidate','自选RR']]},state,category,selected:()=>composition.selected_events,selectedLookup:new Map(),ECGReportEngine:engine,composition:()=>({...composition,strip_defaults:{duration_s:7}}),ECGReportRange:{pending:()=>[]},returnedRhythmSelection:()=>null,reportData:{items:[],total:0},reportWaveReady:true,reportOffset:0,waveEvidenceScope:'scope',active:null,copy:x=>JSON.parse(JSON.stringify(x)),syncText(){},dirty(){counts.dirty++;},renderReportShell(){},renderEventNavigation(){},renderReportBody:async()=>{},document:{querySelectorAll:()=>[]},qs:()=>null,run:f=>f(),toast(){},locate:async()=>{},syncReportMembership(){},confirmReportRhythm(){counts.confirmed++;}});
+ const ctx=vm.createContext({A:{categories:[['fastest','最快心率'],['AF','房颤'],['pause','长RR'],['rr_candidate','自选RR']]},state,category,selected:()=>composition.selected_events,selectedLookup:new Map(),ECGReportEngine:engine,composition:()=>({...composition,strip_defaults:{duration_s:7}}),ECGReportRange:{pending:()=>[]},returnedRhythmSelection:()=>null,reportData:{items:[],total:0},reportWaveReady:true,reportOffset:0,waveEvidenceScope:'scope',active:null,copy:x=>JSON.parse(JSON.stringify(x)),syncText(){},dirty(){counts.dirty++;},renderReportShell(){},renderEventNavigation(){},renderReportBody:async()=>{},document:{querySelectorAll:()=>[]},qs:()=>null,run:f=>f(),toast(){},locate:async()=>{},syncReportMembership(){},confirmReportRhythm(){counts.confirmed++;}});
  vm.runInContext(helpers,ctx);require('./clinical_ui_report_helpers.cjs').prepare(ctx);vm.runInContext(region('  async function addAFStrip(','  function selectEvent('),ctx);vm.runInContext(region('  function selectEvent(','  let removedReportStrip='),ctx);return {ctx,composition,counts,state};
 }
 async function independentAFStrips(){
@@ -34,6 +34,21 @@ async function independentAFStrips(){
  vm.runInContext(region('  let removedReportStrip=','  function enableReportDraftSelections('),x.ctx);x.ctx.removeReportSelection(1);assert.equal(x.composition.selected_events.length,3);assert(x.composition.selected_events.some(s=>s.strip_id===first.strip_id));assert(!x.composition.selected_events.some(s=>s.strip_id===middle.strip_id));
  x.composition.selected_events.push({...first,strip_id:'old-stale',basis_version:'old'});const before=JSON.stringify(x.composition.selected_events);await x.ctx.selectEvent(e,false);assert.equal(x.composition.selected_events.length,0,'candidate cancellation did not remove all sibling strips');
  vm.runInContext(region('  function selectionUndoCurrent(','  function syncReportMembership('),x.ctx);await x.ctx.undoReportSelection();assert.equal(JSON.stringify(x.composition.selected_events),before,'whole-candidate undo did not restore all sibling settings');
+}
+async function undoAfterAutosave(){
+ const e={event_id:'math-rate',basis_version:'r1',category:'fastest',label:'工程心率'};
+ const x=memberContext('fastest');
+ x.ctx.reportData.items=[e];x.ctx.reportData.total=1;
+ vm.runInContext(region('  function selectionUndoCurrent(','  function syncReportMembership('),x.ctx);
+ await x.ctx.selectEvent(e,true);
+ const entry=x.composition.selected_events[0];
+ x.composition.selected_events[0]=Object.fromEntries(Object.entries(entry).sort(([a],[b])=>a.localeCompare(b)));
+ assert(x.ctx.selectionUndoCurrent(),'server object field order disabled undo');
+ x.composition.selected_events[0].caption='医生修改';
+ assert(!x.ctx.selectionUndoCurrent(),'undo could discard a later strip edit');
+ x.composition.selected_events[0].caption=entry.caption;
+ await x.ctx.undoReportSelection();
+ assert.equal(x.composition.selected_events.length,0);
 }
 async function selections(){
  const x=memberContext('AF'),e={event_id:'af',basis_version:'af-b',category:'AF',rhythm_status:'pending',subtype:'AF',label:'候选'};x.ctx.reportData={items:[e],total:1};x.ctx.active=e;
@@ -75,4 +90,4 @@ async function expandedWindowDoesNotChangeRequestedDuration(){
  duration.value='15';duration.onchange();await tasks.at(-1);duration.value='7';duration.onchange();await tasks.at(-1);start.onclick();await tasks.at(-1);const repeated=reads.at(-1);assert.deepEqual([repeated.range_start_s,repeated.range_end_s],[first.range_start_s,first.range_end_s]);assert.equal(mounts.at(-1).stripDuration,7);
  const x=memberContext('AF');x.ctx.reportStrip=async(_,spec)=>({strip:engine.resolve(index,e,spec)});await x.ctx.addAFStrip(e,first,{role:'start',render:false});const saved=x.composition.selected_events[0];await x.ctx.addAFStrip(e,repeated,{role:'start',render:false});assert.equal(x.composition.selected_events.length,1,'returning to the same requested duration duplicated the first strip');assert.equal(x.composition.selected_events[0],saved);assert.equal(saved.duration_s,7.7,'actual five-beat range was not preserved');
 }
-(async()=>{await expandedWindowDoesNotChangeRequestedDuration();await independentAFStrips();await browseKeepsSelectionAndRejectsLateReads();await rowsOnlyView();await selections();await confirmationUsesPendingWithoutApplying();console.log('Candidate handlers: requested duration survives five-beat expansion, AF independent strips, exact duplicate preservation, per-strip removal, whole-candidate undo, pure viewing and single-dialog confirmation passed');})().catch(e=>{console.error(e);process.exitCode=1;});
+(async()=>{await undoAfterAutosave();await expandedWindowDoesNotChangeRequestedDuration();await independentAFStrips();await browseKeepsSelectionAndRejectsLateReads();await rowsOnlyView();await selections();await confirmationUsesPendingWithoutApplying();console.log('Candidate handlers: requested duration survives five-beat expansion, AF independent strips, exact duplicate preservation, per-strip removal, whole-candidate undo, pure viewing and single-dialog confirmation passed');})().catch(e=>{console.error(e);process.exitCode=1;});

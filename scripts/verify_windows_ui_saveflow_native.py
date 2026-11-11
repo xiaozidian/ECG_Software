@@ -1,6 +1,6 @@
-"""Actual fresh19 PE ST-T controls, or exact original18 ->19 workspace upgrade.
+"""Actual fresh20 PE ST-T controls, or exact original19 ->20 workspace upgrade.
 
-This controller never relabels a packaging-only fixture as delivered19, never
+This controller never relabels a packaging-only fixture as delivered20, never
 patches an executable and never imports old clinical code into a new namespace.
 Both application phases run real AMD64 PE files with bundled Python and Edge.
 All generated inputs and publicly retained screenshots are mathematical only.
@@ -22,12 +22,12 @@ from urllib.parse import urlsplit
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / 'scripts')]
 APP = '0.12.32-stt-report-buttons.20261110'
-VERSION = '1.0.19'
+VERSION = '1.0.20'
 BASE_APP = '0.12.32-stt-report-buttons.20261110'
-BASE_VERSION = '1.0.18'
+BASE_VERSION = '1.0.19'
 BASE_CORE = 'core-94352009c80e551e'
-BASE_P01_SHA = '74467c07be74df009664008870f104c26838ef29c86406826edf4bc7b109af60'
-BASE_PE_SHA = '88c7ba301ca40a692e91f8302ade6e355935d327cda7deca29c6153573fc0dee'
+BASE_P01_SHA = 'c2151872d9577ee81e88156d9bf65428d7c3a530cbb54218d5e761ee73cfd6ad'
+BASE_PE_SHA = '8f597a68d153c258d25ebf5c95276a289211b7461ebc8d27d7330fa26b7f6728'
 READONLY_POSTS = {'open', 'scatter-selection', 'waveform-strips', 'event-waveforms',
                   'waveform-density', 'advanced-analysis', 'rr-locate', 'stt-range'}
 
@@ -53,21 +53,21 @@ def files(root):
 
 def metadata_identity(release, shared, *, old_release=None, old_shared=None,
                       new_PE_sha256, old_PE_sha256=None):
-    require(release['packaging_version'] == VERSION, 'Expected a real delivered19, not an upgrade fixture')
+    require(release['packaging_version'] == VERSION, 'Expected a real delivered20, not an upgrade fixture')
     require(release['app_version'] == release['software_version'] == APP, 'Current application version differs')
     require(shared['core_version'] == BASE_CORE, 'The accepted clinical core must remain unchanged')
     require(release['source_id'] == 'P01' and release['source_data_bundled'] is False, 'Expected source-free P01 software')
     require(not any(release.get(k, False) for k in ('ui_repack_only', 'binary_reused_without_rebuild',
-                                                   'verification_fixture_only')), 'A reused binary or internal upgrade fixture is not delivered19')
+                                                   'verification_fixture_only')), 'A reused binary or internal upgrade fixture is not delivered20')
     if old_release is not None:
         require(old_release['packaging_version'] == BASE_VERSION and old_release['app_version'] == BASE_APP,
-                'The baseline must be original delivered18')
+                'The baseline must be original delivered19')
         require(old_release['source_id'] == 'P01' and old_release['source_data_bundled'] is False,
-                'Original18 baseline must be source-free P01')
+                'Original19 baseline must be source-free P01')
         require(old_PE_sha256 == BASE_PE_SHA and old_PE_sha256 != new_PE_sha256,
-                'Expected distinct original18 and fresh19 actual executables')
+                'Expected distinct original19 and fresh20 actual executables')
         require(old_shared['core_version'] == shared['core_version'], 'This UI repair must not change the clinical core')
-        require(old_shared['ui_version'] != shared['ui_version'], 'The delivered19 UI was not updated')
+        require(old_shared['ui_version'] != shared['ui_version'], 'The delivered20 UI was not updated')
     return dict(application_version=APP, packaging_version=VERSION, new_exe_sha256=new_PE_sha256,
                 base_application_version=BASE_APP if old_release else None,
                 base_packaging_version=BASE_VERSION if old_release else None,
@@ -107,7 +107,7 @@ def compare_api(before, after, package):
     current_basis(b1, APP, package['new_exe_sha256'])
     require(b0['engine_id'] != b1['engine_id'] and b0['digest'] != b1['digest'], 'Fresh executable identity was not applied')
     exact(b0['inputs'], b1['inputs'], 'Original source inputs changed')
-    require(old['status'] == 'reviewed' and bool(old['reviewed_by']), 'Original18 report was not visibly approved')
+    require(old['status'] == 'reviewed' and bool(old['reviewed_by']), 'Original19 report was not visibly approved')
     require(new['status'] == 'draft' and not new['reviewed_by'] and new['version'] == old['version'] + 1,
             'New program must invalidate old program-bound approval exactly once')
     require(new['review_revision'] == old['review_revision'] + 1, 'Unexpected review revision change')
@@ -116,7 +116,7 @@ def compare_api(before, after, package):
     exact({k: v for k, v in old.items() if k not in allowed},
           {k: v for k, v in new.items() if k not in allowed}, 'Old conclusion, historical proof or report identity changed')
     exact(new['composition'], invalidated_composition(old['composition']), 'Saved figures, notes or output choices changed')
-    exact(new['analysis_provenance'], old['analysis_provenance'], 'The original18 signature was rewritten or re-signed')
+    exact(new['analysis_provenance'], old['analysis_provenance'], 'The original19 signature was rewritten or re-signed')
     require(new['analysis_provenance']['basis']['digest'] == b0['digest'] != b1['digest'], 'Old signature silently became a new approval')
     stored = lambda value: [{k: v for k, v in item.items() if k != 'stt_review_receipt'}
                             for item in value['annotations']['items']]
@@ -125,7 +125,7 @@ def compare_api(before, after, package):
     previous = {e['event_id']: e for e in before['events']['items']}
     current = {e['event_id']: e for e in after['events']['items']}
     ids = [eid for eid, e in previous.items() if e['category'] == 'ST']
-    require(ids, 'Actual original18 baseline had no adopted ST-T evidence')
+    require(ids, 'Actual original19 baseline had no adopted ST-T evidence')
     for eid in ids:
         require(eid in current and current[eid]['stt_review_state'] == 'stale', 'Old program-bound ST-T proof was not retained as stale')
         exact(previous[eid]['stt_event_evidence'], current[eid]['stt_event_evidence'], 'Historical v3 evidence was relabelled')
@@ -136,7 +136,7 @@ def compare_api(before, after, package):
                 historical_signature_preserved_not_resigned=True, clinical_core_same=True)
 
 
-async def approve_original18(page, case_id):
+async def approve_original19(page, case_id):
     from scripts.verify_windows_ui15_upgrade import get
     async def settled():
         await page.wait_for_function("()=>state.currentPage==='report'&&!state.reportDirty&&!state.reportSaving&&!state.reportEvidenceLoading&&!state.reportViewLoading")
@@ -155,7 +155,7 @@ async def approve_original18(page, case_id):
     await settled()
     if not await page.locator('#conclusionEditor').is_visible():
         await page.locator('.rw-conclusion-disclosure>summary').click()
-    note = 'Original18 mathematical physician workflow baseline; retained through actual19 upgrade.'
+    note = 'Original19 mathematical physician workflow baseline; retained through actual20 upgrade.'
     await page.locator('#conclusionEditor').fill(note)
     await page.locator('#conclusionEditor').press('Tab')
     await settled()
@@ -164,7 +164,7 @@ async def approve_original18(page, case_id):
     await page.wait_for_function("()=>state.report?.status==='reviewed'&&!state.reportSaving")
     report = await get(page, case_id, 'report')
     require(report['conclusion'] == note and len(report['composition']['selected_events']) >= 4,
-            'Visible original18 baseline must contain real saved ST-T and AF figures')
+            'Visible original19 baseline must contain real saved ST-T and AF figures')
 
 
 async def run(args, result):
@@ -181,18 +181,18 @@ async def run(args, result):
     from ecg_core.repository import CaseRepository
     from ecg_core import doctor_source
     checks = result['checks']
-    with tempfile.TemporaryDirectory(prefix='UI-saveflow-actual19-') as temporary:
+    with tempfile.TemporaryDirectory(prefix='UI-saveflow-actual20-') as temporary:
         work = Path(temporary)
         new = unpack(args.software_archive, work / 'new')
         verify_content_manifest(new)
         old = None
         if args.base_software_archive:
-            require(sha256(args.base_software_archive.read_bytes()).hexdigest() == BASE_P01_SHA, 'Original18 P01 ZIP bytes differ')
+            require(sha256(args.base_software_archive.read_bytes()).hexdigest() == BASE_P01_SHA, 'Original19 P01 ZIP bytes differ')
             old = unpack(args.base_software_archive, work / 'old')
             verify_content_manifest(old)
         result['package_identity'] = package = program_identity(new, old)
         exe = new / 'CardioInsightDoctorEval.exe'
-        require(pe_is_x64(exe), 'Current19 is not an actual AMD64 PE')
+        require(pe_is_x64(exe), 'Current20 is not an actual AMD64 PE')
         result['actual_embedded_runtime'] = embedded_modules(exe, ROOT)
         declaration = generate(work / 'mathematics')
         cases, issues = CaseRepository(work / 'mathematics').scan_cases()
@@ -253,36 +253,36 @@ async def run(args, result):
                     require(modules['python_dll_from_bundle'], 'Current application did not load bundled Python')
                     result['comprehensive_STT'] = await stt_flow(page, doctor_source.CASE_ID, args.output.parent / 'STT-current')
                     result['AF_multistrip'] = await af_flow(page, doctor_source.CASE_ID, args.output.parent / 'AF-current',
-                        source_kind='mathematical_synthetic', note='Actual Windows19 mathematical AF protection')
+                        source_kind='mathematical_synthetic', note='Actual Windows20 mathematical AF protection')
                     from scripts.verify_stt_report_buttons_ui import verify as buttons_flow
                     result['STT_report_buttons'] = await buttons_flow(page, doctor_source.CASE_ID, args.output.parent / 'STT-buttons-current')
                     from scripts.verify_ui_saveflow_ui import verify as saveflow
                     result['UI_saveflow'] = await saveflow(page, doctor_source.CASE_ID, args.output.parent / 'UI-saveflow-current')
-                    result['actual_processes'] = [dict(phase='fresh19', pid=running['pid'], birth=running['birth'])]
-                    checks.extend(['actual19-PE-and40-embedded-runtime-modules', 'system-Edge-and-bundled-Python',
+                    result['actual_processes'] = [dict(phase='fresh20', pid=running['pid'], birth=running['birth'])]
+                    checks.extend(['actual20-PE-and40-embedded-runtime-modules', 'system-Edge-and-bundled-Python',
                                    'current-comprehensive-STT-visible-flow', 'independent-AF-multistrip-protection',
                                    'retained-A4-preview-and-pending-save-STT-visible-controls',
-                                   'actual19-STT-AF-incremental-save-delete-and-card-contextmenu'])
+                                   'actual20-STT-AF-incremental-save-delete-and-card-contextmenu'])
                 else:
                     old_exe = old / 'CardioInsightDoctorEval.exe'
-                    require(pe_is_x64(old_exe), 'Original18 is not an actual AMD64 PE')
+                    require(pe_is_x64(old_exe), 'Original19 is not an actual AMD64 PE')
                     active = old_exe
                     page = await begin(old_exe)
                     workspace = json.loads((home / 'catalog.json').read_text())['selected_workspace']
                     state0 = await live_state(home, workspace, old_exe)
                     module0 = await asyncio.to_thread(process_modules, state0['pid'], old_exe)
-                    require(module0['python_dll_from_bundle'], 'Original18 did not load bundled Python')
-                    result['original18_STT_baseline'] = await stt_flow(page, doctor_source.CASE_ID, args.output.parent / 'original18-STT')
-                    result['original18_AF_baseline'] = await af_flow(page, doctor_source.CASE_ID, args.output.parent / 'original18-AF',
-                        source_kind='mathematical_synthetic', note='Original18 mathematical baseline for actual19 upgrade')
-                    await approve_original18(page, doctor_source.CASE_ID)
+                    require(module0['python_dll_from_bundle'], 'Original19 did not load bundled Python')
+                    result['original19_STT_baseline'] = await stt_flow(page, doctor_source.CASE_ID, args.output.parent / 'original19-STT')
+                    result['original19_AF_baseline'] = await af_flow(page, doctor_source.CASE_ID, args.output.parent / 'original19-AF',
+                        source_kind='mathematical_synthetic', note='Original19 mathematical baseline for actual20 upgrade')
+                    await approve_original19(page, doctor_source.CASE_ID)
                     before = await capture(page, doctor_source.CASE_ID, get, after=True)
                     await context.close()
                     context = None
                     await stop(old_exe, home)
                     database = home / 'workspaces' / workspace / 'data/cardioinsight.db'
                     database0 = database_state(database)
-                    (args.output.parent / 'original18-before-report.json').write_text(json.dumps(before['report'], ensure_ascii=False, indent=2) + '\n')
+                    (args.output.parent / 'original19-before-report.json').write_text(json.dumps(before['report'], ensure_ascii=False, indent=2) + '\n')
                     after_mode = True
                     active = exe
                     first = datetime.now(timezone.utc)
@@ -290,8 +290,8 @@ async def run(args, result):
                     page = await begin(exe, reuse=True)
                     state1 = await live_state(home, workspace, exe)
                     module1 = await asyncio.to_thread(process_modules, state1['pid'], exe)
-                    require(module1['python_dll_from_bundle'], 'Actual19 did not load bundled Python')
-                    require((state0['pid'], state0['birth']) != (state1['pid'], state1['birth']), 'Upgrade reused the old18 process')
+                    require(module1['python_dll_from_bundle'], 'Actual20 did not load bundled Python')
+                    require((state0['pid'], state0['birth']) != (state1['pid'], state1['birth']), 'Upgrade reused the old19 process')
                     require(json.loads((home / 'catalog.json').read_text())['selected_workspace'] == workspace, 'Upgrade changed workspace')
                     await page.locator('#openFirstCase').click()
                     await page.wait_for_function('id=>state.caseId===id&&!state.caseLoading', arg=doctor_source.CASE_ID)
@@ -300,7 +300,7 @@ async def run(args, result):
                     from scripts.verify_ui_saveflow_ui import verify_legacy
                     result['legacy_UI'] = await verify_legacy(page, doctor_source.CASE_ID, args.output.parent / 'UI-saveflow-legacy')
                     for _ in range(3):
-                        exact(after, await capture(page, doctor_source.CASE_ID, get, after=True), 'Repeated new19 GET changed retained work')
+                        exact(after, await capture(page, doctor_source.CASE_ID, get, after=True), 'Repeated new20 GET changed retained work')
                     await context.close()
                     context = None
                     await stop(exe, home)
@@ -310,15 +310,15 @@ async def run(args, result):
                         before['report']['current_analysis_basis'], after['report']['current_analysis_basis'])
                     result['database_before'] = public_database(database0)
                     result['database_after'] = public_database(database1)
-                    (args.output.parent / 'actual19-after-report.json').write_text(json.dumps(after['report'], ensure_ascii=False, indent=2) + '\n')
-                    result['actual_processes'] = [dict(phase='original18', pid=state0['pid'], birth=state0['birth']),
-                                                  dict(phase='fresh19', pid=state1['pid'], birth=state1['birth'])]
-                    checks.extend(['exact-original18-P01-and-distinct-fresh19-PE', 'same-clinical-core-and-new-UI-identity',
-                        'old18-visible-reviewed-STT-and-AF-baseline', 'same-source-home-workspace-and-bundled-Python',
+                    (args.output.parent / 'actual20-after-report.json').write_text(json.dumps(after['report'], ensure_ascii=False, indent=2) + '\n')
+                    result['actual_processes'] = [dict(phase='original19', pid=state0['pid'], birth=state0['birth']),
+                                                  dict(phase='fresh20', pid=state1['pid'], birth=state1['birth'])]
+                    checks.extend(['exact-original19-P01-and-distinct-fresh20-PE', 'same-clinical-core-and-new-UI-identity',
+                        'old19-visible-reviewed-STT-and-AF-baseline', 'same-source-home-workspace-and-bundled-Python',
                         'retained-annotations-UUIDs-curation-and-physician-conclusion',
                         'old-signature-retained-not-resigned-and-current-report-invalidated-once',
                         'three-read-only-reopens-idempotent-with-no-clinical-writes',
-                        'real-old18-STT-disabled-reasons-and-exact-record-edit-entry-without-writes'])
+                        'real-old19-STT-disabled-reasons-and-exact-record-edit-entry-without-writes'])
                 require(files(source) == original, 'Mathematical source files changed')
                 require(not errors and not blocked, 'Page errors or forbidden network/PDF/clinical operations occurred')
                 result.update(status='passed', native_frozen_runtime=True, primary_checks=len(checks),
@@ -346,7 +346,7 @@ def main():
     args = parser.parse_args()
     require(not args.output.exists(), 'Preserve original native attempts')
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    result = dict(status='running', mode='actual-original18-to19' if args.base_software_archive else 'actual-fresh19-UI-saveflow',
+    result = dict(status='running', mode='actual-original19-to20' if args.base_software_archive else 'actual-fresh20-UI-saveflow',
                   checks=[], patient_inputs_read=False, clinical_accuracy_validated=False,
                   physical_hospital_Windows10_verified=False, pdf_operations=0)
     try:

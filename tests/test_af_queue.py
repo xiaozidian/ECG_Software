@@ -11,7 +11,8 @@ ROOT = Path(__file__).parents[1]
     'stale-draft', 'save-clears-draft', 'discard', 'discard-stale', 'removed-draft',
     'race-case', 'race-beats', 'race-rhythm', 'race-source', 'race-close',
     'race-navigation', 'summary-saved-only',
-    'boundary-sync', 'confirmed-edit-pending', 'explicit-save-kind',
+    'boundary-sync', 'confirmed-edit-pending', 'unchanged-confirmed-save', 'explicit-save-kind',
+    'partial-last-hour', 'lost-write-control',
 ])
 def test_shipped_episode_queue(scenario):
     subprocess.run(['node', 'tests/browser_af_queue.cjs', scenario], cwd=ROOT, check=True)

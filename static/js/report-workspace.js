@@ -196,7 +196,7 @@ globalThis.ECGReportWorkspace=(()=>{
     }
     return groups;
   }
-  function compose(host,{id,composition,selected,lookup,sections,onPages,onMode,onSTTrendMetric,onPreview,onStripLeads,onStripEdit,onStripPrint,onStripRemove,onStripReference,onReviewEvidence,onReviewLongest,loadLongestRR,onSort,onTemplates,loadTrend,renderWave,loadWave,renderAdvanced,terms=[],overview=null,isCurrent=()=>true,termContext=null,onUsages=null,showTerminology=false,showAdvanced=false,recordStart=null,inspection=false}){
+  function compose(host,{id,composition,selected,lookup,sections,onPages,onMode,onSTTrendMetric,onPreview,onStripLeads,onStripEdit,onStripPrint,onStripRemove,onStripReference,onReviewEvidence,onReviewLongest,loadLongestRR,onSort,onTemplates,loadTrend,renderWave,loadWave,renderAdvanced,renderPaperSettings,terms=[],overview=null,isCurrent=()=>true,termContext=null,onUsages=null,showTerminology=false,showAdvanced=false,recordStart=null,inspection=false}){
     releaseTerminology(host);
     // Hiding the assistant does not discard versioned text already saved in a report.
     host._rwTerminologyUsages=composition.terminology_usages??null;
@@ -225,6 +225,7 @@ globalThis.ECGReportWorkspace=(()=>{
         <details class="rw-output-options" ${view.outputOpen?'open':''}><summary>报告内容与输出 <span>${composition.included_pages.length} 类页</span></summary>
           <fieldset><legend>最快 / 最慢图条</legend>${[['rr','仅 RR'],['nn','仅 NN'],['both','RR 与 NN']].map(([v,l])=>`<label><input type="radio" name="rwRateMode" value="${v}" ${composition.fast_slow_mode===v?'checked':''}>${l}</label>`).join('')}</fieldset>
           <section><h3>报告页</h3><div class="rw-page-options">${pageGroups(sections).map(g=>`<details ${g.name==='基础报告'?'open':''} data-rw-page-group="${esc(g.name)}"><summary>${g.name} · ${g.items.filter(s=>composition.included_pages.includes(s.key)).length} / ${g.items.length}</summary>${g.items.map(s=>`<label title="${esc(s.reason||'')}"><input type="checkbox" data-report-page="${s.key}" ${composition.included_pages.includes(s.key)?'checked':''} ${s.available?'':'disabled'}><span>${esc(s.title)}${s.available?'':`<small>${esc(s.reason)}</small>`}</span></label>`).join('')}</details>`).join('')}</div></section>
+          ${inspection&&renderPaperSettings?renderPaperSettings():''}
         </details>
       </aside>
       <div class="rw-main">
@@ -256,7 +257,7 @@ globalThis.ECGReportWorkspace=(()=>{
     visible.forEach(({i,e})=>{if(e?.category==='AF'&&e.rhythm_episode_id)host.querySelector(`[data-back-event="${i}"]`).insertAdjacentHTML('afterend',`<button type="button" data-review-rhythm="${i}">保存草稿并复核片段</button>`);});
     if(showAdvanced&&renderAdvanced){const panel=document.createElement('div');panel.className='rw-research';host.querySelector('.rw-workspace').append(panel);renderAdvanced(panel);}
     function redraw(selector){
-      compose(host,{id,composition,selected,lookup,sections,onPages,onMode,onSTTrendMetric,onPreview,onStripLeads,onStripEdit,onStripPrint,onStripRemove,onStripReference,onReviewEvidence,onReviewLongest,loadLongestRR,onSort,onTemplates,loadTrend,renderWave,loadWave,renderAdvanced,terms,overview,isCurrent,termContext,onUsages,showTerminology,showAdvanced,inspection});
+      compose(host,{id,composition,selected,lookup,sections,onPages,onMode,onSTTrendMetric,onPreview,onStripLeads,onStripEdit,onStripPrint,onStripRemove,onStripReference,onReviewEvidence,onReviewLongest,loadLongestRR,onSort,onTemplates,loadTrend,renderWave,loadWave,renderAdvanced,renderPaperSettings,terms,overview,isCurrent,termContext,onUsages,showTerminology,showAdvanced,inspection});
       host.querySelector(selector)?.focus({preventScroll:true});
     }
     host.querySelectorAll('[data-strip-filter]').forEach(b=>b.onclick=()=>{filter=b.dataset.stripFilter;redraw('[data-strip-filter][aria-pressed="true"]')});

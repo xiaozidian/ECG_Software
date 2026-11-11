@@ -212,3 +212,24 @@ button:focus-visible,a:focus-visible,select:focus-visible,textarea:focus-visible
   #page-review label[for="gainSelect"] { font-size: 14px; }
   #page-review #calibrationNote { font-size: 14px; line-height: 1.5; }
 }
+
+/* Keep patient and audit tables independently scrollable on small workstations. */
+@media (max-width: 859px) {
+  html:has(:is(#page-audit,#page-patients).active),
+  body:has(:is(#page-audit,#page-patients).active) { min-width: 0; width: 100%; }
+  body:has(:is(#page-audit,#page-patients).active) { --sidebar: 52px; }
+  body:has(:is(#page-audit,#page-patients).active) .main-shell,
+  body:has(:is(#page-audit,#page-patients).active) .topbar { min-width: 0; }
+  :is(#page-audit,#page-patients) .page-heading,
+  #page-patients .card-header { flex-wrap: wrap; }
+  :is(#page-audit,#page-patients) .table-wrap { overflow-x: auto; }
+}
+#page-patients .switch-line { position: relative; }
+#page-patients .switch-line input {
+  display: block;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  clip-path: inset(50%);
+}
+#showDeleted:focus-visible + span { outline: 2px solid var(--teal-700); outline-offset: 2px; }

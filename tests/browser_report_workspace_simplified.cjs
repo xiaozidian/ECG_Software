@@ -56,7 +56,7 @@ async function printHtml(html,title,guard){guard();prints.push({html,title});}
 window.fetch=async(url)=>{calls.push({path:String(url),method:'FETCH'});return {ok:true,blob:async()=>{const value=new Blob(['%PDF-1.4 synthetic-only'],{type:'application/pdf'});if(holdBlob){holdBlob=false;return new Promise(resolve=>heldBlobs.push(()=>resolve(value)));}return value;}};};HTMLAnchorElement.prototype.click=function(){downloads.push({url:this.href,name:this.download});};
 ${shipped}
 qs('#conclusionEditor').value=originalText;qs('#conclusionEditor').addEventListener('input',dirty);
-function mount(){ECGReportWorkspace.compose(qs('#reportV2Content'),{id:state.caseId,composition:state.reportComposition,selected:selected(),lookup:selectedLookup,sections:ECGReportSections.catalog(),isCurrent:()=>state.caseId==='fixture',termContext:{api:async()=>{termApiCalls++;throw Error('Hidden assistant must not load catalog');}},terms:['隐藏的旧助手'],onUsages:()=>usagesDirty++,loadWave:()=>holdWave?new Promise(resolve=>heldWaves.push(()=>resolve(clone(entry)))):Promise.resolve(clone(entry)),renderWave:value=>ECGReportWorkspace.reviewWaveSvg(value.waveform),onPages:pages=>{state.reportComposition.included_pages=pages;dirty();},onMode:mode=>{state.reportComposition.fast_slow_mode=mode;dirty();},onPreview:()=>run(previewPaper),renderAdvanced:()=>advancedMounts++});}
+function mount(inspection=false){ECGReportWorkspace.compose(qs('#reportV2Content'),{inspection,renderPaperSettings:()=>'<section data-test-paper-settings>A4</section>',id:state.caseId,composition:state.reportComposition,selected:selected(),lookup:selectedLookup,sections:ECGReportSections.catalog(),isCurrent:()=>state.caseId==='fixture',termContext:{api:async()=>{termApiCalls++;throw Error('Hidden assistant must not load catalog');}},terms:['隐藏的旧助手'],onUsages:()=>usagesDirty++,loadWave:()=>holdWave?new Promise(resolve=>heldWaves.push(()=>resolve(clone(entry)))):Promise.resolve(clone(entry)),renderWave:value=>ECGReportWorkspace.reviewWaveSvg(value.waveform),onPages:pages=>{state.reportComposition.included_pages=pages;dirty();},onMode:mode=>{state.reportComposition.fast_slow_mode=mode;dirty();},onPreview:()=>run(previewPaper),renderAdvanced:()=>advancedMounts++});}
 window.ECGTerminologyTree={mount(){termMounts++;throw Error('Hidden tree must not mount');}};
 window.fixture={state,originalText,originalUsage,picks,wave,entry,mount,dirty,save,previewPaper,print,downloadReport,renderReportShell,selectedLookup,async attempt(name){try{await this[name]();return null;}catch(e){return e.message;}},resetRead(){basisReads=0;changeFinalBasis=false;},restore(){state.reportDirty=false;state.reportStale=false;state.reportSaving=false;state.caseId='fixture';state.caseRequestId=7;state.reportExportJob=null;changeFinalBasis=false;basisReads=0;ECGReportRange.clear();qs('#rwPaperPreview')?.close();}};
 renderReportShell();mount();
@@ -75,6 +75,19 @@ renderReportShell();mount();
   assert.deepEqual(await page.evaluate(()=>[termMounts,termApiCalls,advancedMounts,usagesDirty]),[0,0,0,0]);
   for(const width of [900,1600,2048]){await page.setViewportSize({width,height:1000});assert(await page.evaluate(()=>{const pane=document.querySelector('.report-conclusion-dock'),editor=document.querySelector('#conclusionEditor');return editor.getBoundingClientRect().width>=pane.getBoundingClientRect().width-3;}));}
   record('default-report-has-no-terms-precheck-or-redundant-research-entry-and-editor-reclaims-width');
+
+  assert.equal(await page.locator('[data-test-paper-settings]').count(),0);
+  await page.evaluate(()=>fixture.mount(true));
+  const paperSettings=page.locator('.rw-output-options [data-test-paper-settings]');
+  assert.equal(await paperSettings.count(),1);
+  await page.locator('.rw-output-options>summary').click();
+  assert(await paperSettings.isVisible());
+  await page.locator('[data-review-filter="confirmed"]').click();
+  assert.equal(await paperSettings.count(),1);
+  await page.locator('[data-clear-strip-filters]').click();
+  await page.evaluate(()=>fixture.mount());
+  assert.equal(await paperSettings.count(),0);
+  record('global-paper-settings-are-reachable-in-strip-inspection-and-survive-redraw');
 
   const before=await page.evaluate(()=>({text:document.querySelector('#conclusionEditor').value,composition:structuredClone(fixture.state.reportComposition)}));
   assert.equal(await page.locator('[data-review-status="stale"]').count(),1);assert.match(await page.locator('[data-review-status="stale"]').textContent(),/不能导出/);assert(await page.locator('[data-back-event="1"]').isDisabled());

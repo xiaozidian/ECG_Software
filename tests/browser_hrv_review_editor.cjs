@@ -23,7 +23,10 @@ function fixture(){let saved={scope:clone(scope),hrv_revision:0,document:clone(b
  for(const input of [['','1','cause'],['0.001','1','cause'],['-1','1','cause'],['2','1','cause'],['0','Infinity','cause'],['0','1',' ']])assert.throws(()=>editor.rangeInput(...input,70000));
  assert(!editor.compare({nn_count:0},{nn_count:null}).includes('undefined'));assert.match(editor.compare({nn_count:0},{nn_count:null}),/>0<\/td>/);assert.match(editor.compare({nn_count:0},{nn_count:null}),/>—<\/td>/);
  const server=fixture(),h=host(),savedCalls=[],located=[];let current=true;
- const controller=editor.mount(h,{id:'fixture',basis:scope,api:server.api,isCurrent:()=>current,onSaved:async(r,bookmark)=>savedCalls.push({r,bookmark}),onLocate:async(b,c)=>{assert(c.isCurrent());located.push(b.id);c.host.textContent='synthetic raw waveform';}});
+ const controller=editor.mount(h,{id:'fixture',basis:scope,api:server.api,isCurrent:()=>current,onSaved:async(r,bookmark)=>{
+   assert(h.children.find(b=>b.dataset.hrvEditAction==='undo').disabled,'saving must keep undo unavailable until the refreshed editor is ready');
+   savedCalls.push({r,bookmark});
+ },onLocate:async(b,c)=>{assert(c.isCurrent());located.push(b.id);c.host.textContent='synthetic raw waveform';}});
  await controller.ready;assert.equal(controller.current(),'5m-0-60000');assert.match(h.nodes['[data-hrv-edit-blocks]'].innerHTML,/不足完整 300 秒/);assert.match(h.innerHTML,/信号质量尚未自动验证/);assert.match(h.innerHTML,/strict|严格大于 50 ms/);assert.match(h.nodes['[data-hrv-edit-detail]'].innerHTML,/>0<\/td>/);
  controller.select('5m-60000-120000');assert.equal(h.nodes['[data-hrv-edit-start]'].value,'300');assert.equal(h.nodes['[data-hrv-edit-end]'].value,'350');await controller.locate();assert.deepEqual(located,['5m-60000-120000']);
  controller.setDomain('frequency');assert.match(h.nodes['[data-hrv-edit-detail]'].innerHTML,/LF\/HF/);assert.equal(server.calls.length,1,'selection/domain do not fetch or mutate statistics');

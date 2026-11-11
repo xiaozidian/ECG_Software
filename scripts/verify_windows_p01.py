@@ -22,14 +22,14 @@ from verify_lasso_browser import verify_lasso
 CASE=doctor_source.CASE_ID
 NOTE='P01 mathematical fixture saved-work verification; no patient input.'
 
-async def open_case(page,duration):
+async def open_case(page,duration,selector='#openFirstCase'):
     try:await worklist_ready(page)
     except Exception:
         snapshot=await page.evaluate("()=>({page:typeof state==='undefined'?null:state.currentPage,caseCount:typeof state==='undefined'?null:state.cases?.length,title:document.title,body:document.body.innerText.slice(0,700)})")
         raise AssertionError('P01 worklist did not become ready: '+json.dumps(snapshot)) from None
-    await page.locator('#openFirstCase').click()
+    await page.locator(selector).click()
     await page.wait_for_function('(arg)=>state.caseId===arg.id && !state.caseLoading && state.caseData?.technical.duration_seconds_raw===arg.duration',arg={'id':CASE,'duration':duration})
-    await navigate(page,'edit');await wait_edit(page)
+    await page.wait_for_function("()=>state.currentPage==='review' && overviewWorkbench.waveformBasis() && Object.keys(state.waveform?.leads||{}).length>0")
 
 async def saved_work(page):
     report=await browser_json(page,'/api/cases/'+CASE+'/report')
@@ -91,7 +91,10 @@ async def verify(args,result):
                 await report_ready(page);await page.locator('#conclusionEditor').fill(NOTE)
                 await page.wait_for_function('()=>!state.reportSaving && !state.reportDirty')
                 await saved_work(page)
-                await navigate(page,'dashboard');await open_case(page,m['duration_seconds']);await saved_work(page)
+                await navigate(page,'dashboard')
+                await open_case(page,m['duration_seconds'],'.row-action[data-case-destination="review"]')
+                record(result,'P01-top-and-row-default-to-overview',await page.evaluate('()=>({page:state.currentPage,leads:Object.keys(state.waveform.leads)})'))
+                await saved_work(page)
                 record(result,'P01-native-report-annotation-save-reopen')
                 workspace=json.loads((home/'catalog.json').read_text())['selected_workspace']
                 folder=home/'workspaces'/workspace

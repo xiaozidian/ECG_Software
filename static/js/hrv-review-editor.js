@@ -102,7 +102,7 @@ globalThis.ECGHRVEditor=(()=>{
     }
     async function discard(){requireActive();if(busy)throw Error('HRV 正在读取或保存，请等待完成');if(preview)await cancel();rangeDirty=false;els.reason.value='';els.ack.checked=false;els.note.value='';if(active()&&selected)select(selected);controls();}
     async function saveResult(result,o,evidence){
-      if(!owned(o))return;validateScope(result.scope,id);if(!Number.isSafeInteger(result.hrv_revision)||result.hrv_revision<o.revision||typeof result.digest!=='string'||!result.document)throw Error('HRV 保存返回的版本信息不完整');if(!sameSource(result.scope,o.scope)||result.scope.analysis_revision<o.scope.analysis_revision)throw Error('HRV 保存返回的来源依据不一致，请重新读取');model=copy({...result,evidence:result.evidence||evidence});basis=copy(result.scope);preview=null;failed=false;els.ack.checked=false;els.note.value='';busy=false;render();remember();
+      if(!owned(o))return;validateScope(result.scope,id);if(!Number.isSafeInteger(result.hrv_revision)||result.hrv_revision<o.revision||typeof result.digest!=='string'||!result.document)throw Error('HRV 保存返回的版本信息不完整');if(!sameSource(result.scope,o.scope)||result.scope.analysis_revision<o.scope.analysis_revision)throw Error('HRV 保存返回的来源依据不一致，请重新读取');model=copy({...result,evidence:result.evidence||evidence});basis=copy(result.scope);preview=null;failed=false;els.ack.checked=false;els.note.value='';render();remember();
       try{await onSaved(result,{windowIndex,selectedBlockId:selected,domain});}catch(e){if(active()){failed=true;error='HRV 修订已保存，页面更新尚未完成，请重新读取：'+e.message;controls();}}
     }
     async function apply(){

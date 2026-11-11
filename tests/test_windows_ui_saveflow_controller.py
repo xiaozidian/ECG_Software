@@ -5,7 +5,7 @@ import zipfile
 
 import pytest
 
-from scripts import prepare_windows19_baseline as baseline
+from scripts import prepare_windows20_baseline as baseline
 from scripts.verify_windows_ui_saveflow_native import (
     APP, BASE_APP, BASE_CORE, BASE_PE_SHA, metadata_identity, compare_api, fingerprint,
 )
@@ -16,12 +16,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def identity():
-    release = dict(packaging_version='1.0.19', app_version=APP, software_version=APP,
+    release = dict(packaging_version='1.0.20', app_version=APP, software_version=APP,
                    source_id='P01', source_data_bundled=False)
-    old = dict(packaging_version='1.0.18', app_version=BASE_APP,
+    old = dict(packaging_version='1.0.19', app_version=BASE_APP,
                source_id='P01', source_data_bundled=False)
     shared = dict(core_version=BASE_CORE, ui_version='ui-current-mathematical')
-    previous = dict(core_version=BASE_CORE, ui_version='ui-original18-mathematical')
+    previous = dict(core_version=BASE_CORE, ui_version='ui-original19-mathematical')
     return release, old, shared, previous
 
 
@@ -29,16 +29,16 @@ def test_same_clinical_core_and_new_actual_program_is_the_UI_upgrade_contract():
     release, old, shared, previous = identity()
     proof = metadata_identity(release, shared, old_release=old, old_shared=previous,
                               new_PE_sha256='a' * 64, old_PE_sha256=BASE_PE_SHA)
-    assert proof['same_clinical_core'] and proof['packaging_version'] == '1.0.19'
+    assert proof['same_clinical_core'] and proof['packaging_version'] == '1.0.20'
 
 
 @pytest.mark.parametrize('fault', ['wrong-package', 'wrong-app', 'bundled-source', 'wrong-source',
                                   'reused-binary', 'repack-only', 'internal-fixture', 'changed-core',
                                   'old-version', 'same-UI', 'wrong-old-PE', 'same-PE'])
-def test_new19_controller_rejects_false_identity(fault):
+def test_new20_controller_rejects_false_identity(fault):
     release, old, shared, previous = identity()
     current_sha, prior_sha = 'a' * 64, BASE_PE_SHA
-    if fault == 'wrong-package': release['packaging_version'] = '1.0.18'
+    if fault == 'wrong-package': release['packaging_version'] = '1.0.19'
     if fault == 'wrong-app': release['app_version'] = '0.12.31-obsolete'
     if fault == 'bundled-source': release['source_data_bundled'] = True
     if fault == 'wrong-source': release['source_id'] = 'M01'
@@ -146,22 +146,22 @@ def test_baseline_math_archive_accepts_five_legal_members_and_validates_source(t
     assert all((destination / name).read_bytes() == payload for name in names)
 
 
-def test_new_workflow_runs_scoped_guards_and_actual_fresh19_and_original18():
+def test_new_workflow_runs_scoped_guards_and_actual_fresh20_and_original19():
     workflow = (ROOT / '.github/workflows/windows-ui-saveflow.yml').read_text()
     for path in ('tests/test_review_write_local_sync.py', 'tests/test_af_review_write_refresh.py',
                  'tests/test_report_card_and_stt_controls.py', 'tests/test_windows_ui_saveflow_controller.py',
                  'tests/test_windows_ui_saveflow_interactions.py'):
         assert 'python -m pytest' in workflow and path in workflow
-    assert 'DOCTOR_PACKAGING_VERSION: "1.0.19"' in workflow
-    assert 'scripts/prepare_windows19_baseline.py' in workflow
+    assert 'DOCTOR_PACKAGING_VERSION: "1.0.20"' in workflow
+    assert 'scripts/prepare_windows20_baseline.py' in workflow
     assert workflow.count('scripts/verify_windows_ui_saveflow_native.py') == 2
-    assert '--base-software-archive' in workflow and 'upgrade18-to19-native.json' in workflow
+    assert '--base-software-archive' in workflow and 'upgrade19-to20-native.json' in workflow
     assert 'verification-upgrade-version "auto"' in workflow
     assert 'scripts/verify_windows_doctor_browser_ui19.py' in workflow and 'scripts/verify_windows_p01.py' in workflow
     assert 'run_windows_release_tests.py' not in workflow and 'run_windows_ui_tests.py' not in workflow
     assert '  push:' not in workflow and '  workflow_dispatch:' in workflow
-    assert baseline.RUN == 42936491344 and baseline.HEAD == 'f559f7ee07ef79fb6f3e69f737618b41032e7f36'
-    assert baseline.ARTIFACTS['p01']['inner_sha256'] == '74467c07be74df009664008870f104c26838ef29c86406826edf4bc7b109af60'
+    assert baseline.RUN == 43038419354 and baseline.HEAD == '98c50c61526cf95199d41453c9e57449d9a7f0c6'
+    assert baseline.ARTIFACTS['p01']['inner_sha256'] == 'c2151872d9577ee81e88156d9bf65428d7c3a530cbb54218d5e761ee73cfd6ad'
     assert APP == BASE_APP == '0.12.32-stt-report-buttons.20261110'
     source = (ROOT / 'scripts/verify_windows_ui_saveflow_native.py').read_text()
     assert 'from scripts.verify_ui_saveflow_ui import verify as saveflow' in source
@@ -178,7 +178,7 @@ def test_native_wrapper_has_no_patient_or_PDF_scope_and_actual_runtime_guards():
     assert 'load_old_oracles(' not in source and 'monkeypatch' not in source
 
 
-def test_ui19_browser_driver_keeps_all_legacy_protections_and_selects_explicit_AF_adapter():
+def test_ui20_browser_driver_keeps_all_legacy_protections_and_selects_explicit_AF_adapter():
     old = (ROOT / 'scripts/verify_windows_doctor_browser.py').read_text()
     new = (ROOT / 'scripts/verify_windows_doctor_browser_ui19.py').read_text()
     original = 'from verify_windows_af_editor import verify_af_editor'

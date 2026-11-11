@@ -135,14 +135,9 @@ async def verify_latest_ui(page, screenshots):
     checks.append('report-included-source-strip-and-twelve-lead-preview')
     await page.wait_for_function('()=>!state.reportSaving && !state.reportDirty')
     await navigate(page,'dashboard')
-    # The worklist resumes the pending step. With edit/ST already complete,
-    # reopening correctly goes to report rather than to the template editor.
     await page.wait_for_function("()=>state.dashboardStatus==='ready' && !document.querySelector('#openFirstCase').disabled")
-    destination=await page.evaluate("()=>filteredCases()[0]?.review_workflow?.next_step||'review'")
     await page.locator('#openFirstCase').click()
-    await page.wait_for_function("destination=>!state.caseLoading && state.caseData?.technical && state.currentPage===destination",arg=destination)
-    if destination=='edit':
-        await wait_edit(page)
+    await page.wait_for_function("()=>!state.caseLoading && state.currentPage==='review' && overviewWorkbench.waveformBasis()")
     await navigate(page,'report')
     await page.locator('#reportV2Nav [data-category="final"]').click()
     await page.locator('.rw-mini-wave svg').first.wait_for()
