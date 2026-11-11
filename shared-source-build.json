@@ -209,9 +209,9 @@
       "sha256": "8a60a34d9d4216a4c43e2961e23827786a7a6aa5eb41ae24c842b10e8fe57518"
     },
     "scripts/build_static_demo.py": {
-      "bytes": 12190,
+      "bytes": 12183,
       "component": "build",
-      "sha256": "f677f691ffd82b5e15054e268632a82bdabb77dbb43357a81e1d915a4750139a"
+      "sha256": "c35b999348e2802e2bd977168036a4de4aff60573639e29936c71caf4bfcaba9"
     },
     "scripts/generate_synthetic_demo.py": {
       "bytes": 16740,
@@ -394,9 +394,9 @@
       "sha256": "fb20b4aa33e0cd2cc5fae8bf8a2a7968b22f8506cdc012ae507c465ea59da3ee"
     },
     "static/js/app.js": {
-      "bytes": 316814,
+      "bytes": 324730,
       "component": "ui",
-      "sha256": "a87bf409ec63bae11e65a88bbd710dc63725f9964a158b8b5108177bb4320da8"
+      "sha256": "95db99f237528f0931f7096d3a4b56f9ba85c682b6ade9ffac0ea1314362f0dd"
     },
     "static/js/beat-editor-ui.js": {
       "bytes": 46712,
@@ -424,9 +424,9 @@
       "sha256": "a6388fe03f33d7e58efdbf0a962794231b1d291d14940b6aedc91305edcd4330"
     },
     "static/js/clinical-ui.js": {
-      "bytes": 273472,
+      "bytes": 274866,
       "component": "ui",
-      "sha256": "4c8fff8b7cac02f36d7cde9ae1b18112869c11a7fadb03f639906ea139ae657f"
+      "sha256": "d0934b29e5d090bd81f382ccf223207e3a1fd95009085dde2cb30cfc9cd31b60"
     },
     "static/js/clinical-workflow.js": {
       "bytes": 15193,
@@ -464,9 +464,9 @@
       "sha256": "d1a63aee15f44184e14207d390faea95a2ed60917fc6f4938b48f6904e5cc91d"
     },
     "static/js/linked-selection.js": {
-      "bytes": 8846,
+      "bytes": 9527,
       "component": "ui",
-      "sha256": "0f88f4766d92a83937f5df10322a049d6d94c0cb0fff0094e7ee141d203083e9"
+      "sha256": "00e0595e4201df99bd832a7d64d4814ebe2bd8c33bca1f4c63cda8c3d429ed4c"
     },
     "static/js/morphology-groups.js": {
       "bytes": 1525,
@@ -489,14 +489,14 @@
       "sha256": "dee7642451506b1ae365afe2a705b5fc5efc84586a116f1c8a676531ec9312cb"
     },
     "static/js/overview-linked-view.js": {
-      "bytes": 24106,
+      "bytes": 24918,
       "component": "ui",
-      "sha256": "7026c9b3e01ed16b02f35f1b11939156ede296c06fdd9ff3ceae2de334d164b6"
+      "sha256": "ae795f9a7fb57ad2094991f2d256c431e474c7df2f69cde323807be4d62de7bf"
     },
     "static/js/overview-workbench.js": {
-      "bytes": 126590,
+      "bytes": 131537,
       "component": "ui",
-      "sha256": "520bcce9987211c10d657d51b92af299f21701487291de860dad7c643d85a92a"
+      "sha256": "555633af57a36eb61a8682839ac5a85f08af701de617d6360ea425f9d3a913a0"
     },
     "static/js/read-requests.js": {
       "bytes": 2715,
@@ -549,9 +549,9 @@
       "sha256": "ca20b335ef61a95402d5a70f6ad6ff2a79833e045508a5510e917aab17cb806c"
     },
     "static/js/report-workspace.js": {
-      "bytes": 64799,
+      "bytes": 64656,
       "component": "ui",
-      "sha256": "f3648e77c35d05161f94f84ec054776dcbe6836cef275fedfcf5b12fcf1f8f79"
+      "sha256": "5ae6a54ebd58c3854786a7bc158dd786ed952a6ce4b00b0b9825d1b3ff1935d2"
     },
     "static/js/review-candidate-ui.js": {
       "bytes": 7804,
@@ -635,7 +635,7 @@
     }
   },
   "schema": 1,
-  "source_fingerprint": "bb1b19586a27e4e1500614dc3f169f4512fbc6ac7700b20328681fa275cde9c0",
+  "source_fingerprint": "76d570c7e12a517b40fc9c7e7b63bd4eb527b90c35c3e4e927acbe0377c161ef",
   "source_revision": null,
-  "ui_version": "ui-cfc82e6e0ac87525"
+  "ui_version": "ui-371f1b03dbec9b2a"
 }

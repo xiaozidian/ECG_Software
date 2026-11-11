@@ -62,7 +62,7 @@ const overviewWorkbench=(()=>{
     main.querySelector('.ov-trends').after(density);
     density.addEventListener('toggle',()=>requestAnimationFrame(()=>{linked?.draw();draw();}));
     if(globalThis.ECGOverviewLinkedView&&globalThis.ECGLinkedSelection){
-      linked=globalThis.ECGOverviewLinkedView.create({getState:()=>state,api,qs,esc,formatTime:formatElapsed,formatNumber:fmtNumber,getMode:()=>ui.mode,drawChanged:()=>draw(),drawStrip:drawOverviewMini,getMiniHeight:()=>ECGOccurrenceCard.geometry.waveHeight+42,preview:(card,row,c,current)=>ECGReviewCandidates.preview({identity:c,item:row,isCurrent:current}),openMenu:({card,event,wave,row,identity,isCurrent,sampleScope})=>beatEditor.open(event||{preventDefault(){}},card,{...wave,beats:(wave.beats||[]).some(b=>b.sample_index===row.sample_index)?wave.beats:[row]},'review',!event,{anchorSample:row.sample_index,isCurrent,sampleScope,onPreview:()=>ECGReviewCandidates.preview({identity,item:row,isCurrent})}).catch(handleError),invalidateLegacy:invalidateScatterStripLoads,onSnapshot:(snapshot,event)=>{if(event.change!=='focus'){ui.range=snapshot.origin==='overview-time-range'&&snapshot.timeBounds?[snapshot.timeBounds.start_s,snapshot.timeBounds.end_s]:null;if(snapshot.origin!=='overview-histogram')ui.bin=null;if(!String(snapshot.origin||'').startsWith('overview-'))ui.polygon=[];}}});
+      linked=globalThis.ECGOverviewLinkedView.create({getState:()=>state,isPresented:()=>!ui.af,api,qs,esc,formatTime:formatElapsed,formatNumber:fmtNumber,getMode:()=>ui.mode,drawChanged:()=>draw(),drawStrip:drawOverviewMini,getMiniHeight:()=>ECGOccurrenceCard.geometry.waveHeight+42,preview:(card,row,c,current)=>ECGReviewCandidates.preview({identity:c,item:row,isCurrent:current}),openMenu:({card,event,wave,row,identity,isCurrent,sampleScope})=>beatEditor.open(event||{preventDefault(){}},card,{...wave,beats:(wave.beats||[]).some(b=>b.sample_index===row.sample_index)?wave.beats:[row]},'review',!event,{anchorSample:row.sample_index,isCurrent,sampleScope,onPreview:()=>ECGReviewCandidates.preview({identity,item:row,isCurrent})}).catch(handleError),invalidateLegacy:invalidateScatterStripLoads,onSnapshot:(snapshot,event)=>{if(event.change!=='focus'){ui.range=snapshot.origin==='overview-time-range'&&snapshot.timeBounds?[snapshot.timeBounds.start_s,snapshot.timeBounds.end_s]:null;if(snapshot.origin!=='overview-histogram')ui.bin=null;if(!String(snapshot.origin||'').startsWith('overview-'))ui.polygon=[];}}});
       globalThis.ecgOverviewLinked=linked;
       renderScatterSelectionList=()=>linked.renderMini();
       new IntersectionObserver(entries=>{if(entries.some(entry=>entry.isIntersecting))linked.renderMini();}).observe(qs('#scatterSelectionList'));
@@ -106,7 +106,8 @@ const overviewWorkbench=(()=>{
   async function load(force=false){
     if(!state.caseId)return;const id=state.caseId;
     if(qs('#ovReturnReport'))qs('#ovReturnReport').hidden=!clinicalUI.hasRhythmReturn();
-    if(!force&&overviewReady&&ui.id===id&&ui.rows.length){draw();return}
+    let headerCurrent=false;try{ECGAnalysisConsistency.assertSame(ui.identity,state.caseData);headerCurrent=true;}catch(_){}
+    if(!force&&overviewReady&&ui.id===id&&ui.rows.length&&headerCurrent){draw();return}
     const token=++ui.loadToken,caseToken=state.caseRequestId;
     invalidateEvidence('正在读取逐搏数据；旧覆盖结果已清除。');qs('#ovStatus').textContent='正在核对逐搏、片段与波形依据…';
     try{const [data,rhythm]=await ECGAnalysisConsistency.read(api,id,['overview','rhythm-review'].map(kind=>basis=>api(ECGAnalysisConsistency.url(id,kind,{},basis))));if(token!==ui.loadToken||id!==state.caseId||caseToken!==state.caseRequestId)return;
@@ -317,7 +318,7 @@ const overviewWorkbench=(()=>{
     const payload={...identity,case_id:id,request_id:crypto.randomUUID(),document,operation,revision:base.revision,beat_revision:ui.revision,confirmed:true};
     ui.rhythmSaving=true;syncAFSaveState();let value;
     try{
-      try{value=await request('rhythm-review',{method:'PUT',body:JSON.stringify(payload)});}
+      try{value=await request('rhythm-review',{method:'PUT',reviewWrite:'rhythm',body:JSON.stringify(payload)});}
       catch(error){
         // A lost response must be reconciled before any retry of a mutation.
         ui.rhythmUncertain={id,caseToken,epoch,payload,base:copy(base),message:error.message};
@@ -325,11 +326,65 @@ const overviewWorkbench=(()=>{
         if(!value)throw error;
       }
       if(!current())return;
-      ui.rhythmUncertain=null;ui.rhythm=value;qs('#ovDialog').close();state.reportComposer=null;
+      ui.rhythmUncertain=null;qs('#ovDialog').close();state.reportComposer=null;
       toast('片段已保存','success');
-      try{await clinicalWorkflow.refresh(id);if(current())await load(true);}
-      catch(_){if(current())toast('已保存；显示更新失败，请重新载入，勿重复保存','error',6000);}
+      try{await refreshRhythmWrite(value,{identity,base,payload,current});}
+      catch(_){if(current()){invalidateEvidence('片段已保存；当前依据尚未核对，请重新载入。');qs('#ovStatus').innerHTML=`已保存 · ${button('重新载入','reload')}`;toast('已保存；显示更新失败，请重新载入，勿重复保存','error',6000);}}
     }finally{ui.rhythmSaving=false;syncAFSaveState();if(current()&&qs('#ovEpisodeForm'))syncAFDraft();}
+  }
+  async function refreshRhythmWrite(value,{identity,base,payload,current}){
+    if(!current())return;
+    const C=ECGAnalysisConsistency,next=C.identity(value),old=C.identity(identity);
+    // Acknowledge exactly this operation. A source/beat change or a second
+    // concurrent write must take the full read path, never reuse old QRS rows.
+    const own=value.last_operation?.request_id===payload.request_id
+      &&value.last_operation.operation===payload.operation&&value.last_operation.revision===value.revision;
+    if(!own||next.analysis_basis!==old.analysis_basis||next.analysis_revision!==old.analysis_revision+1
+      ||value.beat_revision!==ui.revision||value.revision!==base.revision+1){await load(true);return;}
+    const wave=state.waveform,privacyToken=state.privacyRequestId,caseId=state.caseId,caseToken=state.caseRequestId;
+    if(!wave||!overviewReady){await load(true);return;}
+    C.assertSame(identity,wave);
+    const waveRequest=++state.waveformRequestId;
+    const start=state.start,seconds=state.duration,leads=waveformRequestLeads().join(','),filter=state.filter;
+    const unchanged=()=>current()&&ui.identity===identity&&state.waveform===wave&&state.waveformRequestId===waveRequest
+      &&state.start===start&&state.duration===seconds&&waveformRequestLeads().join(',')===leads&&state.filter===filter;
+    const [caseData,freshWave]=await C.read(api,caseId,[
+      basis=>api(withPhi(C.url(caseId,'',{},basis)),{readLane:'rhythm-case'}),
+      basis=>api(C.url(caseId,'waveform',{start:start.toFixed(3),duration:seconds,leads,filter,max_points:5000},basis),{readLane:'rhythm-wave'}),
+    ],next);
+    if(!unchanged()){if(current())await load(true);return;}
+    const expectedLeads=leads.split(','),actualLeads=Object.keys(freshWave.leads||{}),tolerance=.001+1/Math.max(1,Number(freshWave.sample_rate_hz)||200);
+    if(caseData.case_id!==caseId||caseData.beat_editor_history?.revision!==ui.revision||Math.abs(freshWave.start_s-start)>tolerance||Math.abs(freshWave.duration_s-seconds)>tolerance
+      ||!Number.isFinite(freshWave.start_s)||!Number.isFinite(freshWave.duration_s)||actualLeads.length!==expectedLeads.length
+      ||expectedLeads.some(lead=>!actualLeads.includes(lead)||!freshWave.leads[lead]?.length))throw Error('保存后波形与当前窗口不一致');
+    rememberEpisodeForm();
+    ui.rhythm=value;ui.identity=next;
+    const saved=new Map(value.document.episodes.map(x=>[x.id,x])),before=new Map(base.document.episodes.map(x=>[x.id,x]));
+    for(const [key,draft] of episodeDrafts){
+      if(draft.basis.caseId!==caseId)continue;
+      const row=saved.get(draft.original.id),previous=before.get(draft.original.id);
+      if(row&&sameEpisodeFields(draft.values,episodeFields(row)))episodeDrafts.delete(key);
+      else if(row&&previous&&sameEpisodeFields(episodeFields(previous),episodeFields(row)))draft.basis=rhythmBasis();
+    }
+    const row=saved.get(ui.episode);
+    if(episodeEditor&&row&&!episodeDrafts.has(episodeEditor.key)){
+      // Keep the actual form, selection and focus when its submitted values
+      // were acknowledged; only its concurrency baseline advances.
+      episodeEditor.original=copy(row);episodeEditor.isNew=false;episodeEditor.basis=rhythmBasis();episodeEditor.version=JSON.stringify(rhythmBasis());
+      episodeEditor.form.dataset.stale='false';
+      episodeEditor.form.querySelector('[data-ov^="af-add:"]').hidden=false;
+      episodeEditor.form.querySelector('[data-ov="af-delete-current"]').hidden=false;
+    }
+    preserveCurrentIdentity(caseData,privacyToken);state.caseData=caseData;state.waveform=freshWave;
+    const listed=state.cases?.find(item=>item.case_id===caseId);if(listed)listed.review_workflow=caseData.review_workflow;
+    state.waveformOwner=typeof captureRhythmWaveOwner==='function'?captureRhythmWaveOwner(freshWave,typeof rhythmRangeScope==='function'?rhythmRangeScope():null):null;
+    ECGReportConsistency.receive(state,caseData.report_workflow);clinicalWorkflow.receive(caseData.review_workflow);
+    if(linked&&!linked.advanceReview({caseId,caseToken,...next,beatRevision:ui.revision},ui.rows))linked.attach({caseId,caseToken,...next,beatRevision:ui.revision},ui.rows);
+    // RR screening coverage is a pure QRS projection. Keep it only across this
+    // verified metadata write, while replacing its case-header ownership.
+    if(coverage)coverage.basis={...coverage.basis,caseData};
+    ui.navToken=(ui.navToken||0)+1;ui.navKey=null;ui.navPendingKey=null;ui.nav=null;
+    renderEpisodes();renderCoverage();draw();renderWaveform();renderAnnotations(freshWave.annotations||caseData.annotations||[]);
   }
   async function reconcileRhythmWrite(refresh=true){
     const pending=ui.rhythmUncertain;if(!pending)return null;

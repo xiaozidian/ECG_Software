@@ -5,6 +5,7 @@ const T=require('../static/js/clinical-review-tools.js');
 const crypto=require('node:crypto').webcrypto;
 const source=fs.readFileSync('static/js/overview-workbench.js','utf8'),app=fs.readFileSync('static/js/app.js','utf8');
 const which=process.argv[2],basis={analysis_basis:'synthetic',analysis_revision:4};
+let serverBasis=basis;
 const rows=Array.from({length:80},(_,i)=>[200*(i+1),1000,'N']);
 const beat={...basis,revision:2,duration_s:90,columns:['sample_index','rr_ms','class_code'],rows,settings:{pause:2.5}};
 const rhythm={...basis,revision:1,beat_revision:2,document:{episodes:[],bookmarks:{}}};
@@ -22,23 +23,25 @@ const ctx={state,ui:{id:'c',revision:2,caseToken:1,identity:basis,loadToken:1,ro
   updateZoomControls(){},renderWaveform(){},renderVisibleEvents(){},renderAnnotations(){},renderOverview(){},syncHourScatter(){},
   waveformRequestLeads:()=>['II'],ECGVoltage:{snapshot:()=>null},
   clinicalUI:{hasRhythmReturn:()=>false,refreshCurrentCaseEvidence:async(id,token,current,anchor)=>{
-    caseRefreshes++;assert.equal(id,'c');assert.equal(token,1);C.assertSame(basis,anchor);
+    caseRefreshes++;assert.equal(id,'c');assert.equal(token,1);C.assertSame(serverBasis,anchor);
+    if(which==='save-refresh-error')throw Error('case header refresh failed');
     if(which==='case-refresh-late')await pending;
     if(!current())return false;
-    state.caseData={clinical_identity:{...basis},case_id:'c'};return true;
+    state.caseData={clinical_identity:{...serverBasis},case_id:'c',review_workflow:{revision:serverBasis.analysis_revision}};return true;
   }},
   api:async raw=>{
     const u=new URL(raw,'http://test'),kind=u.pathname.split('/').at(-1);calls.push({kind,query:Object.fromEntries(u.searchParams)});
-    if(kind==='analysis-basis'){anchorReads++;return which==='final-change'&&anchorReads===2?{...basis,analysis_revision:5}:basis;}
-    assert.equal(u.searchParams.get('analysis_basis'),basis.analysis_basis);
-    assert.equal(u.searchParams.get('analysis_revision'),'4');
+    if(kind==='analysis-basis'){anchorReads++;return which==='final-change'&&anchorReads===2?{...basis,analysis_revision:5}:serverBasis;}
+    assert.equal(u.searchParams.get('analysis_basis'),serverBasis.analysis_basis);
+    assert.equal(u.searchParams.get('analysis_revision'),String(serverBasis.analysis_revision));
+    if(kind==='overview'&&which==='save-reload-error')throw Error('overview reload failed');
     if(kind==='rhythm-review'){
       if(which.startsWith('late-'))await pending;
       if(fail||which==='late-error')throw Error('offline');
-      return which==='mixed'?{...rhythm,analysis_revision:5}:which==='beat-mismatch'?{...rhythm,beat_revision:3}:rhythm;
+      return which==='mixed'?{...rhythm,analysis_revision:5}:['beat-mismatch','save-beat-mismatch'].includes(which)?{...rhythm,...serverBasis,beat_revision:3}:{...rhythm,...serverBasis,revision:writes?2:1};
     }
-    if(kind==='waveform')return which==='wave-mismatch'?{...wave,analysis_revision:5}:wave;
-    return beat;
+    if(kind==='waveform')return which==='wave-mismatch'?{...wave,analysis_revision:5}:{...wave,...serverBasis};
+    return which==='save-source-mismatch'?{...beat,...serverBasis,analysis_basis:'changed-raw-source'}:{...beat,...serverBasis};
   },
   toast:(...args)=>toasts.push(args),clinicalWorkflow:{writable:()=>true,refresh:async()=>{workflowRefreshes++;if(which==='save-refresh-error')throw Error('refresh failed')}},
 };
@@ -58,10 +61,13 @@ const tick=()=>new Promise(r=>setImmediate(r));
       if(which.startsWith('save-late-'))await pending;
       // Match the common API's successful-write invalidation: the save
       // receiver must not rely on the old ui.rhythm object still being live.
-      if(owner.id===state.caseId&&owner.token===state.caseRequestId&&owner.epoch===state.workspaceEpoch)ctx.ui.rhythm=null;
-      return {...rhythm,revision:2};
+      if(owner.id===state.caseId&&owner.token===state.caseRequestId&&owner.epoch===state.workspaceEpoch){ctx.ui.rhythm=null;serverBasis={...basis,analysis_revision:5};}
+      // No operation receipt: the real implementation must take its guarded
+      // full-read fallback. A stub that only counted load() left null data and
+      // could neither validate refresh failures nor exercise that fallback.
+      return {...rhythm,...serverBasis,revision:2};
     };
-    ctx.load=async()=>{reloads++;if(which==='save-reload-error')throw Error('reload failed');};
+    const realLoad=ctx.load;ctx.load=async force=>{reloads++;assert.equal(force,true);return realLoad(force);};
     vm.runInContext(source.slice(source.indexOf('  async function saveRhythm('),source.indexOf('  const rhythmBasis=')),ctx);
     if(which==='save-not-ready'){ctx.overviewReady=false;await assert.rejects(ctx.saveRhythm({}),/请等待当前片段载入/);assert.equal(writes,0);return;}
     if(which.startsWith('save-late-')){
@@ -73,10 +79,14 @@ const tick=()=>new Promise(r=>setImmediate(r));
       release();await saving;assert.equal(ctx.ui.rhythm,fresh);assert.equal(workflowRefreshes,0);assert.equal(reloads,0);assert.equal(toasts.length,0);assert.equal(writes,1);return;
     }
     await ctx.saveRhythm({episodes:[],bookmarks:{}});assert.equal(writes,1);
-    assert.equal(ctx.ui.rhythm.revision,2);assert.equal(ctx.ui.rhythmSaving,false);assert.equal(ctx.ui.rhythmUncertain,null);
-    assert.equal(workflowRefreshes,1);assert.equal(reloads,which==='save-refresh-error'?0:1);
+    const failed=['save-refresh-error','save-reload-error','save-source-mismatch','save-beat-mismatch'].includes(which);
+    if(failed){assert.equal(ctx.ui.rhythm,null);assert.equal(ctx.overviewReady,false);assert.equal(ctx.ui.rows.length,0);}
+    else{assert.equal(ctx.ui.rhythm.revision,2);C.assertSame(serverBasis,ctx.ui.identity);C.assertSame(serverBasis,state.waveform);assert.equal(ctx.overviewReady,true);assert.equal(state.caseData.review_workflow.revision,5);}
+    assert.equal(ctx.ui.rhythmSaving,false);assert.equal(ctx.ui.rhythmUncertain,null);
+    assert.equal(workflowRefreshes,0);assert.equal(reloads,1);
+    assert(calls.some(x=>x.kind==='overview')&&calls.some(x=>x.kind==='rhythm-review'));
     assert(toasts.some(x=>x[0]==='片段已保存'));
-    assert.equal(toasts.some(x=>x[1]==='error'),which==='save-refresh-error'||which==='save-reload-error');return;
+    assert.equal(toasts.some(x=>x[1]==='error'),failed);return;
   }
   if(which==='same-case-reload'){state.caseRequestId++;assert.equal(ctx.waveformBasis(),null);return;}
   if(which==='late-wave-failure'){ctx.ui.identity={...basis};ctx.waveformFailed(basis);assert.equal(ctx.overviewReady,true);return;}

@@ -16,7 +16,7 @@ function node(){
     querySelector(){return null;},querySelectorAll(){return [];},focus(){},contains(){return false;},prepend(child){child.parentElement=this;}};
 }
 function harness(){
-  const h={basis:{analysis_basis:'synthetic-source-v1',analysis_revision:1,beat_revision:0},requests:[],waves:[],posts:[],basisReads:[],renders:{capability:0,trend:0,overview:0,wave:0},toasts:[],errors:[],timers:[]};
+  const h={basis:{analysis_basis:'synthetic-source-v1',analysis_revision:1,beat_revision:0},requests:[],waves:[],posts:[],basisReads:[],rows:[],renders:{capability:0,trend:0,overview:0,wave:0},toasts:[],errors:[],timers:[]};
   const nodes=new Map(),$=selector=>{if(!nodes.has(selector))nodes.set(selector,node());return nodes.get(selector);},$$=()=>[];
   const root=$('#page-stt');root.querySelector=selector=>['#sttCurrentContext','#sttAnalysisStatus','.stt-waveform-card','#sttWaveCanvasWrap'].includes(selector)?$(selector):null;
   $('#sttFinding').value='无法判读';
@@ -24,7 +24,7 @@ function harness(){
   const state=h.state={caseId:'synthetic-a',caseRequestId:1,currentPage:'stt',workspaceEpoch:'synthetic-workspace',includePhi:false,demoReadonly:false,
     sttRequestId:0,sttStart:0,sttDuration:10,sttIsoFraction:.34,sttJFraction:.52,sttMeasurementMs:60,leads:['II','V1','V5'],
     start:0,duration:10,filter:'display',caseData:{case_id:'synthetic-a',clinical_identity:{...h.basis},technical:{duration_seconds_raw:300}},sttReview:null,sttWaveform:null};
-  const body=kind=>kind===''?{case_id:state.caseId,clinical_identity:{...h.basis},technical:{duration_seconds_raw:300},review_workflow:{revision:h.basis.analysis_revision}}:
+  const body=kind=>kind===''?{case_id:state.caseId,clinical_identity:{...h.basis},technical:{duration_seconds_raw:300},beat_editor_history:{revision:h.basis.beat_revision},review_workflow:{revision:h.basis.analysis_revision}}:
     kind==='trend'?{...h.basis,points:[{time_s:0,hr:70},{time_s:300,hr:75}]}:
     {case_id:state.caseId,...h.basis,automatic_candidates:{enabled:true,items:[{label:'合成候选',start_s:30,end_s:90,leads:['II'],peak_deviation_units:-120}]},
       analysis:{trends:{leads:Object.fromEntries(leads.map(lead=>[lead,[{time_s:0,deviation_units:12},{time_s:300,deviation_units:-18}]]))}},
@@ -40,8 +40,8 @@ function harness(){
     const request={url,kind,options,basis:{...h.basis}};h.requests.push(request);
     if(kind==='waveform'||kind==='health'||kind==='annotations'&&options.method==='POST'||kind==='analysis-basis'&&h.holdNextBasis){
       const deferred=gate();Object.assign(request,{resolve:(payload,status=200)=>{
-        if(payload===undefined)payload=kind==='waveform'?h.waveBody(request):kind==='analysis-basis'?request.basis:kind==='annotations'?{id:h.posts.length,case_id:state.caseId,...JSON.parse(options.body),stt_review_receipt:{event_id:'annotation:'+h.posts.length,annotation_id:h.posts.length,review_state:'reviewed',result_code:JSON.parse(options.body).details.result_code,range:{duration_s:10}}}:{saved:true};
-        if(kind==='annotations'&&status<400)h.basis.analysis_revision++;
+        if(payload===undefined)payload=kind==='waveform'?h.waveBody(request):kind==='analysis-basis'?request.basis:kind==='annotations'?{id:h.posts.length,case_id:state.caseId,...JSON.parse(options.body),stt_review_receipt:{event_id:'annotation:'+h.posts.length,annotation_id:h.posts.length,record_version:1,basis_version:'synthetic-stt-record-'+h.posts.length,review_state:'reviewed',result_code:JSON.parse(options.body).details.result_code,range:{duration_s:10}}}:{saved:true};
+        if(kind==='annotations'&&status<400){h.rows.push(json(payload));h.basis.analysis_revision++;}
         deferred.resolve(response(payload,status));
       },reject:deferred.reject});
       if(kind==='waveform')h.waves.push(request);if(kind==='annotations')h.posts.push(request);
@@ -50,7 +50,7 @@ function harness(){
     }
     const q=url.searchParams,conflict=['analysis_basis','analysis_revision'].some(key=>q.has(key)&&q.get(key)!==String(h.basis[key]));
     if(conflict)return Promise.resolve(response({error:'波形或事件依据已变化，请重新加载后复核'},409));
-    return Promise.resolve(response(kind==='analysis-basis'?{...h.basis}:kind==='annotations'?{items:[]}:body(kind)));
+    return Promise.resolve(response(kind==='analysis-basis'?{...h.basis}:kind==='annotations'?{items:json(h.rows)}:body(kind)));
   };
   const context=h.ctx=vm.createContext({state,$,$$,fetch,crypto:require('node:crypto').webcrypto,ECGReadRequests:Reads.create(),ECGAnalysisConsistency:C,ECGReportSections:require('../static/js/report-sections.js'),AbortController,URLSearchParams,
     ALL_LEADS:leads,withPhi:x=>x,escapeHtml:String,formatElapsed:v=>`D1 ${Number(v).toFixed(0)}s`,fmtNumber:String,
@@ -224,11 +224,11 @@ async function saveFailureAndCaseSwitch(){
   for(const phase of ['basis','post','refresh']){
     const old=harness();await old.load();old.$('#sttReviewNote').value='old case';if(phase==='basis')old.holdNextBasis=true;
     const pending=old.ctx.saveSttReviewAnnotation();await tick();
-    const refresh=gate();if(phase==='refresh'){old.ctx.clinicalWorkflow.refresh=()=>refresh.promise;old.posts[0].resolve();await tick();}
+    let freshWave;if(phase==='refresh'){old.posts[0].resolve();await tick();freshWave=old.waves.at(-1);assert.notEqual(freshWave,old.waves[0],'save acknowledgement did not request its guarded fresh waveform');}
     old.state.caseId='synthetic-b';old.state.caseRequestId++;old.state.sttSaving={caseId:'synthetic-b',caseToken:old.state.caseRequestId};
     const button=old.$('#sttReviewForm button[type="submit"]');button.disabled=true;button.textContent='new case saving';button.dataset.sttSaveState='saving';
     old.$('#sttReviewNote').value='new case draft';
-    if(phase==='basis')old.basisReads[0].resolve();else if(phase==='post')old.posts[0].resolve();else refresh.resolve();await pending;
+    if(phase==='basis')old.basisReads[0].resolve();else if(phase==='post')old.posts[0].resolve();else freshWave.resolve();await pending;
     assert.equal(button.disabled,true);assert.equal(button.textContent,'new case saving');assert.equal(button.dataset.sttSaveState,'saving');
     assert.equal(old.$('#sttReviewNote').value,'new case draft');assert.equal(old.state.sttSaving.caseId,'synthetic-b');
     if(phase==='basis')assert.equal(old.posts.length,0,'late basis check posted to a different case');

@@ -33,7 +33,7 @@
     let context=null,index=null,snapshot=null,unsubscribe=null,densityKey='',data={},message='尚未读取',phase='loading',miniKey='',gateBox=null,refreshRun=0;
     const lanes=new Map();
     const active=()=>context&&index&&scopeKey(snapshot?.scope)===scopeKey(context)&&getState().caseId===context.caseId&&getState().caseRequestId===context.caseToken;
-    const presented=()=>active()&&getState().currentPage==='review';
+    const presented=()=>active()&&getState().currentPage==='review'&&(!options.isPresented||options.isPresented());
     const cohort=()=>active()?index.selected(snapshot):[];
     const currentSet=()=>new Set(cohort());
     function cancel(){refreshRun++;for(const name of lanes.keys())central()?.cancelLane(name);lanes.clear();pending.clear();}
@@ -49,7 +49,7 @@
       snapshot=next;
       if(!active()){resetVisible();return;}
       const state=getState();
-      if(event.change!=='focus'){
+      if(event.change!=='focus'&&event.change!=='review'){
         cancel();
         options.invalidateLegacy?.();
         state.scatterSelectedSamples=next.kind==='samples'?[...cohort()]:[];
@@ -58,7 +58,7 @@
         gateBox=null;failed.clear();
       }
       state.scatterFocusedSample=next.focusSample;
-      options.onSnapshot?.(next,event);
+      if(event.change!=='review')options.onSnapshot?.(next,event);
       renderMini();drawChanged?.();
       if(event.change!=='focus')refresh();else draw();
     }
@@ -70,6 +70,17 @@
       const next=central()?.snapshot()||null;
       if(!snapshot||scopeKey(snapshot.scope)!==scopeKey(next?.scope)||snapshot.selectionGeneration!==next?.selectionGeneration||snapshot.focusGeneration!==next?.focusGeneration)receive(next,{change:'attach'});
       else {renderMini();drawChanged?.();refresh();}
+    }
+    function advanceReview(c,rows){
+      if(!context||!index||index.rows!==rows||!central()?.advanceReviewScope)return false;
+      const previous=context;
+      if(['caseId','caseToken','analysis_basis','beatRevision'].some(k=>c[k]!==previous[k])
+        ||c.analysis_revision!==previous.analysis_revision+1)return false;
+      // Never relabel cached waveforms/densities as a newly verified response.
+      // Retain membership, but fetch any visible evidence under the new scope.
+      cancel();cache.clear();failed.clear();data={};densityKey='';miniKey='';context={...c};
+      if(central().advanceReviewScope(c,{expectedScope:previous}))return true;
+      context=previous;return false;
     }
     function invalidate(reason){context=null;index=null;resetVisible(reason);}
     function select(samples,details={}){
@@ -210,7 +221,7 @@
     }
     function retryMini(sample){failed.delete(sample);renderMini();}
     function inspect(){return {scope:context?{...context}:null,kind:snapshot?.kind||null,generation:snapshot?.selectionGeneration??null,focusGeneration:snapshot?.focusGeneration??null,samples:[...cohort()],density:Object.fromEntries(Object.entries(data).map(([lead,d])=>[lead,{lead,total:d.total,included:d.included,skipped_edges:d.skipped_edges,amplitude_limit:d.amplitude_limit,population_samples:[...d.population_samples],bins:[...d.bins]}])),phase};}
-    return {attach,invalidate,select,focus,clear,timeInterval,refresh,draw,renderMini,retryMini,gatePoint,previewGate,clearGatePreview,gate,
+    return {attach,advanceReview,invalidate,select,focus,clear,timeInterval,refresh,draw,renderMini,retryMini,gatePoint,previewGate,clearGatePreview,gate,
       index:()=>index,snapshot:()=>snapshot,active,cohort,currentSet,inspect,
       dispose:()=>{cancel();unsubscribe?.();}};
   }
