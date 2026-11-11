@@ -1,4 +1,4 @@
-name: Windows1.0.19 UI save flow and actual original18 workspace upgrade
+name: Windows1.0.20 UI save flow and actual original19 workspace upgrade
 
 # Frontend-only repair. APP32 and the clinical core remain unchanged.
 # This workflow requires explicit dispatch after the source acceptance gate.
@@ -24,9 +24,9 @@ jobs:
       ECG_ALLOW_PHI: "0"
       PYTHONDONTWRITEBYTECODE: "1"
       GH_TOKEN: ${{ github.token }}
-      DOCTOR_PACKAGING_VERSION: "1.0.19"
+      DOCTOR_PACKAGING_VERSION: "1.0.20"
       DOCTOR_SOURCE_VERSION: "M01-24h-v1"
-      DOCTOR_RELEASE_NOTES: "优化ST-T与房颤保存、删除后的局部刷新；报告图条可右击打开图条操作；未复核或依据变化的ST-T显示原因并可直达修改复核。保留原18工作区、图条、备注与历史审核依据，APP32及临床核心不变。"
+      DOCTOR_RELEASE_NOTES: "工作台打开病例默认进入总览，已审核病例行内查看报告直达报告。更新房颤、ST-T、HRV 和报告图条的交互。"
     defaults:
       run:
         shell: pwsh
@@ -72,16 +72,16 @@ jobs:
           "ECG_CHROME_PATH=$edgePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Verify release production source fingerprint
         run: python scripts/verify_public_release.py
-      - name: Fetch exact accepted18 P01 and unchanged original mathematical M01
+      - name: Fetch exact accepted19 P01 and unchanged original mathematical M01
         run: |
-          python scripts/prepare_windows19_baseline.py --output "$env:RUNNER_TEMP\UI19-baseline"
+          python scripts/prepare_windows20_baseline.py --output "$env:RUNNER_TEMP\UI20-baseline"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $inputs = Get-Content "$env:RUNNER_TEMP\UI19-baseline\baseline19-input.json" -Raw | ConvertFrom-Json
+          $inputs = Get-Content "$env:RUNNER_TEMP\UI20-baseline\baseline20-input.json" -Raw | ConvertFrom-Json
           "ECG_DATA_ROOT=$($inputs.paths.math_source)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "ECG_APP_DATA_ROOT=$env:RUNNER_TEMP\doctor-regression-work" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Frontend save-flow and retained report guards on actual system Edge
         run: |
-          python -m pytest -p no:cacheprovider -q tests/test_review_write_local_sync.py tests/test_af_review_write_refresh.py tests/test_report_card_and_stt_controls.py tests/test_overview_identity.py tests/test_overview_identity_refresh_fallback.py tests/test_unsaved_navigation.py tests/test_report_wave_menu.py tests/test_report_preview_interactions.py tests/test_stt_use_save_wait.py tests/test_stt_membership_remount.py tests/test_windows_ui_saveflow_controller.py tests/test_windows_ui_saveflow_interactions.py tests/test_shared_source.py tests/test_static_demo_builder.py --junitxml="$env:RUNNER_TEMP\doctor19-ui-saveflow-tests.xml"
+          python -m pytest -p no:cacheprovider -q tests/test_dashboard_arrival.py tests/test_af_queue.py tests/test_review_write_local_sync.py tests/test_af_review_write_refresh.py tests/test_report_card_and_stt_controls.py tests/test_overview_identity.py tests/test_overview_identity_refresh_fallback.py tests/test_unsaved_navigation.py tests/test_report_wave_menu.py tests/test_report_preview_interactions.py tests/test_stt_use_save_wait.py tests/test_stt_membership_remount.py tests/test_windows_ui_saveflow_controller.py tests/test_windows_ui_saveflow_interactions.py tests/test_windows_af_editor_ui19.py tests/test_shared_source.py tests/test_static_demo_builder.py --junitxml="$env:RUNNER_TEMP\doctor20-ui-saveflow-tests.xml"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Native directory build, generated 24h source and final ZIP smoke
         id: nativebuild
@@ -100,14 +100,14 @@ jobs:
         id: p01template
         run: |
           python scripts/windows_deidentified_package.py template `
-            --software-archive "$env:RUNNER_TEMP\doctor-eval\CardioInsight-DoctorEval-Windows-x64-1.0.19-software.zip" `
+            --software-archive "$env:RUNNER_TEMP\doctor-eval\CardioInsight-DoctorEval-Windows-x64-1.0.20-software.zip" `
             --output "$env:RUNNER_TEMP\doctor-p01"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: System Edge full software interaction and retained-source update validation
         run: |
           $buildReport = Get-Content "$env:RUNNER_TEMP\doctor-eval\build-report.json" -Raw | ConvertFrom-Json
           $upgradeArchive = $buildReport.verification_upgrade_fixture.archive
-          python scripts/verify_windows_doctor_browser.py `
+          python scripts/verify_windows_doctor_browser_ui19.py `
             --package-root "$env:RUNNER_TEMP\doctor-eval\verify-package\CardioInsight-DoctorEval-Windows-x64" `
             --software-archive "$env:RUNNER_TEMP\doctor-eval\$upgradeArchive" `
             --output "$env:RUNNER_TEMP\doctor-eval\evidence\browser-validation.json"
@@ -115,31 +115,31 @@ jobs:
       - name: Actual frozen P01 source save reopen and update using mathematical fixture only
         run: |
           python scripts/verify_windows_p01.py `
-            --software-archive "$env:RUNNER_TEMP\doctor-p01\CardioInsight-DoctorEval-Windows-x64-1.0.19-P01-software.zip" `
+            --software-archive "$env:RUNNER_TEMP\doctor-p01\CardioInsight-DoctorEval-Windows-x64-1.0.20-P01-software.zip" `
             --math-source-root "$env:ECG_DATA_ROOT" `
             --output "$env:RUNNER_TEMP\doctor-p01\evidence\p01-native.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Actual fresh19 ST-T and AF incremental save and report card interactions on system Edge
+      - name: Actual fresh20 ST-T and AF incremental save and report card interactions on system Edge
         run: |
-          python scripts/verify_windows_ui_saveflow_native.py --software-archive "$env:RUNNER_TEMP\doctor-p01\CardioInsight-DoctorEval-Windows-x64-1.0.19-P01-software.zip" --output "$env:RUNNER_TEMP\doctor-p01\evidence\comprehensive-native.json"
+          python scripts/verify_windows_ui_saveflow_native.py --software-archive "$env:RUNNER_TEMP\doctor-p01\CardioInsight-DoctorEval-Windows-x64-1.0.20-P01-software.zip" --output "$env:RUNNER_TEMP\doctor-p01\evidence\comprehensive-native.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Actual original18 to fresh19 same-workspace reviewed report and UUID retention
+      - name: Actual original19 to fresh20 same-workspace reviewed report and UUID retention
         run: |
-          $inputs = Get-Content "$env:RUNNER_TEMP\UI19-baseline\baseline19-input.json" -Raw | ConvertFrom-Json
-          python scripts/verify_windows_ui_saveflow_native.py --base-software-archive "$($inputs.paths.p01)" --software-archive "$env:RUNNER_TEMP\doctor-p01\CardioInsight-DoctorEval-Windows-x64-1.0.19-P01-software.zip" --output "$env:RUNNER_TEMP\doctor-p01\evidence\upgrade18-to19-native.json"
+          $inputs = Get-Content "$env:RUNNER_TEMP\UI20-baseline\baseline20-input.json" -Raw | ConvertFrom-Json
+          python scripts/verify_windows_ui_saveflow_native.py --base-software-archive "$($inputs.paths.p01)" --software-archive "$env:RUNNER_TEMP\doctor-p01\CardioInsight-DoctorEval-Windows-x64-1.0.20-P01-software.zip" --output "$env:RUNNER_TEMP\doctor-p01\evidence\upgrade19-to20-native.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Prove full19 source payload equals original unchanged source archive
+      - name: Prove full20 source payload equals original unchanged source archive
         run: |
-          python scripts/prepare_windows19_baseline.py --baseline-proof "$env:RUNNER_TEMP\UI19-baseline\baseline19-input.json" --package-root "$env:RUNNER_TEMP\doctor-eval\verify-package\CardioInsight-DoctorEval-Windows-x64" --output "$env:RUNNER_TEMP\doctor-p01\evidence\original-M01-payload-parity.json"
+          python scripts/prepare_windows20_baseline.py --baseline-proof "$env:RUNNER_TEMP\UI20-baseline\baseline20-input.json" --package-root "$env:RUNNER_TEMP\doctor-eval\verify-package\CardioInsight-DoctorEval-Windows-x64" --output "$env:RUNNER_TEMP\doctor-p01\evidence\original-M01-payload-parity.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Retain built source-free P01 binary; native verdict is separate
         if: always() && steps.p01template.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: CardioInsight-Windows-x64-1.0.19-P01-software-only
+          name: CardioInsight-Windows-x64-1.0.20-P01-software-only
           path: |
-            ${{ runner.temp }}/doctor-p01/CardioInsight-DoctorEval-Windows-x64-1.0.19-P01-software.zip
-            ${{ runner.temp }}/doctor-p01/CardioInsight-DoctorEval-Windows-x64-1.0.19-P01-software.zip.sha256
+            ${{ runner.temp }}/doctor-p01/CardioInsight-DoctorEval-Windows-x64-1.0.20-P01-software.zip
+            ${{ runner.temp }}/doctor-p01/CardioInsight-DoctorEval-Windows-x64-1.0.20-P01-software.zip.sha256
             ${{ runner.temp }}/doctor-p01/p01-software-build-report.json
           if-no-files-found: error
           retention-days: 30
@@ -148,10 +148,10 @@ jobs:
         if: always() && steps.nativebuild.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: CardioInsight-Windows-x64-1.0.19-M01-full
+          name: CardioInsight-Windows-x64-1.0.20-M01-full
           path: |
-            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-1.0.19-full.zip
-            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-1.0.19-full.zip.sha256
+            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-1.0.20-full.zip
+            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-1.0.20-full.zip.sha256
             ${{ runner.temp }}/doctor-eval/build-report.json
           if-no-files-found: error
           retention-days: 30
@@ -160,10 +160,10 @@ jobs:
         if: always() && steps.nativebuild.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: CardioInsight-Windows-x64-1.0.19-software-update
+          name: CardioInsight-Windows-x64-1.0.20-software-update
           path: |
-            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-1.0.19-software.zip
-            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-1.0.19-software.zip.sha256
+            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-1.0.20-software.zip
+            ${{ runner.temp }}/doctor-eval/CardioInsight-DoctorEval-Windows-x64-1.0.20-software.zip.sha256
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
@@ -171,10 +171,10 @@ jobs:
         if: always() && steps.nativebuild.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: CardioInsight-Synthetic-M01-24h-v1-for-1.0.19
+          name: CardioInsight-Synthetic-M01-24h-v1-for-1.0.20
           path: |
-            ${{ runner.temp }}/UI19-baseline/math/CardioInsight-Synthetic-M01-24h-v1.zip
-            ${{ runner.temp }}/UI19-baseline/math/CardioInsight-Synthetic-M01-24h-v1.zip.sha256
+            ${{ runner.temp }}/UI20-baseline/math/CardioInsight-Synthetic-M01-24h-v1.zip
+            ${{ runner.temp }}/UI20-baseline/math/CardioInsight-Synthetic-M01-24h-v1.zip.sha256
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
@@ -186,8 +186,8 @@ jobs:
           path: |
             ${{ runner.temp }}/doctor-p01/evidence/**/*.json
             ${{ runner.temp }}/doctor-p01/evidence/**/*.png
-            ${{ runner.temp }}/UI19-baseline/baseline19-input.json
-            ${{ runner.temp }}/doctor19-ui-saveflow-tests.xml
+            ${{ runner.temp }}/UI20-baseline/baseline20-input.json
+            ${{ runner.temp }}/doctor20-ui-saveflow-tests.xml
             ${{ runner.temp }}/doctor-regression/*.json
             ${{ runner.temp }}/doctor-core/**/*.json
             ${{ runner.temp }}/doctor-core/**/*.png
