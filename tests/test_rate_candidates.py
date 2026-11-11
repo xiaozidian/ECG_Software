@@ -1,5 +1,6 @@
 """Rate candidates are ranked evidence, not additional diagnoses or summary extrema."""
 import json
+import re
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -107,5 +108,34 @@ def test_api_rate_candidates_and_report_strip(client):
 
 def test_rate_controls_are_wired_to_backend_sort_and_pagination():
     text=(Path(__file__).parents[1]/'static/js/clinical-ui.js').read_text()
-    for expected in ('sort:reportSort','id="v2RateSort"','id="v2ReportPage"','从快到慢','从慢到快','candidate-rate','pick=selectionForEvent(e)', 'reportStrip(evidence,resumeSpec||returnedRhythmSettings(e)||pick||newStripSettings(e),id)'):
+    for expected in ('sort:reportSort','id="v2RateSort"','id="v2ReportPage"','从快到慢','从慢到快','candidate-rate','pick=selectionForEvent(e)'):
         assert expected in text
+    start = text.index('  async function locate(')
+    locate = text[start:text.index('\n  }', start)]
+    assert re.search(r'async function locate\(e,\s*preview\s*=\s*null\)', locate)
+    expression = re.search(r'entry=await reportStrip\(evidence,(.*?),id\);', locate)
+    assert expression, 'The actual locate handler must resolve report-strip settings'
+    # Execute the real settings expression rather than freezing its spelling.
+    # Saved selections outrank a read-only preview; ordinary rate navigation
+    # without a preview still falls back to the normal event strip settings.
+    script = r"""
+const assert=require('node:assert/strict'),vm=require('node:vm'),expression=process.argv[1];
+const names=['resume','returned','pick','preview','default'];
+for(let level=0;level<names.length;level++){
+  const values=Object.fromEntries(names.map(name=>[name,{name}])),event={};
+  let returnedCalls=0,defaultCalls=0;
+  const context={e:event,resumeSpec:level===0?values.resume:null,
+    returnedRhythmSettings:e=>{assert.equal(e,event);returnedCalls++;return level<=1?values.returned:null;},
+    pick:level<=2?values.pick:null,preview:level<=3?{settings:values.preview}:null,
+    newStripSettings:e=>{assert.equal(e,event);defaultCalls++;return values.default;}};
+  assert.equal(vm.runInNewContext(expression,context),values[names[level]],names[level]);
+  assert.equal(returnedCalls,level===0?0:1);
+  assert.equal(defaultCalls,level===4?1:0);
+}
+for(const preview of [undefined,{},null]){
+  const expected={},context={e:{},resumeSpec:null,returnedRhythmSettings:()=>null,pick:null,
+    preview,newStripSettings:()=>expected};
+  assert.equal(vm.runInNewContext(expression,context),expected);
+}
+"""
+    subprocess.run(['node', '-e', script, expression.group(1)], check=True)
