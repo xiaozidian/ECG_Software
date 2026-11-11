@@ -15,7 +15,13 @@ const overviewWorkbench=(()=>{
   const duration=()=>state.caseData?.technical.duration_seconds_raw||1;
   const span=()=>ui.range||[state.start,Math.min(duration(),state.start+state.duration)];
   const linkedTimeSpan=()=>linked?.active()&&linked.snapshot().timeBounds?[linked.snapshot().timeBounds.start_s,linked.snapshot().timeBounds.end_s]:null;
-  const hour=()=>Math.min(Math.floor(state.start/3600)*3600,Math.max(0,duration()-Math.min(3600,duration())));
+  function hour(){
+    if(ui.af){
+      const cursor=ui.afCursor>=state.start&&ui.afCursor<=state.start+state.duration?ui.afCursor:state.start;
+      return Math.min(Math.floor(cursor/3600),Math.ceil(duration()/3600)-1)*3600;
+    }
+    return Math.min(Math.floor(state.start/3600)*3600,Math.max(0,duration()-Math.min(3600,duration())));
+  }
   const name=x=>x==='AF'?'房颤':'房扑';
   const statusName=x=>({pending:'待复核',confirmed:'医生确认',excluded:'已排除'})[x]||x;
   function lane(id,label,kind,minutes=false){return `<section class="ov-lane"><header><h2>${label} <small class="ov-axis-unit">${kind==='hr'?'bpm':'ms'}</small></h2><output data-coordinate="${id}"></output>${button('操作','menu-'+kind,`aria-label="${label}操作" data-canvas="${id}"`)}</header><canvas id="${id}" height="76" tabindex="0" data-ov-plot="${kind}" ${minutes?'data-hour="1"':''} aria-label="${label}；点击定位，拖动选区，右键或 Shift+F10 打开操作"></canvas></section>`}
@@ -275,7 +281,7 @@ const overviewWorkbench=(()=>{
   function draw(){
     drawContext();if(!ui.rows.length)return;ui.hour=hour();const end=Math.min(duration(),ui.hour+3600),selection=linked?.active()?linked.snapshot():null,windowLabel=`${formatElapsed(state.start)}–${formatElapsed(Math.min(duration(),state.start+state.duration))}`;
     qs('#ovRange').textContent=selection?.timeBounds?`已选时段 ${formatElapsed(selection.timeBounds.start_s)}–${formatElapsed(selection.timeBounds.end_s)}`:selection?.kind==='samples'?`已选 ${fmtNumber(linked.cohort().length)} 搏 · 当前波形窗口 ${windowLabel}`:`当前波形窗口 ${windowLabel}`;
-    if(ui.af){drawTime(qs('#ovAFFull'),0,duration(),'rr');drawScatter(qs('#ovAFLorenz'));qs('#ovAFHour').textContent=`${formatElapsed(ui.hour)}–${formatElapsed(end)}`;for(let i=0;i<4;i++){const c=qs('#ovQuarter'+i),start=ui.hour+i*900;c.closest('.ov-lane').hidden=start>=duration();if(start<duration())drawTime(c,start,start+900,'rr')}}
+    if(ui.af){drawTime(qs('#ovAFFull'),0,duration(),'rr');drawScatter(qs('#ovAFLorenz'));qs('[data-ov="af-prev"]').disabled=ui.hour<=0;qs('[data-ov="af-next"]').disabled=end>=duration();qs('#ovAFHour').textContent=`${formatElapsed(ui.hour)}–${formatElapsed(end)}`;for(let i=0;i<4;i++){const c=qs('#ovQuarter'+i),start=ui.hour+i*900;c.closest('.ov-lane').hidden=start>=duration();if(start<duration())drawTime(c,start,Math.min(end,start+900),'rr')}}
     else{drawHistogram();drawTime(qs('#ovFullHR'),0,duration(),'hr');drawTime(qs('#ovHourHR'),ui.hour,end,'hr');drawTime(qs('#ovFullRR'),0,duration(),'rr');drawTime(qs('#ovHourRR'),ui.hour,end,'rr');drawScatter();drawStats()}
   }
   function seek(time,keepRange=false,locatedTime=time,preserveWindow=false){
@@ -287,11 +293,16 @@ const overviewWorkbench=(()=>{
   function timeAt(event,canvas){const g=geometries.get(canvas),r=canvas.getBoundingClientRect();return g?E.clamp(g.start+(event.clientX-r.left-g.l)/g.w*(g.end-g.start),g.start,g.end):state.start}
   function scatterAt(event,canvas){const g=geometries.get(canvas),r=canvas.getBoundingClientRect();return [E.clamp((event.clientX-r.left-g.l)/g.w,0,1)*g.bound,E.clamp(1-(event.clientY-r.top-g.t)/g.h,0,1)*g.bound]}
   function inside(x,y,poly){let hit=false;for(let i=0,j=poly.length-1;i<poly.length;j=i++){const a=poly[i],b=poly[j];if((a[1]>y)!==(b[1]>y)&&x<(b[0]-a[0])*(y-a[1])/(b[1]-a[1])+a[0])hit=!hit}return hit}
-  function closeMenu(){menuScope=null;const menu=qs('#ovMenu');if(!menu)return;try{menu.hidePopover()}catch(_){}menu.hidden=true}
+  function closeMenu(restoreFocus=false){
+    const trigger=menuScope?.trigger;menuScope=null;const menu=qs('#ovMenu');if(!menu)return;
+    try{menu.hidePopover()}catch(_){}menu.hidden=true;
+    if(restoreFocus&&trigger?.isConnected)trigger.focus({preventScroll:true});
+  }
   function group(title,items){return `<details><summary>${title}</summary>${items}</details>`}
   function showMenu(kind,event,canvasId){
     if(!ui.rows.length||!overviewReady||ui.id!==state.caseId||ui.caseToken!==state.caseRequestId)return;event?.preventDefault?.();const canvas=qs('#'+(canvasId||'ovFullRR')),rect=canvas.getBoundingClientRect(),x=event?.clientX??rect.left+50,y=event?.clientY??rect.top+20;
-    menuScope={caseId:state.caseId,caseToken:state.caseRequestId,page:state.currentPage,identity:ui.identity,loadToken:ui.loadToken};
+    const trigger=!event&&document.activeElement?.dataset?.canvas===canvas.id?document.activeElement:canvas;
+    menuScope={caseId:state.caseId,caseToken:state.caseRequestId,page:state.currentPage,identity:ui.identity,loadToken:ui.loadToken,trigger};
     // Only the full-record RR surfaces own AF/AFL episode commands.
     if(kind==='rr'&&!['ovFullRR','ovAFFull'].includes(canvas.id)&&!ui.af)kind='hr';
     closeBeatRelabelMenu();globalThis.ecgRhythmRangeEditor?.closeMenu();globalThis.ECGOccurrenceCard?.closeMenu();
@@ -402,7 +413,16 @@ const overviewWorkbench=(()=>{
     throw Error('记录已变化，请重新读取核对');
   }
   function syncAFSaveState(){
-    const form=qs('#ovEpisodeForm');if(!form)return;
+    const form=qs('#ovEpisodeForm');
+    if(!form){
+      // A lost write invalidates the previous evidence and removes its form.
+      // Keep the read-only reconciliation action reachable on the same screen.
+      if(ui.rhythmUncertain){
+        const host=qs(ui.af?'#ovEpisodeEditor':'#ovStatus');
+        if(host)host.innerHTML=`<div role="status">保存结果待核实 · ${button('核对保存结果','af-reconcile')}</div>`;
+      }
+      return;
+    }
     form.querySelectorAll('button,input,select').forEach(n=>n.disabled=!!ui.rhythmSaving||!!ui.rhythmUncertain||form.dataset.stale==='true');
     const cancel=form.querySelector('[data-ov="episode-discard"]');if(cancel)cancel.disabled=!!ui.rhythmSaving||!!ui.rhythmUncertain;
     const retry=form.querySelector('[data-ov="af-reconcile"]');if(retry){retry.hidden=!ui.rhythmUncertain;retry.disabled=!!ui.rhythmSaving;}
@@ -453,7 +473,11 @@ const overviewWorkbench=(()=>{
     const valid=Number.isFinite(bounds.start)&&Number.isFinite(bounds.end)&&bounds.end>bounds.start;
     ui.range=valid?[bounds.start,bounds.end]:null;
     form.querySelector('[data-af-duration]').textContent=valid?(bounds.end-bounds.start).toFixed(3)+' s':'—';
-    const hint=qs('#ovEpisodeDraftHint');if(hint)hint.textContent=form.dataset.stale==='true'?'依据已变化，请重新编辑':bounds.start!==null&&bounds.end!==null&&!valid?'终点须晚于起点':episodeDrafts.has(episodeEditor.key)?(episodeEditor.isNew?'新增候选 · 未保存':'修改候选 · 未保存'):'已保存 · 可继续添加或到报告筛选';
+    const hint=qs('#ovEpisodeDraftHint');if(hint&&!ui.rhythmSaving&&!ui.rhythmUncertain)hint.textContent=form.dataset.stale==='true'?'依据已变化，请重新编辑':bounds.start!==null&&bounds.end!==null&&!valid?'终点须晚于起点':episodeDrafts.has(episodeEditor.key)?(episodeEditor.isNew?'新增候选 · 未保存':'修改候选 · 未保存'):'已保存 · 可继续添加或到报告筛选';
+    const busy=form.dataset.stale==='true'||!!ui.rhythmSaving||!!ui.rhythmUncertain;
+    for(const [action,time] of [['af-boundary-home',bounds.start],['af-boundary-tail',bounds.end]]){
+      const button=form.querySelector('[data-ov="'+action+'"]');if(button)button.disabled=busy||!Number.isFinite(time);
+    }
     for(const action of ['pending','confirmed','excluded']){
       const b=form.querySelector('[data-ov="af-save:'+action+'"]');if(b)b.disabled=!valid||form.dataset.stale==='true'||!!ui.rhythmSaving||!!ui.rhythmUncertain;
     }
@@ -467,7 +491,12 @@ const overviewWorkbench=(()=>{
       const value=ECGRhythmRangeEditor.parseBoundaryClock(form.elements[k+'Clock'].value,state.caseData?.metadata?.start_time,duration());
       form.elements[k].value=String(value);
     }
-    rememberEpisodeForm();const data=new FormData(form),doc=copy(ui.rhythm.document),old=doc.episodes.find(e=>e.id===owner.original.id);
+    rememberEpisodeForm();
+    if(!owner.isNew&&!episodeDrafts.has(owner.key)){
+      qs('#ovEpisodeDraftHint').textContent='已保存 · 没有待保存的修改';
+      return;
+    }
+    const data=new FormData(form),doc=copy(ui.rhythm.document),old=doc.episodes.find(e=>e.id===owner.original.id);
     const item={id:owner.original.id,start_s:Number(data.get('start')),end_s:Number(data.get('end')),kind:data.get('kind'),status,source:'manual',note:data.get('note')};
     if(old)Object.assign(old,item);else if(owner.isNew)doc.episodes.push(item);else throw Error('片段已移除，请重新选择');
     E.validateDocument(doc,duration());form.elements.status.value=status;rememberEpisodeForm();
@@ -574,7 +603,7 @@ const overviewWorkbench=(()=>{
       if(['startClock','endClock','kind'].includes(field)&&form.elements.status.value==='confirmed')form.elements.status.value='pending';
       rememberEpisodeForm();syncAFDraft();
     };
-    syncAFDraft();syncAFSaveState();
+    syncAFSaveState();syncAFDraft();
   }
 
   function afMode(enabled){
@@ -773,7 +802,7 @@ const overviewWorkbench=(()=>{
   async function action(value,element){
     const [key,...tail]=value.split(':'),arg=tail.join(':');if(key.startsWith('menu-')&&key!=='menu-close')return showMenu(key.slice(5),null,element?.dataset.canvas);
     if(element?.closest?.('#ovMenu')&&key!=='menu-close'&&(!menuScope||menuScope.caseId!==state.caseId||menuScope.caseToken!==state.caseRequestId||menuScope.page!==state.currentPage||menuScope.identity!==ui.identity||menuScope.loadToken!==ui.loadToken)){closeMenu();throw Error('病例或图表依据已变化，请重新打开当前图表菜单');}
-    closeMenu();
+    closeMenu(key==='menu-close');
     if(key==='menu-close')return;
     if(key==='dialog-close'){qs('#ovDialog').close();return}
     if(key==='reload')return load(true);
@@ -830,7 +859,7 @@ const overviewWorkbench=(()=>{
     }
     if(key==='episode-edit'){
       renderEpisodes();const details=qs('#ovEpisodeEditor details');if(details)details.open=true;
-      qs('#ovEpisodeEditor').scrollIntoView({block:'center'});qs('#ovEpisodeForm [name="status"]')?.focus({preventScroll:true});return;
+      qs('#ovEpisodeEditor').scrollIntoView({block:'center'});qs('#ovEpisodeForm [name="startClock"]')?.focus({preventScroll:true});return;
     }
     if(key==='episode-discard'){
       if(ui.rhythmSaving||ui.rhythmUncertain)throw Error('请先核实保存结果');
@@ -915,7 +944,7 @@ const overviewWorkbench=(()=>{
     document.addEventListener('contextmenu',event=>{
       if(!ui.af||event.target.id!=='waveformCanvas'||state.waveformExpanded||!waveformBasis())return;
       event.preventDefault();event.stopImmediatePropagation();closeBeatRelabelMenu();ui.afCursor=waveSample(event);const c=event.target,r=c.getBoundingClientRect();ui.afMenuFraction=(event.clientX-r.left)/r.width;
-      menuScope={caseId:state.caseId,caseToken:state.caseRequestId,page:state.currentPage,identity:ui.identity,loadToken:ui.loadToken};
+      menuScope={caseId:state.caseId,caseToken:state.caseRequestId,page:state.currentPage,identity:ui.identity,loadToken:ui.loadToken,trigger:c};
       const menu=qs('#ovMenu');menu.innerHTML=`<header><strong>片段边界</strong>${button('关闭','menu-close')}</header><p>${esc(afClock(ui.afCursor))}</p><div class="ov-menu-body">${button('设为起点','af-boundary-start')}${button('设为终点','af-boundary-end')}${button('心搏 / 图条操作','af-wave-tools')}</div>`;menu.hidden=false;try{menu.showPopover()}catch(_){}menu.style.left=Math.min(event.clientX,innerWidth-280)+'px';menu.style.top=Math.min(event.clientY,innerHeight-210)+'px';drawAFOverlay();
     },true);
     let drag=null;
@@ -970,7 +999,7 @@ const overviewWorkbench=(()=>{
     document.addEventListener('contextmenu',event=>{const canvas=own(event.target);if(!canvas)return;event.preventDefault();event.stopImmediatePropagation();const kind=geometries.get(canvas)?.kind;if(['hr','rr','scatter'].includes(kind))showMenu(kind,event,canvas.id)},true);
     document.addEventListener('keydown',event=>{
       if(qs('#ovDialog').open){event.stopImmediatePropagation();return}
-      const menu=qs('#ovMenu');if(!menu.hidden){if(event.key==='Escape'){closeMenu();event.preventDefault();event.stopImmediatePropagation();return}if(['ArrowDown','ArrowUp'].includes(event.key)){const items=[...menu.querySelectorAll('button,summary')].filter(x=>x.getClientRects().length),index=items.indexOf(document.activeElement);items[(index+(event.key==='ArrowDown'?1:-1)+items.length)%items.length]?.focus();event.preventDefault();event.stopImmediatePropagation()}return}
+      const menu=qs('#ovMenu');if(!menu.hidden){if(event.key==='Escape'){closeMenu(true);event.preventDefault();event.stopImmediatePropagation();return}if(['ArrowDown','ArrowUp'].includes(event.key)){const items=[...menu.querySelectorAll('button:not(:disabled),summary')].filter(x=>x.getClientRects().length),index=items.indexOf(document.activeElement);items[(index+(event.key==='ArrowDown'?1:-1)+items.length)%items.length]?.focus();event.preventDefault();event.stopImmediatePropagation()}return}
       const canvas=own(event.target);if(!canvas)return;
       if(event.shiftKey&&event.key==='F10'){const g=geometries.get(canvas);if(['rr','hr','scatter'].includes(g?.kind)){showMenu(g.kind,null,canvas.id);event.preventDefault();event.stopImmediatePropagation()}return}
       if(event.key==='Escape'){if(cancelGesture()){event.preventDefault();event.stopImmediatePropagation();return;}ui.range=null;ui.rangeAnchor=null;ui.rangeExplicit=false;ui.creationRange=null;ui.polygon=[];ui.densityBox=null;ui.bin=null;linked?.clear('overview-escape');draw();event.preventDefault();event.stopImmediatePropagation();return}

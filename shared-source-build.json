@@ -209,9 +209,9 @@
       "sha256": "8a60a34d9d4216a4c43e2961e23827786a7a6aa5eb41ae24c842b10e8fe57518"
     },
     "scripts/build_static_demo.py": {
-      "bytes": 12183,
+      "bytes": 12181,
       "component": "build",
-      "sha256": "c35b999348e2802e2bd977168036a4de4aff60573639e29936c71caf4bfcaba9"
+      "sha256": "964c72bcea968342204618d2210c548c8657cc3858667f8167c5d5e5ead112ee"
     },
     "scripts/generate_synthetic_demo.py": {
       "bytes": 16740,
@@ -259,9 +259,9 @@
       "sha256": "c012242bf0cc18342657be14623ac25138a7a74e128699ab3a6c3bec1b2488ae"
     },
     "static/css/clinical-workflow.css": {
-      "bytes": 15566,
+      "bytes": 16475,
       "component": "ui",
-      "sha256": "7ec358503f2a98374658491a45a33d4933753bcd28c8cdd44c4a22ec304e875d"
+      "sha256": "187d97448ada5308112a1d216ba9e7af806071aeb9af93c016a76f25b2ff39f8"
     },
     "static/css/dashboard-icons.css": {
       "bytes": 2864,
@@ -269,9 +269,9 @@
       "sha256": "6b09a6e8aa929584b650c8059ad339be819bd5b463ef72f11d5a562cc5ab0155"
     },
     "static/css/desktop-workspace.css": {
-      "bytes": 53441,
+      "bytes": 53442,
       "component": "ui",
-      "sha256": "12994a593146972ec1327a8b58d5e2b887c72bcb73142ffbc4bfca3e951b0960"
+      "sha256": "9b5b98deecb98f2e08b0c925e5f73e57e47f486ede5415d36d352966a3f6bdb8"
     },
     "static/css/hrv-review-editor.css": {
       "bytes": 4119,
@@ -309,9 +309,9 @@
       "sha256": "6cb2d9917d3168a6c5ab5c6335efcc259c12aa70352f357a598e31fe7f63a565"
     },
     "static/css/report-workspace.css": {
-      "bytes": 101000,
+      "bytes": 100868,
       "component": "ui",
-      "sha256": "7f64b65d7de489fa3aa58a1b48640440356d1bde8477de6820cb5fd53b37ccbe"
+      "sha256": "16ec9bc948fd56acbd7dd4d392da819fca331c15f5e7e2a98cd21a53a62bbfca"
     },
     "static/css/review-candidates.css": {
       "bytes": 2856,
@@ -344,9 +344,9 @@
       "sha256": "25d83c7315e4e20fbd704da479a3a286707a730aeaffaa27f690515bc5e656d9"
     },
     "static/css/stt-review-layout.css": {
-      "bytes": 14775,
+      "bytes": 14774,
       "component": "ui",
-      "sha256": "3474b5a371c78ef6fcad29e5f2493e9e7ec80f22d5685d0931c453c630ecdc43"
+      "sha256": "f21606ec95862c474647076deca86ffd78e6b21e9f1934d590867e52dab95516"
     },
     "static/css/terminology-tree.css": {
       "bytes": 3880,
@@ -394,14 +394,14 @@
       "sha256": "fb20b4aa33e0cd2cc5fae8bf8a2a7968b22f8506cdc012ae507c465ea59da3ee"
     },
     "static/js/app.js": {
-      "bytes": 324730,
+      "bytes": 328097,
       "component": "ui",
-      "sha256": "95db99f237528f0931f7096d3a4b56f9ba85c682b6ade9ffac0ea1314362f0dd"
+      "sha256": "3f6d5246f897f4f4d014f794b47c489e529f34bdce73bf79b759761d29775527"
     },
     "static/js/beat-editor-ui.js": {
-      "bytes": 46712,
+      "bytes": 47473,
       "component": "ui",
-      "sha256": "fa6ad68ec0233b67fd85487e41e680d6c654f9221e60d8c9c294c11435a0c4c8"
+      "sha256": "263fe522a467adcbeb9bc94c1424c4b9e64c95ab603d328a31eaa94255c8ec93"
     },
     "static/js/beat-engine.js": {
       "bytes": 12953,
@@ -424,9 +424,9 @@
       "sha256": "a6388fe03f33d7e58efdbf0a962794231b1d291d14940b6aedc91305edcd4330"
     },
     "static/js/clinical-ui.js": {
-      "bytes": 274866,
+      "bytes": 275299,
       "component": "ui",
-      "sha256": "d0934b29e5d090bd81f382ccf223207e3a1fd95009085dde2cb30cfc9cd31b60"
+      "sha256": "19e604af5374d002e3047c9bee70a261cc98fdf5e6e3dcdccf2f2cddd416f2f2"
     },
     "static/js/clinical-workflow.js": {
       "bytes": 15193,
@@ -454,9 +454,9 @@
       "sha256": "96e967936824426e35974d0495e1a65fc2d94d5ae6c7185ebab6659e4851bcb6"
     },
     "static/js/hrv-review-editor.js": {
-      "bytes": 28993,
+      "bytes": 28982,
       "component": "ui",
-      "sha256": "b9c79a4bba3125aad1bfcdf5cbe719a4426cde25b5cd8b865090cba5156f775e"
+      "sha256": "dcf95155d1fd19627a3bedfc0af02ac7c6275e3ba93b6035a7d1157772339113"
     },
     "static/js/hrv-review-evidence.js": {
       "bytes": 11871,
@@ -494,9 +494,9 @@
       "sha256": "ae795f9a7fb57ad2094991f2d256c431e474c7df2f69cde323807be4d62de7bf"
     },
     "static/js/overview-workbench.js": {
-      "bytes": 131537,
+      "bytes": 133111,
       "component": "ui",
-      "sha256": "555633af57a36eb61a8682839ac5a85f08af701de617d6360ea425f9d3a913a0"
+      "sha256": "ee45a29f2258018e82b807aff76ef96d935f75b8dadee33eb11c736c8c6132b8"
     },
     "static/js/read-requests.js": {
       "bytes": 2715,
@@ -539,9 +539,9 @@
       "sha256": "bb4c9a73e543b3368450afac59cc133958c152679eed4f07876147bfb75951ea"
     },
     "static/js/report-strip-editor.js": {
-      "bytes": 11674,
+      "bytes": 12087,
       "component": "ui",
-      "sha256": "db9862654a8952ef7450940278d693c9e6db732fa18082b490380c1c3ffcc4fe"
+      "sha256": "e83b72c83f14fc8c47ebd0f221d27c28502653f7aa4e2fb5556136ac2d0ed0f9"
     },
     "static/js/report-wave-menu.js": {
       "bytes": 16144,
@@ -549,9 +549,9 @@
       "sha256": "ca20b335ef61a95402d5a70f6ad6ff2a79833e045508a5510e917aab17cb806c"
     },
     "static/js/report-workspace.js": {
-      "bytes": 64656,
+      "bytes": 64766,
       "component": "ui",
-      "sha256": "5ae6a54ebd58c3854786a7bc158dd786ed952a6ce4b00b0b9825d1b3ff1935d2"
+      "sha256": "19c86d200eafdb279f47a2088c953bc0f433e1502843f03fed9db63a5dca4452"
     },
     "static/js/review-candidate-ui.js": {
       "bytes": 7804,
@@ -584,9 +584,9 @@
       "sha256": "c4f15738861dfcf5155f9ad356a5d3f4a690b28bdb29654ba92a5b5dae85547b"
     },
     "static/js/stt-range-bridge.js": {
-      "bytes": 16851,
+      "bytes": 16951,
       "component": "ui",
-      "sha256": "fbe52943eae7f23bb1caced30d8cbdaf8f3641cfa3adb5fd898c73b098e888bd"
+      "sha256": "8e43d5160e72b471e79a0ab91f4a0708b9dfad58a289fbb361bdcd3d378dd0ba"
     },
     "static/js/stt-range-review.js": {
       "bytes": 25332,
@@ -629,13 +629,13 @@
       "sha256": "ef1988abc91dd81b85d87f7c00b933c6efdc2101cb8915ce939f62c412f5ebcf"
     },
     "templates/index.html": {
-      "bytes": 83814,
+      "bytes": 84088,
       "component": "ui",
-      "sha256": "06777d78b4407ffd422e1cea8c6813f2109501e969f47e6522e976cb0796921f"
+      "sha256": "e4f45bf1a51524bfd338cb2e90b47862773d10cccb6b1f8059c43279dee5f196"
     }
   },
   "schema": 1,
-  "source_fingerprint": "76d570c7e12a517b40fc9c7e7b63bd4eb527b90c35c3e4e927acbe0377c161ef",
+  "source_fingerprint": "895465b5ee2d6cc8b1c35b9603968874f650f6903cc16cb077e5d2d32376d44b",
   "source_revision": null,
-  "ui_version": "ui-371f1b03dbec9b2a"
+  "ui_version": "ui-eb65a59ae55d4a00"
 }

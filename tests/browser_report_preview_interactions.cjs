@@ -82,7 +82,7 @@ function fixture() {
     composition: () => composition, selected: () => composition.selected_events,
     selectedLookup: new Map(), category: 'final', reportCategories: [], reportRenderToken: 7,
     reportData: {analysis_basis: 'basis-A', analysis_revision: 4},
-    renderStripUndo() {}, renderReportShell() {}, dirty() { dirty++; }, copy: clone,
+    renderStripUndo() {}, renderReportShell() {}, paperSettingsHtml: () => '<section>A4</section>', dirty() { dirty++; }, copy: clone,
     api() { throw Error('VM preview must not use network'); },
     resolveWorkstationLeave: async () => true,
     ECGReportRange: {assertApplied() {}}, ECGAdvancedAnalysis: {assertApplied() {}},

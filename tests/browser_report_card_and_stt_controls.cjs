@@ -38,6 +38,50 @@ const record=n=>{result.checks.push(n);console.log('PASS '+n);};
   await page.locator('[data-rw-mini="1"]').click({button:'right'});await menu.waitFor();assert.deepEqual(await menu.getByRole('menuitem').evaluateAll(ns=>ns.map(n=>n.disabled)),[true,true,true,true,true,true,true,false]);await page.keyboard.press('Escape');record('stale-card-placeholder-opens-the-same-menu-with-only-existing-removal-enabled');
   await page.evaluate(()=>{window.failRead=true;menuFixture.remount();});await page.locator('[data-rw-mini="0"]').getByText('图条读取失败：mathematical unavailable').waitFor();await page.locator('[data-rw-mini="0"]').click({button:'right'});await menu.waitFor();await page.keyboard.press('Escape');record('failed-wave-placeholder-does-not-require-a-successful-wave-to-open-curation');
   await page.evaluate(()=>{window.failRead=false;menuFixture.bindOutside(true);});await page.locator('#outsideWave svg').click({button:'right'});await page.locator('#reportWaveMenu').waitFor({state:'visible'});assert.equal(await menu.count(),0);await page.locator('[data-rw-key="math-first"]').focus();await page.keyboard.press('Shift+F10');await menu.waitFor();assert.equal(await page.locator('#reportWaveMenu:visible').count(),0);await page.keyboard.press('Escape');await page.evaluate(()=>{document.querySelector('#outsideWave').remove();fixture.state.currentPage='edit';menuFixture.bindOutside(false);});await page.locator('#outsideWave svg').click({button:'right'});assert.deepEqual(await page.evaluate(()=>editOpens),['edit']);record('outside-card-readonly-hospital-menu-and-editable-heartbeat-route-remain-independent');
+  await page.evaluate(()=>fixture.state.currentPage='report');
+  // Keyboard users can move directly to later report controls after inspecting a strip.
+  await page.locator('[data-rw-key="math-first"]').focus();
+  await page.keyboard.press('Shift+F10');
+  await page.keyboard.press('End');
+  assert.match(await page.evaluate(()=>document.activeElement.textContent), /删除图条/);
+  await page.keyboard.press('Home');
+  assert.match(await page.evaluate(()=>document.activeElement.textContent), /3L/);
+  await page.keyboard.press('Tab');
+  assert.equal(await menu.count(),0);
+  record('card-menu-Home-End-and-Tab-dismissal');
+  await page.evaluate(async()=>{
+    window.draftChecks={applied:0,reads:0};
+    await ECGReportStripEditor.open({selection:fixture.picks[0],event:{label:'测试',hr:60},
+      metadata:{},total:90,loadWave:async()=>{draftChecks.reads++;return fixture.entry;},
+      onApply:async()=>{draftChecks.applied++;}});
+  });
+  const stripEditor=page.locator('.rw-strip-editor-dialog[open]');
+  const start=stripEditor.locator('[data-se-start]'), clock=stripEditor.locator('[data-se-clock]');
+  assert(await clock.isDisabled());
+  await start.fill('');
+  await stripEditor.locator('[data-se-preview-button]').click();
+  await page.waitForFunction(()=>document.querySelector('[data-se-status]')?.textContent.includes('范围须位于'));
+  assert.deepEqual(await page.evaluate(()=>draftChecks),{applied:0,reads:1});
+  await stripEditor.locator('button[type=submit]').click();
+  assert(await clock.isDisabled());
+  assert(await stripEditor.isVisible());
+  await start.fill('0');
+  await stripEditor.locator('button[type=submit]').click();
+  await stripEditor.waitFor({state:'detached'});
+  assert.deepEqual(await page.evaluate(()=>draftChecks),{applied:1,reads:2});
+  record('empty-offset-cannot-preview-or-save-as-zero-and-source-clock-stays-readonly');
+  await page.evaluate(()=>ECGReportStripEditor.open({selection:fixture.picks[0],event:{label:'时钟测试',hr:60},
+    metadata:{start_time:'2026-01-01 08:00:00'},total:90,loadWave:async()=>fixture.entry,onApply:async()=>{draftChecks.applied++;}}));
+  await clock.fill('');
+  assert.equal(await start.inputValue(),'');
+  await stripEditor.locator('[data-se-preview-button]').click();
+  assert.match(await stripEditor.locator('[data-se-status]').textContent(),/范围须位于/);
+  await clock.fill('2026-01-01T08:00');
+  assert.equal(await start.inputValue(),'0');
+  await stripEditor.locator('button[type=submit]').click();
+  await stripEditor.waitFor({state:'detached'});
+  assert.equal(await page.evaluate(()=>draftChecks.applied),2);
+  record('clearing-record-clock-also-clears-offset-and-explicit-origin-remains-valid');
   await page.evaluate(()=>{fixture.state.currentPage='report';menuFixture.stale();});await page.locator('[data-rw-mini="0"]').click({button:'right'});assert.equal(await menu.count(),0);assert.equal(await page.evaluate(()=>JSON.stringify(fixture.state.reportComposition)),snapshot);assert.equal(await page.evaluate(()=>calls.some(c=>['POST','PUT','PATCH','DELETE'].includes(c.method))),false);record('expired-owner-cannot-open-and-opening-cancelling-never-writes-report-or-beats');
  }else if(scenario==='stt'){
   await page.setContent(sttHTML());await page.evaluate(()=>initial);const show=(state,elig,code,old=false)=>page.evaluate(async v=>sttFixture.show(...v),[state,elig,code,old]);const flags=()=>page.locator('[data-stt-use][data-stt-index="0"]').evaluateAll(ns=>ns.map(n=>({key:n.dataset.sttUse,disabled:n.disabled,checked:n.checked})));

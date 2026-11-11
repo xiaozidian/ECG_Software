@@ -12,7 +12,7 @@ const hrvFunctions=region('  async function refreshHrvCase(',"  async function s
 const retain=region('  function prepareHrvLoad(){','  function composition(){');
 const waveSvg=region('  function svg(wave,','  function eventWaveKey(');
 const wrapper=region('const loadTrendsLegacy=loadTrends;','const goPageLegacy=goPage;');
-const scripts=['static/js/analysis-consistency.js','static/js/report-consistency.js','static/js/report-paper.js','static/js/hrv-report.js','static/js/hrv-review-evidence.js','static/js/hrv-review-editor.js'].map(p=>`<script>${read(p)}</script>`).join('');
+const scripts=['static/js/clinical-review-tools.js','static/js/occurrence-card.js','static/js/report-workspace.js','static/js/analysis-consistency.js','static/js/report-consistency.js','static/js/report-paper.js','static/js/hrv-report.js','static/js/hrv-review-evidence.js','static/js/hrv-review-editor.js'].map(p=>`<script>${read(p)}</script>`).join('');
 const css=['static/css/report-paper.css','static/css/hrv-review-evidence.css','static/css/hrv-review-editor.css'].map(read).join('\n');
 function fixture(){return `<!doctype html><html><meta charset="utf-8"><style>*{box-sizing:border-box}body{margin:0;padding:16px;font-family:system-ui;background:#f4f7f7}.button{border:1px solid #bdd0d0;border-radius:5px;background:white;padding:6px 10px;font:inherit}main{max-width:1700px;margin:auto;min-width:0}#conclusionEditor{display:none}${css}</style><main id="page-trends"><article id="hrvWindowPanel"><section id="hrvWholeRecordReference"><h2>全记录参考</h2><canvas id="histogramCanvas"></canvas><canvas id="poincareCanvas"></canvas></section></article></main><textarea id="conclusionEditor">手写数学夹具结论保留</textarea>${scripts}<script>
 const fixtureBase=${JSON.stringify(payload(2))},fixtureModel=${JSON.stringify(model)};
@@ -37,7 +37,7 @@ async function api(url,options={}){const u=new URL(url,'https://math.invalid'),b
  throw Error('Unexpected mathematical endpoint '+u.pathname);}
 window.fetch=async url=>{downloadURLs.push(String(url));return {ok:true,blob:async()=>new Blob(['public synthetic PDF'])};};HTMLAnchorElement.prototype.click=function(){};
 const withPhi=x=>x,escapeHtml=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),formatElapsedPrecise=x=>String(x)+'s';
-const preserveCurrentIdentity=x=>x,beatEditor={refreshHistory(){}},clinicalWorkflow={writable:()=>true,receive(){},renderPreflight(){}},handleError=e=>errors.push(e.message),toast=()=>{};
+const preserveCurrentIdentity=x=>x,beatEditor={refreshHistory(){},bindWaveSurface(){}},clinicalWorkflow={writable:()=>true,receive(){},renderPreflight(){}},handleError=e=>errors.push(e.message),toast=()=>{};
 const ECGReportSections={selectedPages:source=>source.included_pages||[]},ECGReportEngine={settings:x=>x||{}};
 let loadTrends=async w=>{if(forceStale)throw Error('HRV 排除区间来自旧依据');return {data:analysis(w),caseId:state.caseId,caseToken:state.caseRequestId,requestId:++state.trendsRequestId};};state.trendsRequestId=0;
 const clinicalUI=(()=>{const esc=escapeHtml,qs=s=>document.querySelector(s),copy=clone;let reportCase=null,reportVersion=null,hrv=null,hrvToken=0,hrvLegacyWeb=qs('#hrvWholeRecordReference');const run=fn=>Promise.resolve().then(fn).catch(handleError),endpoint=(kind,params={},id=state.caseId,options={})=>api('/api/cases/'+id+'/'+kind+'?'+new URLSearchParams(params),options);

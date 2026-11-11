@@ -240,6 +240,7 @@ globalThis.ECGSTTRangeBridge = (() => {
     host.addEventListener('input',edited);host.addEventListener('change',edited);
     point?.addEventListener('change',externalChange);
     const controller={sync,snapshotForSave,clearAfterSave,
+      discardReviewed(){clearAccepted();saveCandidate=null;ownFragment='';staleFragments.clear();},
       destroy() {
         if (disposed) return;
         if (host._sttRangeBridgeOwner===owner) {clearAccepted('组件已关闭');component?.destroy();delete host._sttRangeBridgeOwner;delete host._sttRangeBridge;}

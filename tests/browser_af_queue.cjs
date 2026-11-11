@@ -6,6 +6,7 @@ const action=source.slice(source.indexOf('  async function action('),source.inde
 const basisCode=source.slice(source.indexOf('  const rhythmBasis='),source.indexOf('  function confirmRhythm('));
 const boundaryCode=source.slice(source.indexOf('  const afClock='),source.indexOf('  // The queue is read-only:'));
 const savingCode=source.slice(source.indexOf('  function syncAFSaveState('),source.indexOf('  const rhythmBasis='));
+const hourCode=source.slice(source.indexOf('  function hour('),source.indexOf('  const name='));
 const esc=x=>String(x).replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;');
 const unesc=x=>x.replaceAll('&quot;','"').replaceAll('&lt;','<').replaceAll('&gt;','>').replaceAll('&amp;','&');
 let focuses=0,scrolls=0,seeks=[],requests=0,accept=null,confirmation=null,currentForm=null,resolveSeek=null,leaveChoice='stay',leavePrompts=0;
@@ -74,6 +75,24 @@ const select=async(id='e:0003')=>{await call(`locateEpisode(${JSON.stringify(id)
 const edit=value=>{currentForm.elements.note.value=value;currentForm.oninput({target:currentForm.elements.note});};
 const input=(name,value)=>{currentForm.elements[name].value=value;currentForm.oninput({target:currentForm.elements[name]});};
 (async()=>{
+  if(scenario==='partial-last-hour'){
+    vm.runInContext(hourCode,c);
+    c.duration=()=>4200;c.state.start=3600;c.ui.afCursor=3600;
+    assert.equal(call('hour()'),3600);
+    c.duration=()=>3603;c.state.start=3593;
+    assert.equal(call('hour()'),3600);
+    c.duration=()=>3600;c.state.start=3590;
+    assert.equal(call('hour()'),0);
+    return;
+  }
+  if(scenario==='lost-write-control'){
+    c.ui.rhythmUncertain={};currentForm=null;
+    call('syncAFSaveState()');
+    assert.match(qs('#ovEpisodeEditor').innerHTML,/data-ov="af-reconcile"/);
+    c.ui.af=false;call('syncAFSaveState()');
+    assert.match(qs('#ovStatus').innerHTML,/data-ov="af-reconcile"/);
+    return;
+  }
   if(scenario==='summary-saved-only'){
     await select('e:0001');
     const before=qs('#ovAFSummary').innerHTML;
@@ -133,6 +152,14 @@ const input=(name,value)=>{currentForm.elements[name].value=value;currentForm.on
     assert.equal(currentForm.elements.start.value,'8.005');assert.equal(currentForm.elements.status.value,'pending');
     assert.deepEqual(Array.from(c.ui.range),[8.005,9]);assert.equal(qs('#ovAFSummary').innerHTML,summary);
     assert.equal(episodes[4].status,'confirmed');assert.equal(requests,0);return;
+  }
+  if(scenario==='unchanged-confirmed-save'){
+    await select('e:0004');
+    assert.equal(currentForm.elements.status.value,'confirmed');
+    await call('action("af-save:pending")');
+    assert.equal(requests,0);
+    assert.equal(c.ui.rhythm.document.episodes[4].status,'confirmed');
+    return;
   }
   if(scenario==='explicit-save-kind'){
     input('kind','AFL');edit('new AFL note');await call('action("af-save:pending")');
