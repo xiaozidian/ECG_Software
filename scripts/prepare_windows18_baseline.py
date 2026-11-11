@@ -35,9 +35,14 @@ def extract_math(archive, destination):
         names = z.namelist()
         assert len(names) == 5 and len(set(names)) == len(names) and z.testzip() is None
         for info in z.infolist():
-            name = PurePosixPath(info.filename)
+            # ZipInfo normalizes the host separator on Windows. Inspect the
+            # original archive name as well so a raw backslash or NUL is never
+            # silently accepted as a different, apparently safe member name.
+            raw_name = info.orig_filename
+            assert raw_name and raw_name == info.filename and '\\' not in raw_name
+            name = PurePosixPath(raw_name)
             assert not info.is_dir() and name.parts[0] == 'M01'
-            assert not name.is_absolute() and '..' not in name.parts and '\\' not in info.filename
+            assert not name.is_absolute() and '..' not in name.parts
             assert not any(':' in part for part in name.parts)
             assert (info.external_attr >> 16) & 0o170000 != 0o120000
         z.extractall(destination)

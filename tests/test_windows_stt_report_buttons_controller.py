@@ -117,11 +117,33 @@ def test_baseline_math_archive_rejects_unsafe_paths(tmp_path, monkeypatch, unsaf
     source = tmp_path / 'math.zip'
     with zipfile.ZipFile(source, 'w') as archive:
         for name in [unsafe, 'M01/a', 'M01/b', 'M01/c', 'M01/d']:
-            archive.writestr(name, b'independent mathematical path test')
+            # Preserve the actual invalid ZIP bytes on Windows too; ZipInfo's
+            # constructor would otherwise normalize a backslash before writing.
+            info = zipfile.ZipInfo('independent-fixture-placeholder')
+            info.filename = info.orig_filename = name
+            archive.writestr(info, b'independent mathematical path test')
+    with zipfile.ZipFile(source) as archive:
+        assert archive.infolist()[0].orig_filename == unsafe
     monkeypatch.setattr(baseline, 'validate_source', lambda _: None)
     with pytest.raises(AssertionError):
         baseline.extract_math(source, tmp_path / 'extract')
     assert not (tmp_path / 'escape').exists()
+
+
+def test_baseline_math_archive_accepts_five_legal_members_and_validates_source(tmp_path, monkeypatch):
+    source = tmp_path / 'legal-math.zip'
+    names = ['M01/data/a', 'M01/DGS/b', 'M01/report_image/c', 'M01/note.txt', 'M01/source-manifest.json']
+    payload = b'independent mathematical legal path test'
+    with zipfile.ZipFile(source, 'w') as archive:
+        for name in names:
+            archive.writestr(name, payload)
+    calls = []
+    monkeypatch.setattr(baseline, 'validate_source', lambda root: calls.append(root))
+    destination = tmp_path / 'legal-extract'
+    actual = baseline.extract_math(source, destination)
+    assert actual == destination / 'M01' and calls == [actual]
+    assert sorted(p.relative_to(destination).as_posix() for p in destination.rglob('*') if p.is_file()) == sorted(names)
+    assert all((destination / name).read_bytes() == payload for name in names)
 
 
 def test_new_workflow_executes_current_wrappers_and_real18_controllers():
