@@ -403,6 +403,7 @@ async def run(args, result):
                     require(json.loads((home / 'catalog.json').read_text())['selected_workspace'] == workspace, 'Upgrade changed workspace')
                     await page.locator('#openFirstCase').click()
                     await page.wait_for_function('id=>state.caseId===id&&!state.caseLoading', arg=doctor_source.CASE_ID)
+                    await page.wait_for_function("()=>state.currentPage==='review'&&overviewWorkbench.waveformBasis()&&Object.keys(state.waveform?.leads||{}).join(',')==='II,V1,V5'")
                     after = await capture(page, doctor_source.CASE_ID, get, after=True)
                     require(await page.evaluate("state.currentPage==='review'&&Object.keys(state.waveform?.leads||{}).join(',')==='II,V1,V5'"), 'Upgraded case did not open in overview with loaded three-lead ECG')
                     result['API_upgrade'] = compare_api(before, after, package)
