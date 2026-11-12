@@ -28,8 +28,9 @@ globalThis.ECGReportWorkspace=(()=>{
     if(!host.hasAttribute('tabindex'))host.setAttribute('tabindex','0');
     host.setAttribute('aria-description','波形只读复核；双击具体波形或 Shift+Enter 查看本图条。左侧列表单击或勾选入报。');
     if(host._rwWaveBound)return;host._rwWaveBound=true;
-    host.addEventListener('click',event=>{if(event.target.closest?.('.rw-candidate-context,.rw-af-strip-rail'))return;if(event.target.closest?.('svg')&&host.contains(event.target)){event.stopPropagation();if(host._rwWaveCurrent())host.focus({preventScroll:true});}},true);
-    host.addEventListener('dblclick',event=>{if(event.target.closest?.('.rw-candidate-context,.rw-af-strip-rail')||event.button!==0||!event.target.closest?.('svg')||!host.contains(event.target)||!host._rwWaveCurrent())return;event.preventDefault();event.stopPropagation();host._rwWaveOpen?.();},true);
+    const childInteraction='.rw-candidate-context,.rw-af-strip-rail,.report-wave-tool-host';
+    host.addEventListener('click',event=>{if(event.target.closest?.(childInteraction))return;if(event.target.closest?.('svg')&&host.contains(event.target)){event.stopPropagation();if(host._rwWaveCurrent())host.focus({preventScroll:true});}},true);
+    host.addEventListener('dblclick',event=>{if(event.target.closest?.(childInteraction)||event.button!==0||!event.target.closest?.('svg')||!host.contains(event.target)||!host._rwWaveCurrent())return;event.preventDefault();event.stopPropagation();host._rwWaveOpen?.();},true);
   }
   function bindTwelveWave(host,{wave,readWave,isCurrent=()=>true,recordStart=null,domain=null,displayProfile=null,event=null}){
     const open=mountEventPreview(host,{event,title:'12 导联 · 同一记录时间窗',isCurrent,

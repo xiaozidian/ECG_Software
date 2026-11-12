@@ -5,13 +5,13 @@ globalThis.ECGReadRequests=(()=>{
   function create(){
     const pending=new Map(),lanes=new Map();let currentScope=null;
     function clear(){for(const entry of pending.values())entry.controller.abort();pending.clear();lanes.clear();}
-    function read(scope,key,build,lane='',signal=null){
+    function read(scope,key,build,lane='',signal=null,ownsResult=false){
       if(signal?.aborted)return Promise.reject(cancelled());
       if(currentScope!==scope){clear();currentScope=scope;}
       const full=JSON.stringify([scope,lane,key]);let entry=pending.get(full);
       if(!entry){
         if(lane){const previous=lanes.get(lane);if(previous&&previous.key!==full){previous.controller.abort();pending.delete(previous.key);}}
-        const controller=new AbortController();entry={controller,key:full,consumers:new Set()};
+        const controller=new AbortController();entry={controller,key:full,consumers:new Set(),ownsResult};
         entry.promise=Promise.resolve().then(()=>{if(controller.signal.aborted)throw cancelled();return build(controller.signal)}).then(value=>{if(controller.signal.aborted)throw cancelled();return value}).finally(()=>{if(pending.get(full)===entry)pending.delete(full);if(lanes.get(lane)===entry)lanes.delete(lane)});
         pending.set(full,entry);if(lane)lanes.set(lane,entry);
       }
@@ -28,6 +28,9 @@ globalThis.ECGReadRequests=(()=>{
         if(signal?.aborted||entry.controller.signal.aborted)abort();
         entry.promise.then(value=>{
           if(done)return;done=true;release();
+          // fetch().json() owns a fresh object. Earlier subscribers receive copies;
+          // the last subscriber can take the original once the entry is no longer pending.
+          if(entry.ownsResult&&!entry.consumers.size){resolve(value);return;}
           try{resolve(typeof structuredClone==='function'?structuredClone(value):JSON.parse(JSON.stringify(value)));}catch(error){reject(error);}
         },error=>{if(done)return;done=true;release();reject(error);});
       });

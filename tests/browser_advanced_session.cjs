@@ -64,7 +64,8 @@ async function scenario(mode){
 async function gates(){
   const source=fs.readFileSync('static/js/clinical-ui.js','utf8');
   for(const name of ['save','previewPaper','print','downloadReport','reloadReport']){
-    const start=source.indexOf('  async function '+name+'('),end=source.indexOf('\n  }',start)+4;
+    const declaration=new RegExp('^  async function '+name+'\\(','m');
+    const start=source.search(declaration),end=source.indexOf('\n  }',start)+4;
     assert(start>=0);const ctx=vm.createContext({resolveWorkstationLeave:async()=>{throw Error('pending-advanced')},ECGAdvancedAnalysis:{assertApplied(){throw Error('pending-advanced')}}});
     vm.runInContext(source.slice(start,end),ctx);await assert.rejects(ctx[name](),/pending-advanced/);
   }

@@ -698,6 +698,55 @@ class Storage(ReviewWorkflowMixin, EvidenceCandidateMixin, ReportEvidenceMixin):
                         rhythm_only=json.loads(row['details'] or '{}').get('kind') in ('AF','AFL'))
         return True
 
+    def record_compatible_implementation(self, case_id, certificate, actor, check_current):
+        """Audit verified implementation continuity without changing a doctor's work."""
+        from .analysis_provenance import digest
+        with self.connect() as db:
+            db.execute("""CREATE TABLE IF NOT EXISTS analysis_implementation_compatibility (
+                case_id TEXT NOT NULL, execution_engine_id TEXT NOT NULL,
+                execution_basis TEXT NOT NULL, certificate TEXT NOT NULL, created_at TEXT NOT NULL,
+                PRIMARY KEY(case_id,execution_engine_id,execution_basis))""")
+            db.execute('BEGIN IMMEDIATE')
+            old=db.execute('SELECT basis FROM case_analysis_basis WHERE case_id=?',(case_id,)).fetchone()
+            if not old or json.loads(old['basis'])!=certificate['reference_basis']:
+                raise ReportConflict('升级核对期间病例依据已变化，未保留旧复核')
+            if self._review(db,case_id)['revision']!=certificate['review_revision']:
+                raise ReportConflict('升级核对期间复核已有修改，请重新载入')
+            annotations=[{**dict(row),'details':json.loads(row['details'] or '{}')}
+                         for row in db.execute('SELECT * FROM annotations WHERE case_id=? ORDER BY sample_index,id',(case_id,))]
+            rhythm=db.execute("SELECT document,updated_at FROM rhythm_reviews WHERE case_id=?",(case_id,)).fetchone()
+            if rhythm:
+                from .overview import episode_annotations
+                annotations=[x for x in annotations if x['details'].get('kind') not in ('AF','AFL')]
+                annotations+=episode_annotations(json.loads(rhythm['document']),stamp=rhythm['updated_at'])
+                annotations.append(dict(id='rhythm-control',sample_index=0,label='',internal=True,details={'rhythm_authoritative':True}))
+            report=db.execute('SELECT version,composition FROM report_drafts WHERE case_id=?',(case_id,)).fetchone()
+            if report and (report['version']!=certificate['report_version'] or digest(normalize_report_composition(json.loads(report['composition'])))!=certificate['report_composition_digest']):
+                raise ReportConflict('升级核对期间报告已有修改，请重新载入')
+            # list_annotations has this same ordering and source DTO.
+            if digest(annotations)!=certificate['authored_annotations_digest']:
+                raise ReportConflict('升级核对期间标注已变化，未保留旧复核')
+            editor=db.execute('SELECT revision,document FROM beat_edit_documents WHERE case_id=?',(case_id,)).fetchone()
+            if editor:
+                if editor['revision']!=certificate['beat_revision'] or digest(json.loads(editor['document']))!=certificate['editor_document_digest']:
+                    raise ReportConflict('升级核对期间心搏编辑已变化，未保留旧复核')
+            elif certificate['beat_revision']!=0:
+                raise ReportConflict('升级核对期间心搏依据缺失')
+            check_current()
+            payload=json.dumps(certificate,ensure_ascii=False,sort_keys=True)
+            exists=db.execute('SELECT certificate FROM analysis_implementation_compatibility WHERE case_id=? AND execution_engine_id=? AND execution_basis=?',
+                              (case_id,certificate['execution_engine_id'],certificate['execution_basis'])).fetchone()
+            db.execute("""INSERT INTO analysis_implementation_compatibility VALUES(?,?,?,?,?)
+                ON CONFLICT(case_id,execution_engine_id,execution_basis)
+                DO UPDATE SET certificate=excluded.certificate,created_at=excluded.created_at""",
+                (case_id,certificate['execution_engine_id'],certificate['execution_basis'],payload,utc_now()))
+            if not exists or exists['certificate']!=payload:
+                db.execute('INSERT INTO audit_log(case_id,actor,action,detail,created_at) VALUES(?,?,?,?,?)',
+                    (case_id,actor,'analysis.performance_upgrade_verified',
+                     json.dumps(dict(reference_basis=certificate['reference_basis']['digest'],
+                         execution_engine=certificate['execution_engine_id'],
+                         proof_sha256=digest(certificate),retained_stt_records=certificate['retained_stt_records']),sort_keys=True),utc_now()))
+
     def sync_analysis_basis(self, case_id, basis, actor, readonly=False):
         """Idempotent, atomic invalidation; keep text and selected evidence intact."""
         encoded = json.dumps(basis, sort_keys=True, ensure_ascii=False)

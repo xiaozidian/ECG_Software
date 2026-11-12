@@ -46,6 +46,7 @@ const ctx={state,ui:{id:'c',revision:2,caseToken:1,identity:basis,loadToken:1,ro
   toast:(...args)=>toasts.push(args),clinicalWorkflow:{writable:()=>true,refresh:async()=>{workflowRefreshes++;if(which==='save-refresh-error')throw Error('refresh failed')}},
 };
 vm.createContext(ctx);
+vm.runInContext(source.slice(source.indexOf('  function histogramNonempty('),source.indexOf('  function drawHistogram(')),ctx);
 vm.runInContext(source.slice(source.indexOf('  async function load('),source.indexOf('  function prepare(')),ctx);
 vm.runInContext(app.slice(app.indexOf('async function loadWaveform('),app.indexOf('function canvasContext(')),ctx);
 ctx.overviewWorkbench={waveformBasis:ctx.waveformBasis,waveformFailed:ctx.waveformFailed};

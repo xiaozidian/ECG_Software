@@ -14,7 +14,7 @@ const ctx=vm.createContext({state,A:{categories:[['AF','房颤']]},active:e,repo
  reportStrip:async(event,s)=>({strip:{start_s:s.range_start_s??100,end_s:s.range_end_s??107,actual_duration_s:s.duration_s||7,visible_beat_count:8}}),
  endpoint:async(kind)=>{if(kind==='rhythm-review'){if(committed)receipts++;return {revision:committed?4:3,beat_revision:0,last_operation:committed?{request_id:committed.request_id,operation:'save',revision:4}:null,document:{episodes:[{id:'math',kind:'AF',status:committed?'confirmed':'pending',start_s:100,end_s:400}]}};}if(kind==='report-events')return {items:[fresh]};throw Error(kind);},
  api:async(_,options)=>{writes++;committed=JSON.parse(options.body);throw Error('intentional lost committed response');},
- ECGUnsavedNavigation:{resolve:async options=>{dialogs++;assert.match(options.detail,/整段候选：[\s\S]*300.000 秒[\s\S]*本次图条：[\s\S]*250 — 257/);await options.save();return true;}},
+ ECGUnsavedNavigation:{resolve:async options=>{dialogs++;options={...options,...await options.prepare(options.isCurrent)};assert.match(options.detail,/整段候选：[\s\S]*300.000 秒[\s\S]*本次图条：[\s\S]*250 — 257/);await options.save();return true;}},
  flushReportAutosave:async()=>{saves++;},overviewWorkbench:{invalidateAfterWrite(){}},refreshHrvCase:async()=>{},refreshReport:async()=>{if(committed){lookup.set(e.event_id,fresh);ctx.reportData={analysis_basis:'math-source',analysis_revision:2};}},ECGReportStripEditor:{curation:()=>({})},syncText(){},dirty(){},renderReportShell(){},syncReportMembership(){},toast(){},locate:async()=>{},renderReportBody:async()=>{}});
 delete ctx.globalThis;
 vm.runInContext(region('  const reportCategories=','  function projectRRSelections('),ctx);vm.runInContext(region('  function enableSTTStripUse(','  function sttNarrative('),ctx);vm.runInContext(region('  async function addAFStrip(','  function selectEvent('),ctx);vm.runInContext(region('  async function confirmReportRhythm(','  function hasRhythmReturn('),ctx);
@@ -24,7 +24,7 @@ vm.runInContext(region('  const reportCategories=','  function projectRRSelectio
  console.log('AF confirmation: one dialog/write, lost receipt recovery, all current siblings rebased without changing curation, stale sibling retained and new middle range independent passed');
  for(const initial of [[first,middle,stale],[]]){
   writes=0;receipts=0;dialogs=0;committed=null;forgotten.length=0;state.reportComposition.selected_events=structuredClone(initial);lookup.set(e.event_id,e);ctx.reportData={analysis_basis:'math-source',analysis_revision:1};
-  ctx.ECGUnsavedNavigation.resolve=async options=>{dialogs++;assert.equal(options.title,'确认整段房颤');assert(!options.detail.includes('本次图条'));await options.save();return true;};
+  ctx.ECGUnsavedNavigation.resolve=async options=>{dialogs++;options={...options,...await options.prepare(options.isCurrent)};assert.equal(options.title,'确认整段房颤');assert(!options.detail.includes('本次图条'));await options.save();return true;};
   await ctx.confirmReportRhythm(e,null,{adopt:false});assert.equal(writes,1);assert.equal(dialogs,1);assert.equal(state.reportComposition.selected_events.length,initial.length,'whole confirmation adopted another strip');
   for(const old of initial){const next=state.reportComposition.selected_events.find(s=>s.strip_id===old.strip_id);assert.deepEqual({...next,basis_version:old.basis_version},old);assert.equal(next.basis_version,old.basis_version==='before-confirm'?'after-confirm':old.basis_version);}
   assert.deepEqual(forgotten,[],'whole-only confirmation discarded a range choice');

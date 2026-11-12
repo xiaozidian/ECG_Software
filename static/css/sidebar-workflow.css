@@ -10,3 +10,8 @@
 .sidebar-workflow button:focus-visible{outline:2px solid #a5eeee;outline-offset:2px}
 .sidebar-workflow button:disabled{color:#9bb0b9;border-color:#365360;cursor:default}
 @media(max-width:680px){.sidebar-workflow button{min-height:44px;font-size:10px}}
+
+/* Give the build label its own row: when it wraps it must never cover Settings. */
+.sidebar{display:flex;flex-direction:column}
+.sidebar nav{flex:1 1 auto;min-height:0;height:auto;padding-bottom:4px}
+.sidebar-version{position:static;flex:none;width:100%;padding-top:4px;line-height:1.25;pointer-events:none}

@@ -221,6 +221,8 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
     app.extensions['hrv_evidence_cache'] = hrv_evidence_cache
     hrv_measurement_cache = ClinicalEvidenceCache(max_entries=4,max_units=32*1024*1024)
     app.extensions['hrv_measurement_cache'] = hrv_measurement_cache
+    hrv_event_cache = ClinicalEvidenceCache(max_entries=4,max_units=16*1024*1024)
+    app.extensions['hrv_event_cache'] = hrv_event_cache
     app.extensions['waveform_beat_cache'] = waveform_beat_cache
     # Only detached read projections are retained. Never share a mutable
     # EditedRecords with writes, analyses, or another request.
@@ -273,6 +275,24 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         try:
             case = repository.get_case(case_id)
             basis = runtime.basis(case)
+            previous = storage.get_analysis_basis(case_id)
+            compatibility = app.extensions.get('performance_compatibility')
+            if (previous and previous.get('digest')!=basis.get('digest')
+                    and compatibility and not app.config['DEMO_READONLY']
+                    and compatibility.build_allowed(previous,basis)):
+                snapshot=editor.snapshot(case_id)
+                annotations=storage.list_annotations(case_id)
+                prior_report=storage.get_report(case_id,case.get('conclusion',''))
+                revision=storage.get_review(case_id)['revision']
+                certificate=compatibility.resolve(case,previous,basis,build_feed(case,snapshot['document']),
+                              annotations,prior_report,revision,snapshot['revision'])
+                if certificate:
+                    def current_source():
+                        if runtime.direct_basis(case)['digest']!=certificate['execution_basis']:
+                            raise ReportConflict('升级核对期间原始数据已变化')
+                    storage.record_compatible_implementation(case_id,certificate,ACTOR,current_source)
+                    runtime.bind_compatible_basis(case,certificate)
+                    basis=runtime.basis(case)
             storage.sync_analysis_basis(case_id, basis, ACTOR, app.config['DEMO_READONLY'])
             return case
         except CaseNotFound:
@@ -305,6 +325,9 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
     editor = BeatEditorStore(storage)
     rhythms = RhythmReviewStore(storage)
     hrv_reviews = HrvReviewStore(storage)
+    from ecg_core.performance_compatibility import PerformanceCompatibility
+    app.extensions['performance_compatibility']=PerformanceCompatibility(base,runtime,storage,editor)
+
     terminology = TerminologyStore(storage)
     app.extensions['hrv_reviews'] = hrv_reviews
     app.extensions['terminology'] = terminology
@@ -361,22 +384,29 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         linked_read_identity(case, identity)
         return result
 
-    def clinical_index_key(case, identity):
+    def clinical_index_key(case, identity, annotations=None):
         # Report acknowledgements refresh event metadata without changing the
         # signal-analysis identity or cancelling unrelated waveform reads.
         return (case['case_id'], identity['analysis_basis'], identity['analysis_revision'],
+                provenance_digest(annotations if annotations is not None else storage.list_annotations(case['case_id'])),
                 canonical(storage.list_candidates(case['case_id'])),
                 evidence_digest(storage.list_report_evidence(case['case_id'])))
 
-    def clinical_projection(case, project):
+    def clinical_projection(case, project, annotations=None):
         identity = linked_read_identity(case)
-        key = clinical_index_key(case, identity)
+        key = clinical_index_key(case, identity, annotations)
+
+        def ensure_current():
+            linked_read_identity(case, identity)
+            if clinical_index_key(case, identity) != key:
+                raise ReportConflict("标注或报告依据已变化，请重新读取")
+
         def checked():
             index = clinical_index(case)
-            linked_read_identity(case, identity)
+            ensure_current()
             return index
         result = clinical_query_cache.project(key, checked, project)
-        linked_read_identity(case, identity)
+        ensure_current()
         return result
 
     def build_feed(case, document):
@@ -559,6 +589,7 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
             "demo_readonly": app.config["DEMO_READONLY"],
             "allow_phi": app.config["ALLOW_PHI"],
             "workspace_epoch": workspace_epoch,
+            "evidence_continuity": app.extensions["performance_compatibility"].diagnostics(),
         })
 
     @app.get("/api/dashboard")
@@ -590,6 +621,38 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         # Keep the legacy editor revision separate from the broader review identity.
         return clinical_response(case, lambda: present_case(case, include_phi_authorized(), detailed=True), nested=True)
 
+    def stt_signal_inputs(case, expected):
+        basis = linked_read_identity(case, expected)
+        editor_value = editor.snapshot(case['case_id'])
+        feed = edited_feed(case, editor_value["document"])
+        overrides = storage.list_beat_overrides(case['case_id'])
+        override_signature = ",".join(f"{item['sample_index']}:{item['class_code']}" for item in overrides)
+        revision = f"editor-{editor_value['revision']}|overrides-{override_signature or 'none'}"
+        return basis, feed, revision
+
+    def stt_trends(case, expected):
+        # HRV requests only trends. Keep exact source/beat guards while copying
+        # just the requested cache projection, not the full ST-T HTTP contract.
+        from ecg_core.stt import analyze_stt
+        basis, feed, revision = stt_signal_inputs(case, expected)
+        result = analyze_stt(case["paths"]["data"], feed.records,
+            case["technical"]["duration_seconds_raw"], analysis_revision=revision,
+            project=lambda analysis: analysis.get('trends', {}).get('leads', {}))
+        linked_read_identity(case, basis)
+        return result
+
+    def stt_candidate_projection(case, expected):
+        from ecg_core.stt import analyze_stt
+        basis, feed, revision = stt_signal_inputs(case, expected)
+        result = analyze_stt(case["paths"]["data"], feed.records,
+            case["technical"]["duration_seconds_raw"], analysis_revision=revision,
+            project=lambda analysis: {
+                'analysis': {'algorithm_version': analysis['algorithm_version']},
+                'automatic_candidates': {'items': analysis['candidates']},
+            })
+        linked_read_identity(case, basis)
+        return result
+
     @app.get("/api/cases/<case_id>/stt-review")
     def stt_review(case_id: str):
         case = case_or_404(case_id)
@@ -597,19 +660,12 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         if 'beat_revision' in expected:
             value = expected['beat_revision']
             if not value.isascii() or not value.isdecimal():
-                raise ValueError('心搏修订须为非负整数')
+                raise ValueError('逐搏修订须为非负整数')
             expected['beat_revision'] = int(value)
-        basis = linked_read_identity(case, expected)
-        editor_value = editor.snapshot(case_id)
-        feed = edited_feed(case, editor_value["document"])
-        overrides = storage.list_beat_overrides(case_id)
-        override_signature = ",".join(f"{item['sample_index']}:{item['class_code']}" for item in overrides)
+        basis, feed, revision = stt_signal_inputs(case, expected)
         result = build_stt_review(
-            case.get("conclusion", ""),
-            case["paths"]["data"],
-            feed.records,
-            case["technical"]["duration_seconds_raw"],
-            analysis_revision=f"editor-{editor_value['revision']}|overrides-{override_signature or 'none'}",
+            case.get("conclusion", ""), case["paths"]["data"], feed.records,
+            case["technical"]["duration_seconds_raw"], analysis_revision=revision,
         )
         linked_read_identity(case, basis)
         result['review_records']=[a for a in stt_annotation_items(case) if a.get('details',{}).get('kind') in ('ST','ST_REVIEW_NOTE')]
@@ -832,7 +888,7 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         # editing paths still compute independently; their results cannot poison
         # a cached index. Each returned projection is detached from cache storage.
         result = read_evidence(case, ('clinical-query', occurrences,
-            tuple(sorted(request.args.items())), key[-2:]),
+            tuple(sorted(request.args.items())), key[3:]),
             lambda: clinical_query_cache.project(key, build_checked,
                 lambda index: query_index(index, request.args, occurrences)))
         linked_read_identity(case, identity)
@@ -1268,15 +1324,35 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         return jsonify(target=exact, waveform={**wave, **scope}, located=True, **scope)
 
     def hrv_measurements(case,window,document,context=None):
+        from ecg_core.rr_quality import annotation_exclusions
         context = context or review_scope(case)
-        key=(case['case_id'],context['analysis_basis'],context['analysis_revision'],
-             context['beat_revision'],int(window),document['profile'],provenance_digest(document))
-        def build_checked():
-            result=analyze_hrv_review(edited_feed(case),case['metadata'].get('start_iso') or case['metadata'].get('start_time'),int(window),document['exclusions'])
+        # Bind actual authored content as well as the public version. Some
+        # imported or method-updated annotations can retain a workflow number.
+        def numerical_inputs():
+            return dict(editor=editor.snapshot(case['case_id'])['document'],
+                        overrides=storage.list_beat_overrides(case['case_id']),
+                        rhythm=annotation_exclusions(storage.list_annotations(case['case_id'])),
+                        clock=case['metadata'].get('start_iso') or case['metadata'].get('start_time'))
+        inputs=numerical_inputs()
+        inputs_digest=provenance_digest(inputs)
+        # Workflow acknowledgements and saving this same exclusion do not
+        # alter numerical inputs. Preserve the verified preview across that
+        # revision only; the complete scope is still checked before publishing.
+        key=(case['case_id'],context['source_digest'],context['data_version'],
+             context['analysis_basis'],context['beat_revision'],inputs_digest,
+             int(window),document['profile'],provenance_digest(document))
+        def ensure_inputs():
             review_scope(case,context)
+            if provenance_digest(numerical_inputs()) != inputs_digest:
+                raise ReportConflict('HRV 数值依据已变化，请重新读取并预览')
+        def build_checked():
+            feed=build_feed(case,inputs['editor'])
+            feed.excluded_rhythm_intervals=inputs['rhythm']
+            result=analyze_hrv_review(feed,inputs['clock'],int(window),document['exclusions'])
+            ensure_inputs()
             return result
         result=hrv_measurement_cache.read(key,build_checked)
-        review_scope(case,context)
+        ensure_inputs()
         return result  # fresh JSON decoding; enrichment cannot mutate retained evidence
 
     @app.get('/api/cases/<case_id>/hrv-review')
@@ -1321,13 +1397,15 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         if state['document_stale']: raise ReportConflict('HRV 排除区间来自旧依据，请打开区间复核并预览当前范围')
         measured=hrv_measurements(case,int(window),state['document'],state['scope'])
         data=measured['reviewed']
-        data['hrv_review']=state
+        # Supply the editor the same verified numerical snapshot as this
+        # analysis. Copy reviewed before adding report-only fields, so no
+        # circular reference or duplicated request is needed on the browser.
+        data['hrv_review']={**state,'evidence':{**measured,'reviewed':copy.deepcopy(data)}}
         data['hrv_review_reference']=hrv_reference(case,int(window))
         data['review_profile']=measured['profile']
         data['review_coverage']=measured['coverage']
         # Use the already-versioned ST research engine; never label device units mV.
-        review=stt_review(case['case_id']).get_json()
-        data['st_trends']=(review.get('analysis') or {}).get('trends',{}).get('leads',{})
+        data['st_trends']=stt_trends(case,state['scope'])
         def event_evidence(index):
             statistics=report_statistics(index,case['metadata'].get('start_iso') or case['metadata'].get('start_time'),feed.document['settings'])
             representatives=[]
@@ -1339,7 +1417,45 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
                     entry=prepare_strip(index,event,{'leads':['II']},lambda a,b,leads,points:read_event_waveform(case['paths']['data'],a,b,leads,min(points,1000)))
                     representatives.append(entry)
             return dict(event_statistics=statistics, representatives=representatives)
-        data.update(clinical_projection(case,event_evidence))
+        # HRV's own exclusion/acknowledgement changes the workflow version,
+        # not the event population. Keep a detached projection only when all
+        # actual event inputs and review decisions are unchanged.
+        def event_inputs():
+            cid=case['case_id'];review=storage.get_review(cid)
+            with storage.connect() as db:
+                refs=[dict(r) for r in db.execute('SELECT template_id,beat_ids FROM beat_edit_template_refs WHERE case_id=? ORDER BY template_id',(cid,))]
+            return dict(editor=editor.snapshot(cid)['document'],
+                        overrides=storage.list_beat_overrides(cid),
+                        templates=storage.list_beat_templates(cid),template_refs=refs,
+                        annotations=storage.list_annotations(cid),
+                        review_steps=review.get('steps',{}),review_events=review.get('events',{}),
+                        candidates=storage.list_candidates(cid),
+                        report_evidence=storage.list_report_evidence(cid),
+                        clock=case['metadata'].get('start_iso') or case['metadata'].get('start_time'),
+                        duration=case['technical']['duration_seconds_raw'],
+                        window=[data['start_s'],data['end_s']])
+        event_digest=provenance_digest(event_inputs())
+        event_key=(case['case_id'],state['scope']['analysis_basis'],event_digest)
+        def assert_events_current():
+            review_scope(case,state['scope'])
+            if provenance_digest(event_inputs())!=event_digest:
+                raise ReportConflict('HRV 事件或复核依据已变化，请重新读取')
+        def workflow_bound(value):
+            if isinstance(value,dict):
+                return any(k=='analysis_revision' or 'scope' in k.lower() or workflow_bound(v) for k,v in value.items())
+            return isinstance(value,list) and any(workflow_bound(v) for v in value)
+        def project_events():
+            projected=clinical_projection(case,event_evidence)
+            assert_events_current()
+            return dict(workflow_bound=workflow_bound(projected),
+                        revision=state['scope']['analysis_revision'],value=projected)
+        projection=hrv_event_cache.read(event_key,project_events)
+        if projection['workflow_bound'] and projection['revision']!=state['scope']['analysis_revision']:
+            # A future or authored representative may carry a full scope.
+            # Retain that exact scope and use normal version-bound reuse.
+            projection=hrv_event_cache.read((*event_key,state['scope']['analysis_revision']),project_events)
+        assert_events_current()
+        data.update(projection['value'])
         return data
 
     def hrv_evidence(case, window=0):
@@ -1819,13 +1935,26 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
     def stt_annotation_items(case):
         items=storage.list_annotations(case['case_id'])
         if not any(a.get('details',{}).get('kind') in ('ST','ST_REVIEW_NOTE') for a in items):return items
-        index=clinical_index(case);events={e['event_id']:e for e in index['events'] if e.get('category')=='ST'}
+        from ecg_core.stt_records import ST_KINDS, decorate_event, mark_stale, use_for
+        from ecg_core.clinical_analysis import beat_basis_version
+        identity=linked_read_identity(case)
+        annotations_digest=provenance_digest(items)
+        beat_version=beat_basis_version(edited_feed(case))
         report=storage.get_report(case['case_id'],'')
-        from ecg_core.stt_records import use_for
+        # A receipt depends on the authored record and beat/settings identity.
+        # The shared decorator is exactly the one used in the full index;
+        # unrelated RR/AF candidates and whole-record event statistics add no
+        # eligibility evidence here and need not be generated after this save.
         for item in items:
-            event=events.get('annotation:'+str(item['id']))
-            if event:
-                item['stt_review_receipt']={**event['stt_review_receipt'],'report_use':use_for(report['composition'],event)}
+            if item.get('details',{}).get('kind') not in ST_KINDS:continue
+            event=decorate_event({'event_id':'annotation:'+str(item['id'])},item,beat_version)
+            source_scope=event.get('stt_source_scope')
+            if source_scope and any(source_scope.get(k)!=identity[k] for k in ('case_id','analysis_basis','beat_revision')):
+                mark_stale(event)
+            item['stt_review_receipt']={**event['stt_review_receipt'],'report_use':use_for(report['composition'],event)}
+        linked_read_identity(case,identity)
+        if provenance_digest(storage.list_annotations(case['case_id'])) != annotations_digest:
+            raise ReportConflict('ST-T复核记录已变化，请重新读取')
         return items
 
     def save_stt_annotation(case,payload,annotation_id=None):
@@ -1855,7 +1984,7 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
             candidate_scope=details.get('stt_candidate_scope')
             if not isinstance(candidate_scope,dict) or any(k not in candidate_scope for k in ('case_id','analysis_basis','analysis_revision','beat_revision')):raise ValueError('ST-T候选须提供当前完整筛查依据')
             linked_read_identity(case,candidate_scope)
-            measured=stt_review(case['case_id']).get_json()
+            measured=stt_candidate_projection(case,candidate_scope)
             chosen=next((c for c in measured['automatic_candidates']['items'] if c['id']==details['stt_candidate_id']),None)
             if chosen is None:raise ReportConflict('原ST-T候选已变化，请重选后核对')
         attached=details.get('range_statistics')
@@ -1928,6 +2057,8 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
             proof['scope']=identity
             if chosen:proof['algorithm_version']=measured['analysis']['algorithm_version']
             details['stt_event_evidence']=proof
+        from ecg_core.stt_compatibility import make_input_binding
+        details['stt_input_binding']=make_input_binding(edited_feed(case),identity,runtime.basis(case))
         item=storage.save_stt_record(case['case_id'],payload,ACTOR,guard=candidate_guard(case,identity),replay_guard=source_guard,
             request_sha256=request_hash,annotation_id=annotation_id,expected_record_version=payload.get('expected_record_version'))
         updated=next(a for a in stt_annotation_items(case) if a['id']==item['id'])
@@ -1963,7 +2094,7 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
             if not isinstance(scope,dict) or any(k not in scope for k in ('case_id','analysis_basis','analysis_revision','beat_revision')):
                 raise ValueError('整段 ST-T 复核须提供完整读取依据')
             candidate_identity=linked_read_identity(case,scope)
-            measured=stt_review(case_id).get_json()
+            measured=stt_candidate_projection(case,scope)
             candidate=next((r for r in measured.get('automatic_candidates',{}).get('items',[]) if r['id']==details['stt_candidate_id']),None)
             if not candidate:raise ReportConflict('ST-T 连续事件依据已变化，请重新读取候选')
             start=round(candidate['start_s']*200);end=round(candidate['end_s']*200)
@@ -2120,10 +2251,15 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         report['paper_statistics']=report_statistics(index,case['metadata'].get('start_iso') or case['metadata'].get('start_time'),edited_feed(case).document['settings'],report['composition'].get('pause_edges_ms'))
         report['paper_statistics']['hrv']=hrv(edited_feed(case))
         report['event_statistics']=query_index(index,{'fast_slow_mode':report['composition'].get('fast_slow_mode','rr')})
-        report['hrv_windows']=hrv_windows(edited_feed(case),case['metadata'].get('start_iso') or case['metadata'].get('start_time'),report['composition'].get('hrv_window',0))
         from ecg_core.report_sections import evidence, validate_pages
         page_keys=validate_pages(report['composition'])
-        report['section_evidence']=report_section_evidence(case,index)
+        supplemental_pages=set(page_keys)-{'cover','summary','hourly','event_strips','hrv_time','hrv_frequency','hrv_overview'}
+        if supplemental_pages.intersection({'st_trend','t_trend','st_events'}):
+            report['section_evidence']=report_section_evidence(case,index)
+        elif supplemental_pages:
+            # Non-ST pages consume only event/RR evidence. The selected ST pages
+            # above retain all-day measurements and representative source beats.
+            report['section_evidence']=evidence(index)
         if any(k in page_keys for k in ('qtd','vcg','twa','sap')):
             report['section_evidence']['advanced']=advanced_evidence(case,index,report['composition'].get('advanced_options'))
         if any(k.startswith('hrv_') for k in page_keys):
@@ -2137,6 +2273,7 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         storage.audit(ACTOR, "report.export_pdf", case_id, f"version={report['version']} review_revision={source_token[1]} privacy={privacy_mode} basis={source_token[2]} sha256={pdf_digest}")
         response = send_file(pdf, mimetype="application/pdf", as_attachment=True, download_name=f"{report_case['case_id']}_心电分析复核报告.pdf")
         response.headers["X-Privacy-Mode"] = privacy_mode
+        response.headers["X-Execution-Engine"] = runtime.engine_id
         response.headers["X-Report-Version"] = str(source_token[0])
         response.headers["X-Review-Revision"] = str(source_token[1])
         response.headers['X-Analysis-Basis'] = source_token[2]

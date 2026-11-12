@@ -52,8 +52,26 @@ function synchronizer(config={}){
   };
   const ctx=vm.createContext({state,ECGAnalysisConsistency:C,api,URLSearchParams,withPhi:x=>x,sttSelectionMatches:s=>owned&&state.currentPage==='stt'&&s.caseId===state.caseId&&s.caseToken===state.caseRequestId&&s.start===state.sttStart&&s.duration===state.sttDuration,
     sttSelectionSnapshot:()=>({...selection}),preserveCurrentIdentity:()=>events.push('privacy'),ECGReportConsistency:{receive:(_,value)=>events.push(['report',value.version])},clinicalWorkflow:{receive:value=>events.push(['workflow',value.revision])},renderSttOverview:()=>events.push('overview'),renderSttWaveform:()=>events.push('wave')});
-  vm.runInContext(actual('syncSavedSttReview'),ctx);
+  vm.runInContext(actual('sttReceiptsForSnapshot')+actual('syncSavedSttReview'),ctx);
   return {ctx,state,selection,old,oldCase,oldReview,oldTrend,oldWave,receipt,annotation,events,requests,waveGate,context:{selection,basis:old,savedAnnotation:saved},run:()=>ctx.syncSavedSttReview({selection,basis:old,savedAnnotation:saved},()=>owned),depart(){owned=false;},caseData};
+}
+async function snapshotReceipts(){
+  const refused=['changedNote','unknownSibling','reportUseChanged','legacySelection'];
+  for(const scenario of ['first','withSibling',...refused]){
+    const f=synchronizer();
+    const baseUse=(event_id,basis_version)=>({event_id,basis_version,table:false,text:false,strip:false});
+    f.context.savedAnnotation.stt_review_receipt.report_use=baseUse('annotation:21','record-current');
+    const raw=clone(f.context.savedAnnotation);delete raw.stt_review_receipt;
+    const sib={id:3,details:{kind:'ST',physician_note:'prior'}},sibling={...sib,stt_review_receipt:{event_id:'annotation:3',basis_version:'prior-basis',review_state:'stale',report_use:baseUse('annotation:3','prior-basis')}};
+    f.caseData.report_workflow.composition={stt_report_use:[]};f.caseData.annotations=[raw];
+    if(scenario!=='first'){f.caseData.annotations.push(clone(sib));if(scenario!=='unknownSibling')f.oldReview.review_records.push(sibling);}
+    if(scenario==='changedNote')f.caseData.annotations[1].details.physician_note='external change';
+    if(scenario==='reportUseChanged')f.caseData.report_workflow.composition.stt_report_use.push({...baseUse('annotation:3','prior-basis'),text:true});
+    if(scenario==='legacySelection')f.caseData.report_workflow.composition={selected_events:[{event_id:'annotation:3'}]};
+    const pending=f.run();f.waveGate.resolve();assert.equal(await pending,true,scenario);
+    assert.equal(f.requests.includes('annotations'),refused.includes(scenario),scenario);
+    if(scenario==='withSibling')assert.equal(f.state.sttReview.review_records[1].stt_review_receipt.review_state,'stale');
+  }
 }
 async function incrementalSuccess(){
   const f=synchronizer(),oldInputs=clone({review:f.oldReview,trend:f.oldTrend,wave:f.oldWave,case:f.oldCase}),pending=f.run();await tick();
@@ -98,5 +116,5 @@ async function savedBaseOrder(){
     else{assert.equal(state.sttDraftBase,JSON.stringify(ctx.sttDraftState()),'saved baseline captured bounds before acknowledged target was cleared');assert.equal(ctx.sttReviewHasUnsavedNote(),false);ctx.sttSetReviewTarget(next);assert.equal(confirms,0,'next candidate was mistaken for an unsaved edit');assert.equal(state.sttSelectedCandidate.item.id,'second');assert.deepEqual(JSON.parse(JSON.stringify(state.codes)),['t_low_flat']);assert.equal(node('#sttEpisodeStart').value,'220');}
   }
 }
-const cases={'known-adapter':knownAdapter,'unknown-adapter':unknownAdapter,'failed-adapter':failedAdapter,'incremental-success':incrementalSuccess,'departed':departed,'finish-fallback':finishFallback,'finish-read-failure':finishReadFailure,'save-base-order':savedBaseOrder,...Object.fromEntries(['sourceChanged','concurrent','endRace','beatChanged','badReceipt','badUuid','badWindow','badLeads'].map(name=>[name,()=>rejectTransition(name)]))};
+const cases={'snapshot-receipts':snapshotReceipts,'known-adapter':knownAdapter,'unknown-adapter':unknownAdapter,'failed-adapter':failedAdapter,'incremental-success':incrementalSuccess,'departed':departed,'finish-fallback':finishFallback,'finish-read-failure':finishReadFailure,'save-base-order':savedBaseOrder,...Object.fromEntries(['sourceChanged','concurrent','endRace','beatChanged','badReceipt','badUuid','badWindow','badLeads'].map(name=>[name,()=>rejectTransition(name)]))};
 (async()=>{const scenario=process.argv[2];if(scenario){assert(cases[scenario],scenario);await cases[scenario]();}else for(const run of Object.values(cases))await run();process.stdout.write('review-write local synchronization checks passed\n');})().catch(error=>{console.error(error);process.exitCode=1;});

@@ -7,7 +7,7 @@ const root=path.resolve(__dirname,'..'),read=p=>fs.readFileSync(path.join(root,p
 const ui=read('static/js/clinical-ui.js'),workflow=read('static/js/clinical-workflow.js');
 function region(source,a,b){const i=source.indexOf(a),j=source.indexOf(b,i);assert(i>=0&&j>i,'Missing shipped source '+a);return source.slice(i,j);}
 const methods=region(ui,'  function mountSavedSTNote(','  function hourlyMatrix(')+region(ui,'  function mountRhythmBrowser(','  function renderRangeDraftNotice(');
-const dirty=region(ui,'  function dirty(){','  function svg('),preflight=region(workflow,'  function renderPreflight()','  function decision(');
+const dirty=region(ui,'  function dirty(','  function svg('),preflight=region(workflow,'  function renderPreflight()','  function decision(');
 // Keep the shipped locate/mountRange closure dependencies in this isolated fixture.
 const selectionHelpers=region(ui,'  const reportCategoryOf=','  function projectRRSelections(')+region(ui,'  function sttReviewed(','  function sttUses(');
 const assets=['static/js/clinical-ui.js','static/js/clinical-workflow.js','static/js/report-workspace.js','static/js/report-range-editor.js','static/js/analysis-consistency.js','static/js/report-consistency.js','static/js/chart-inspection.js','static/css/report-workspace.css','static/css/clinical-review-tools.css'];

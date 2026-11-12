@@ -26,7 +26,7 @@ globalThis.ECGHRVEditor=(()=>{
   function availability(row){if(!row)return '未应用历史排除区间';if(!row.qualified)return (row.qualification_reasons||[]).map(r=>reasons[r]||r).join('；')||'短段不可估计';return row.spectral_qualified?'有可计算短段频谱':reasons[row.spectral_reason]||row.spectral_reason||'频谱不可用';}
   function evidenceOf(value,preview=false){return value?.[preview?'evidence_preview':'evidence']||((value?.baseline&&value?.blocks)?value:null);}
   function blockTable(evidence,{pending=false,stale=false}={}){return (evidence?.blocks||[]).map((b,i)=>{const r=stale?null:b.reviewed;return `<tr data-hrv-edit-row="${esc(b.id)}"><th scope="row"><button type="button" data-hrv-edit-block="${esc(b.id)}" aria-pressed="false">${i+1}</button></th><td>记录后 ${time(b.start_s)}–${time(b.end_s)}${b.complete?'':' · 不完整'}</td><td>${n(b.baseline?.nn_count)} / ${n(r?.nn_count)}</td><td>${n(b.baseline?.sdnn_ms)} / ${n(r?.sdnn_ms)}</td><td>${esc(availability(r))}</td><td>${n(stale?null:b.excluded_s)} 秒${pending?' · 预览':''}</td></tr>`;}).join('')||'<tr><td colspan="6">当前窗口没有可列出的时间段；缺失不显示为零。</td></tr>';}
-  function mount(host,{id,basis={},api,isCurrent=()=>host.isConnected,onSaved=()=>{},onLocate=null,onPendingChange=()=>{},writable=true,windowIndex=0,cancelPreview=true}={}){
+  function mount(host,{id,basis={},api,isCurrent=()=>host.isConnected,onSaved=()=>{},onLocate=null,onPendingChange=()=>{},writable=true,windowIndex=0,cancelPreview=true,initialModel=null}={}){
     if(typeof id!=='string'||!id||typeof api!=='function')throw Error('HRV 编辑器缺少病例或接口');
     let model=null,preview=null,busy=false,failed=false,disposed=false,epoch=0,selected=null,domain='time',error='',waveEpoch=0,rangeDirty=false;
     const base='/api/cases/'+encodeURIComponent(id)+'/hrv-review',mountOwner={};host._hrvEditorOwner=mountOwner;
@@ -80,9 +80,28 @@ globalThis.ECGHRVEditor=(()=>{
       if(selected)select(selected,{fill:!preview});else renderDetail();controls();
     }
     function wireDoc(){return copy(model.document);}
+    let initialRead=initialModel;
+    async function initialSnapshot(){
+      const seed=initialRead;initialRead=null;
+      if(!seed)return null;
+      try{
+        validateScope(seed.scope,id);
+        if(!givenScope(seed.scope,basis)||seed.window_index!==windowIndex||
+           !Number.isSafeInteger(seed.hrv_revision)||seed.hrv_revision<0||
+           typeof seed.digest!=='string'||seed.digest!==seed.document_digest||
+           !seed.document||seed.profile!==seed.document.profile||
+           seed.evidence?.profile?.id!==seed.profile||
+           JSON.stringify(seed.evidence.exclusions)!==JSON.stringify(seed.document.exclusions)||
+           !globalThis.crypto?.subtle)return null;
+        const canonical=v=>Array.isArray(v)?v.map(canonical):v&&typeof v==='object'?Object.fromEntries(Object.keys(v).sort().map(k=>[k,canonical(v[k])])):v;
+        const bytes=new TextEncoder().encode(JSON.stringify(canonical(seed.document)));
+        const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),v=>v.toString(16).padStart(2,'0')).join('');
+        return hash===seed.digest?seed:null;
+      }catch{return null;}
+    }
     async function reload(){
       requireActive();if(busy)return;if(preview||rangeDirty||els.ack.checked||els.note.value.trim()){if(typeof globalThis.confirm!=='function'||!globalThis.confirm('HRV 有尚未保存的区间修改。取消这些修改并重新读取？'))return;await discard();}const requestEpoch=++epoch;busy=true;error='';controls();
-      try{const params=new URLSearchParams({window:String(windowIndex)});for(const k of SCOPE)if(basis[k]!==undefined&&k!=='case_id')params.set(k,String(basis[k]));const result=await api(base+'?'+params.toString());if(!active()||requestEpoch!==epoch)return;validateScope(result.scope,id);if(!Number.isSafeInteger(result.hrv_revision)||result.hrv_revision<0||typeof result.digest!=='string'||!result.document)throw Error('HRV 文档与版本信息不完整');if(!givenScope(result.scope,basis))throw Error('HRV 读取结果与当前页面依据不一致，请重新载入页面');if(result.window_index!==windowIndex)throw Error('HRV 窗口已变化，请重新读取');model=copy(result);preview=null;failed=false;els.ack.checked=false;els.note.value='';const mark=bookmarks.get(bookmarkKey());selected=mark?.selected||selected;domain=mark?.domain||domain;render();if(mark&&q('.hrv-edit-table-scroll'))q('.hrv-edit-table-scroll').scrollTop=mark.scrollTop;
+      try{const params=new URLSearchParams({window:String(windowIndex)});for(const k of SCOPE)if(basis[k]!==undefined&&k!=='case_id')params.set(k,String(basis[k]));const seed=await initialSnapshot();const result=seed||await api(base+'?'+params.toString());if(!active()||requestEpoch!==epoch)return;validateScope(result.scope,id);if(!Number.isSafeInteger(result.hrv_revision)||result.hrv_revision<0||typeof result.digest!=='string'||!result.document)throw Error('HRV 文档与版本信息不完整');if(!givenScope(result.scope,basis))throw Error('HRV 读取结果与当前页面依据不一致，请重新载入页面');if(result.window_index!==windowIndex)throw Error('HRV 窗口已变化，请重新读取');model=copy(result);preview=null;failed=false;els.ack.checked=false;els.note.value='';const mark=bookmarks.get(bookmarkKey());selected=mark?.selected||selected;domain=mark?.domain||domain;render();if(mark&&q('.hrv-edit-table-scroll'))q('.hrv-edit-table-scroll').scrollTop=mark.scrollTop;
       }catch(e){if(active()&&requestEpoch===epoch){failed=true;error='HRV 读取失败：'+e.message;}}
       finally{if(active()&&requestEpoch===epoch){busy=false;controls();}}
     }

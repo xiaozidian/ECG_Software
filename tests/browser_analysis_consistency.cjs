@@ -59,7 +59,9 @@ async function hrv(which){
   const ctx=vm.createContext({state,reportCase:'A',hrvToken:0,hrv:null,copy:x=>x,composition:()=>({hrv_window:0}),qs:()=>target,api:async()=>basis,
     ECGAnalysisConsistency:C,endpoint:()=>g.promise,ECGHrvReport:{ui:()=>{rendered++;return 'new'}},ECGReportPaper:{number(){}},paperModel:()=>({report:{}}),esc:String,run:f=>f(),
     fetch:async url=>{exports++;assert.equal(new URL(url,'http://test').searchParams.get('analysis_revision'),'1');return {ok:false,json:async()=>({error:'依据已变化'})};}});
-  vm.runInContext(ui.slice(ui.indexOf('  async function loadHrv('),ui.indexOf('  async function save(')),ctx);
+  const start=ui.indexOf('  async function loadHrv('),end=ui.indexOf('  async function save(',start);
+  assert(start>=0&&end>start,'HRV loader must be included in the browser lifecycle regression');
+  vm.runInContext(ui.slice(start,end),ctx);
   const pending=ctx.loadHrv('#hrvWindowPanel',0);await tick();
   if(which==='hrv-late-error'){state.caseRequestId++;target.innerHTML='replacement';g.reject(Error('late'));await pending;assert.equal(target.innerHTML,'replacement');return;}
   g.resolve({...basis,window_index:0});await pending;assert.equal(rendered,1);

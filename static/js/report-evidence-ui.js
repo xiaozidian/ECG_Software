@@ -20,7 +20,7 @@ globalThis.ECGReportEvidenceUI=(()=>{
     svg.insertAdjacentHTML('beforeend',`<g data-report-rr-interval><rect x="${a}" y="36" width="${b-a}" height="${Math.max(0,h-36)}" fill="#087e7e" fill-opacity=".06"/><path d="M${a} 36V${h}" stroke="#2678b9"/><path d="M${b} 36V${h}" stroke="#bc6500"/></g>`);
   }
   let generation=0;
-  async function open({api,id,identity,event=null,entry={},target=null,isCurrent=()=>true,onSaved,onCorrect,include=false}){
+  async function open({api,id,identity,prepare,event=null,entry={},target=null,isCurrent=()=>true,onSaved,onCorrect,include=false}){
     document.querySelector('#reportEvidenceDialog')?.close();
     const token=++generation,dialog=document.createElement('dialog');dialog.id='reportEvidenceDialog';dialog.className='modal rw-rr-review-dialog';dialog.setAttribute('aria-labelledby','reportEvidenceTitle');
     dialog.innerHTML='<header class="modal-header"><h2 id="reportEvidenceTitle">核对入报证据</h2><button type="button" data-evidence-close aria-label="关闭核对窗口">×</button></header><p data-evidence-description></p><div class="rw-rr-view-leads" aria-label="当前查看导联"><span>查看导联</span><button type="button" data-evidence-leads="1">1L</button><button type="button" data-evidence-leads="3">3L</button><button type="button" data-evidence-leads="12">12L</button></div><div data-evidence-wave aria-live="polite">正在读取本条原始波形…</div><p data-evidence-metadata></p><p class="rw-hint">核对原始波形、两端心搏、测量和图注。确认记录用于本条证据，疾病诊断由医生另行判断。</p><p role="status" data-evidence-status></p><footer class="modal-actions"><button type="button" data-evidence-retry hidden>重试读取</button><button type="button" data-evidence-correct disabled>修正识别</button><button type="button" data-evidence-close>稍后核对</button><button type="button" class="button primary" data-evidence-confirm disabled></button></footer>';
@@ -29,13 +29,20 @@ globalThis.ECGReportEvidenceUI=(()=>{
     let preview=null,viewWave=null,busy=false,reading=0;
     const current=()=>token===generation&&dialog.open&&dialog.isConnected&&isCurrent();
     const status=dialog.querySelector('[data-evidence-status]'),host=dialog.querySelector('[data-evidence-wave]');
-    const body={...scope(identity),...(target?{target}:{event_id:event.event_id,basis_version:event.basis_version}),entry};
+    let body;
     const disable=()=>{dialog.querySelectorAll('button').forEach(b=>{b.disabled=busy;});button.disabled=busy||!preview||!viewWave;dialog.querySelector('[data-evidence-correct]').disabled=busy||!preview||!viewWave;};
     const fail=error=>{if(!current())return;viewWave=null;status.textContent='读取未完成：'+error.message;host.textContent='本条波形未就绪，请重试后核对。';dialog.querySelector('[data-evidence-retry]').hidden=false;disable();};
     function render(){if(!current()||!viewWave)return;paint(host,viewWave,preview.event);host.dataset.ready='true';host.dataset.leadCount=String(Object.keys(viewWave.leads).length);dialog.querySelectorAll('[data-evidence-leads]').forEach(b=>b.setAttribute('aria-pressed',String(Number(b.dataset.evidenceLeads)===Object.keys(viewWave.leads).length)));}
     async function load(){
       const read=++reading;preview=null;viewWave=null;disable();host.textContent='正在读取本条原始波形…';
-      try{const value=await api(`/api/cases/${id}/report-evidence/preview`,{method:'POST',body:JSON.stringify(body)});if(!current()||read!==reading)return;
+      try{
+        if(!identity&&prepare)identity=await prepare(current);
+        if(!current()||read!==reading){
+          if(token===generation&&dialog.open&&!isCurrent())dialog.close();
+          return;
+        }
+        body={...scope(identity),...(target?{target}:{event_id:event.event_id,basis_version:event.basis_version}),entry};
+        const value=await api(`/api/cases/${id}/report-evidence/preview`,{method:'POST',body:JSON.stringify(body)});if(!current()||read!==reading)return;
         ECGAnalysisConsistency.assertSame(identity,value);preview=value;viewWave=value.waveform;
         const ref=value.event.evidence_ref;dialog.querySelector('#reportEvidenceTitle').textContent=target==='longest'?'核对最长 RR 数值':'核对入报证据';
         dialog.querySelector('[data-evidence-description]').textContent=(value.entry.caption||value.event.label)+(ref?.kind==='rr'?` · RR ${ref.rr_ms} ms · 两端 R 峰相隔 ${ref.endpoint_delta_ms} ms`:'');
@@ -47,7 +54,7 @@ globalThis.ECGReportEvidenceUI=(()=>{
     dialog.querySelectorAll('[data-evidence-close]').forEach(b=>b.onclick=()=>{if(!busy)dialog.close();});
     dialog.addEventListener('cancel',e=>{if(busy)e.preventDefault();});
     const observer=typeof ResizeObserver==='undefined'?null:new ResizeObserver(()=>render());observer?.observe(host);
-    dialog.addEventListener('close',()=>{observer?.disconnect();dialog.remove();});
+    const closed=new Promise(resolve=>dialog.addEventListener('close',()=>{observer?.disconnect();dialog.remove();resolve();},{once:true}));
     dialog.querySelector('[data-evidence-retry]').onclick=load;
     dialog.querySelectorAll('[data-evidence-leads]').forEach(b=>b.onclick=async()=>{
       if(!current()||!preview||busy)return;const read=++reading,n=Number(b.dataset.evidenceLeads),names=n===1?['II']:n===3?['II','V1','V5']:ECGReportEngine.leads;
@@ -66,7 +73,7 @@ globalThis.ECGReportEvidenceUI=(()=>{
       }catch(error){if(current())status.textContent='核对未保存：'+error.message;else globalThis.handleError?.(error);}
       finally{busy=false;if(current())disable();}
     };
-    await load();return dialog;
+    await Promise.race([load(),closed]);return dialog;
   }
   function correction({host,preview,isCurrent=()=>true}){
     document.querySelector('#reportEvidenceCorrection')?.remove();

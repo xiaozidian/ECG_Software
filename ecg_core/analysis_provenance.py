@@ -1,4 +1,7 @@
-"""Bind review to the executing analysis build and original input contents.
+"""Bind review evidence to its verified implementation and original inputs.
+
+An explicitly verified performance upgrade may retain the reviewed reference
+build; the actual executing files remain separately checked and audited.
 
 Not an electronic signature: a database administrator can rewrite the ledger.
 File metadata only accelerates hashes; size/mtime alone are not the identity.
@@ -25,7 +28,7 @@ MODULES = ('config', 'lps_parser', 'repository', 'ebi', 'waveform', 'beat_editor
            'advanced_analysis', 'report_layout', 'report_sections', 'report_pdf',
            'report_paper_pdf', 'report_sections_pdf', 'hrv_report_pdf', 'storage',
            'review_workflow', 'analysis_provenance', 'source_identity', 'workspace_backup',
-           'clinical_query_cache', 'signal_profile', 'rr_review', 'hrv_review', 'terminology', 'review_candidates', 'rr_report', 'evaluation_status', 'report_curation')
+           'clinical_query_cache', 'signal_profile', 'rr_review', 'hrv_review', 'terminology', 'review_candidates', 'rr_report', 'evaluation_status', 'report_curation', 'stt_compatibility', 'performance_compatibility')
 
 LOGGER = logging.getLogger(__name__)
 SIGNATURE_FIELDS = ('device', 'inode', 'bytes', 'mtime_ns', 'ctime_ns')
@@ -39,6 +42,9 @@ def digest(value):
 class AnalysisRuntime:
     def __init__(self, recovery_epoch=''):
         self.recovery_epoch = recovery_epoch
+        self.module_names = MODULES
+        self._basis_bindings = {}
+        self._basis_binding_lock = threading.RLock()
         self.files = {}
         self.file_names = {}
         self.file_hashes = {}
@@ -69,6 +75,18 @@ class AnalysisRuntime:
                 if code is None:
                     raise RuntimeError('无法识别分析程序构建，请使用完整的软件安装包')
                 artifacts[name] = sha256(marshal.dumps(code)).hexdigest()
+        for policy_name in ('performance-compatibility.json','performance-parent-engines.json'):
+            policy_path = root.parent / policy_name
+            if not policy_path.is_file():continue
+            signature=file_signature(policy_path)
+            policy_hash=file_evidence(policy_path)['sha256']
+            if file_signature(policy_path)!=signature:
+                raise ReportConflict('兼容策略在启动期间变化，请重新启动')
+            artifact_name='performance-compatibility-policy' if policy_name=='performance-compatibility.json' else 'performance-parent-engines'
+            self.files[policy_path]=signature
+            self.file_names[policy_path]=artifact_name
+            self.file_hashes[policy_path]=policy_hash
+            artifacts[artifact_name]=policy_hash
         dependencies = {'python': platform.python_version()}
         for package in ('numpy', 'scipy', 'reportlab'):
             try:
@@ -175,6 +193,27 @@ class AnalysisRuntime:
                 pass  # Content verification succeeded independently of logging.
 
     def basis(self, case):
+        current=self.direct_basis(case)
+        with self._basis_binding_lock:
+            entry=self._basis_bindings.get(case['case_id'])
+            if entry and entry['execution_basis']==current['digest']:
+                return copy.deepcopy(entry['reference_basis'])
+            if entry:self._basis_bindings.pop(case['case_id'],None)
+        return current
+
+    def bind_compatible_basis(self, case, certificate):
+        self.assert_current()
+        current=self.direct_basis(case)
+        if current['digest']!=certificate.get('execution_basis'):
+            raise ReportConflict('升级核对期间原始数据已变化，未保留旧依据')
+        previous=certificate.get('reference_basis') or {}
+        if (previous.get('inputs')!=current['inputs']
+                or certificate.get('execution_engine_id')!=self.engine_id):
+            raise ReportConflict('升级证据不一致，未保留旧依据')
+        with self._basis_binding_lock:
+            self._basis_bindings[case['case_id']]=copy.deepcopy(certificate)
+
+    def direct_basis(self, case):
         self.assert_current()
         paths = {k: case['paths'][k] for k in ('data', 'ebi', 'lps')}
         try:

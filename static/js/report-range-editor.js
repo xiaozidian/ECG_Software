@@ -3,7 +3,7 @@
 
 const ECGUnsavedNavigation=(()=>{
  let open=false;
- async function resolve({title,detail,stayLabel='继续编辑',saveLabel='保存并继续',discardLabel='放弃修改并继续',save,discard,isCurrent=()=>true}){
+ async function resolve({title,detail,stayLabel='继续编辑',saveLabel='保存并继续',discardLabel='放弃修改并继续',save,discard,prepare,isCurrent=()=>true}){
   if(open)return false;open=true;
   const focus=document.activeElement,dialog=document.createElement('dialog');
   dialog.id='unsavedChangesDialog';dialog.className='modal unsaved-changes-dialog';
@@ -11,7 +11,7 @@ const ECGUnsavedNavigation=(()=>{
   dialog.setAttribute('aria-describedby','unsavedChangesDetail');
   dialog.innerHTML='<header class="modal-header"><h2 id="unsavedChangesTitle"></h2></header><p id="unsavedChangesDetail"></p><p data-unsaved-error role="alert"></p><footer class="modal-actions"><button type="button" class="button secondary" data-unsaved-stay autofocus>继续编辑</button><button type="button" class="button secondary" data-unsaved-discard></button><button type="button" class="button primary" data-unsaved-save></button></footer>';
   dialog.querySelector('h2').textContent=title;dialog.querySelector('#unsavedChangesDetail').textContent=detail;
-  const saveButton=dialog.querySelector('[data-unsaved-save]');saveButton.textContent=saveLabel;saveButton.hidden=!save;
+  const saveButton=dialog.querySelector('[data-unsaved-save]');saveButton.textContent=saveLabel;saveButton.hidden=!save&&!prepare;saveButton.disabled=!!prepare;
   dialog.querySelector('[data-unsaved-stay]').textContent=stayLabel;dialog.querySelector('[data-unsaved-discard]').textContent=discardLabel;dialog.querySelector('[data-unsaved-discard]').hidden=!discard;document.body.append(dialog);
   return new Promise(resolve=>{
    let busy=false,done=false;
@@ -24,6 +24,18 @@ const ECGUnsavedNavigation=(()=>{
     finally{busy=false;if(!done)dialog.querySelectorAll('button').forEach(b=>b.disabled=false);}
    }
    saveButton.onclick=()=>act(save);dialog.querySelector('[data-unsaved-discard]').onclick=()=>act(discard);dialog.showModal();
+   if(prepare){
+    const current=()=>!done&&isCurrent();
+    Promise.resolve().then(()=>prepare(current)).then(ready=>{
+     if(!current()||!ready){finish(false);return;}
+     dialog.querySelector('#unsavedChangesDetail').textContent=ready.detail;
+     save=ready.save;saveButton.disabled=false;
+    }).catch(error=>{
+     if(!current()){finish(false);return;}
+     dialog.querySelector('#unsavedChangesDetail').textContent='';
+     dialog.querySelector('[data-unsaved-error]').textContent=error.message;
+    });
+   }
   });
  }
  return {resolve,isOpen:()=>open};

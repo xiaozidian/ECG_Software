@@ -103,7 +103,7 @@ def test_old_semantic_basis_is_rejected_even_when_event_id_survives():
     event = query_index(index, {'category':'S','mode':'bigeminy'})['items'][0]
     assert event['basis_version'].endswith('-periodic-v2')
     old = event['basis_version'].removesuffix('-periodic-v2')
-    assert index['data_version'].endswith('-periodic-v2-af-end-v1-status-v2')
+    assert index['data_version'].endswith('-periodic-v2-af-end-v1-status-v2-no-artifact-v1')
     with pytest.raises(ValueError, match='失效'):
         validate_report(index, {'selected_events':[{'event_id':event['event_id'],'basis_version':old}]},review,True)
 
