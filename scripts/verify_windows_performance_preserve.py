@@ -205,8 +205,33 @@ def compare_database(before, after, package):
 
 async def verify_hrv(page, case_id):
     from scripts.verify_windows_ui15_upgrade import get
+    # UI_saveflow intentionally leaves a later ST draft unsaved. Navigate as a
+    # physician and explicitly discard only that draft, never reset state or
+    # silently write it into the reviewed records.
+    annotations_before_navigation = await get(page, case_id, 'annotations')
+    navigation_writes = []
+    def observe_navigation(request):
+        if request.method not in ('GET', 'HEAD', 'OPTIONS'):
+            navigation_writes.append(dict(method=request.method, url=request.url))
+    page.on('request', observe_navigation)
     await page.locator('.nav-item[data-page="trends"]').click()
+    await page.wait_for_function("()=>state.currentPage==='trends'||!!document.querySelector('#unsavedChangesDialog[open]')", timeout=180000)
+    discarded_STT_draft = False
+    if await page.locator('#unsavedChangesDialog[open]').count():
+        require(await page.locator('#unsavedChangesTitle').inner_text() == 'ST-T 复核尚未保存',
+                'Unexpected unsaved-navigation prompt before HRV')
+        require(await page.evaluate("()=>state.currentPage==='stt'&&sttReviewHasUnsavedNote()"),
+                'ST draft prompt is not attached to the active ST workbench')
+        await page.locator('#unsavedChangesDialog [data-unsaved-discard]').click()
+        await page.locator('#unsavedChangesDialog').wait_for(state='hidden', timeout=180000)
+        discarded_STT_draft = True
+    await page.wait_for_function("()=>state.currentPage==='trends'&&!document.querySelector('#unsavedChangesDialog[open]')", timeout=180000)
     await page.locator('[data-hrv-edit-block]').first.wait_for(timeout=180000)
+    page.remove_listener('request', observe_navigation)
+    annotations_after_navigation = await get(page, case_id, 'annotations')
+    exact(annotations_before_navigation['items'], annotations_after_navigation['items'],
+          'Discarding the unsaved ST draft changed previously saved ST records')
+    require(not navigation_writes, 'Navigation silently saved or changed physician records')
     before = await get(page, case_id, 'hrv-review?window=0&analysis=edited')
     await page.locator('[data-hrv-edit-start]').fill('140')
     await page.locator('[data-hrv-edit-end]').fill('150')
@@ -230,7 +255,9 @@ async def verify_hrv(page, case_id):
     require(restored['hrv_revision']>saved['hrv_revision'], 'HRV undo revision was not persisted')
     return dict(status='passed', preview_seconds=preview, saved_update_seconds=apply,
                 original_hrv_revision=before['hrv_revision'],saved_hrv_revision=saved['hrv_revision'],restored_hrv_revision=restored['hrv_revision'],
-                actual_exclusion_saved_and_undone=True,original_document_restored=True)
+                actual_exclusion_saved_and_undone=True,original_document_restored=True,
+                STT_unsaved_navigation=dict(discarded_draft_via_visible_prompt=discarded_STT_draft,
+                    saved_records_unchanged=True,navigation_writes=navigation_writes,current_page='trends'))
 
 
 async def formal_pdf(page, case_id):
