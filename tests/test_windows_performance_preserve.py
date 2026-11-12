@@ -3,7 +3,7 @@ import copy
 from pathlib import Path
 import pytest
 from scripts.verify_windows_performance_preserve import (
-    APP, BASE_APP, BASE_PE_SHA, metadata_identity, compare_api, fingerprint,
+    APP, BASE_APP, BASE_PE_SHA, metadata_identity, compare_api, compare_nonempty_scopes, fingerprint,
 )
 
 
@@ -84,3 +84,38 @@ def test_current_package_requires_policy_and_original20_content_can_be_verified(
         package_inventory(root)
     (root/'RELEASE.json').write_text(json.dumps({'packaging_version':'1.0.20'}))
     package_inventory(root)
+
+
+def authored_baseline():
+    before, _, _ = baseline()
+    before['report']['composition']['selected_events'].append({'event_id':'candidate:1'})
+    before['authored_HRV'] = dict(document={'exclusions':[{'id':'x-1','start_sample':28000,'end_sample':30000,'reason':'authored'}]},
+        hrv_revision=1, document_stale=False, confirmation={'valid':True,'scope':{'window':0},'note':'original'},
+        scope={'analysis_basis':'original'},document_scope={'analysis_basis':'original'})
+    before['authored_RR_candidates'] = {'items':[{'id':1,'kind':'rr','status':'active','scope':{'analysis_basis':'original'}}]}
+    before['authored_RR_events'] = {'items':[{'event_id':'candidate:1','evidence_ref':{'previous':{'sample_index':100},'terminal':{'sample_index':300}},
+        'evidence_review':{'status':'confirmed','actor':'math-reviewer','presentations':[{'start_s':0,'end_s':7}]}}]}
+    return before, copy.deepcopy(before)
+
+
+def test_nonempty_authored_HRV_and_RR_scope_continuity_requires_real_entries():
+    before, after = authored_baseline()
+    proof = compare_nonempty_scopes(before, after)
+    assert proof['HRV_exclusion_count']==proof['RR_active_candidates']==proof['RR_confirmed_report_pairs']==1
+
+
+@pytest.mark.parametrize('fault',['HRV-empty','HRV-stale','HRV-unconfirmed','HRV-revision-reset','HRV-scope-changed',
+                                  'RR-empty','RR-withdrawn','RR-pending','RR-presentation-lost','RR-removed-from-report'])
+def test_nonempty_scope_verdict_rejects_empty_or_changed_authored_history(fault):
+    before, after = authored_baseline()
+    if fault=='HRV-empty': before['authored_HRV']['document']['exclusions']=[];after=copy.deepcopy(before)
+    if fault=='HRV-stale': before['authored_HRV']['document_stale']=True;after=copy.deepcopy(before)
+    if fault=='HRV-unconfirmed': before['authored_HRV']['confirmation']['valid']=False;after=copy.deepcopy(before)
+    if fault=='HRV-revision-reset': after['authored_HRV']['hrv_revision']=0
+    if fault=='HRV-scope-changed': after['authored_HRV']['scope']['analysis_basis']='new'
+    if fault=='RR-empty': before['authored_RR_candidates']['items']=[];after=copy.deepcopy(before)
+    if fault=='RR-withdrawn': after['authored_RR_candidates']['items'][0]['status']='withdrawn'
+    if fault=='RR-pending': after['authored_RR_events']['items'][0]['evidence_review']['status']='pending'
+    if fault=='RR-presentation-lost': after['authored_RR_events']['items'][0]['evidence_review']['presentations']=[]
+    if fault=='RR-removed-from-report': after['report']['composition']['selected_events']=[{'event_id':'annotation:1'}]
+    with pytest.raises(AssertionError): compare_nonempty_scopes(before, after)

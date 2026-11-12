@@ -283,6 +283,75 @@ async def formal_pdf(page, case_id):
                 old_approved_report_exported_without_reapproval=True)
 
 
+async def author_nonempty_scopes(page, case_id):
+    """Persist real old20 HRV and RR decisions through its visible controls."""
+    from scripts.verify_windows_ui15_upgrade import get
+    await page.locator('.nav-item[data-page="trends"]').click()
+    await page.locator('[data-hrv-edit-block]').first.wait_for(timeout=180000)
+    await page.locator('[data-hrv-edit-start]').fill('140')
+    await page.locator('[data-hrv-edit-end]').fill('150')
+    await page.locator('[data-hrv-edit-reason]').fill('Original20 mathematical authored exclusion retained by21')
+    await page.locator('[data-hrv-edit-action="exclude"]').click()
+    await page.locator('[data-hrv-edit-action="apply"]').wait_for(timeout=180000)
+    await page.locator('[data-hrv-edit-action="apply"]').click()
+    await page.wait_for_function("()=>document.querySelector('.hrv-edit [data-hrv-edit-action=undo]:enabled')&&document.querySelector('[data-hrv-edit-exclusions]').textContent.includes('Original20 mathematical authored exclusion retained by21')", timeout=180000)
+    await page.locator('[data-hrv-edit-ack]').check()
+    await page.locator('[data-hrv-edit-note]').fill('Original20 mathematical window acknowledgement retained by21')
+    await page.locator('[data-hrv-edit-action="confirm"]').click()
+    await page.wait_for_function("()=>document.querySelector('.hrv-edit[aria-busy=false] [data-hrv-edit-confirmation]')?.textContent.includes('已保存')", timeout=180000)
+    hrv = await get(page, case_id, 'hrv-review?window=0&analysis=edited')
+    require(hrv['document']['exclusions'] and hrv['hrv_revision']>0 and hrv['confirmation']['valid'],
+            'Old20 did not actually persist and confirm a nonempty HRV exclusion')
+    await page.evaluate("""async()=>{const b='/api/cases/'+state.caseId,ledger=await api(b+'/evidence-candidates'),e=(await api(b+'/report-rr-evidence')).event;
+        await ECGReviewCandidates.choose({identity:ledger,item:{sample_index:e.sample_index,rr_ms:e.rr_ms,class_code:e.evidence_ref.terminal.class_code}});} """)
+    caption = 'Original20 mathematical reviewed RR retained by21'
+    await page.locator('.review-candidate-dialog input').fill(caption)
+    await page.locator('[data-candidate-save]').click()
+    await page.locator('[data-candidate-open-report]').wait_for()
+    await page.locator('[data-candidate-open-report]').click()
+    ready = "()=>state.currentPage==='report'&&!state.reportDirty&&!state.reportSaving&&!state.reportViewLoading&&!state.reportEvidenceLoading"
+    await page.wait_for_function(ready)
+    rows = await get(page, case_id, 'report-events?category=rr_interval&rr_source=manual&limit=1000')
+    event = next(e for e in rows['items'] if e['label']==caption)
+    await page.locator('tr[data-report-event-id="'+event['event_id']+'"] [data-include]').check()
+    await page.wait_for_function(ready)
+    await page.locator('#reportV2Nav [data-category="strips"]').click()
+    await page.wait_for_function(ready)
+    card = page.locator('.rw-strip[data-rw-key="'+event['event_id']+'"]')
+    await card.locator('[data-review-evidence]').click()
+    await page.locator('#reportEvidenceDialog [data-evidence-confirm]:enabled').wait_for(timeout=180000)
+    await page.locator('#reportEvidenceDialog [data-evidence-confirm]').click()
+    await page.locator('#reportEvidenceDialog').wait_for(state='detached')
+    await page.wait_for_function(ready)
+    reviewed = await get(page, case_id, 'report-events?category=rr_interval&rr_source=manual&limit=1000')
+    actual = next(e for e in reviewed['items'] if e['event_id']==event['event_id'])
+    require(actual['evidence_review']['status']=='confirmed' and actual['evidence_review']['presentations'],
+            'Old20 RR pair was not actually acknowledged with a saved presentation')
+    return dict(status='passed',HRV_exclusions=len(hrv['document']['exclusions']),
+                HRV_revision=hrv['hrv_revision'],HRV_window_confirmation_valid=True,
+                RR_event_id=event['event_id'],RR_original_pair=actual['evidence_ref'],
+                RR_review=actual['evidence_review'],storage='HRV document; RR candidate/composition/report evidence review')
+
+
+def compare_nonempty_scopes(before, after):
+    for key in ('authored_HRV','authored_RR_candidates','authored_RR_events'):
+        exact(before[key], after[key], 'Upgrade changed nonempty authored scope: '+key)
+    hrv = after['authored_HRV']
+    require(hrv['document']['exclusions'] and hrv['hrv_revision']>0 and hrv['confirmation']['valid']
+            and not hrv['document_stale'], 'Retained HRV document/confirmation is empty or stale')
+    candidates = after['authored_RR_candidates']['items']
+    require(candidates and all(c['status']=='active' for c in candidates), 'Retained manual RR candidate missing')
+    events = after['authored_RR_events']['items']
+    require(events and all(e['evidence_review']['status']=='confirmed' and e['evidence_review']['presentations'] for e in events),
+            'Retained RR pair/presentation acknowledgement is missing')
+    chosen = {p['event_id'] for p in after['report']['composition']['selected_events']}
+    require(all(e['event_id'] in chosen for e in events), 'Retained reviewed RR figure was removed from report')
+    return dict(status='passed',HRV_exclusion_count=len(hrv['document']['exclusions']),
+                HRV_revision=hrv['hrv_revision'],HRV_scope_document_and_confirmation_exact=True,
+                HRV_window_confirmation_valid=True,RR_active_candidates=len(candidates),RR_confirmed_report_pairs=len(events),
+                RR_original_pair_scope_presentation_actor_and_report_use_exact=True)
+
+
 async def approve_original20(page, case_id):
     from scripts.verify_windows_ui15_upgrade import get
     async def settled():
@@ -395,6 +464,14 @@ async def run(args, result):
                     return manager_tab
                 from scripts.verify_stt_comprehensive_ui import verify as stt_flow
                 from scripts.verify_af_multistrip_ui import verify as af_flow
+                async def capture_current():
+                    value = await capture(page, doctor_source.CASE_ID, get, after=True)
+                    if args.nonempty_reviewed_scopes:
+                        for key, endpoint in [('authored_HRV','hrv-review?window=0&analysis=edited'),
+                                              ('authored_RR_candidates','evidence-candidates'),
+                                              ('authored_RR_events','report-events?category=rr_interval&rr_source=manual&limit=1000')]:
+                            value[key] = await get(page, doctor_source.CASE_ID, endpoint)
+                    return value
                 context = await new_context()
                 if old is None:
                     page = await begin(exe)
@@ -427,8 +504,13 @@ async def run(args, result):
                     result['original20_STT_baseline'] = await stt_flow(page, doctor_source.CASE_ID, args.output.parent / 'original20-STT')
                     result['original20_AF_baseline'] = await af_flow(page, doctor_source.CASE_ID, args.output.parent / 'original20-AF',
                         source_kind='mathematical_synthetic', note='Original20 mathematical baseline for actual21 upgrade')
+                    if args.nonempty_reviewed_scopes:
+                        result['old20_authored_nonempty_scopes'] = await author_nonempty_scopes(page, doctor_source.CASE_ID)
                     await approve_original20(page, doctor_source.CASE_ID)
-                    before = await capture(page, doctor_source.CASE_ID, get, after=True)
+                    before = await capture_current()
+                    if args.nonempty_reviewed_scopes:
+                        compare_nonempty_scopes(before, before)
+                        (args.output.parent / 'original20-nonempty-scopes.json').write_text(json.dumps(before,ensure_ascii=False,indent=2)+'\n')
                     await context.close()
                     context = None
                     await stop(old_exe, home)
@@ -448,13 +530,16 @@ async def run(args, result):
                     await page.locator('#openFirstCase').click()
                     await page.wait_for_function('id=>state.caseId===id&&!state.caseLoading', arg=doctor_source.CASE_ID)
                     await page.wait_for_function("()=>state.currentPage==='review'&&overviewWorkbench.waveformBasis()&&Object.keys(state.waveform?.leads||{}).join(',')==='II,V1,V5'")
-                    after = await capture(page, doctor_source.CASE_ID, get, after=True)
+                    after = await capture_current()
                     require(await page.evaluate("state.currentPage==='review'&&Object.keys(state.waveform?.leads||{}).join(',')==='II,V1,V5'"), 'Upgraded case did not open in overview with loaded three-lead ECG')
                     result['API_upgrade'] = compare_api(before, after, package)
+                    if args.nonempty_reviewed_scopes:
+                        result['nonempty_scope_upgrade'] = compare_nonempty_scopes(before, after)
+                        (args.output.parent / 'actual21-nonempty-scopes.json').write_text(json.dumps(after,ensure_ascii=False,indent=2)+'\n')
                     result['formal_PDF'] = await formal_pdf(page, doctor_source.CASE_ID)
                     result['pdf_operations'] = 1
                     for _ in range(3):
-                        exact(after, await capture(page, doctor_source.CASE_ID, get, after=True), 'Repeated new21 GET changed retained work')
+                        exact(after, await capture_current(), 'Repeated new21 GET changed retained work')
                     await context.close()
                     context = None
                     await stop(exe, home)
@@ -495,8 +580,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--software-archive', type=Path, required=True)
     parser.add_argument('--base-software-archive', type=Path)
+    parser.add_argument('--nonempty-reviewed-scopes', action='store_true')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
+    require(not args.nonempty_reviewed_scopes or args.base_software_archive,
+            'Authored nonempty scope retention requires an actual original20 upgrade')
     require(not args.output.exists(), 'Preserve original native attempts')
     args.output.parent.mkdir(parents=True, exist_ok=True)
     result = dict(status='running', mode='actual-original20-to21' if args.base_software_archive else 'actual-fresh21-UI-saveflow',
