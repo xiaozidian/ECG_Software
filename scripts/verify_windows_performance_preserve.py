@@ -404,7 +404,7 @@ async def run(args, result):
                     await page.locator('#openFirstCase').click()
                     await page.wait_for_function('id=>state.caseId===id&&!state.caseLoading', arg=doctor_source.CASE_ID)
                     after = await capture(page, doctor_source.CASE_ID, get, after=True)
-                    require(await page.evaluate("state.currentPage==='overview'"), 'Upgraded case did not open in overview')
+                    require(await page.evaluate("state.currentPage==='review'&&Object.keys(state.waveform?.leads||{}).join(',')==='II,V1,V5'"), 'Upgraded case did not open in overview with loaded three-lead ECG')
                     result['API_upgrade'] = compare_api(before, after, package)
                     result['formal_PDF'] = await formal_pdf(page, doctor_source.CASE_ID)
                     result['pdf_operations'] = 1
