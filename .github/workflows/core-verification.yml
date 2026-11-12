@@ -94,7 +94,7 @@ jobs:
       - name: Verify actual mathematical AF candidate and multi-figure workflow in Chromium
         run: python scripts/verify_af_multistrip_ui.py --output build/core-verification/af-multistrip-web
       - name: Verify performance caches and authored ST-T review preservation
-        run: python -m pytest -q tests/test_stt_compatibility.py tests/test_performance_compatibility.py tests/test_performance_continuity_transaction.py tests/test_stt_light_receipts.py tests/test_stt_projection.py tests/test_hrv_evidence_cache.py tests/test_report_pdf_page_dependencies.py -p no:cacheprovider --junitxml=build/core-verification/performance-review-preservation-junit.xml
+        run: python -m pytest -q tests/test_stt_compatibility.py tests/test_performance_compatibility.py tests/test_performance_continuity_transaction.py tests/test_windows21_continuation.py tests/test_stt_light_receipts.py tests/test_stt_projection.py tests/test_hrv_evidence_cache.py tests/test_report_pdf_page_dependencies.py -p no:cacheprovider --junitxml=build/core-verification/performance-review-preservation-junit.xml
       - name: Retain source identity and test evidence
         if: always()
         uses: actions/upload-artifact@v4
