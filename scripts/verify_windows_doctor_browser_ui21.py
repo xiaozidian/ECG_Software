@@ -701,6 +701,8 @@ async def save_math_work(page, result):
 
 async def download_pdf(page, result, home):
     await report_ready(page)
+    before = await browser_json(page, "/api/cases/" + CASE_ID + "/report?analysis=edited")
+    started = time.perf_counter()
     async with page.expect_response(lambda response: urlsplit(response.url).path.endswith("/report.pdf")) as native_pdf:
         async with page.expect_download() as pending:
             await page.locator("#downloadReport").click()
@@ -709,12 +711,34 @@ async def download_pdf(page, result, home):
     download = await pending.value
     path = home / "temporary-report.pdf"
     await download.save_as(path)
-    require(path.read_bytes().startswith(b"%PDF-") and path.stat().st_size > 1000, "Native report export did not produce an actual PDF")
+    elapsed = time.perf_counter() - started
+    body = path.read_bytes()
+    require(body.startswith(b"%PDF-") and path.stat().st_size > 1000, "Native report export did not produce an actual PDF")
     actual_hash = digest(path)
+    pages = len(re.findall(rb"/Type\s*/Page\b", body))
+    require(pages > 0, "Downloaded reportlab PDF has no actual page objects")
     require(response.headers.get("x-report-sha256") == actual_hash, "Downloaded PDF differs from the native report integrity header")
-    record(result, "native-draft-pdf-download", {"bytes": path.stat().st_size, "sha256": actual_hash, "content_type": response.headers["content-type"], "native_integrity_header_matches": True, "artifact_published": False})
+    require(response.headers.get("x-report-version") == str(before['version']), "Exported PDF is not the selected report version")
+    after = await browser_json(page, "/api/cases/" + CASE_ID + "/report?analysis=edited")
+    require(after['status'] == before['status'] and after['version'] == before['version']
+            and after['analysis_provenance'] == before['analysis_provenance'], "PDF download changed report approval or version")
+    evidence = {"seconds":elapsed,"bytes":path.stat().st_size,"sha256":actual_hash,"page_count":pages,
+                "report_status":before['status'],"report_version":before['version'],"review_revision":before['review_revision'],
+                "content_type":response.headers["content-type"],"native_integrity_header_matches":True,"artifact_published":False}
+    record(result, "native-PDF-download", evidence)
     path.unlink()
-    return response.request
+    return response.request, evidence
+
+
+async def measure_pdf_hrv(page, result, home, repeat, verified_attachments):
+    request, pdf = await download_pdf(page, result, home)
+    verified_attachments.append(request)
+    record(result, "native-24h-M01-actual-PDF-performance-repeat-" + str(repeat),
+           {**pdf,"repeat":repeat,"actual_duration_s":86400,"physical_printing":False})
+    from verify_windows_performance_preserve import verify_hrv
+    hrv_update = await verify_hrv(page, CASE_ID)
+    record(result, "native-24h-M01-actual-HRV-save-undo-performance-repeat-" + str(repeat),
+           {**hrv_update,"repeat":repeat,"actual_duration_s":86400})
 
 
 async def feedback_check(manager, result, home, states):
@@ -1097,13 +1121,7 @@ async def verify(args, receipt):
                             record(receipt, "native-af-afl-single-screen-editor", af_editor)
                             await fault_checks(page, receipt, selector, sample)
                             annotation_id = await save_math_work(page, receipt)
-                            pdf_started = time.perf_counter()
-                            verified_pdf_request = await download_pdf(page, receipt, home)
-                            verified_attachment_requests.append(verified_pdf_request)
-                            record(receipt, "native-24h-M01-actual-PDF-performance", {"seconds":time.perf_counter()-pdf_started,"actual_duration_s":86400,"draft_PDF":True,"physical_printing":False})
-                            from verify_windows_performance_preserve import verify_hrv
-                            hrv_update = await verify_hrv(page, CASE_ID)
-                            record(receipt, "native-24h-M01-actual-HRV-save-undo-performance", hrv_update)
+                            await measure_pdf_hrv(page, receipt, home, iteration+1, verified_attachment_requests)
                             await report_ready(page)
                             await page.screenshot(path=str(screenshots / "mathematical-report-draft.png"), full_page=True)
                             record(receipt, "mathematical-only-screenshot", {"file": "browser-screenshots/mathematical-report-draft.png"})
@@ -1204,6 +1222,10 @@ async def verify(args, receipt):
                             resumed = await resume(context, manager_state, workspace_id)
                             await live_state(home, workspace_id, active_exe)
                             await persistence_check(resumed, receipt, "frozen-exe-stop-relaunch-preserves-work", annotation_id)
+                        else:
+                            await save_math_work(page, receipt)
+                            await measure_pdf_hrv(page, receipt, home, iteration+1, verified_attachment_requests)
+                            await report_ready(page)
                     except Exception:
                         # Capture only the disposable M01 UI, before closing
                         # its browser, so a failed check retains its actual state.

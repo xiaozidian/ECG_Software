@@ -17,6 +17,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import sys
 import tempfile
 from urllib.parse import urlsplit
@@ -206,6 +207,7 @@ async def verify_hrv(page, case_id):
     from scripts.verify_windows_ui15_upgrade import get
     await page.locator('.nav-item[data-page="trends"]').click()
     await page.locator('[data-hrv-edit-block]').first.wait_for(timeout=180000)
+    before = await get(page, case_id, 'hrv-review?window=0&analysis=edited')
     await page.locator('[data-hrv-edit-start]').fill('140')
     await page.locator('[data-hrv-edit-end]').fill('150')
     await page.locator('[data-hrv-edit-reason]').fill('Windows21 mathematical performance check')
@@ -217,26 +219,40 @@ async def verify_hrv(page, case_id):
     await page.locator('[data-hrv-edit-action="apply"]').click()
     await page.wait_for_function("()=>document.querySelector('.hrv-edit [data-hrv-edit-action=undo]:enabled')&&document.querySelector('[data-hrv-edit-exclusions]').textContent.includes('Windows21 mathematical performance check')", timeout=180000)
     apply = time.perf_counter()-started
+    saved = await get(page, case_id, 'hrv-review?window=0&analysis=edited')
+    require(saved['hrv_revision']>before['hrv_revision'] and any(r.get('reason')=='Windows21 mathematical performance check' for r in saved['document']['exclusions']), 'Actual HRV exclusion was not persisted')
     await page.locator('[data-hrv-edit-action="undo"]').click()
     await page.locator('[data-hrv-edit-action="apply"]').wait_for(timeout=180000)
     await page.locator('[data-hrv-edit-action="apply"]').click()
     await page.wait_for_function("()=>document.querySelector('.hrv-edit [data-hrv-edit-action=redo]:enabled')&&!document.querySelector('[data-hrv-edit-exclusions]').textContent.includes('Windows21 mathematical performance check')", timeout=180000)
+    restored = await get(page, case_id, 'hrv-review?window=0&analysis=edited')
+    exact(before['document'], restored['document'], 'HRV undo did not restore the original saved document')
+    require(restored['hrv_revision']>saved['hrv_revision'], 'HRV undo revision was not persisted')
     return dict(status='passed', preview_seconds=preview, saved_update_seconds=apply,
-                actual_exclusion_saved_and_undone=True)
+                original_hrv_revision=before['hrv_revision'],saved_hrv_revision=saved['hrv_revision'],restored_hrv_revision=restored['hrv_revision'],
+                actual_exclusion_saved_and_undone=True,original_document_restored=True)
 
 
 async def formal_pdf(page, case_id):
     from scripts.verify_windows_ui15_upgrade import get
     address = urlsplit(page.url)
+    before = await get(page, case_id, 'report')
+    require(before['status']=='reviewed', 'Expected the original physician-approved report before formal export')
     started = time.perf_counter()
-    response = await page.request.get(address.scheme+'://'+address.netloc+'/api/cases/'+case_id+'/report.pdf')
+    response = await page.request.get(address.scheme+'://'+address.netloc+'/api/cases/'+case_id+'/report.pdf?expected_version='+str(before['version'])+'&expected_review_revision='+str(before['review_revision']))
     body = await response.body()
+    elapsed = time.perf_counter()-started
     require(response.headers.get('x-report-sha256') == sha256(body).hexdigest(), 'Actual PDF integrity header differs')
     require(response.headers.get('content-type', '').startswith('application/pdf'), 'Unexpected formal PDF content type')
     require(response.ok and body.startswith(b'%PDF-') and len(body)>1000, 'Previously approved report cannot export formal PDF after upgrade')
+    pages = len(re.findall(rb'/Type\s*/Page\b', body))
+    require(pages>0, 'Formal report PDF has no actual page objects')
+    require(response.headers.get('x-report-version')==str(before['version']) and response.headers.get('x-review-revision')==str(before['review_revision']), 'Formal PDF used a different report or review version')
     report = await get(page, case_id, 'report')
-    require(report['status']=='reviewed', 'Formal export silently changed approval to draft')
-    return dict(status='passed', seconds=time.perf_counter()-started, bytes=len(body), sha256=sha256(body).hexdigest(),
+    for key in ('status','reviewed_by','version','review_revision','analysis_provenance'):
+        exact(before[key], report[key], 'Formal export changed original approval: '+key)
+    return dict(status='passed', seconds=elapsed, bytes=len(body), sha256=sha256(body).hexdigest(),page_count=pages,
+                report_status=before['status'],report_version=before['version'],review_revision=before['review_revision'],
                 old_approved_report_exported_without_reapproval=True)
 
 
