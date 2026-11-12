@@ -23,7 +23,8 @@ const c={E,ECGAFCoverage:C,overviewReady:true,coverage:null,coveragePage:0,cover
   document:{querySelectorAll:()=>[]},loadWaveform:async()=>{c.state.waveform=identity},
   clinicalUI:{hasRhythmReturn:()=>false,refreshCurrentCaseEvidence:async(_id,_token,current,data)=>{if(!current())return false;c.state.caseData={clinical_identity:data};return true;}},
 };
-vm.createContext(c);vm.runInContext(helpers+load,c);
+const histogramReview=source.slice(source.indexOf('  function histogramNonempty('),source.indexOf('  function drawHistogram('));
+vm.createContext(c);vm.runInContext(histogramReview+helpers+load,c);
 const call=code=>vm.runInContext(code,c);
 async function check(){const promise=call('checkCoverage()');assert.equal(c.coverageBusy,true);assert.match(host.innerHTML,/正在检查/);timers.shift()();await promise;}
 (async()=>{

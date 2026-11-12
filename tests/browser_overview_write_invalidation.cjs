@@ -49,6 +49,7 @@ function fixture(){
    return response({});
   }};
  vm.createContext(ctx);
+vm.runInContext(overview.slice(overview.indexOf('  function histogramNonempty('),overview.indexOf('  function drawHistogram(')),ctx);
  vm.runInContext(overview.slice(overview.indexOf('  async function load('),overview.indexOf('  function prepare(')),ctx);
  vm.runInContext(overview.slice(overview.indexOf('  const episodeFields='),overview.indexOf('  function episodeQueue('))+overview.slice(overview.indexOf('  function rememberEpisodeForm('),overview.indexOf('  function episodeDraftHint(')),ctx);
  vm.runInContext(app.slice(app.indexOf('async function api('),app.indexOf('function toast(')),ctx);

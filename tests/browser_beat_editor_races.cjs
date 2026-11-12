@@ -92,7 +92,7 @@ async function run(){
   if(scenario.endsWith('-cancel'))ctx.editor.invalidate();
   if(scenario.endsWith('-second'))await ctx.editor.quickEdit('S',[400]);
   pending.resolve();const result=await task;
-  if(stage==='menu'){if(scenario.endsWith('-success'))assert.equal(result,null,result?.message);assert.equal(writes().length,0);assert.equal($('#beatRelabelMenu').hidden,!scenario.endsWith('-success'));return;}
+  if(stage==='menu'){assert.equal(result,null,'superseded menu reads must not show an edit error');assert.equal(writes().length,0);assert.equal($('#beatRelabelMenu').hidden,!scenario.endsWith('-success'));return;}
   if(stage==='undo'){assert.equal(writes().length,1);assert.equal(writes()[0].body.operation,'undo');assert.equal(reloads,scenario.endsWith('-success')?1:0);return;}
   if(scenario.endsWith('-success')||scenario.endsWith('-second')){
     assert.equal(result,null,result?.message);assert.equal(writes().length,1);

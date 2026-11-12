@@ -14,16 +14,18 @@ const ECGReviewCandidates=globalThis.ECGReviewCandidates=(()=>{
       beatEditor.bindWaveSurface(node.querySelector('[data-candidate-wave]'),{wave,readOnly:true,previewLabel:'返回原波形',isCurrent:()=>node.isConnected&&id===state.caseId&&token===state.caseRequestId&&isCurrent(),onPreview:()=>node.close()});
     }catch(error){if(node.isConnected)node.querySelector('[data-candidate-status]').textContent=error.message;}
   }
-  async function choose({identity,item,population={},isCurrent=()=>true}){
+  async function choose({identity,loadIdentity,item,population={},isCurrent=()=>true}){
     if(!isCurrent())throw Error('小图集合已变化，请重新右击');
     if(!ECGOccurrenceCard.rrCandidateAvailable(item))throw Error('此心搏未提供有效前 RR，或为质控标记；不能建立 RR 候选。');
-    const own=scope(identity),token=state.caseRequestId;
-    const current=()=>isCurrent()&&state.caseId===own.case_id&&state.caseRequestId===token;
+    const id=state.caseId,token=state.caseRequestId;
+    let own=identity?scope(identity):null;
+    const current=()=>isCurrent()&&state.caseId===id&&state.caseRequestId===token&&(!own||own.case_id===id);
     const node=modal('加入 RR 间期候选',`<p>当前心搏 ${esc(formatElapsedPrecise(item.sample_index/200))} · RR ${esc(item.rr_ms)} ms。保存原相邻心搏、记录依据及 II / V1 / V5 上下文；此选取不声明全记录最长。</p><label>候选图注<input aria-label="候选图注" maxlength="120" value="自选 RR 候选 ${(Number(item.rr_ms)/1000).toFixed(3)} s"></label><div class="range-actions"><button type="button" data-candidate-save>加入候选</button><button type="button" data-candidate-cancel>取消</button></div><p>保存后仅加入候选，报告是否采用由候选列表的“入报”勾选决定。</p>`);
     node.querySelector('[data-candidate-cancel]').onclick=()=>node.close();let busy=false;node.addEventListener('cancel',e=>{if(busy)e.preventDefault();});
-    node.querySelector('[data-candidate-save]').textContent='加入候选';
-    node.querySelector('[data-candidate-save]').onclick=async()=>{
-      if(busy)return;const status=node.querySelector('[data-candidate-status]');if(!current()){status.textContent='病例或所选 RR 区间已变化，未保存；请关闭后重新选择。';return;}
+    const saveButton=node.querySelector('[data-candidate-save]'),status=node.querySelector('[data-candidate-status]');
+    saveButton.disabled=!own;
+    saveButton.onclick=async()=>{
+      if(busy||!own)return;if(!current()){status.textContent='病例或所选 RR 区间已变化，未保存；请关闭后重新选择。';return;}
       busy=true;node.querySelectorAll('button,input').forEach(x=>x.disabled=true);status.textContent='正在保存候选…';
       try{
         await api(`/api/cases/${own.case_id}/evidence-candidates`,{method:'POST',body:JSON.stringify({...own,kind:'rr',sample_index:item.sample_index,rr_ms:item.rr_ms,population,caption:node.querySelector('input').value,settings:{leads:['II','V1','V5'],duration_s:7}})});
@@ -34,6 +36,15 @@ const ECGReviewCandidates=globalThis.ECGReviewCandidates=(()=>{
       }catch(error){if(node.isConnected)status.textContent='候选未保存：'+error.message;}
       finally{busy=false;if(node.isConnected)node.querySelectorAll('button,input').forEach(x=>x.disabled=false);}
     };
+    if(loadIdentity){
+      status.textContent='正在核对所选 RR 间期…';
+      try{
+        const verified=scope(await loadIdentity());
+        if(!node.open)return;
+        if(!current()||verified.case_id!==id)throw Error('病例或所选 RR 区间已变化，请重新选择。');
+        own=verified;saveButton.disabled=false;status.textContent='';
+      }catch(error){if(node.open)status.textContent=error.message;}
+    }
   }
 
   async function pool(identity=null){

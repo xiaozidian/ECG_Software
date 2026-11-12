@@ -23,6 +23,7 @@ import tempfile
 import zipfile
 
 ASSET_FILES = (
+    'performance-compatibility.json',
     'static/css/report-wave-menu.css',
     'static/js/report-wave-menu.js',
     'static/help/af-afl.html',
@@ -211,7 +212,8 @@ def package_inventory(package, *, with_source=True):
     files = regular_files(package)
     expected_sources = {"Sources/M01/" + name for name in SOURCE_FILES}
     release_path=package/'RELEASE.json'
-    source_id=json.loads(release_path.read_text()).get('source_id','M01') if release_path.is_file() else 'M01'
+    release=json.loads(release_path.read_text()) if release_path.is_file() else {}
+    source_id=release.get('source_id','M01')
     if source_id=='P01':
         from ecg_core.doctor_source import PATHS
         expected_sources={'Sources/P01/'+name for name in [*PATHS.values(),'source-manifest.json']}
@@ -221,8 +223,12 @@ def package_inventory(package, *, with_source=True):
     if actual_sources != (expected_sources if with_source else set()):
         raise PackageError("Package source directory is outside the "+("synthetic allowlist." if source_id=='M01' else 'deidentified allowlist.'))
     expected_assets = {"_internal/" + name for name in ASSET_FILES}
+    policy_path = '_internal/performance-compatibility.json'
+    legacy = re.fullmatch(r'1\.0\.(\d+)', str(release.get('packaging_version', '')))
+    if legacy and int(legacy.group(1)) < 21 and policy_path not in files:
+        expected_assets.remove(policy_path)
     actual_assets = {name for name in files if name.startswith(("_internal/static/", "_internal/templates/"))
-                     or name == "_internal/shared-source-build.json"}
+                     or name in {"_internal/shared-source-build.json", policy_path}}
     if actual_assets != expected_assets:
         raise PackageError("Bundled application assets differ from the explicit software allowlist.")
     for name, path in files.items():

@@ -144,6 +144,7 @@ async function scenario(demoReadonly, phase, change) {
   // this CJS directly; no pytest bootstrap or replacement renderer is needed.
   production(context, 'renderHrvTarget', false);
   production(context, 'bindHrvNavigation', false);
+  production(context, 'mountHrvReviewEditor');
   production(context, 'loadHrv');
   production(context, 'printHtml');
   await context.loadHrv('#hrvWindowPanel', 0, data);

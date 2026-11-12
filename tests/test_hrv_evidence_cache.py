@@ -72,7 +72,7 @@ def test_identical_readers_share_computation_and_failed_build_can_retry(failure,
         assert cache.read(('a','source',1,'0'), lambda:{'retry': True}) == {'retry': True}
 
 
-def test_hrv_hit_then_revision_and_same_mtime_source_change_recompute(synthetic_app, synthetic_case, monkeypatch):
+def test_hrv_hit_rebinds_workflow_revision_and_source_content_recomputes(synthetic_app, synthetic_case, monkeypatch):
     import app as server
     client = synthetic_app.test_client()
     cid, paths = synthetic_case[1:]
@@ -89,11 +89,15 @@ def test_hrv_hit_then_revision_and_same_mtime_source_change_recompute(synthetic_
     synthetic_app.extensions['storage'].audit('synthetic','beat_override.editor',cid)
     assert client.get(base+'/hrv-analysis',query_string=identity).status_code == 409
     current = client.get(base+'/hrv-analysis').json
-    assert current['analysis_revision'] != seed['analysis_revision'] and len(calls) == 2
+    assert current['analysis_revision'] != seed['analysis_revision'] and len(calls) == 1
+    # Workflow-only changes rebind the full evidence/reference; the mathematical
+    # inputs are unchanged and their independently scoped numerical result remains.
+    assert current['hrv_review']['scope']['analysis_revision'] == current['analysis_revision']
+    assert current['periods'] == seed['periods']
     content = paths['data'].read_bytes()
     replace_preserving_mtime(paths['data'], b'\1'+content[1:])
     source = client.get(base+'/hrv-analysis')
-    assert source.status_code == 200 and source.json['analysis_basis'] != current['analysis_basis'] and len(calls) == 3
+    assert source.status_code == 200 and source.json['analysis_basis'] != current['analysis_basis'] and len(calls) == 2
     assert synthetic_app.extensions['hrv_evidence_cache'].retention()['entries'] == 1
 
 

@@ -527,7 +527,7 @@ def _screening_masks(intervals,total_samples):
 
 
 @source_read
-def analyze_stt(waveform_path: str | Path, records, duration_s: float | None = None, *, analysis_revision=None, config=None,excluded_intervals=()) -> dict:
+def analyze_stt(waveform_path: str | Path, records, duration_s: float | None = None, *, analysis_revision=None, config=None,excluded_intervals=(),project=None) -> dict:
     """Analyze a recording and return automatic review candidates and trends."""
     path, settings = Path(waveform_path), {**DEFAULT_CONFIG, **(config or {})}
     stat, normalized = require_waveform_file(path), _normalize_records(records)
@@ -540,7 +540,9 @@ def analyze_stt(waveform_path: str | Path, records, duration_s: float | None = N
     from .source_identity import file_signature
     cache_key = (str(path.resolve()), file_signature(path), signature, duration, tuple(sorted(settings.items())),masks)
     if cache_key in _CACHE:
-        _CACHE.move_to_end(cache_key); return copy.deepcopy(_CACHE[cache_key])
+        _CACHE.move_to_end(cache_key)
+        value = _CACHE[cache_key]
+        return copy.deepcopy(project(value) if project is not None else value)
     block_samples = int(settings["block_seconds"] * SAMPLE_RATE)
     block_count=math.ceil(duration/settings['block_seconds']);masked_blocks=set()
     # The same source supports used for baseline/J/ST/T must be outside a saved
@@ -668,7 +670,7 @@ def analyze_stt(waveform_path: str | Path, records, duration_s: float | None = N
     _CACHE[cache_key] = copy.deepcopy(result); _CACHE.move_to_end(cache_key)
     while len(_CACHE) > _CACHE_LIMIT:
         _CACHE.popitem(last=False)
-    return result
+    return copy.deepcopy(project(result)) if project is not None else result
 
 
 def build_stt_review(conclusion: str, waveform_path=None, records=None, duration_s=None, *, analysis_revision=None, config=None,excluded_intervals=()) -> dict:

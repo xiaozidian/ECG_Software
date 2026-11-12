@@ -58,7 +58,7 @@ function initialMeasurementHarness(){
   const state={caseId:'synthetic',caseRequestId:1,currentPage:'review',scatterMode:'rr',waveform:wave,caseData:{case_id:'synthetic',clinical_identity:basis}},ui={loadToken:0,id:null,rows:[],ratio:false},calls={render:0,fetch:0};
   const ctx={state,ui,E,ECGAnalysisConsistency:{...C,read:async()=>[data,rhythm]},overviewReady:false,episodeFilter:'all',episodePage:0,episodeEditor:null,episodeNavigation:0,geometries:new WeakMap(),api(){},qs:s=>s==='#ovBeatMetrics'?host:s==='#ovBeatMetrics .ov-beat-metrics-list'?list:s==='#ovStatus'?status:s==='#ovScatterRange'?{value:'auto'}:null,document:{querySelectorAll:()=>[]},rememberEpisodeForm(){},hour:()=>0,duration:()=>10,renderCoverage(){},resetCoverage(){},draw(){},renderEpisodes(){},fmtNumber:String,esc:String,formatElapsed:String,formatElapsedPrecise:String,editEffectiveCode:r=>r.class_code,button:()=>''};
   ctx.renderWaveform=()=>{calls.render++;ctx.drawBeatMetrics(state.waveform,200);};ctx.loadWaveform=async()=>{calls.fetch++;state.waveform=wave;ctx.renderWaveform();};
-  vm.createContext(ctx);vm.runInContext(chunk('  async function load(', '  function waveformFailed(')+chunk('  function drawBeatMetrics(', '  function waveformOverlay('),ctx);
+  vm.createContext(ctx);vm.runInContext(chunk('  function histogramNonempty(', '  function drawHistogram('),ctx);vm.runInContext(chunk('  async function load(', '  function waveformFailed(')+chunk('  function drawBeatMetrics(', '  function waveformOverlay('),ctx);
   ctx.drawBeatMetrics(wave,200);assert.equal(list.innerHTML,'','an early waveform cannot show unconfirmed measurement evidence');
   return {ctx,state,ui,calls,host,list,data,rhythm};
 }

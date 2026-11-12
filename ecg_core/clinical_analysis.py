@@ -59,9 +59,17 @@ def encode(value):
         return v
     return json.dumps(integral(value),ensure_ascii=True,separators=(',',':'))
 
+def beat_basis_version(feed):
+    """Shared exact beat/settings identity for full events and ST receipt projections."""
+    rows=feed.beats+feed.markers
+    opts=feed.document['settings']
+    return fingerprint('|'.join(f"{r['id']}:{r['sample_index']}:{r['class_code']}" for r in rows)
+                       +'|'+encode([[k,opts[k]] for k in sorted(opts)]))
+
+
 def build_index(feed, templates=(), annotations=(), review=None):
     rows=feed.beats; markers=feed.markers; opts=feed.document['settings']; review=review or {}
-    bv=fingerprint('|'.join(f"{r['id']}:{r['sample_index']}:{r['class_code']}" for r in rows+markers)+'|'+encode([[k,opts[k]] for k in sorted(opts)]))
+    bv=beat_basis_version(feed)
     from .stt_records import ST_KINDS, decorate_event
     findings=[a for a in annotations if a.get('details',{}).get('kind') in (*ST_KINDS,'AT','VT','AF','AFL','STRIP')]
     av=fingerprint(encode([[a['id'],a['sample_index'],a.get('details')] for a in findings]))

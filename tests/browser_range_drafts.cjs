@@ -45,7 +45,7 @@ function change(h,value){const n=h.querySelector('[data-bound=start]');n.value=S
  assert.equal(ctx.allowLeave(),false);assert.equal(R.pending().length,1);assert.match(prompt,/尚未应用/);
  accepted=true;assert.equal(ctx.allowLeave(),true);assert.equal(R.pending().length,0);
  for(const name of ['save','previewPaper','print','reloadReport','downloadReport']){
-   const start=ui.indexOf('  async function '+name+'(');assert(start>=0);
+   const start=ui.indexOf('\n  async function '+name+'(')+1;assert(start>0);
    const end=ui.indexOf('\n  }',start)+4;const blocked=vm.createContext({resolveWorkstationLeave:async()=>{throw Error('pending-range')},reportSavePromise:null,ECGReportRange:{assertApplied(){throw Error('pending-range')}}});
    if(name==='save'){const p=ui.indexOf('  async function persistReport('),q=ui.indexOf('\n  }',p)+4;vm.runInContext(ui.slice(p,q),blocked);}
    vm.runInContext(ui.slice(start,end),blocked);await assert.rejects(blocked[name](),/pending-range/);

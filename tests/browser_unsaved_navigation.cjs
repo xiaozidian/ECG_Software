@@ -19,6 +19,23 @@ const {chromium}=require(process.env.ECG_PLAYWRIGHT_CORE||process.env.PLAYWRIGHT
   await open('failure');await page.locator('[data-unsaved-save]').click();assert.equal(await page.locator('[role=alert]').innerText(),'save failed');assert.equal(await page.evaluate(()=>done),null);assert(await page.locator('#unsavedChangesDialog').isVisible());await page.keyboard.press('Escape');assert.equal(await page.evaluate(()=>done),false);
   await open();await page.evaluate(()=>owner=false);await page.locator('[data-unsaved-save]').click();assert.deepEqual(await page.evaluate(()=>[done,saves]),[false,0]);
   await open('late');await page.locator('[data-unsaved-save]').click();assert(await page.locator('[data-unsaved-discard]').isDisabled());await page.evaluate(()=>{owner=false;finishSave();});await page.locator('dialog').waitFor({state:'detached'});assert.equal(await page.evaluate(()=>done),false);
+  async function prepareConfirmation(){
+   await page.evaluate(()=>{
+    window.saves=0;
+    window.preparing=ECGUnsavedNavigation.resolve({title:'Review',detail:'Preparing evidence',
+     prepare:()=>new Promise((resolve,reject)=>{window.ready=()=>resolve({detail:'Validated',save:async()=>{saves++;}});window.failPreparation=reject;})});
+   });
+   assert(await page.locator('#unsavedChangesDialog').isVisible());
+   assert(await page.locator('[data-unsaved-save]').isDisabled());
+  }
+  await prepareConfirmation();await page.evaluate(()=>{window.firstReady=ready;});
+  await page.keyboard.press('Escape');assert.equal(await page.evaluate(()=>preparing),false);
+  await prepareConfirmation();await page.evaluate(()=>firstReady());assert(await page.locator('[data-unsaved-save]').isDisabled());
+  await page.evaluate(()=>ready());await page.locator('[data-unsaved-save]').click();
+  assert.equal(await page.evaluate(()=>preparing),true);assert.equal(await page.evaluate(()=>saves),1);
+  await prepareConfirmation();await page.evaluate(()=>failPreparation(Error('Evidence changed')));
+  assert.equal(await page.locator('[role=alert]').innerText(),'Evidence changed');assert(await page.locator('[data-unsaved-save]').isDisabled());
+  await page.keyboard.press('Escape');assert.equal(await page.evaluate(()=>preparing),false);
   console.log('Unsaved dialog: stay/save/discard, deduplication, errors, Escape, focus, owner changes and late save passed');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

@@ -14,6 +14,15 @@ const state={caseId:'math-stt',caseRequestId:1,currentPage:'stt',sttStart:120,st
 let writes=0,target=null;const ctx=vm.createContext({state,$,$$:()=>[],ALL_LEADS:leads,escapeHtml:String,ECGReviewTools:require('../static/js/clinical-review-tools.js'),window:{confirm:()=>true},clinicalWorkflow:{writable:()=>true},sttWaveformIsCurrent:()=>true,api:()=>{writes++;throw Error('No write authorized by view');},setSttStart:value=>state.sttStart=value,renderSttCapability:()=>{},clinicalUI:{showSTReport:r=>target=r}});
 vm.runInContext(fs.readFileSync('static/js/stt-review-layout.js','utf8'),ctx);
 vm.runInContext(['sttReviewHasUnsavedNote','sttDraftState','sttSelectedResultCodes','sttSetResultCodes','sttFindingsForSave','sttSavedRows','sttClock','sttParseClock','sttReviewLeadNames','renderSttReviewLeads','sttReadReviewRange','sttSetReviewTarget','renderSttCandidateSelection','renderSttRecordList','sttTrendBounds','renderSttTrendRows','updateSttSaveState'].map(actual).join('\n'),ctx);
+ctx.ECGRhythmRangeEditor=require('../static/js/rhythm-range-editor.js');
+state.caseData.metadata={start_time:'2026-11-02 23:59:00'};
+assert.equal(ctx.sttParseClock('+61.003'),61.005);
+assert.equal(ctx.sttParseClock('2026-11-03 00:00:01.005'),61.005);
+assert.equal(ctx.sttParseClock('+0'),0);
+assert.throws(()=>ctx.sttParseClock('+600.005'));
+assert.throws(()=>ctx.sttParseClock('+'));
+delete ctx.ECGRhythmRangeEditor;
+delete state.caseData.metadata;
 $('#sttFinding').value='未见明确动态 ST-T 改变';$('#sttReviewNote').value='old result';state.sttDraftBase=JSON.stringify(ctx.sttDraftState());
 ctx.sttSetReviewTarget(candidate);assert.equal($('#sttFinding').value,'T 波极性反转');assert.equal($('#sttReviewNote').value,'');assert.equal($('#sttSignalChecked').checked,false);assert.deepEqual(JSON.parse(JSON.stringify(state.sttReviewLeads)),['V5']);assert.equal(state.sttLeads.length,3);assert.equal(writes,0);
 assert.equal(ctx.ECGSttReviewLayout.candidateKind(candidate),'t_wave_inversion');assert.equal(ctx.ECGSttReviewLayout.resultCode('T 波改变'),'t_change');

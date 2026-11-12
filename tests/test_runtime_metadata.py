@@ -5,8 +5,6 @@ from hashlib import sha256
 import json
 import logging
 import os
-import stat
-import time
 from pathlib import Path
 import subprocess
 import sys
@@ -38,13 +36,7 @@ def known_runtime(tmp_path):
 
 def metadata_change(source):
     before = file_signature(source)
-    mode = source.stat().st_mode
-    if os.name == "nt":
-        time.sleep(0.03)  # NTFS metadata-clock resolution; only a temporary test file.
-        source.chmod(mode ^ stat.S_IWRITE)
-        source.chmod(mode)  # Restore write access; exercise a real Windows attribute change.
-    else:
-        source.chmod(mode ^ stat.S_IXUSR)  # Temporary synthetic file only.
+    source.chmod(source.stat().st_mode ^ 0o100)  # Temporary synthetic file only.
     actual = file_signature(source)
     assert before[:4] == actual[:4] and before[4] != actual[4]
     return actual

@@ -53,6 +53,8 @@ const overviewWorkbench=(()=>{
     const navigator=document.createElement('details');navigator.className='ov-navigator';navigator.open=innerWidth<=1000||innerHeight>780;navigator.innerHTML='<summary><strong>连续波形导航 · II</strong><output id="ovNavigatorTime"></output></summary><canvas id="ovNavigator" height="60" tabindex="0" aria-label="当前窗口前后连续波形导航；点击定位，左右键移动"></canvas>';navigator.addEventListener('toggle',()=>{if(navigator.open)run(navigatorWave)});qs('#waveformCard').after(navigator);
     const af=document.createElement('section');af.id='ovAF';af.hidden=true;af.innerHTML=`<header class="ov-af-heading"><div><h2>房颤 / 房扑编辑与分析</h2></div><div>${button('新建房颤','af-add:AF')}${button('新建房扑','af-add:AFL')}${button('帮助','af-help')}${button('重分析 RR 候选','af-screen')}${button('撤销','af-undo')}${button('重做','af-redo')}${button('返回总览','af-close','class="ov-af-return"')}</div></header>${lane('ovAFFull','全程 RR 散点图','rr')}<div class="ov-af-grid"><aside><section class="ov-af-lorenz"><h3>相邻 RR 散点 · 选中时段</h3><canvas id="ovAFLorenz" height="230" tabindex="0" data-ov-plot="scatter" aria-label="房颤时段 Lorenz 散点图"></canvas></section><section class="ov-episodes"><header><h3>房颤 / 房扑片段</h3>${button('添加片段','af-add')}</header><output id="ovAFSummary"></output><div class="ov-episode-table"><table><thead><tr><th>开始 / 持续</th><th>类型</th><th>状态</th></tr></thead><tbody id="ovEpisodeRows"></tbody></table></div></section></aside><div><div class="ov-af-hour">${button('前一小时','af-prev')}<output id="ovAFHour"></output>${button('后一小时','af-next')}</div>${[0,1,2,3].map(i=>lane('ovQuarter'+i,'15 分钟 RR · '+(i+1),'rr')).join('')}<div id="ovEpisodeEditor"></div></div></div><div id="ovAFWaveHost"></div><p class="ov-method">RR 自动筛查只提示不规则候选，未识别 P 波，不能区分所有早搏、伪差或房扑；确认后才计入医生确认负荷。原始 DATA / EBI 保持只读。</p>`;grid.after(af);
     const menu=document.createElement('div');menu.id='ovMenu';menu.className='ov-menu';menu.hidden=true;menu.setAttribute('popover','manual');menu.setAttribute('role','menu');document.body.append(menu);
+    window.addEventListener('resize',positionMenu);
+    new ResizeObserver(positionMenu).observe(menu);
     const dialog=document.createElement('dialog');dialog.id='ovDialog';dialog.className='ov-dialog';document.body.append(dialog);
     const coverageHost=document.createElement('section');coverageHost.id='ovAFCoverage';coverageHost.className='ov-af-coverage';coverageHost.setAttribute('aria-label','RR 筛查覆盖检查');af.firstElementChild.after(coverageHost);
     const gapNav=document.createElement('nav');gapNav.id='ovAFGapNavigation';gapNav.className='ov-af-gap-nav';gapNav.hidden=true;gapNav.setAttribute('aria-label','未评估时段导航');qs('#ovAFWaveHost').before(gapNav);
@@ -149,6 +151,7 @@ const overviewWorkbench=(()=>{
     globalThis.ecgOverviewLinked?.invalidate(message);
     globalThis.ecgChartInspection?.invalidate();
     rememberEpisodeForm();episodeEditor=null;overviewReady=false;ui.identity=null;ui.rows=[];ui.hist=null;ui.statistics=null;ui.rhythm=null;episodeNavigation++;
+    syncHistogramReview();
     for(const selector of ['#ovEpisodeRows','#ovAFSummary','#ovEpisodeNavigation','#ovEpisodeEditor','#ovEpisodePages','#ovStatistics','#ovStatisticsMethod']){const host=qs(selector);if(host)host.innerHTML='';}
     document.querySelectorAll('#page-review canvas[data-ov-plot],#ovHistogram,#scatterCanvas').forEach(canvas=>{globalThis.ECGChartInspection?.unregisterRenderer(canvas);geometries.delete(canvas);canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height);});
     const focus=qs('#ovFocusContext');if(focus)focus.textContent='当前波形依据尚未核对';
@@ -298,11 +301,17 @@ const overviewWorkbench=(()=>{
     try{menu.hidePopover()}catch(_){}menu.hidden=true;
     if(restoreFocus&&trigger?.isConnected)trigger.focus({preventScroll:true});
   }
+  function positionMenu(){
+    const menu=qs('#ovMenu');
+    if(!menuScope||menu.hidden)return;
+    menu.style.left=Math.max(8,Math.min(menuScope.x,innerWidth-menu.offsetWidth-12))+'px';
+    menu.style.top=Math.max(8,Math.min(menuScope.y,innerHeight-menu.offsetHeight-12))+'px';
+  }
   function group(title,items){return `<details><summary>${title}</summary>${items}</details>`}
   function showMenu(kind,event,canvasId){
     if(!ui.rows.length||!overviewReady||ui.id!==state.caseId||ui.caseToken!==state.caseRequestId)return;event?.preventDefault?.();const canvas=qs('#'+(canvasId||'ovFullRR')),rect=canvas.getBoundingClientRect(),x=event?.clientX??rect.left+50,y=event?.clientY??rect.top+20;
     const trigger=!event&&document.activeElement?.dataset?.canvas===canvas.id?document.activeElement:canvas;
-    menuScope={caseId:state.caseId,caseToken:state.caseRequestId,page:state.currentPage,identity:ui.identity,loadToken:ui.loadToken,trigger};
+    menuScope={caseId:state.caseId,caseToken:state.caseRequestId,page:state.currentPage,identity:ui.identity,loadToken:ui.loadToken,trigger,x,y};
     // Only the full-record RR surfaces own AF/AFL episode commands.
     if(kind==='rr'&&!['ovFullRR','ovAFFull'].includes(canvas.id)&&!ui.af)kind='hr';
     closeBeatRelabelMenu();globalThis.ecgRhythmRangeEditor?.closeMenu();globalThis.ECGOccurrenceCard?.closeMenu();
@@ -313,7 +322,7 @@ const overviewWorkbench=(()=>{
     if(kind==='scatter')html=group('修改心拍',types('beat'))+button('排除房颤 / 房扑','af-exclude-scatter')+button('手动批量添加 QRS 波','edit:insert')+button('自动向前插入候选','edit:detect-before')+button('自动向后插入候选','edit:detect-after')+group('修改前一心搏',types('previous'))+group('修改后一心搏',types('next'))+group('散点图类型',[['n','N 散点'],['s','S 散点'],['v','V 散点'],['hour','小时散点'],['nn','N–N 散点'],['rr','R–R 散点']].map(([k,v])=>button(v,'mode:'+k)).join(''))+group('框选模式',button('矩形框选','selection:box')+button('自由圈选','selection:lasso')+button('单点定位','selection:point'))+group('显示范围',button('自动全量','bound:auto')+[2000,3000,5000].map(n=>button('0–'+n+' ms','bound:'+n)).join(''))+group('散点大小',[1,1.4,2.4,3.4].map(n=>button(n+' px','size:'+n)).join(''))+button((ui.guides?'隐藏':'显示')+'辅助线','guides');
     if(kind==='hr')html=button('插入图条','strip')+button('插入缩略图条','strip-short')+group('即时打印图条',button('三导联图条','print:3')+button('十二导联图条','print:12'))+button('插入心搏','edit:insert')+button('选择起始位置','range-anchor')+button('删除前面区段的标记','delete-before')+button('删除后面区段的标记','delete-after')+button('测量尺','ruler:measure')+button('分规尺','ruler:divider')+button('平行尺','ruler:parallel')+button('跳转到时间','jump')+button('转到诊断图','diagnostic')+button('转到全览图','af-close')+button((ui.showEvents?'隐藏':'显示')+'患者事件','events')+button('设为最快心率图条','bookmark:fastest')+button('设为最慢心率图条','bookmark:slowest')+button('设为最快窦性心率图条','bookmark:fastest_nn')+button('设为最慢窦性心率图条','bookmark:slowest_nn')+button('重分析房早','pac-screen')+button('设置选项','edit:settings');
     const menu=qs('#ovMenu');menu.innerHTML=`<header><strong>${kind==='rr'?'房颤 / 房扑':kind==='hr'?'心率与图条':'Lorenz 散点操作'}</strong>${button('关闭','menu-close','aria-label="关闭菜单"')}</header><p>${formatElapsed(span()[0])}–${formatElapsed(span()[1])}${kind==='scatter'?' · 已选 '+state.scatterSelectedSamples.length+' 搏':''}</p><div class="ov-menu-body">${html}</div>`;
-    menu.hidden=false;try{menu.showPopover()}catch(_){}menu.style.left=Math.max(8,Math.min(x,innerWidth-menu.offsetWidth-12))+'px';menu.style.top=Math.max(8,Math.min(y,innerHeight-menu.offsetHeight-12))+'px';menu.querySelector('button')?.focus({preventScroll:true});
+    menu.hidden=false;try{menu.showPopover()}catch(_){}positionMenu();menu.querySelector('button')?.focus({preventScroll:true});
   }
   function dialog(title,body,accept,label='确认保存'){
     closeMenu();const el=qs('#ovDialog');el.innerHTML=`<form><header><h2>${esc(title)}</h2>${button('关闭','dialog-close','aria-label="关闭对话框"')}</header><div class="ov-dialog-body">${body}</div><p class="ov-error" role="alert"></p><footer>${button('取消','dialog-close')}<button type="submit" class="button primary">${label}</button></footer></form>`;
@@ -944,8 +953,8 @@ const overviewWorkbench=(()=>{
     document.addEventListener('contextmenu',event=>{
       if(!ui.af||event.target.id!=='waveformCanvas'||state.waveformExpanded||!waveformBasis())return;
       event.preventDefault();event.stopImmediatePropagation();closeBeatRelabelMenu();ui.afCursor=waveSample(event);const c=event.target,r=c.getBoundingClientRect();ui.afMenuFraction=(event.clientX-r.left)/r.width;
-      menuScope={caseId:state.caseId,caseToken:state.caseRequestId,page:state.currentPage,identity:ui.identity,loadToken:ui.loadToken,trigger:c};
-      const menu=qs('#ovMenu');menu.innerHTML=`<header><strong>片段边界</strong>${button('关闭','menu-close')}</header><p>${esc(afClock(ui.afCursor))}</p><div class="ov-menu-body">${button('设为起点','af-boundary-start')}${button('设为终点','af-boundary-end')}${button('心搏 / 图条操作','af-wave-tools')}</div>`;menu.hidden=false;try{menu.showPopover()}catch(_){}menu.style.left=Math.min(event.clientX,innerWidth-280)+'px';menu.style.top=Math.min(event.clientY,innerHeight-210)+'px';drawAFOverlay();
+      menuScope={caseId:state.caseId,caseToken:state.caseRequestId,page:state.currentPage,identity:ui.identity,loadToken:ui.loadToken,trigger:c,x:event.clientX,y:event.clientY};
+      const menu=qs('#ovMenu');menu.innerHTML=`<header><strong>片段边界</strong>${button('关闭','menu-close')}</header><p>${esc(afClock(ui.afCursor))}</p><div class="ov-menu-body">${button('设为起点','af-boundary-start')}${button('设为终点','af-boundary-end')}${button('心搏 / 图条操作','af-wave-tools')}</div>`;menu.hidden=false;try{menu.showPopover()}catch(_){}positionMenu();drawAFOverlay();
     },true);
     let drag=null;
     const dragCurrent=job=>job.caseId===state.caseId&&job.caseToken===state.caseRequestId&&job.loadToken===ui.loadToken&&job.page===state.currentPage&&job.start===state.start&&job.duration===state.duration&&job.filter===state.filter&&job.mode===ui.mode&&job.bound===ui.bound&&job.selectionMode===ui.selectionMode&&job.ratio===ui.ratio&&job.selectionGeneration===(linked?.snapshot()?.selectionGeneration??null);

@@ -112,6 +112,9 @@ async function hrv() {
       paperModel: () => ({case: state.caseData, report: {status: 'draft'}}),
       endpoint: async () => ({...data}), run: callback => Promise.resolve().then(callback)
     });
+    production(context, 'renderHrvTarget', false);
+    production(context, 'bindHrvNavigation', false);
+    production(context, 'mountHrvReviewEditor');
     production(context, 'loadHrv');
     await context.loadHrv('#hrvWindowPanel', 1, data);
     const task = panel.querySelector('[data-hrv-export]').onclick();

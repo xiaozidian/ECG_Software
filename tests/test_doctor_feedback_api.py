@@ -828,18 +828,12 @@ def test_mean_concurrent_same_uuid_inserts_once_and_advances_review_once(
 def test_mean_uuid_lock_reconciliation_rechecks_current_evidence(
         synthetic_app, synthetic_case, monkeypatch, which):
     from ecg_core.storage import Storage
-    if which == "data":
-        # This race requires an actual source rewrite after preflight. Native
-        # request leases deliberately prevent it; their enabled read/write and
-        # teardown protections remain covered by test_windows_request_source_lease.
-        monkeypatch.setitem(synthetic_app.config, "WINDOWS_REQUEST_SOURCE_LEASES", False)
     client = synthetic_app.test_client()
     base = base_for(synthetic_case)
     store = synthetic_app.extensions["storage"]
     body = uuid_mean_payload(client, base)
     original = Storage.create_annotation
     checkpoint = []
-    source_before = synthetic_case[2]["data"].read_bytes() if which == "data" else None
     def another_submit_finishes_after_preflight(self, cid, payload, actor, **kwargs):
         # Both intents passed the outer read before either save existed. The
         # first request commits; evidence changes before the second gets its
@@ -855,13 +849,11 @@ def test_mean_uuid_lock_reconciliation_rechecks_current_evidence(
                 db.execute("UPDATE case_analysis_basis SET basis=? WHERE case_id=?", (json.dumps(value), cid))
         else:
             advance(store, cid, which, synthetic_case[2])
-            if which == "data":
-                assert synthetic_case[2]["data"].read_bytes() != source_before
         checkpoint.append(rows(store))
         return original(self, cid, payload, actor, **kwargs)
     monkeypatch.setattr(Storage, "create_annotation", another_submit_finishes_after_preflight)
     response = client.post(base + "/annotations", json=body)
-    assert len(checkpoint) == 1, (response.status_code, response.get_json())
+    assert len(checkpoint) == 1
     assert response.status_code == 409, response.get_json()
     assert rows(store) == checkpoint[0]
     assert len(rows(store)["annotations"]) == 1

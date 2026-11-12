@@ -11,6 +11,13 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
   await tick();assert.equal(requests,1);g.resolve({leads:{II:[1,2]}});
   const [a,b]=await Promise.all([first,second]);a.leads.II[0]=99;assert.equal(b.leads.II[0],1);
   assert.equal(reads.pendingCount(),0);
+  const owned={rows:[[23,800,'N']]}, delivered=gate();
+  const copies=[1,2,3].map(()=>reads.read('S','owned',()=>delivered.promise,'',null,true));
+  delivered.resolve(owned);const [left,middle,last]=await Promise.all(copies);
+  assert.equal(last,owned);left.rows[0][1]=0;middle.rows.length=0;
+  assert.equal(last.rows[0][1],800);assert.notEqual(left,middle);
+  const shared={rows:[1]},copy=await reads.read('S','not-owned',async()=>shared);
+  copy.rows[0]=0;assert.equal(shared.rows[0],1,'generic builders retain ownership');
   await reads.read('caseA:r1:review','waveform',async()=>{requests++;return {fresh:true}},'wave');
   assert.equal(requests,2,'completed clinical results must not be cached');
 

@@ -100,6 +100,14 @@ def create_review_app(data_root: Path, workspace: Path, *, purpose: str = 'user_
     @app.after_request
     def local_presentation(response):
         if response.is_json and not response.direct_passthrough:
+            # These waveform and index routes return UTF-8 Flask jsonify responses.
+            # If neither presentation key occurs, walking 100k rows and encoding
+            # the same JSON again can only change whitespace. Escaped ASCII keys
+            # take the full path; nested metadata and signed ranges retain their rules.
+            if request.endpoint in ('overview_data', 'waveform', 'rr_endpoint', 'scatter_endpoint', 'trend'):
+                data = response.get_data()
+                if all(marker not in data for marker in (b'"case_id"', b'"metadata"', b'\\u00')):
+                    return response
             value = response.get_json(silent=True)
             if value is not None:
                 response.set_data(app.json.dumps(present(value)))

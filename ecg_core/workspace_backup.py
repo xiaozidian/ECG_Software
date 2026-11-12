@@ -36,6 +36,7 @@ CORE = {
     'case_review': 'case_id revision steps events',
 }
 OPTIONAL = {
+    'analysis_implementation_compatibility': 'case_id execution_engine_id execution_basis certificate created_at',
     'stt_review_submissions': 'case_id submission_id annotation_id operation request_sha256',
     'report_evidence_reviews': 'case_id evidence_key descriptor presentations status actor updated_at',
     'evidence_candidates': 'id case_id kind candidate_key scope payload status',
@@ -55,6 +56,7 @@ LEGACY_FIELDS = {
     'rhythm_reviews': {'case_id', 'revision', 'document', 'undo', 'redo', 'updated_at'},
 }
 JSON_FIELDS = {
+    'analysis_implementation_compatibility': {'certificate': dict},
     'report_evidence_reviews': {'descriptor':dict,'presentations':list},
     'evidence_candidates': {'scope':dict,'payload':dict},
     'annotations': {'details': dict},

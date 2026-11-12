@@ -7,7 +7,7 @@ const engine=require('../static/js/report-engine.js'),analysis=require('../stati
 const source=fs.readFileSync('static/js/clinical-ui.js','utf8');
 const region=(a,b)=>{const i=source.indexOf(a),j=source.indexOf(b,i+1);assert(i>=0&&j>i,'Production boundary changed: '+a);return source.slice(i,j);};
 function production(ctx,name,async=false){
- const begin=source.indexOf(`  ${async?'async ':''}function ${name}(`);assert(begin>=0,'Missing '+name);
+ const begin=source.indexOf(`\n  ${async?'async ':''}function ${name}(`)+1;assert(begin>0,'Missing '+name);
  const firstEnd=source.indexOf('\n',begin),line=source.slice(begin,firstEnd);
  const end=line.endsWith('}')?firstEnd:source.indexOf('\n  }',firstEnd)+4;
  assert(end>begin,'Missing function end '+name);vm.runInContext(source.slice(begin,end),ctx);

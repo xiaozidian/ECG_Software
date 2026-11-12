@@ -317,26 +317,28 @@ def test_hrv_measurement_cache_shares_panels_and_invalidates_every_identity(synt
     assert len(calls)==2 and predicted['evidence_preview']['coverage']['excluded_s']==1
     predicted=preview(client,base,review)  # New preview cancels the earlier token.
     assert len(calls)==2
+    # Saving this verified preview rebinds the public revision while reusing
+    # its exactly identical numerical evidence.
     applied=ok(client.put(base+'/hrv-review',json=apply_payload(review,predicted)))
     current=state(client,base)
-    assert len(calls)==3 and current['hrv_revision']==applied['hrv_revision']==1
+    assert len(calls)==2 and current['hrv_revision']==applied['hrv_revision']==1
     ok(client.get(base+'/hrv-analysis'))
-    assert len(calls)==3
+    assert len(calls)==2
     old_scope=current['scope']
     synthetic_app.extensions['storage'].audit('synthetic','beat_override.editor',cid)
     revised=state(client,base)
-    assert len(calls)==4 and revised['scope']['analysis_revision']!=old_scope['analysis_revision']
+    assert len(calls)==2 and revised['scope']['analysis_revision']!=old_scope['analysis_revision']
     assert not revised['document_stale'] and revised['evidence']['coverage']['excluded_s']==1
     assert client.get(base+'/hrv-review',query_string=old_scope).status_code==409
     ok(client.put(base+'/beat-editor',json=dict(operation='relabel',selection={'samples':[2000]},class_code='V',revision=0,confirmed=True)))
     changed_beat=state(client,base)
-    assert len(calls)==5 and changed_beat['scope']['beat_revision']!=revised['scope']['beat_revision']
+    assert len(calls)==3 and changed_beat['scope']['beat_revision']!=revised['scope']['beat_revision']
     assert changed_beat['document_stale'] and changed_beat['evidence']['reviewed'] is None
     # Only disposable synthetic files are changed; same-mtime content invalidates.
     content=paths['data'].read_bytes()
     replace_preserving_mtime(paths['data'],b'\1'+content[1:])
     source=state(client,base)
-    assert len(calls)==6 and source['scope']['analysis_basis']!=changed_beat['scope']['analysis_basis']
+    assert len(calls)==4 and source['scope']['analysis_basis']!=changed_beat['scope']['analysis_basis']
     assert client.get(base+'/hrv-review',query_string=revised['scope']).status_code==409
     assert client.get(base+'/hrv-analysis',query_string=revised['scope']).status_code==409
     # A second tiny generated case has distinct identity even with identical bytes.
@@ -348,9 +350,16 @@ def test_hrv_measurement_cache_shares_panels_and_invalidates_every_identity(synt
         destination.write_bytes(path.read_bytes())
     other_base=f'/api/cases/{other}'
     other_review=state(client,other_base)
-    assert len(calls)==7 and other_review['scope']['case_id']==other
+    assert len(calls)==5 and other_review['scope']['case_id']==other
     ok(client.get(other_base+'/hrv-analysis'))
-    assert len(calls)==7
+    assert len(calls)==5
+    # A real rhythm-exclusion edit is a numerical dependency, unlike merely
+    # saving or acknowledging the unchanged HRV document.
+    synthetic_app.extensions['storage'].create_annotation(cid,dict(sample_index=4000,lead='II',label='synthetic AF',details=dict(kind='AF',status='pending',end_sample=6000)),'synthetic')
+    annotation_changed=state(client,base)
+    assert len(calls)==6
+    assert annotation_changed['evidence']['baseline']['periods']['full']['nn_count']<source['evidence']['baseline']['periods']['full']['nn_count']
+    assert client.get(base+'/hrv-review',query_string=source['scope']).status_code==409
     retention=synthetic_app.extensions['hrv_measurement_cache'].retention()
     assert retention['max_entries']==4 and retention['max_units']==32*1024*1024
     assert retention['units']<=retention['max_units'] and retention['pending']==0

@@ -5,11 +5,18 @@ const beatEditor=(()=>{
   const E=ECGBeatEngine,esc=escapeHtml;
   let context=null,selected=new Set(),info=null,busy=false,openToken=0,dialog,dialogToken=0,committing=false;
   let historySnapshot=null;
+  let lastRelabelPreview=null;
   function currentHistory(){
     if(!state.caseId||state.caseLoading)return null;
     const data=state.caseData;
     if(data?.case_id===state.caseId&&data.beat_editor_history?.revision===data.analysis_revision)return data.beat_editor_history;
     return historySnapshot?.caseId===state.caseId&&historySnapshot.caseToken===state.caseRequestId?historySnapshot.value:null;
+  }
+  function caseEditorSnapshot(){
+    const data=state.caseData, history=data?.beat_editor_history;
+    if(state.caseLoading||!data||data.case_id!==state.caseId||!data.beat_editor_settings||
+       !Number.isSafeInteger(data.analysis_revision)||history?.revision!==data.analysis_revision)return null;
+    return {...history,settings:data.beat_editor_settings};
   }
   function readOnlySnapshot(wave){
     const data=state.caseData;
@@ -59,10 +66,14 @@ const beatEditor=(()=>{
     begin({caseId:state.caseId,surface:'edit',anchor:{...item,class_code:item.class_code||scope.code},time:item.time_s,x:event?.clientX??rect.left+20,y:event?.clientY??rect.top+20,occurrenceScope:scope,canvas:card,waveform:card.occurrenceWave,isCurrent:scope.isCurrent,onPreview:()=>openEditTwelveLead(card.querySelector('.occurrence-open')||card,item,{expectedScope:scope.identity,isCurrent:scope.isCurrent})});
     state.editSelectedSamples=new Set(selected);state.editSelectedSample=item.sample_index;
     syncOccurrenceSelection();renderEditScatter();
-    const result=await request('');if(token!==openToken||context.caseId!==state.caseId)return;
+    if(!menu)return perform('relabel',{class_code:code},true);
+    const scopeAtOpen=owner();
+    let result;
+    try{result=caseEditorSnapshot()||await request('','GET',undefined,scopeAtOpen);}
+    catch(error){if(!currentOwner(scopeAtOpen))return;throw error;}
+    if(token!==openToken||context.caseId!==state.caseId)return;
     info=result;context.revision=result.revision;
-    if(menu){renderMenu();$('#beatRelabelMenu [data-editor-code]:not(:disabled)')?.focus({preventScroll:true});}
-    else return perform('relabel',{class_code:code},true);
+    renderMenu();$('#beatRelabelMenu [data-editor-code]:not(:disabled)')?.focus({preventScroll:true});
   }
   function registerOccurrence(card,item,scope){
     occurrenceCards.set(card,{item,scope});
@@ -175,23 +186,31 @@ const beatEditor=(()=>{
     if(!anchor)selected.clear();
     state.beatRelabelTarget=anchor?{...anchor,caseId:state.caseId,surface}:null;
     if(!pointerWaveOnly)syncSelection();
-    try{const result=(context.readOnly&&readOnlySnapshot(waveform))||await request("");if(token!==openToken||context.caseId!==state.caseId)return;info=result;context.revision=result.revision;renderMenu();$("#beatRelabelMenu [data-editor-code]:not(:disabled)")?.focus({preventScroll:true})}catch(error){handleError(error)}
+    const scopeAtOpen=owner();
+    try{const result=(context.readOnly?readOnlySnapshot(waveform):caseEditorSnapshot())||await request("","GET",undefined,scopeAtOpen);if(token!==openToken||context.caseId!==state.caseId)return;info=result;context.revision=result.revision;renderMenu();$("#beatRelabelMenu [data-editor-code]:not(:disabled)")?.focus({preventScroll:true})}catch(error){if(currentOwner(scopeAtOpen))handleError(error)}
   }
-  function close(){openToken++;closeBeatRelabelMenu()}
-  function showDialog(title,content,accept,acceptLabel="预览修改"){
+  function close(restoreFocus=false){
+    const host=context?.canvas;
+    const opener=host?.querySelector?.('.occurrence-open')||host;
+    openToken++;closeBeatRelabelMenu();
+    if(restoreFocus&&opener?.isConnected)opener.focus({preventScroll:true});
+  }
+  function showDialog(title,content,accept,acceptLabel="预览修改",pending=false,workingLabel=acceptLabel){
     close();const scope=owner(),generation=++dialogToken;dialog.innerHTML='<form method="dialog"><header><h2>'+esc(title)+'</h2><button type="button" data-dialog-close aria-label="关闭">×</button></header><div class="editor-dialog-body">'+content+'</div><p class="editor-error" role="alert"></p><footer><button type="button" data-dialog-close class="button secondary">取消</button><button type="submit" class="button primary">'+esc(acceptLabel)+'</button></footer></form>';
+    const submit=dialog.querySelector('[type="submit"]');submit.disabled=pending;
     dialog.querySelectorAll("[data-dialog-close]").forEach(b=>b.onclick=()=>dialog.close());
     dialog.querySelector("form").onsubmit=async event=>{
-      event.preventDefault();const submit=dialog.querySelector('[type="submit"]');if(submit.disabled)return;submit.disabled=true;
-      try{if(!dialog.open||generation!==dialogToken)throw Error("确认窗口已关闭，请重新选择心搏");requireOwner(scope);await accept(new FormData(event.target))}catch(error){if(generation===dialogToken)dialog.querySelector(".editor-error").textContent=error.message}finally{if(generation===dialogToken)submit.disabled=false}
+      event.preventDefault();if(submit.disabled)return;submit.disabled=true;
+      try{if(!dialog.open||generation!==dialogToken)throw Error("确认窗口已关闭，请重新选择心搏");requireOwner(scope);submit.textContent=workingLabel;await accept(new FormData(event.target))}catch(error){if(generation===dialogToken)dialog.querySelector(".editor-error").textContent=error.message}finally{if(generation===dialogToken){submit.disabled=false;submit.textContent=acceptLabel}}
     };
     if(!dialog.open)dialog.showModal();
+    return {scope,submit,generation};
   }
   function contextOK(){if(!context||context.caseId!==state.caseId||context.caseToken!==state.caseRequestId||context.isCurrent?.()===false)throw Error("病例或波形已切换，请重新选择心搏");if(context.readOnly)throw Error('报告图条只读；请先转到原始诊断波形');if(!clinicalWorkflow.writable())throw Error("当前服务为只读")}
   async function afterCommit(value,operation){
     const caseId=context.caseId;
     const bookmark=typeof clinicalUI!=='undefined'?clinicalUI.occurrenceBookmark(context.occurrenceScope?(context.anchor?.start_sample??context.anchor?.sample_index):null):null;
-    info=value;dialog.close();close();
+    lastRelabelPreview=null;info=value;dialog.close();close();
     selected.clear();state.editSelectedSamples.clear();state.editSelectedSample=null;
     state.scatterStripCache.clear();state.reportComposer=null;
     if(!await loadCase(caseId))return;
@@ -215,33 +234,102 @@ const beatEditor=(()=>{
       await afterCommit(value,payload.operation);
     }finally{committing=false;historyBusy(busy)}
   }
-  function changeTable(preview){
-    const a=preview.before,b=preview.after,fields=[["有效心搏",a.metrics.valid_beats,b.metrics.valid_beats],["NN 间期数",a.hrv.nn_count??0,b.hrv.nn_count??0],["最长 RR (ms)",a.metrics.longest_rr_ms,b.metrics.longest_rr_ms],["非心搏标记",a.markers.length,b.markers.length]];
-    return '<table><thead><tr><th>重算项目</th><th>修改前</th><th>修改后</th></tr></thead><tbody>'+fields.map(([l,x,y])=>"<tr><th>"+l+"</th><td>"+(x??"—")+"</td><td>"+(y??"—")+"</td></tr>").join("")+"</tbody></table>";
-  }
-  async function perform(operation,extra={},quick=false){
-    contextOK();if(busy||committing)return;const scope=owner();requireOwner(scope);busy=true;historyBusy(true);
-    try{
-      const current=await request("");
-      if(info&&context.revision!==undefined&&current.revision!==context.revision&&!["undo","redo"].includes(operation))throw Error("病例修订版本已变化，请重新打开菜单核对");
-      info=current;
-      $("#beatRelabelMenu").setAttribute("aria-busy","true");
-      const payload={operation,selection:{scope:"samples",samples:scope.samples.slice()},revision:info.revision,...extra};
-      if(["undo","redo"].includes(operation)){await commit(payload,scope);return}
-      const preview=await request("/preview","POST",payload);
+  async function previewChange(payload,scope){
+    const basis=state.caseData?.clinical_identity;
+    if(payload.operation!=="relabel"||payload.selection.samples.length!==1||!basis||state.demoReadonly){
+      return request("/preview","POST",payload,scope);
+    }
+    const key=JSON.stringify([scope.caseId,scope.caseToken,basis.analysis_basis,basis.analysis_revision,payload]);
+    const checkBasis=async()=>{
+      const live=await api(ECGAnalysisConsistency.url(scope.caseId,"analysis-basis",{},basis));
       requireOwner(scope);
-      if(quick&&savesSingleBeatDirectly(extra.class_code,scope.samples.length)){await commit(payload,scope);return}
-      let warning="基于已保存修订 r"+info.revision+"；已选 "+scope.samples.length+" 搏；将影响 "+preview.affected+" 个标记。修订后需重新确认相关复核环节；源 DATA / EBI 不会改写。";
-      if(E.types[extra.class_code]?.kind==="nonbeat")warning+=" 该类型不是 QRS，原标记将从心搏和 NN 统计中排除。";
-      if(E.types[extra.class_code]?.kind==="rhythm")warning+=" 这是医生指定的逐搏节律属性，不是自动房颤 / 房扑识别或完整发作负荷分析。";
-      if(operation==="longest")warning+=" 只指定报告图条，不覆盖数学上最长 RR 的计算结果。";
-      const positions=(extra.positions||[...selected]).slice().sort((a,b)=>a-b);
-      let targets=positions.slice(0,8).map(s=>formatElapsedPrecise(s/200)).join("、")+(positions.length>8?" …":"");
-      if(operation==="move")targets+=" → "+formatElapsedPrecise(extra.target_sample/200);
-      if(operation==="settings")targets=Object.entries(extra.settings||{}).map(([key,value])=>key+"="+value).join("；");
-      showDialog("确认"+({relabel:"改型 · "+(E.types[extra.class_code]?.name||""),delete:"删除标记",restore:"恢复源标记",insert:"补标 QRS",move:"移动 QRS",longest:"报告 RR 图条",settings:"分析设置"}[operation]||"修订"),
-        "<p>"+esc(warning)+"</p><p><strong>本次目标：</strong>"+esc(targets)+"</p>"+changeTable(preview),()=>commit(payload),"确认保存修订");
-    }finally{busy=false;historyBusy(committing);$("#beatRelabelMenu").removeAttribute("aria-busy");if(occurrenceSummary)renderOccurrenceToolbar({...occurrenceSummary,selectedCount:state.editSelectedSamples.size});}
+      ECGAnalysisConsistency.assertSame(basis,live);
+    };
+    await checkBasis();
+    if(lastRelabelPreview?.key===key)return lastRelabelPreview.result;
+    const preview=await request("/preview","POST",payload,scope);
+    await checkBasis();
+    // Retain only the four values the doctor saw, never all marker rows.
+    const counts=value=>({metrics:{valid_beats:value.metrics.valid_beats,longest_rr_ms:value.metrics.longest_rr_ms},
+      hrv:{nn_count:value.hrv.nn_count},marker_count:value.markers.length});
+    const result={affected:preview.affected,before:counts(preview.before),after:counts(preview.after)};
+    lastRelabelPreview={key,result};
+    return result;
+  }
+  function changeTable(preview){
+    const values=summary=>summary?[summary.metrics.valid_beats,summary.hrv.nn_count??0,summary.metrics.longest_rr_ms,(summary.marker_count??summary.markers.length)]:[];
+    const before=values(preview?.before),after=values(preview?.after);
+    const rows=["有效心搏","NN 间期数","最长 RR (ms)","非心搏标记"].map((label,i)=>
+      "<tr><th>"+label+"</th><td>"+(before[i]??"—")+"</td><td>"+(after[i]??"—")+"</td></tr>").join("");
+    return '<table class="beat-change-preview"><thead><tr><th>重算项目</th><th>修改前</th><th>修改后</th></tr></thead><tbody>'+rows+'</tbody></table>';
+  }
+  function affectedPositions(operation,extra,samples){
+    if(operation==="settings")return Object.entries(extra.settings||{}).map(([key,value])=>key+"="+value).join("；");
+    const positions=extra.positions||samples;
+    const times=positions.slice().sort((a,b)=>a-b).slice(0,8).map(s=>formatElapsedPrecise(s/200));
+    const text=times.join("、")+(positions.length>8?" …":"");
+    return operation==="move"?text+" → "+formatElapsedPrecise(extra.target_sample/200):text;
+  }
+  async function perform(operation,extra={},quick=false,targetMode=null){
+    contextOK();if(busy||committing)return;
+    const code=extra.class_code;
+    const direct=operation==="undo"||operation==="redo"||(quick&&savesSingleBeatDirectly(code,selected.size));
+    // The case reply carries the editor revision. Both preview and commit validate it on the server.
+    const snapshot=info||caseEditorSnapshot();
+    const title="确认"+({relabel:"改型 · "+(E.types[code]?.name||""),delete:"删除标记",restore:"恢复源标记",insert:"补标 QRS",move:"移动 QRS",settings:"分析设置"}[operation]||"修订");
+    let payload,previewDialog;
+    let note="修订后需重新确认相关复核环节；源 DATA / EBI 不会改写。";
+    if(E.types[code]?.kind==="nonbeat")note+=" 该类型不是 QRS，原标记将从心搏和 NN 统计中排除。";
+    if(E.types[code]?.kind==="rhythm")note+=" 这是医生指定的逐搏节律属性，不是自动房颤 / 房扑识别或完整发作负荷分析。";
+    const summary=(status,position,preview)=>'<p><span role="status">'+esc(status)+'</span> '+esc(note)+
+      '</p><p><strong>本次目标：</strong>'+esc(position)+'</p>'+changeTable(preview);
+    if(direct){busy=true;historyBusy(true);}
+    else{
+      const position=targetMode?{previous:"前一心搏",next:"后一心搏",nearest:"当前时间最近心搏"}[targetMode]:affectedPositions(operation,extra,[...selected]);
+      previewDialog=showDialog(title,summary("正在核对修改前后的结果…",position),
+        ()=>commit(payload,previewDialog.scope),"确认保存修订",true,"正在保存…");
+    }
+    const scope=previewDialog?.scope||owner();
+    const active=()=>!previewDialog||(dialog.open&&previewDialog.generation===dialogToken);
+    try{
+      requireOwner(scope);
+      let samples=scope.samples;
+      if(targetMode){
+        const feed=await request("/beats","GET",undefined,scope);
+        if(!active())return;
+        const anchors=new Set(samples);
+        if(!anchors.size){
+          const closest=context.anchor||feed.items.reduce((a,b)=>!a||Math.abs(b.time_s-context.time)<Math.abs(a.time_s-context.time)?b:a,null);
+          if(closest)anchors.add(closest.sample_index);
+        }
+        if(targetMode==="nearest")samples=[...anchors];
+        else{
+          const step=targetMode==="previous"?-1:1;
+          samples=feed.items.flatMap((row,i)=>anchors.has(row.sample_index)&&feed.items[i+step]?[feed.items[i+step].sample_index]:[]);
+        }
+        if(!samples.length)throw Error("此位置未找到目标心搏");
+      }
+      const current=snapshot||await request("","GET",undefined,scope);
+      if(!active())return;
+      requireOwner(scope);
+      payload={operation,selection:{scope:"samples",samples},revision:current.revision,...extra};
+      if(operation==="undo"||operation==="redo"){await commit(payload,scope);return;}
+      const preview=await previewChange(payload,scope);
+      if(!active())return;
+      requireOwner(scope);
+      if(direct){await commit(payload,scope);return;}
+      const status="基于已保存修订 r"+payload.revision+"；已选 "+samples.length+" 搏；将影响 "+preview.affected+" 个标记。";
+      dialog.querySelector(".editor-dialog-body").innerHTML=summary(status,affectedPositions(operation,extra,samples),preview);
+      previewDialog.submit.disabled=false;
+    }catch(error){
+      if(!previewDialog)throw error;
+      if(!active())return;
+      if(!currentOwner(scope)){dialog.close();return;}
+      dialog.querySelector('[role="status"]').textContent="未能完成核对";
+      dialog.querySelector(".editor-error").textContent=error.message;
+    }finally{
+      if(direct){busy=false;historyBusy(committing);if(occurrenceSummary)renderOccurrenceToolbar({...occurrenceSummary,selectedCount:state.editSelectedSamples.size});}
+    }
   }
   async function quickEdit(code,samples=[...state.editSelectedSamples]){
     if(busy||committing)return;
@@ -269,12 +357,6 @@ const beatEditor=(()=>{
     }
     return rows.map(r=>r.sample_index);
   }
-  async function neighbor(direction,code){
-    const feed=await request("/beats"),anchors=selected.size?selected:new Set([context.anchor?.sample_index]),targets=[],step=direction==="previous"?-1:1;
-    feed.items.forEach((row,index)=>{if(anchors.has(row.sample_index)&&feed.items[index+step])targets.push(feed.items[index+step])});
-    if(!targets.length)throw Error("此方向没有相邻心搏");
-    selected=new Set(targets.map(row=>row.sample_index));context.anchor=targets[0];syncSelection();await perform("relabel",{class_code:code});
-  }
   function manual(op){
     const time=op==="move"?(context.anchor?.time_s??context.time):context.time;
     showDialog(op==="move"?"调整 QRS 位置":"手动批量添加 QRS",
@@ -293,22 +375,56 @@ const beatEditor=(()=>{
     showDialog("当前病例已保存分析参数 · 心搏修订 "+info.revision,'<p>当前显示已保存参数；表单修改需预览并确认保存才会生效。仅作用于当前病例。候选阈值不是疾病诊断标准；排重间隔是算法参数。修改后会重新计算并撤回复核确认。</p><div class="editor-settings"><label>QRS 搜索导联<select name="lead">'+ALL_LEADS.map(l=>'<option '+(l===info.settings.lead?"selected":"")+'>'+l+'</option>').join("")+'</select></label>'+Object.entries(labels).map(([key,label])=>'<label>'+label+'<input name="'+key+'" type="number" step="any" required value="'+info.settings[key]+'"></label>').join("")+'</div>',
       data=>{const opts={};for(const key of Object.keys(E.defaults))opts[key]=key==="lead"?data.get(key):Number(data.get(key));E.settings(opts);return perform("settings",{settings:opts})});
   }
-  async function detect(direction){
-    const scope=owner();
-    info=await request("");const total=state.caseData.technical.duration_seconds_raw,t=context.anchor?.time_s??context.time;
-    const start=Math.max(0,direction==="before"?t-info.settings.search_seconds:t),seconds=Math.min(info.settings.search_seconds,total-start,direction==="before"?t-start:Infinity);
-    if(seconds<1)throw Error("此方向剩余记录不足 1 秒");
-    const result=await request("/preview","POST",{operation:"detect",revision:info.revision,start_s:start,duration_s:seconds});
-    const wave=await api("/api/cases/"+context.caseId+"/waveform?start="+start+"&duration="+seconds+"&leads="+info.settings.lead+"&filter=raw&max_points=12000");
-    requireOwner(scope);
-    const candidates=result.candidates;
-    showDialog("漏标 QRS 候选预览",'<p>'+esc(result.method)+'</p><p>搜索 '+formatElapsedPrecise(start)+'—'+formatElapsedPrecise(start+seconds)+' · '+esc(info.settings.lead)+' · <b>'+candidates.length+'</b> 个候选。默认不勾选；核对原始波形后逐个选择。</p><canvas id="qrsCandidatePreview" height="190" aria-label="原始波形与 QRS 候选位置"></canvas><div class="qrs-candidate-list">'+
-      (candidates.map(r=>'<label><input type="checkbox" name="candidates" value="'+r.sample_index+'">'+formatElapsedPrecise(r.time_s)+'<small>阈值比 '+r.score+'（非置信概率）</small></label>').join("")||"<p>未发现候选。可调整导联／阈值，或手动补标；未检测到不代表无漏搏。</p>")+'</div>',
-      async data=>{if(info.revision!==result.revision)throw Error("版本已变化，请重新检测");const positions=data.getAll("candidates").map(Number);if(!positions.length)throw Error("请核对并选择至少一个候选");await perform("insert",{positions,class_code:"OTHER",revision:result.revision})});
-    const canvas=$("#qrsCandidatePreview"),box=canvas.getBoundingClientRect();canvas.width=Math.max(500,Math.round(box.width*devicePixelRatio));canvas.height=190*devicePixelRatio;
-    const ctx=canvas.getContext("2d");ctx.scale(devicePixelRatio,devicePixelRatio);const w=canvas.width/devicePixelRatio,h=190,values=wave.leads[info.settings.lead],low=Math.min(...values),high=Math.max(...values),span=Math.max(1,high-low);
-    ctx.fillStyle="#f8fbfb";ctx.fillRect(0,0,w,h);ctx.strokeStyle="#263e48";ctx.beginPath();values.forEach((v,i)=>{const x=i/Math.max(1,values.length-1)*w,y=170-(v-low)/span*150;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();
-    candidates.forEach((r,i)=>{const x=(r.time_s-wave.start_s)/wave.duration_s*w;ctx.strokeStyle="#ca6919";ctx.beginPath();ctx.moveTo(x,5);ctx.lineTo(x,h);ctx.stroke();ctx.fillStyle="#9d4d11";ctx.fillText(String(i+1),x+2,12)});
+  async function detect(direction,locateOverviewBeat=false){
+    contextOK();
+    let revision;
+    const pending=showDialog("漏标 QRS 候选预览",'<p role="status">正在读取候选与原始波形…</p>',async data=>{
+      const positions=data.getAll("candidates").map(Number);
+      if(!positions.length)throw Error("请核对并选择至少一个候选");
+      await perform("insert",{positions,class_code:"OTHER",revision});
+    },"预览修改",true);
+    const {scope}=pending,active=()=>dialog.open&&dialogToken===pending.generation;
+    try{
+      const snapshot=info||caseEditorSnapshot()||await request("","GET",undefined,scope);
+      if(!active())return;
+      requireOwner(scope);
+      let t=context.anchor?.time_s??context.time;
+      if(locateOverviewBeat){
+        const feed=await request("/beats","GET",undefined,scope);
+        if(!active())return;
+        const anchor=feed.items.find(row=>selected.has(row.sample_index))||
+          feed.items.reduce((nearest,row)=>!nearest||Math.abs(row.time_s-t)<Math.abs(nearest.time_s-t)?row:nearest,null);
+        t=anchor?.time_s??t;
+      }
+      const total=state.caseData.technical.duration_seconds_raw,{lead,search_seconds:span}=snapshot.settings;
+      const start=Math.max(0,direction==="before"?t-span:t),seconds=Math.min(span,total-start,direction==="before"?t-start:Infinity);
+      if(seconds<1)throw Error("此方向剩余记录不足 1 秒");
+      const [result,wave]=await Promise.all([
+        request("/preview","POST",{operation:"detect",revision:snapshot.revision,start_s:start,duration_s:seconds},scope),
+        api("/api/cases/"+encodeURIComponent(scope.caseId)+"/waveform?start="+start+"&duration="+seconds+"&leads="+encodeURIComponent(lead)+"&filter=raw&max_points=12000")
+      ]);
+      if(!active())return;
+      requireOwner(scope);
+      if(wave.case_id!==undefined&&wave.case_id!==scope.caseId)throw Error("候选波形来自其他病例，请重新检测");
+      if(wave.analysis_basis!==undefined&&state.caseData?.clinical_identity)ECGAnalysisConsistency.assertSame(wave,state.caseData.clinical_identity);
+      if(result.revision!==snapshot.revision)throw Error("版本已变化，请重新检测");
+      revision=result.revision;
+      const candidates=result.candidates,values=wave.leads?.[lead];
+      if(!values?.length)throw Error("未读取到候选对应导联的原始波形");
+      const body=dialog.querySelector(".editor-dialog-body");
+      body.innerHTML='<p>'+esc(result.method)+'</p><p>搜索 '+formatElapsedPrecise(start)+'—'+formatElapsedPrecise(start+seconds)+' · '+esc(lead)+' · <b>'+candidates.length+'</b> 个候选。默认不勾选；核对原始波形后逐个选择。</p><canvas id="qrsCandidatePreview" height="190" aria-label="原始波形与 QRS 候选位置"></canvas><div class="qrs-candidate-list">'+
+        (candidates.map(r=>'<label><input type="checkbox" name="candidates" value="'+r.sample_index+'">'+formatElapsedPrecise(r.time_s)+'<small>阈值比 '+r.score+'（非置信概率）</small></label>').join("")||"<p>未发现候选。可调整导联／阈值，或手动补标；未检测到不代表无漏搏。</p>")+'</div>';
+      const canvas=$("#qrsCandidatePreview"),box=canvas.getBoundingClientRect();canvas.width=Math.max(500,Math.round(box.width*devicePixelRatio));canvas.height=190*devicePixelRatio;
+      const ctx=canvas.getContext("2d");ctx.scale(devicePixelRatio,devicePixelRatio);const w=canvas.width/devicePixelRatio,h=190,low=Math.min(...values),high=Math.max(...values),heightSpan=Math.max(1,high-low);
+      ctx.fillStyle="#f8fbfb";ctx.fillRect(0,0,w,h);ctx.strokeStyle="#263e48";ctx.beginPath();values.forEach((v,i)=>{const x=i/Math.max(1,values.length-1)*w,y=170-(v-low)/heightSpan*150;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();
+      candidates.forEach((r,i)=>{const x=(r.time_s-wave.start_s)/wave.duration_s*w;ctx.strokeStyle="#ca6919";ctx.beginPath();ctx.moveTo(x,5);ctx.lineTo(x,h);ctx.stroke();ctx.fillStyle="#9d4d11";ctx.fillText(String(i+1),x+2,12)});
+      pending.submit.disabled=false;
+    }catch(error){
+      if(!active())return;
+      if(!currentOwner(scope)){dialog.close();return;}
+      dialog.querySelector(".editor-dialog-body").textContent="未能读取本次候选";
+      dialog.querySelector(".editor-error").textContent=error.message;
+    }
   }
   function updateStatus(value){
     if(value)historySnapshot={caseId:state.caseId,caseToken:state.caseRequestId,value};
@@ -333,13 +449,16 @@ const beatEditor=(()=>{
     if(!clinicalWorkflow.writable())throw Error('当前版本只读，不能修改分析参数');
   }
   async function action(name){
-    if(name==="close")return close();
+    if(name==="close")return close(true);
     if(name==='longest'){
       contextOK();if(selected.size!==1||!context.anchor||!selected.has(context.anchor.sample_index))throw Error('请选择一个有前 RR 的原心搏');
-      close();const scope=owner(),item={...context.anchor};
-      const identity=await api(`/api/cases/${scope.caseId}/evidence-candidates`);requireOwner(scope);
-      ECGAnalysisConsistency.assertSame(context.waveform||state.caseData.clinical_identity,identity);
-      return ECGReviewCandidates.choose({identity,item,population:{origin:context.surface==='review'?'overview-card':'edit-card'},isCurrent:()=>currentOwner(scope)});
+      close();const scope=owner(),item={...context.anchor},basis=context.waveform||state.caseData.clinical_identity;
+      return ECGReviewCandidates.choose({item,population:{origin:context.surface==='review'?'overview-card':'edit-card'},isCurrent:()=>currentOwner(scope),
+        loadIdentity:async()=>{
+          const identity=await api(`/api/cases/${scope.caseId}/evidence-candidates`);
+          requireOwner(scope);ECGAnalysisConsistency.assertSame(basis,identity);
+          return identity;
+        }});
     }
     if(name.startsWith('wave-')){
       const scope=owner();requireOwner(scope);const target=context;
@@ -365,7 +484,7 @@ const beatEditor=(()=>{
     dialog=document.createElement("dialog");dialog.id="beatEditorDialog";dialog.className="beat-editor-dialog";document.body.appendChild(dialog);
     $("#beatRelabelMenu").addEventListener("click",event=>{
       const b=event.target.closest("button");if(!b||b.disabled)return;
-      const task=b.dataset.editorCode?(b.dataset.editorNeighbor?neighbor(b.dataset.editorNeighbor,b.dataset.editorCode):perform("relabel",{class_code:b.dataset.editorCode})):b.dataset.editorAction?action(b.dataset.editorAction):null;
+      const task=b.dataset.editorCode?(b.dataset.editorNeighbor?perform("relabel",{class_code:b.dataset.editorCode},false,b.dataset.editorNeighbor):perform("relabel",{class_code:b.dataset.editorCode})):b.dataset.editorAction?action(b.dataset.editorAction):null;
       Promise.resolve(task).catch(handleError);
     });
     // Dialog/menu keystrokes must not leak to global navigation or beat shortcuts.
@@ -374,13 +493,20 @@ const beatEditor=(()=>{
       if(dialog.open){event.stopImmediatePropagation();return}
       const menu=$("#beatRelabelMenu");
       if(!menu.hidden&&context){
-        if(event.key==="Escape"){event.preventDefault();event.stopImmediatePropagation();close();return}
+        if(event.key==="Escape"){event.preventDefault();event.stopImmediatePropagation();close(true);return}
         if(!event.ctrlKey&&!event.metaKey&&!event.altKey&&({D:"delete",K:"page",I:"invert-page",L:"longest"})[event.key.toUpperCase()]){event.preventDefault();event.stopImmediatePropagation();action(({D:"delete",K:"page",I:"invert-page",L:"longest"})[event.key.toUpperCase()]).catch(handleError);return}
         if((event.ctrlKey||event.metaKey)&&["a","i"].includes(event.key.toLowerCase())){event.preventDefault();event.stopImmediatePropagation();action(event.key.toLowerCase()==="a"?"all":"invert").catch(handleError);return}
         if(!event.ctrlKey&&!event.metaKey&&!event.altKey&&E.types[event.key.toUpperCase()]){
           event.preventDefault();event.stopImmediatePropagation();if(context.pointerWaveOnly&&!context.readOnly){toast('请右击 R 标注或原心搏小图后改型','warning');return;}perform("relabel",{class_code:event.key.toUpperCase()}).catch(handleError);return;
         }
-        if(["ArrowDown","ArrowUp","Home","End"].includes(event.key)){event.preventDefault();event.stopImmediatePropagation();const buttons=[...menu.querySelectorAll("button:not(:disabled),summary")].filter(el=>el.getClientRects().length),i=buttons.indexOf(document.activeElement);buttons[event.key==="Home"?0:event.key==="End"?buttons.length-1:(i+(event.key==="ArrowDown"?1:-1)+buttons.length)%buttons.length]?.focus();return}
+        if(["ArrowDown","ArrowUp","Home","End"].includes(event.key)){
+          event.preventDefault();event.stopImmediatePropagation();
+          const buttons=[...menu.querySelectorAll("button:not(:disabled),summary")].filter(el=>
+            el.getClientRects().length&&!el.closest('details:not([open]) > :not(summary)'));
+          const i=buttons.indexOf(document.activeElement);
+          const next=event.key==="Home"?0:event.key==="End"?buttons.length-1:(i+(event.key==="ArrowDown"?1:-1)+buttons.length)%buttons.length;
+          buttons[next]?.focus();return;
+        }
       }
       if(["INPUT","TEXTAREA","SELECT"].includes(document.activeElement.tagName))return;
       const occurrenceCard=event.target.closest?.('[data-occ-index]');
@@ -418,12 +544,19 @@ const beatEditor=(()=>{
     const time=options.time??state.start;
     begin({caseId:state.caseId,surface:"review",time,x:0,y:0,canvas:$("#waveformCanvas"),waveform:state.waveform});
     selected=new Set(options.samples||[]);
+    if(name==="insert"){contextOK();return manual(name);}
+    if(name.startsWith("detect-"))return detect(name.slice(7),true);
+    if(name==="settings"){
+      contextOK();info=caseEditorSnapshot()||await request("");context.revision=info.revision;
+      return settingsDialog();
+    }
+    if(name==="previous"||name==="next")return perform("relabel",{class_code:options.code},false,name);
+    if(["relabel","delete","restore"].includes(name))
+      return perform(name,name==="relabel"?{class_code:options.code}:{},false,selected.size?null:"nearest");
     const feed=await request("/beats");
     context.anchor=feed.items.find(r=>selected.has(r.sample_index))||feed.items.reduce((a,b)=>!a||Math.abs(b.time_s-time)<Math.abs(a.time_s-time)?b:a,null);
     if(!selected.size&&context.anchor)selected.add(context.anchor.sample_index);
     info=await request("");context.revision=info.revision;
-    if(name==="relabel")return perform(name,{class_code:options.code});
-    if(name==="previous"||name==="next")return neighbor(name,options.code);
     return action(name);
   }
   document.addEventListener("DOMContentLoaded",bind);

@@ -3,7 +3,8 @@
 .full-beat-menu header,.beat-editor-dialog header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #dae5e9}
 .full-beat-menu header button,.beat-editor-dialog header button{border:0;background:transparent;font-size:22px;cursor:pointer}
 .full-beat-menu .editor-context{margin:0;padding:8px 14px;background:#edf6f6;font-size:12px}
-.editor-menu-scroll{max-height:calc(100dvh - 252px);overflow:auto;padding:6px 8px;overscroll-behavior:contain}
+#beatRelabelMenu.full-beat-menu:not([hidden]){display:grid;grid-template-rows:auto auto minmax(0,1fr) auto}
+.editor-menu-scroll{min-height:0;overflow:auto;padding:6px 8px;overscroll-behavior:contain}
 .full-beat-menu button{display:flex;gap:8px;align-items:center;justify-content:space-between;width:100%;padding:7px 8px;border:0;border-radius:3px;background:transparent;color:inherit;cursor:pointer;text-align:left;font:inherit;min-height:32px}
 .full-beat-menu button:hover,.full-beat-menu summary:hover{background:#e0f2f1}
 .full-beat-menu button:disabled{opacity:.4;cursor:not-allowed}
@@ -24,6 +25,8 @@
 .editor-dialog-body{padding:14px 20px;max-height:calc(100dvh - 190px);overflow:auto;line-height:1.6;font-size:14px}
 .editor-dialog-body>p{margin:0 0 16px;color:#4c6571}
 .editor-dialog-body table{width:100%;border-collapse:collapse}
+.editor-dialog-body:has(.beat-change-preview){height:min(23rem,calc(100dvh - 190px));scrollbar-gutter:stable}
+.editor-dialog-body .beat-change-preview{table-layout:fixed}
 .editor-dialog-body th,.editor-dialog-body td{text-align:left;border-bottom:1px solid #d9e5e9;padding:10px;font-variant-numeric:tabular-nums}
 .editor-dialog-body label{display:flex;flex-direction:column;gap:6px;margin-bottom:12px;font-size:13px}
 .editor-dialog-body input,.editor-dialog-body select,.editor-dialog-body textarea{padding:8px;border:1px solid #afc5ce;border-radius:4px;font-size:14px;min-width:0}

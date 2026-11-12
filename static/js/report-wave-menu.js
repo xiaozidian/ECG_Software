@@ -14,7 +14,7 @@ const ECGReportWaveMenu=(()=>{
   function assertCurrent(c){
     if(!current(c))throw Error('病例或波形已变化，请重新右击当前图条');
     if(c.wave.case_id!==undefined&&c.wave.case_id!==c.case_id)throw Error('图条来自其他病例，未执行操作');
-    if(c.wave.analysis_basis!==undefined&&state.caseData?.clinical_identity)ECGAnalysisConsistency.assertSame(c.wave,state.caseData.clinical_identity);
+    if(c.wave.analysis_basis!==undefined&&state.caseData?.clinical_identity)ECGAnalysisConsistency.assertReportWave(c.wave,state);
   }
   function close(){if(menu){menu.hidden=true;try{menu.hidePopover?.();}catch(_){}}context=null;}
   function box(c){
@@ -33,7 +33,7 @@ const ECGReportWaveMenu=(()=>{
   }
   const stamp=time=>typeof formatElapsedPrecise==='function'?formatElapsedPrecise(time):time.toFixed(3)+' s';
   function selection(c){const r=ranges.get(c.host);return r&&r.case_id===c.case_id&&r.case_token===c.case_token&&r.basis===c.wave.analysis_basis?r:null;}
-  function stopTool(){if(!tool)return;tool.observer?.disconnect();tool.resize?.disconnect();tool.layer?.remove();tool.status?.remove();tool=null;}
+  function stopTool(){if(!tool)return;tool.observer?.disconnect();tool.resize?.disconnect();tool.layer?.remove();tool.status?.remove();tool.context.host.classList.remove('report-wave-tool-host');tool=null;}
   function line(layer,x1,y1,x2,y2){const node=document.createElementNS(ns,'line');for(const [k,v]of Object.entries({x1,y1,x2,y2}))node.setAttribute(k,String(v));layer.append(node);}
   function paintTool(){
     const t=tool;if(!t)return;if(!current(t.context)){stopTool();return;}
@@ -90,7 +90,9 @@ const ECGReportWaveMenu=(()=>{
     assertCurrent(c);await goPage('review');if(state.caseId!==c.case_id||state.caseRequestId!==c.case_token||state.currentPage!=='review')return;
     if(kind==='overview'||kind==='diagnostic'){
       const af=document.querySelector('#ovAF');if(af&&!af.hidden&&getComputedStyle(af).display!=='none')document.querySelector('[data-ov="af-close"]')?.click();
-      jumpTo(c.time);return;
+      jumpTo(c.time);
+      const target=document.querySelector(kind==='diagnostic'?'#waveformCanvas':'#ovFullHR');
+      target?.scrollIntoView({block:'nearest'});target?.focus({preventScroll:true});return;
     }
     return overviewWorkbench.waveAction(kind==='pac'?'pac-screen':'bookmark-'+kind,{time:c.time,bounds:[c.wave.start_s,c.wave.start_s+c.wave.duration_s],caseId:c.case_id,caseToken:c.case_token});
   }
