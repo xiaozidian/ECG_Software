@@ -284,6 +284,54 @@ def api(endpoint):
     return result.stdout
 
 
+def archived_original_logs(output, evidence):
+    """Use the exact earlier authenticated raw ZIP after official consolidation.
+
+    The earlier step9 truly verified these original bytes. No log lines are
+    reconstructed from the combined presentation or assigned its timestamps.
+    """
+    run_id, head = 43301246400, '503f37fbe75d814d6546c54c7c838e1068abda16'
+    raw = {n: api(p) for n, p in [('run', f'/actions/runs/{run_id}'),
+        ('jobs', f'/actions/runs/{run_id}/attempts/1/jobs?per_page=100'),
+        ('artifacts', f'/actions/runs/{run_id}/artifacts?per_page=100')]}
+    for name, value in raw.items(): (evidence/('archived-log-origin-'+name+'.json')).write_bytes(value)
+    run, jobs, artifacts = (loads(raw[n]) for n in ('run', 'jobs', 'artifacts'))
+    require((run['id'], run['head_sha'], run['path'], run['status'], run['conclusion'], run['run_attempt']) ==
+            (run_id, head, CONTINUATION, 'completed', 'failure', 1) and
+            run['repository']['full_name'] == run['head_repository']['full_name'] == REPO, 'Archived log run differs')
+    require(jobs['total_count'] == len(jobs['jobs']) == 1, 'Archived log job is ambiguous')
+    job = jobs['jobs'][0]
+    require((job['id'], job['run_id'], job['head_sha'], job['run_attempt']) ==
+            (131472709504, run_id, head, 1), 'Archived log job identity differs')
+    steps = {s['number']: s for s in job['steps']}
+    require(len(steps) == len(job['steps']) and all(steps[n]['conclusion'] == 'success' for n in range(1, 10)) and
+            steps[9]['name'] == 'Bind exact original21 compiled ZIPs and passed producer prerequisites',
+            'Archived original bytes were not actually verified by earlier step9')
+    rows = artifacts['artifacts']
+    require(artifacts['total_count'] == len(rows) == 1, 'Archived log artifact is ambiguous')
+    row = rows[0]
+    checksum = '32139bb895393aa3277871c054d8999c3491cf1af7a90e3bb2ecb98e79831a60'
+    require((row['id'], row['name'], row['size_in_bytes'], row['digest'], row['expired']) ==
+            (13984056455, 'Windows-doctor-eval-mathematical-validation-1.0.21', 6813244, 'sha256:'+checksum, False) and
+            row['workflow_run']['id'] == run_id and row['workflow_run']['head_sha'] == head, 'Archived log artifact differs')
+    archive = output/'archived-log-proof.artifact.zip'
+    with archive.open('xb') as stream:
+        result = subprocess.run(['gh', 'api', '--hostname', 'github.com',
+            f'/repos/{REPO}/actions/artifacts/13984056455/zip'], stdout=stream,
+            stderr=subprocess.PIPE, timeout=900, check=False)
+    require(result.returncode == 0, 'Archived log artifact download failed')
+    inventory = validate_zip(archive, checksum, 6813244)
+    destination = output/'archived-log-proof'
+    extract_original(archive, destination, inventory)
+    old = destination/'PERF21-producer/evidence'
+    original = old/'original-producer-run-logs.zip'
+    require(original.stat().st_size == 78187 and digest(original) ==
+            'c280039daeadbb621baa64de2d73e43c2a6266538eb4ce8f47700a57943fb2ce' and
+            digest(old/'original-failed15.log') == FAILED15_SHA, 'Archived exact original raw log bytes differ')
+    return original, dict(run_id=run_id, head_sha=head, verified_step=9, artifact_id=row['id'],
+                          artifact_sha256=checksum, original_raw_log_zip_sha256=digest(original))
+
+
 def prepare(output, validator_commit, validator_run_id):
     require(sys.version_info[:3] == (3, 12, 10), 'Use pinned Python3.12.10 to inspect original PYZ')
     output = Path(output).resolve()
@@ -330,7 +378,24 @@ def prepare(output, validator_commit, validator_run_id):
     scopes = validate_qa(qa)
     logs = evidence / 'original-producer-run-logs.zip'
     logs.write_bytes(api(f'/actions/runs/{PRODUCER}/logs'))
+    with zipfile.ZipFile(logs) as current:
+        per_step = JOB_NAME+'/15_'+STEP_NAMES[15]+'.txt'
+        consolidated = per_step not in current.namelist()
+        if consolidated:
+            combined = '0_'+JOB_NAME+'.txt'
+            require(set(current.namelist()) == {combined, JOB_NAME+'/system.txt'} and
+                    hashlib.sha256(current.read(combined)).hexdigest() ==
+                    '3626c6b506dd48d6d0cfb233e68bb44ac089f6ffeaff01f13dfb76a25515e0eb',
+                    'Official producer log layout/content is not the known exact consolidation')
+    if consolidated:
+        current_path = evidence/'current-official-consolidated-logs.zip'
+        logs.rename(current_path)
+        original, origin = archived_original_logs(output, evidence)
+        shutil.copyfile(original, logs)
     log_proof = validate_logs(logs, scopes['original_failed_browser'])
+    if consolidated:
+        log_proof['authenticated_archived_source'] = origin
+        log_proof['official_consolidated_zip_sha256'] = digest(current_path)
     raw_failed = log_proof.pop('_original_failed15_bytes')
     (evidence / 'original-failed15.log').write_bytes(raw_failed)
     freeze = log_proof['resolved_build_dependencies']
