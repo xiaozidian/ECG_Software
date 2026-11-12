@@ -58,6 +58,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -c "import json,subprocess,sys; print('DOCTOR_BUILD_FREEZE_JSON='+json.dumps(subprocess.check_output([sys.executable,'-m','pip','freeze','--all'],text=True).splitlines()))"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Windows backup ACL and committed WAL smoke
+        run: |
+          python -m pytest -p no:cacheprovider -q tests/test_workspace_backup.py::test_online_backup_contains_committed_wal_only --junitxml="$env:RUNNER_TEMP\doctor21-backup-acl-smoke.xml"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Configure CI-only Node tests with installed system Edge
         run: |
           $jsTools = "$env:RUNNER_TEMP\doctor-node-browser"
@@ -195,6 +199,7 @@ jobs:
             ${{ runner.temp }}/doctor-p01/evidence/**/*.png
             ${{ runner.temp }}/PERF21-baseline/baseline21-input.json
             ${{ runner.temp }}/doctor21-performance-tests.xml
+            ${{ runner.temp }}/doctor21-backup-acl-smoke.xml
             ${{ runner.temp }}/doctor-regression/*.json
             ${{ runner.temp }}/doctor-core/**/*.json
             ${{ runner.temp }}/doctor-core/**/*.png

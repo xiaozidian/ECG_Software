@@ -3,6 +3,7 @@ from contextlib import closing
 from copy import deepcopy
 from hashlib import sha256
 import json
+import os
 from pathlib import Path
 import sqlite3
 import subprocess
@@ -81,7 +82,29 @@ def test_online_backup_contains_committed_wal_only(workspace, tmp_path):
         assert snapshot['report_drafts'] == before['report_drafts']
         writer.rollback()
     assert backup.verify_backup(created['path'])['verified']
-    assert Path(created['path']).stat().st_mode & 0o077 == 0
+    if sys.platform == 'win32':
+        # Windows st_mode maps chmod(0600) to 0666. Check actual DACL read
+        # grants in this private user workspace rather than POSIX mode bits.
+        command = """$ErrorActionPreference='Stop';
+        $acl=[System.IO.File]::GetAccessControl($env:ECG_BACKUP_PERMISSION_TEST);
+        $rules=$acl.GetAccessRules($true,$true,[System.Security.Principal.SecurityIdentifier]);
+        foreach($rule in $rules) {
+            $sid=$rule.IdentityReference.Value;
+            $kind=[int]$rule.AccessControlType; $rights=[int]$rule.FileSystemRights;
+            [Console]::WriteLine($sid+'|'+$kind+'|'+$rights)
+        }"""
+        output = subprocess.check_output(
+            ['powershell.exe', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command],
+            env={**os.environ, 'ECG_BACKUP_PERMISSION_TEST': str(created['path'])}, text=True, timeout=30)
+        rules = []
+        for line in output.splitlines():
+            parts = line.split('|')
+            assert len(parts) == 3 and parts[0].startswith('S-1-'), 'Invalid Windows ACL observation'
+            rules.append({'sid':parts[0], 'type':int(parts[1]), 'rights':int(parts[2])})
+        public_sids = {'S-1-1-0', 'S-1-5-11', 'S-1-5-32-545'}
+        assert rules and not any(r['type'] == 0 and r['sid'] in public_sids and r['rights'] & 1 for r in rules)
+    else:
+        assert Path(created['path']).stat().st_mode & 0o077 == 0
     assert before['report_drafts'] == dump_tables(workspace.path)['report_drafts']
 
 
