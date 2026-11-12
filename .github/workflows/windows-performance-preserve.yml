@@ -92,7 +92,7 @@ jobs:
           "ECG_APP_DATA_ROOT=$env:RUNNER_TEMP\doctor-regression-work" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Frontend save-flow and retained report guards on actual system Edge
         run: |
-          python -m pytest -p no:cacheprovider -q tests/test_dashboard_arrival.py tests/test_af_queue.py tests/test_review_write_local_sync.py tests/test_af_review_write_refresh.py tests/test_report_card_and_stt_controls.py tests/test_overview_identity.py tests/test_overview_identity_refresh_fallback.py tests/test_unsaved_navigation.py tests/test_report_wave_menu.py tests/test_report_preview_interactions.py tests/test_stt_use_save_wait.py tests/test_stt_membership_remount.py tests/test_windows_ui_saveflow_controller.py tests/test_windows_performance_preserve.py tests/test_windows_ui_saveflow_interactions.py tests/test_windows_af_editor_ui19.py tests/test_shared_source.py tests/test_static_demo_builder.py tests/test_stt_compatibility.py tests/test_performance_compatibility.py tests/test_performance_continuity_transaction.py tests/test_workspace_backup.py tests/test_windows_doctor_build.py tests/test_windows_deidentified_package.py tests/test_performance_equivalence.py tests/test_hrv_numeric_reuse.py tests/test_stt_light_receipts.py tests/test_report_pdf_page_dependencies.py --junitxml="$env:RUNNER_TEMP\doctor21-performance-tests.xml"
+          python -m pytest -p no:cacheprovider -q tests/test_dashboard_arrival.py tests/test_af_queue.py tests/test_review_write_local_sync.py tests/test_af_review_write_refresh.py tests/test_report_card_and_stt_controls.py tests/test_overview_identity.py tests/test_overview_identity_refresh_fallback.py tests/test_unsaved_navigation.py tests/test_report_wave_menu.py tests/test_report_preview_interactions.py tests/test_stt_use_save_wait.py tests/test_stt_membership_remount.py tests/test_windows_ui_saveflow_controller.py tests/test_windows_performance_preserve.py tests/test_windows_ui_saveflow_interactions.py tests/test_windows_af_editor_ui19.py tests/test_windows_af_editor_ui21.py tests/test_shared_source.py tests/test_static_demo_builder.py tests/test_stt_compatibility.py tests/test_performance_compatibility.py tests/test_performance_continuity_transaction.py tests/test_workspace_backup.py tests/test_windows_doctor_build.py tests/test_windows_deidentified_package.py tests/test_performance_equivalence.py tests/test_hrv_numeric_reuse.py tests/test_stt_light_receipts.py tests/test_report_pdf_page_dependencies.py --junitxml="$env:RUNNER_TEMP\doctor21-performance-tests.xml"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Native directory build, generated 24h source and final ZIP smoke
         id: nativebuild
@@ -210,5 +210,6 @@ jobs:
             ${{ runner.temp }}/doctor-current*.xml
             ${{ runner.temp }}/doctor-eval/evidence/*.json
             ${{ runner.temp }}/doctor-eval/evidence/browser-screenshots/*.png
+            ${{ runner.temp }}/doctor-eval/evidence/browser-screenshots/*.json
           if-no-files-found: ignore
           retention-days: 30

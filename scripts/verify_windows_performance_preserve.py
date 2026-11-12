@@ -80,8 +80,9 @@ def program_identity(new, old=None):
     from scripts.verify_public_release import verify
     read = lambda p: json.loads(p.read_text(encoding='utf-8-sig'))
     release, shared = read(new / 'RELEASE.json'), read(new / '_internal/shared-source-build.json')
-    if os.environ.get('GITHUB_SHA'):
-        require(release['source_commit'] == os.environ['GITHUB_SHA'], 'Package was not compiled from this actual CI commit')
+    expected_compile_commit = os.environ.get('ECG_EXPECTED_WINDOWS_BUILD_COMMIT') or os.environ.get('GITHUB_SHA')
+    if expected_compile_commit:
+        require(release['source_commit'] == expected_compile_commit, 'Package was not compiled from the strictly verified producer commit')
     require(release['production_source_identity'] == verify(ROOT), 'Actual package differs from current production manifest')
     require(shared == snapshot(ROOT)[0], 'Actual package shared stamp differs from frozen current source')
     assets = {name: row for name, row in shared['files'].items() if row['component'] == 'ui'}
@@ -99,7 +100,7 @@ def program_identity(new, old=None):
     exact(policy, read(ROOT / policy_name), 'Actual packaged compatibility policy differs from frozen Windows source')
     require(policy['schema']=='performance-evidence-continuity-v1', 'Unexpected compatibility policy schema')
     proof['performance_policy_sha256'] = fingerprint(policy)
-    proof.update(source_compile_commit=release['source_commit'], production_source_identity=release['production_source_identity'],
+    proof.update(source_compile_commit=release['source_commit'], acceptance_controller_commit=os.environ.get('GITHUB_SHA'), production_source_identity=release['production_source_identity'],
                  common_source_fingerprint=shared['source_fingerprint'], actual_UI_files_verified=len(assets))
     return proof
 

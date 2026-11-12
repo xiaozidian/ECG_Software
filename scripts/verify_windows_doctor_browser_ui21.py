@@ -384,6 +384,7 @@ def upgrade_receipt(home, workspace_id, before, after):
 
 def record(result, name, evidence=None, status="passed"):
     result["checks"].append({"name": name, "status": status, "evidence": evidence or {}})
+    print("WINDOWS_UI21_CHECK="+json.dumps({"name":name,"status":status},ensure_ascii=False),flush=True)
 
 
 async def two_frames(page):
@@ -1091,7 +1092,7 @@ async def verify(args, receipt):
                             from verify_report_rr_browser import verify_report_rr
                             rr_review = await verify_report_rr(page, screenshots)
                             record(receipt, "rr-candidate-selection-and-final-approval", rr_review)
-                            from verify_windows_af_editor_ui19 import verify_af_editor
+                            from verify_windows_af_editor_ui21 import verify_af_editor
                             af_editor = await verify_af_editor(page, screenshots)
                             record(receipt, "native-af-afl-single-screen-editor", af_editor)
                             await fault_checks(page, receipt, selector, sample)
@@ -1316,7 +1317,7 @@ def main():
         receipt["failure_location"] = [
             {"file": Path(frame.filename).name, "function": frame.name, "line": frame.lineno}
             for frame in traceback.extract_tb(error.__traceback__)
-            if Path(frame.filename).name == Path(__file__).name]
+            if Path(frame.filename).name in {Path(__file__).name,'verify_windows_af_editor_ui21.py','verify_windows_performance_preserve.py'}]
         record(receipt, "browser-verification-completion", {"error": safe_error(error, [str(args.package_root), str(args.output.parent)])}, status="failed")
     finally:
         receipt["completed_utc"] = datetime.now(timezone.utc).isoformat()
