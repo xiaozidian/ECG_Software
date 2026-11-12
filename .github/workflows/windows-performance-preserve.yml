@@ -71,7 +71,12 @@ jobs:
           "ECG_CHROME=$edgePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "ECG_CHROME_PATH=$edgePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Regenerate exact platform policy on pinned Windows Python
-        run: python scripts/build_performance_policy.py --parents performance-parent-engines.json
+        run: |
+          python scripts/build_performance_policy.py --parents performance-parent-engines.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # Canonical JSON bytes must retain the sealed repository LF on Windows.
+          python -c "from pathlib import Path; p=Path('performance-compatibility.json'); p.write_bytes(p.read_bytes().replace(bytes([13,10]),bytes([10])))"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify release production source fingerprint
         run: python scripts/verify_public_release.py
       - name: Fetch exact accepted20 P01 and unchanged original mathematical M01
