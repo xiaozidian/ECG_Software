@@ -1,4 +1,4 @@
-name: Windows1.0.21 original PE strict native continuation
+name: Windows1.0.21 actual nonempty HRV RR review preservation
 
 # Reuse only exact producer43295463674 binaries after authenticated failed-step and
 # ACL/418/build/PE/policy/source proofs; every native business gate reruns.
@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   build:
-    name: Original21 PE native acceptance with preserved producer failure
+    name: Actual nonempty HRV RR original20 to original21 reviewed evidence
     runs-on: windows-latest
     timeout-minutes: 90
     env:
@@ -95,92 +95,21 @@ jobs:
           $inputs = Get-Content "$env:RUNNER_TEMP\PERF21-baseline\baseline21-input.json" -Raw | ConvertFrom-Json
           "ECG_DATA_ROOT=$($inputs.paths.math_source)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "ECG_APP_DATA_ROOT=$env:RUNNER_TEMP\doctor-regression-work" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      - name: Validate changed controller readiness and strict continuation refusal contracts
-        run: |
-          python -m pytest -p no:cacheprovider -q tests/test_windows21_continuation.py tests/test_windows_af_editor_ui21.py tests/test_windows_performance_preserve.py tests/test_windows_ui_saveflow_controller.py --junitxml="$env:RUNNER_TEMP\doctor21-continuation-controller-tests.xml"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Complete original21 M01 three native rounds plus actual draft PDF and HRV operations
-        run: |
-          python scripts/verify_windows_doctor_browser_ui21.py --package-root "$env:PERF21_FULL_ROOT" --software-archive "$env:PERF21_VERIFICATION_UPGRADE_FIXTURE" --output "$env:RUNNER_TEMP\doctor-native\evidence\browser-validation.json" --repeats 3
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Actual original21 P01 source save reopen and packaging update
-        run: |
-          python scripts/verify_windows_p01.py --software-archive "$env:PERF21_P01" --math-source-root "$env:ECG_DATA_ROOT" --output "$env:RUNNER_TEMP\doctor-native\evidence\p01-native.json"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Actual fresh21 ST-T AF incremental saving and report card operations
-        run: |
-          python scripts/verify_windows_performance_preserve.py --software-archive "$env:PERF21_P01" --output "$env:RUNNER_TEMP\doctor-native\evidence\comprehensive-native.json"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Actual original20 to original21 same-workspace reviewed signature UUID and formal PDF retention
+      - name: Actual nonempty HRV RR original20 to original21 reviewed signature and formal PDF retention
         run: |
           $inputs = Get-Content "$env:RUNNER_TEMP\PERF21-baseline\baseline21-input.json" -Raw | ConvertFrom-Json
-          python scripts/verify_windows_performance_preserve.py --base-software-archive "$($inputs.paths.p01)" --software-archive "$env:PERF21_P01" --output "$env:RUNNER_TEMP\doctor-native\evidence\upgrade20-to21-native.json"
+          python scripts/verify_windows_performance_preserve.py --nonempty-reviewed-scopes --base-software-archive "$($inputs.paths.p01)" --software-archive "$env:PERF21_P01" --output "$env:RUNNER_TEMP\doctor-native\evidence\upgrade20-to21-native.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Prove original21 full source matches unchanged original20 M01
-        run: |
-          python scripts/prepare_windows21_baseline.py --baseline-proof "$env:RUNNER_TEMP\PERF21-baseline\baseline21-input.json" --package-root "$env:PERF21_FULL_ROOT" --output "$env:RUNNER_TEMP\doctor-native\evidence\original-M01-payload-parity.json"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Require every new native receipt and unchanged original deliverable before acceptance
-        run: |
-          python scripts/prepare_windows21_continuation.py --output "$env:RUNNER_TEMP\PERF21-producer" --finalize-evidence "$env:RUNNER_TEMP\doctor-native\evidence"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Deliver exact original p01 bytes only after all native gates succeed
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: CardioInsight-Windows-x64-1.0.21-P01-software-only
-          path: |
-            ${{ env.PERF21_P01 }}
-            ${{ env.PERF21_P01 }}.sha256
-            ${{ env.PERF21_P01_BUILD_REPORT }}
-          if-no-files-found: error
-          retention-days: 30
-          compression-level: 0
-      - name: Deliver exact original full bytes only after all native gates succeed
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: CardioInsight-Windows-x64-1.0.21-M01-full
-          path: |
-            ${{ env.PERF21_FULL }}
-            ${{ env.PERF21_FULL }}.sha256
-            ${{ env.PERF21_BUILD_REPORT }}
-          if-no-files-found: error
-          retention-days: 30
-          compression-level: 0
-      - name: Deliver exact original software bytes only after all native gates succeed
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: CardioInsight-Windows-x64-1.0.21-software-update
-          path: |
-            ${{ env.PERF21_SOFTWARE }}
-            ${{ env.PERF21_SOFTWARE }}.sha256
-          if-no-files-found: error
-          retention-days: 30
-          compression-level: 0
-      - name: Deliver exact original source bytes only after all native gates succeed
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: CardioInsight-Synthetic-M01-24h-v1-for-1.0.21
-          path: |
-            ${{ env.PERF21_SOURCE }}
-            ${{ env.PERF21_SOURCE }}.sha256
-          if-no-files-found: error
-          retention-days: 30
-          compression-level: 0
-      - name: Preserve original failure and distinct new native acceptance evidence
+      - name: Preserve priority upgrade-only evidence without delivering any binary
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Windows-doctor-eval-mathematical-validation-1.0.21
+          name: Windows21-original20-nonempty-HRV-RR-upgrade-only
           path: |
             ${{ runner.temp }}/PERF21-producer/continuation21-input.json
             ${{ runner.temp }}/PERF21-producer/evidence/**/*
             ${{ runner.temp }}/PERF21-producer/original-artifacts/qa/**/*
             ${{ runner.temp }}/PERF21-baseline/baseline21-input.json
-            ${{ runner.temp }}/doctor21-continuation-controller-tests.xml
             ${{ runner.temp }}/doctor-native/evidence/**/*
           if-no-files-found: error
           retention-days: 30
