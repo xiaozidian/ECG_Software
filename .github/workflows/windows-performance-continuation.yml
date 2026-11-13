@@ -97,7 +97,7 @@ jobs:
         if: ${{ inputs.phase == 'm01' }}
         run: |
           $inputs = Get-Content "$env:RUNNER_TEMP\screening22-producer\candidate22-input.json" -Raw | ConvertFrom-Json
-          python scripts/verify_windows_doctor_browser_ui21.py --package-root "$($inputs.paths.full_root)" --software-archive "$($inputs.paths.software)" --repeats 3 --output "$env:RUNNER_TEMP\screening22-native\m01-three-rounds.json"
+          python scripts/verify_windows_doctor_browser_ui21.py --package-root "$($inputs.paths.full_root)" --repeats 3 --output "$env:RUNNER_TEMP\screening22-native\m01-three-rounds.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Retain distinct native attempt and immutable producer attribution
         if: always()
