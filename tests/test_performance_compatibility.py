@@ -230,4 +230,3 @@ def test_policy_hot_change_remains_blocked_by_executing_runtime(tmp_path, monkey
     with pytest.raises(ReportConflict):
         runtime.assert_current()
     assert runtime.engine_id == original_engine
-

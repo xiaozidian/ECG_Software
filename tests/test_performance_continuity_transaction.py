@@ -133,4 +133,3 @@ def test_upgraded_workspace_can_be_backed_up_with_continuity_receipt(approved_st
     checked=verify_backup(archive)
     assert checked['tables']['analysis_implementation_compatibility']==1
     assert rows(store)==before
-

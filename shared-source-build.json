@@ -16,7 +16,7 @@
   },
   "clinical_acceptance": false,
   "core_contract": "ecg-core-1",
-  "core_version": "core-e70238803cba74ff",
+  "core_version": "core-cf0c36e25738fc31",
   "files": {
     "demo/static/js/demo-api.js": {
       "bytes": 100588,
@@ -174,9 +174,9 @@
       "sha256": "609acd9c66e256ce5a42767532d6195970defb1564f2b0e216b7ca0037e884bd"
     },
     "ecg_core/screening_compatibility.py": {
-      "bytes": 12296,
+      "bytes": 16780,
       "component": "core",
-      "sha256": "f79b0fab62b765f13887e09eed8bdb415c301ae8f81c4542c6b8a298d7e8cdea"
+      "sha256": "731d498b5f66cdf963221ceaff918a8d7af65b48ce3577b184cb4fd3bd160d16"
     },
     "ecg_core/signal_profile.py": {
       "bytes": 2876,
@@ -680,7 +680,7 @@
     }
   },
   "schema": 1,
-  "source_fingerprint": "41b2e3b3b79caf50920104e0f7aa498c4674ff468e63ee8d33ef625b800c50ae",
+  "source_fingerprint": "758c908ccf05520370398a236c6ec4dfcbc8fa216f727744410b551167212eb3",
   "source_revision": null,
   "ui_version": "ui-5246a685b1574c29"
 }

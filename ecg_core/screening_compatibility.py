@@ -134,6 +134,14 @@ def report_identity(report):
                     "updated_at", "analysis_provenance")})
 
 
+def edited_feed_identity(feed):
+    """Cryptographic edited-beat/settings identity, beyond the display hash."""
+    rows = feed.beats + feed.markers
+    return digest(dict(records=feed.records,duration_s=feed.duration,
+        beats=[(row['id'],row['sample_index'],row['class_code']) for row in rows],
+        settings=feed.document['settings']))
+
+
 class ScreeningCompatibility(PerformanceCompatibility):
     policy_name = POLICY_NAME
     policy_schema = POLICY_SCHEMA
@@ -141,6 +149,8 @@ class ScreeningCompatibility(PerformanceCompatibility):
     def __init__(self, root, runtime, storage, editor):
         super().__init__(root, runtime, storage, editor)
         self._measurement_ok = False
+        self._verified_certificate_reuses = 0
+        self._full_verification_attempts = 0
         if not self.policy or not self._code_ok:
             return
         try:
@@ -154,7 +164,9 @@ class ScreeningCompatibility(PerformanceCompatibility):
 
     def diagnostics(self):
         return {**super().diagnostics(), "continuity_kind": CONTINUITY_KIND,
-                "measurement_matched": self._measurement_ok}
+                "measurement_matched": self._measurement_ok,
+                "verified_certificate_reuses": self._verified_certificate_reuses,
+                "full_verification_attempts": self._full_verification_attempts}
 
     def build_allowed(self, previous, current):
         return self._measurement_ok and super().build_allowed(previous, current)
@@ -169,6 +181,19 @@ class ScreeningCompatibility(PerformanceCompatibility):
                 "measurement_identity": digest(self.policy["measurement_contract"])}}
 
     def resolve(self, case, previous, current, feed, annotations, report, review_revision, beat_revision):
+        if not self.build_allowed(previous,current):
+            return None
+        if self.storage is not None:
+            cached = self.storage.get_compatible_implementation(case['case_id'],
+                self.runtime.engine_id,current['digest'])
+            if cached and self._cached_snapshot_matches(cached,case,previous,current,feed,
+                                                        annotations,report,review_revision,beat_revision):
+                self.runtime.assert_current()
+                with self._lock:self._verified_certificate_reuses += 1
+                # Keep the original proof byte-for-byte. Atomic commit guards
+                # and the live source guard still run in the caller.
+                return copy.deepcopy(cached)
+        with self._lock:self._full_verification_attempts += 1
         certificate = super().resolve(case, previous, current, feed, annotations, report, review_revision, beat_revision)
         if certificate is None:
             return None
@@ -182,9 +207,10 @@ class ScreeningCompatibility(PerformanceCompatibility):
         old_measurements, new_measurements = measurement_projection(old), measurement_projection(new)
         if digest(old_measurements) != digest(new_measurements):
             return None
-        certificate.update(continuity_kind=CONTINUITY_KIND,
+        certificate.update(continuity_kind=CONTINUITY_KIND,case_id=case['case_id'],
             screening_transition=self.record_evaluation_options()["screening_transition"],
             beat_basis_version=beat_basis_version(feed),
+            edited_feed_digest=edited_feed_identity(feed),
             measurement_projection_digest=digest(old_measurements),
             report_state_digest=report_identity(report),
             signed_report_snapshot=None)
@@ -203,6 +229,49 @@ class ScreeningCompatibility(PerformanceCompatibility):
                 **snapshot, before_digest=digest(old_presentation), after_digest=digest(new_presentation))
         self.runtime.assert_current()
         return certificate
+
+    def _cached_snapshot_matches(self, certificate, case, previous, current, feed,
+                                 annotations, report, review_revision, beat_revision):
+        """Accept audited prior computation only for this exact live snapshot."""
+        from .clinical_analysis import beat_basis_version
+        context = dict(schema=POLICY_SCHEMA,continuity_kind=CONTINUITY_KIND,
+            case_id=case['case_id'],policy_digest=self.policy_digest,
+            screening_transition=self.record_evaluation_options()['screening_transition'],
+            reference_basis=previous,execution_basis=current['digest'],
+            execution_engine_id=self.runtime.engine_id,source_inputs_digest=digest(current['inputs']))
+        if (current.get('engine_id') != self.runtime.engine_id
+                or digest(current.get('engine') or {}) != self.runtime.engine_id
+                or any(certificate.get(key) != value for key,value in context.items())):
+            return False
+        state = report_identity(report)
+        if (certificate.get('report_version') == report.get('version',1)
+                and certificate.get('report_state_digest') != state):
+            # A genuine server edit advances the report version. Recomputing
+            # signal measurements cannot authorize a same-version text/signature
+            # rewrite, even if the database was edited outside the UI.
+            raise ReportConflict('报告内容或签署状态在同一版本下变化，请重新核对')
+        snapshot = dict(beat_revision=beat_revision,beat_basis_version=beat_basis_version(feed),
+            edited_feed_digest=edited_feed_identity(feed),editor_document_digest=digest(feed.document),
+            authored_annotations_digest=digest(annotations),review_revision=review_revision,
+            report_version=report.get('version',1),report_composition_digest=digest(report.get('composition') or {}),
+            report_state_digest=state)
+        if any(certificate.get(key) != value for key,value in snapshot.items()):
+            return False
+        identity = certificate.get('measurement_projection_digest')
+        if not isinstance(identity,str) or len(identity)!=64 or any(c not in '0123456789abcdef' for c in identity):
+            return False
+        signed = certificate.get('signed_report_snapshot')
+        origin = (report.get('analysis_provenance') or {}).get('screening_algorithm_version')
+        if report.get('status')=='reviewed' and origin != REFINED_SCREENING_VERSION:
+            if (not isinstance(signed,dict) or signed.get('schema') != SNAPSHOT_SCHEMA
+                    or signed.get('report_identity') != state
+                    or signed.get('report_version') != report.get('version',1)
+                    or not signed.get('before_digest')
+                    or signed.get('before_digest') != signed.get('after_digest')):
+                return False
+        elif signed is not None:
+            return False
+        return True
 
     def apply_report_presentation(self, case, report, value, feed):
         """Project an unchanged signed report; new drafts use current screening."""

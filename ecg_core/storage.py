@@ -752,14 +752,65 @@ class Storage(ReviewWorkflowMixin, EvidenceCandidateMixin, ReportEvidenceMixin):
                 ON CONFLICT(case_id,execution_engine_id,execution_basis)
                 DO UPDATE SET certificate=excluded.certificate,created_at=excluded.created_at""",
                 (case_id,certificate['execution_engine_id'],certificate['execution_basis'],payload,utc_now()))
-            if not exists or exists['certificate']!=payload:
+            action=('analysis.screening_refinement_verified'
+                    if certificate.get('continuity_kind')=='stt_screening_refinement'
+                    else 'analysis.performance_upgrade_verified')
+            needs_audit=not exists or exists['certificate']!=payload
+            if action=='analysis.screening_refinement_verified':
+                # A full re-verification repairs a missing or damaged audit even
+                # when the resulting numerical certificate is byte-for-byte equal.
+                # A read cache cannot create this independent evidence.
+                needs_audit=needs_audit or not self._compatible_audit_matches(db,case_id,certificate,action)
+            if needs_audit:
                 db.execute('INSERT INTO audit_log(case_id,actor,action,detail,created_at) VALUES(?,?,?,?,?)',
-                    (case_id,actor,'analysis.screening_refinement_verified'
-                        if certificate.get('continuity_kind')=='stt_screening_refinement'
-                        else 'analysis.performance_upgrade_verified',
+                    (case_id,actor,action,
                      json.dumps(dict(reference_basis=certificate['reference_basis']['digest'],
                          execution_engine=certificate['execution_engine_id'],
                          proof_sha256=digest(certificate),retained_stt_records=certificate['retained_stt_records']),sort_keys=True),utc_now()))
+
+    @staticmethod
+    def _compatible_audit_matches(db,case_id,certificate,action):
+        from .analysis_provenance import digest
+        expected=digest(certificate)
+        for row in db.execute('SELECT detail FROM audit_log WHERE case_id=? AND action=? ORDER BY id DESC',
+                              (case_id,action)):
+            try:detail=json.loads(row['detail'])
+            except (ValueError,TypeError):continue
+            if (isinstance(detail,dict) and detail.get('proof_sha256')==expected
+                    and detail.get('execution_engine')==certificate.get('execution_engine_id')
+                    and detail.get('reference_basis')==(certificate.get('reference_basis') or {}).get('digest')
+                    and detail.get('retained_stt_records')==certificate.get('retained_stt_records')):
+                return True
+        return False
+
+    def get_compatible_implementation(self,case_id,execution_engine_id,execution_basis):
+        """Read one independently audited screening certificate, never authorize it.
+
+        The caller must still match its entire live snapshot and policy, then
+        run the ordinary atomic commit guards. Unattested JSON is a cache miss.
+        """
+        from .screening_compatibility import POLICY_SCHEMA,CONTINUITY_KIND
+        with self.connect() as db:
+            db.execute('BEGIN')
+            if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='analysis_implementation_compatibility'").fetchone():
+                return None
+            row=db.execute('SELECT certificate FROM analysis_implementation_compatibility '
+                           'WHERE case_id=? AND execution_engine_id=? AND execution_basis=?',
+                           (case_id,execution_engine_id,execution_basis)).fetchone()
+            if not row:return None
+            try:certificate=json.loads(row['certificate'])
+            except (ValueError,TypeError):return None
+            if (not isinstance(certificate,dict) or certificate.get('schema')!=POLICY_SCHEMA
+                    or certificate.get('continuity_kind')!=CONTINUITY_KIND
+                    or certificate.get('case_id')!=case_id
+                    or certificate.get('execution_engine_id')!=execution_engine_id
+                    or certificate.get('execution_basis')!=execution_basis):
+                return None
+            try:audited=self._compatible_audit_matches(db,case_id,certificate,'analysis.screening_refinement_verified')
+            except (ValueError,TypeError,AttributeError,OverflowError):return None
+            if not audited:
+                return None
+            return certificate
 
     def sync_analysis_basis(self, case_id, basis, actor, readonly=False):
         """Idempotent, atomic invalidation; keep text and selected evidence intact."""
