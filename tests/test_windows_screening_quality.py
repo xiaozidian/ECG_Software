@@ -378,3 +378,47 @@ def test_owned_process_inventory_uses_exact_executable_and_never_records_command
     psutil=SimpleNamespace(process_iter=lambda _:entries,NoSuchProcess=ProcessLookupError,AccessDenied=PermissionError)
     monkeypatch.setitem(sys.modules,'psutil',psutil)
     assert owned_processes(exe)==[{'pid':4,'parent_pid':3,'birth':10.0}]
+
+
+def test_old_candidate_probe_reaches_validator_only_with_real_native_UI_write_context():
+    import threading
+    from flask import Flask,jsonify,request,abort
+    import win_doctor_eval as doctor
+    from scripts.verify_windows_screening_quality import annotation_probe_headers
+    context=dict(profile=doctor.PROFILE,role='workspace',pid=1,birth='math',token='a'*64,
+                 cookie_name='doctor_'+'a'*20,port=45555,software_version=APP,packaging_version='1.0.22',shutdown=threading.Event())
+    app=Flask('mathematical-native-probe-boundary');doctor._install_guards(app,context)
+    reached=[]
+    @app.post('/api/cases/math/annotations')
+    def annotations():
+        if request.headers.get('X-CardioInsight-Request')!='1' or request.headers.get('X-CardioInsight-Workspace')!='math-epoch':abort(403)
+        reached.append(request.get_json())
+        return jsonify(error='deliberately obsolete mathematical candidate',code='report_conflict'),409
+    client=app.test_client();origin='http://127.0.0.1:45555'
+    assert client.get('/_doctor/open?token='+'a'*64,base_url=origin).status_code==303
+    # APIRequestContext's bare POST cannot reach the candidate version check.
+    assert client.post('/api/cases/math/annotations',base_url=origin,json={'old':True}).status_code==403
+    assert reached==[]
+    headers=annotation_probe_headers('math-epoch');assert 'Origin' not in headers
+    headers['Origin']=origin  # The browser supplies this, never the helper.
+    response=client.post('/api/cases/math/annotations',base_url=origin,json={'old':True},headers=headers)
+    assert response.status_code==409 and reached==[{'old':True}]
+
+
+def test_annotation_attempt_uses_browser_fetch_and_preserves_rejection_response():
+    import asyncio
+    from scripts.verify_windows_screening_quality import browser_annotation_attempt
+    calls=[]
+    class Page:
+        async def evaluate(self,script,args=None):
+            if args is None:return 'actual-browser-workspace-epoch'
+            calls.append((script,args))
+            return {'status':409,'payload':{'error':'obsolete candidate','code':'report_conflict'}}
+    response=asyncio.run(browser_annotation_attempt(Page(),'math-case',{'deliberately_old':True}))
+    assert response=={'status':409,'payload':{'error':'obsolete candidate','code':'report_conflict'}}
+    script,args=calls[0]
+    assert "fetch('/api/cases/'" in script and "credentials:'same-origin'" in script
+    assert args['case_id']=='math-case' and args['body']=={'deliberately_old':True}
+    assert args['headers']['X-CardioInsight-Request']=='1'
+    assert args['headers']['X-CardioInsight-Workspace']=='actual-browser-workspace-epoch'
+    assert 'Origin' not in args['headers']

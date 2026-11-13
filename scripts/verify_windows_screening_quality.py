@@ -514,7 +514,25 @@ def pdf_content_identity(body):
                 excluded_fields="PDF metadata IDs/timestamps; actual software-generator version text only")
 
 
-async def candidate_transition_probe(page,case_id,before):
+def annotation_probe_headers(workspace_epoch):
+    return {'Content-Type':'application/json','X-Actor':'demo-analyst','X-CardioInsight-Request':'1',
+            'X-CardioInsight-Workspace':workspace_epoch or ''}
+
+
+async def browser_annotation_attempt(page,case_id,body):
+    """Use the doctor page's real Origin/cookies and its ordinary write headers."""
+    epoch=await page.evaluate("()=>state.workspaceEpoch||''")
+    return await page.evaluate("""async args=>{
+        if(state.caseId!==args.case_id)throw Error('Candidate probe case changed');
+        const response=await fetch('/api/cases/'+encodeURIComponent(args.case_id)+'/annotations?analysis=edited',{
+            method:'POST',credentials:'same-origin',headers:args.headers,body:JSON.stringify(args.body)});
+        const json=(response.headers.get('content-type')||'').includes('application/json');
+        const payload=json?await response.json():{error:(await response.text()).slice(0,600)};
+        return {status:response.status,payload};
+    }""",dict(case_id=case_id,body=body,headers=annotation_probe_headers(epoch)))
+
+
+async def candidate_transition_probe(page,case_id,before,*,progress=None):
     """After immutable upgrade checks, test an old request refusal and author a new0.5 record."""
     from uuid import uuid4
     from scripts.verify_windows_ui15_upgrade import get
@@ -533,10 +551,12 @@ async def candidate_transition_probe(page,case_id,before):
               result_code=chosen['kind'],review_extent='whole',review_leads=chosen['leads'],
               end_sample=round(chosen['end_s']*200)-1,submission_id=str(uuid4()),review_scope=scope,
               stt_candidate_scope=scope,stt_candidate_id=chosen['id']))
-    address=urlsplit(page.url);origin=address.scheme+'://'+address.netloc
     annotations=await get(page,case_id,'annotations');report=await get(page,case_id,'report')
-    response=await page.request.post(origin+'/api/cases/'+case_id+'/annotations',data=body)
-    require(response.status==409,'Old0.4 candidate submission was not rejected with409')
+    response=await browser_annotation_attempt(page,case_id,body)
+    if progress is not None:
+        progress.update(old_candidate_http_status=response['status'],old_candidate_rejection=response['payload'],
+                        request_context='real-browser-Origin-cookies-and-ordinary-workspace-write-headers')
+    require(response['status']==409,'Old0.4 candidate submission expected409, received '+str(response['status'])+': '+str(response['payload']))
     exact(annotations['items'],(await get(page,case_id,'annotations'))['items'],'Rejected old candidate wrote a clinical record')
     after_reject=await get(page,case_id,'report')
     for key in ('status','version','review_revision','analysis_provenance','composition'):
@@ -555,7 +575,8 @@ async def candidate_transition_probe(page,case_id,before):
     await page.wait_for_function("()=>!state.sttSaving",timeout=180000)
     final=await get(page,case_id,'report')
     require(final['status']=='draft' and not final['reviewed_by'],'A real new authored record resurrected the old signed report')
-    return dict(status='passed',old_candidate_http_status=response.status,rejected_write_left_original_report_unchanged=True,
+    return dict(status='passed',old_candidate_http_status=response['status'],old_candidate_rejection=response['payload'],
+                request_context='real-browser-Origin-cookies-and-ordinary-workspace-write-headers',rejected_write_left_original_report_unchanged=True,
                 new_candidate_saved_from_visible_workbench=True,new_algorithm='stt-screening-0.5.0-morphology-qualified',
                 report_after_real_new_authored_record='draft',new_record_id=receipt['id'])
 
@@ -1015,7 +1036,8 @@ async def run(args, result):
                     page=await begin(exe,reuse=True)
                     await page.locator('#openFirstCase').click()
                     await page.wait_for_function('id=>state.caseId===id&&!state.caseLoading',arg=doctor_source.CASE_ID)
-                    result['candidate_transition']=await candidate_transition_probe(page,doctor_source.CASE_ID,before)
+                    result['candidate_transition']=await candidate_transition_probe(page,doctor_source.CASE_ID,before,
+                        progress=result.setdefault('candidate_transition',{'status':'running'}))
                     await context.close();context=None
                     await stop(exe,home)
                     checks.extend(['exact-original21-P01-and-distinct-fresh22-PE', 'new-compiled-screening05-source-and-unchanged-measurement-input-identity',
