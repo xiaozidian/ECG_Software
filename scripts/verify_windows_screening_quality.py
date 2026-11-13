@@ -72,7 +72,15 @@ def verify_policy_pair(root, packaged):
          'stt-screening-refinement-continuity-v1',set(SCREENING_PARENTS))]:
         policy=read(root/policy_name);engines=read(root/parents_name)
         exact(policy,read(packaged/policy_name),'Packaged '+kind+' policy differs from frozen source')
-        exact(engines,read(packaged/parents_name),'Packaged '+kind+' parents differ from frozen source')
+        # The performance parents file is a build input; its complete manifest
+        # list is already included in the independently packaged runtime policy.
+        # Screening additionally packages its separate parent resource.
+        parent_resource=packaged/parents_name
+        if kind=='screening' or parent_resource.exists():
+            exact(engines,read(parent_resource),'Packaged '+kind+' parents differ from frozen source')
+        actual_engines=read(packaged/policy_name)['parent_engines']
+        exact({fingerprint(e):e for e in engines},{fingerprint(e):e for e in actual_engines},
+              'Actual '+kind+' policy parent manifests differ from frozen build inputs')
         require(policy['schema']==schema,'Unexpected '+kind+' policy schema')
         require(isinstance(engines,list) and len(engines)==len(parents),'Unexpected '+kind+' parent count')
         require({fingerprint(engine) for engine in engines}==parents,'Unapproved '+kind+' parent engine')
@@ -80,7 +88,9 @@ def verify_policy_pair(root, packaged):
         require({fingerprint(engine) for engine in policy['parent_engines']}==parents,'Policy parent manifests do not match '+kind+' allowlist')
         require('f1a6856075c041df55f179ddd6b9cf959763ad9bd66838b6ed04f23f8f16025e' not in policy['parent_engine_ids'],
                 'Undelivered fbaa candidate was incorrectly trusted as a parent')
-        proof[kind]=dict(schema=schema,policy_sha256=fingerprint(policy),parent_engine_ids=sorted(parents))
+        proof[kind]=dict(schema=schema,policy_sha256=fingerprint(policy),parent_engine_ids=sorted(parents),
+                        actual_parent_manifests_verified_from='packaged-policy.parent_engines',
+                        separate_parent_resource_present=parent_resource.exists())
     return proof
 
 

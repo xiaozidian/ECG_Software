@@ -444,6 +444,28 @@ def test_C34_requires_both_independent_policy_and_parent_sets(tmp_path):
     assert PERFORMANCE_PARENT not in SCREENING_PARENTS
 
 
+def test_performance_parent_build_input_is_not_required_when_actual_policy_contains_exact_manifest(tmp_path):
+    from scripts.verify_windows_screening_quality import verify_policy_pair,PERFORMANCE_PARENT
+    source,packaged=policy_pair_copy(tmp_path)
+    (packaged/'performance-parent-engines.json').unlink()
+    result=verify_policy_pair(source,packaged)
+    assert result['performance']['parent_engine_ids']==[PERFORMANCE_PARENT]
+    assert result['performance']['actual_parent_manifests_verified_from']=='packaged-policy.parent_engines'
+    assert result['performance']['separate_parent_resource_present'] is False
+    assert result['screening']['separate_parent_resource_present'] is True
+
+
+def test_missing_separate_parent_input_never_allows_tampered_actual_performance_policy(tmp_path):
+    import json
+    from scripts.verify_windows_screening_quality import verify_policy_pair
+    source,packaged=policy_pair_copy(tmp_path)
+    (packaged/'performance-parent-engines.json').unlink()
+    path=packaged/'performance-compatibility.json';value=json.loads(path.read_text())
+    value['parent_engines'][0]['app_version']='unapproved-parent'
+    path.write_text(json.dumps(value))
+    with pytest.raises(AssertionError):verify_policy_pair(source,packaged)
+
+
 @pytest.mark.parametrize('fault',['packaged-performance-policy','packaged-screening-parents','performance-add-fbaa','screening-alias-performance','unknown-performance-parent'])
 def test_dual_policy_verdict_rejects_missing_mismatched_or_broadened_authority(tmp_path,fault):
     import json
