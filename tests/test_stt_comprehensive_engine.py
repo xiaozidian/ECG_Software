@@ -81,9 +81,11 @@ def test_low_T_biphasic_and_dynamic_inversion_remain_distinct_and_parallel(tmp_p
     assert [(c['start_s'],c['end_s']) for c in events(r,'V3','t_low_flat')]==[(61,181)]
     assert [(c['start_s'],c['end_s']) for c in events(r,'V4','t_biphasic')]==[(121,241)]
     assert not events(r,'V4','t_low_flat')
-    assert events(r,'V5','st_depression') and events(r,'V5','t_persistent_inversion')
+    assert events(r,'V5','st_depression')
     inversion=events(r,'V5','t_wave_inversion')[0]
     assert (inversion['polarity_from'],inversion['polarity_to'])==('positive','negative')
+    assert 't_persistent_inversion' in inversion['criteria']
+    assert not events(r,'V5','t_persistent_inversion')  # Same continuous change is one candidate.
     selected=calculate_stt_range(array,records,start_sample=121*200,end_sample=241*200,leads=['V4'])['leads'][0]
     assert selected['mean_t_positive_units']>100 and selected['mean_t_negative_units']<-100
     assert selected['biphasic_beat_count']==120
@@ -139,7 +141,8 @@ def test_AF_lifecycle_keeps_all_new_candidate_types_and_measured_minutes_exact(t
     client=app.test_client();base='/api/cases/'+module.CASE_ID
     initial=client.get(base+'/stt-review');assert initial.status_code==200,initial.json
     before=initial.json['analysis']
-    assert {'st_depression','st_elevation','t_low_flat','t_persistent_inversion','t_biphasic','t_wave_inversion'}<=set(c['kind'] for c in before['candidates'])
+    assert {'st_depression','st_elevation','t_low_flat','t_biphasic','t_wave_inversion'}<=set(c['kind'] for c in before['candidates'])
+    assert any('t_persistent_inversion' in c['criteria'] for c in before['candidates'])
     identifier=str(uuid4())
     for status in ('pending','confirmed','excluded',None):
         current=client.get(base+'/rhythm-review').json

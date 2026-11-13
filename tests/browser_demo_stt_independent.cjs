@@ -4,7 +4,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),crypto=require('node:crypto');
 const {harness}=require('./browser_demo_feedback_api.cjs');
 const fixture=JSON.parse(fs.readFileSync(process.argv[2],'utf8')),mode=process.argv[3];
-const POLICY='independent_of_AF_AFL_reviews',ALGORITHM='stt-screening-0.4.0-comprehensive-independent',PROFILE='raw-200hz-fixed16s-st-perbeat-morphology-v3',METHOD='stt-hospital-review-v3';
+const POLICY='independent_of_AF_AFL_reviews',ALGORITHM='stt-screening-0.5.0-morphology-qualified',PROFILE='raw-200hz-fixed16s-st-perbeat-morphology-v3',METHOD='stt-hospital-review-v3';
 const raw=fs.readFileSync(fixture.raw_path),source={raw,rows:fixture.rows},key='cardioinsight-public-math-4314-v2',clone=v=>JSON.parse(JSON.stringify(v));
 const scope=v=>Object.fromEntries(['case_id','analysis_basis','analysis_revision','beat_revision'].map(k=>[k,v[k]]));
 function bind(h,expectedHash=fixture.raw_sha256){

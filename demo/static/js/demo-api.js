@@ -2,7 +2,7 @@
 
 /* Browser-only mathematical API. No uploaded or patient dataset is consumed. */
 (() => {
-  const STT_RHYTHM_POLICY='independent_of_AF_AFL_reviews',STT_ALGORITHM='stt-screening-0.4.0-comprehensive-independent',STT_RANGE_PROFILE='raw-200hz-fixed16s-st-perbeat-morphology-v3',STT_METHOD='stt-hospital-review-v3';
+  const STT_RHYTHM_POLICY='independent_of_AF_AFL_reviews',STT_ALGORITHM='stt-screening-0.5.0-morphology-qualified',STT_RANGE_PROFILE='raw-200hz-fixed16s-st-perbeat-morphology-v3',STT_METHOD='stt-hospital-review-v3';
   const RATE=200,COUNT=1,STORE_KEY=window.__CARDIOINSIGHT_SOURCE_VERSION__?.source_fingerprint?"cardioinsight.math."+window.__CARDIOINSIGHT_SOURCE_VERSION__.source_fingerprint:"cardioinsight-public-math-4314-v2";
   const rawSignalMetadata=()=>({units:'device_unit',unit_label:'设备单位',calibration_verified:false,calibration_note:'u = 设备单位，电压未校准；显示放大不等于 mm/mV 标定。',signal_profile:{id:'data-int16le-8ch-200hz-v1',sample_rate_hz:RATE,channel_count:8,sample_format:'little-endian int16',stored_leads:['I','II','V1','V2','V3','V4','V5','V6'],derived_leads:{III:'II-I',aVR:'-(I+II)/2',aVL:'I-II/2',aVF:'II-I/2'},basis:'当前支持的 DATA 导入格式；采样率与通道映射尚未经设备资料核验',device_verified:false}});
   const TEMPLATE_FAMILIES=new Set(["全部","单发","成对","房速","二联律","三联律(NPN)","三联律(NNP)","连续三发","连续多发","室速","三联律(NPP)","四联律","自定义"]),TEMPLATE_LEADS=new Set(["I","II","III","aVR","aVL","aVF","V1","V2","V3","V4","V5","V6"]);

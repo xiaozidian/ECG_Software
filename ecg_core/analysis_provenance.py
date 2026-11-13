@@ -1,7 +1,8 @@
 """Bind review evidence to its verified implementation and original inputs.
 
-An explicitly verified performance upgrade may retain the reviewed reference
-build; the actual executing files remain separately checked and audited.
+An explicitly verified performance upgrade or screening-only refinement may
+retain the reviewed reference build. Their distinct policies and audit events
+keep the actual executing implementation separately checked and identifiable.
 
 Not an electronic signature: a database administrator can rewrite the ledger.
 File metadata only accelerates hashes; size/mtime alone are not the identity.
@@ -28,7 +29,7 @@ MODULES = ('config', 'lps_parser', 'repository', 'ebi', 'waveform', 'beat_editor
            'advanced_analysis', 'report_layout', 'report_sections', 'report_pdf',
            'report_paper_pdf', 'report_sections_pdf', 'hrv_report_pdf', 'storage',
            'review_workflow', 'analysis_provenance', 'source_identity', 'workspace_backup',
-           'clinical_query_cache', 'signal_profile', 'rr_review', 'hrv_review', 'terminology', 'review_candidates', 'rr_report', 'evaluation_status', 'report_curation', 'stt_compatibility', 'performance_compatibility')
+           'clinical_query_cache', 'signal_profile', 'rr_review', 'hrv_review', 'terminology', 'review_candidates', 'rr_report', 'evaluation_status', 'report_curation', 'stt_compatibility', 'performance_compatibility', 'screening_compatibility', 'stt_screening_legacy', 'stt_candidate_quality')
 
 LOGGER = logging.getLogger(__name__)
 SIGNATURE_FIELDS = ('device', 'inode', 'bytes', 'mtime_ns', 'ctime_ns')
@@ -75,14 +76,17 @@ class AnalysisRuntime:
                 if code is None:
                     raise RuntimeError('无法识别分析程序构建，请使用完整的软件安装包')
                 artifacts[name] = sha256(marshal.dumps(code)).hexdigest()
-        for policy_name in ('performance-compatibility.json','performance-parent-engines.json'):
+        for policy_name in ('performance-compatibility.json','performance-parent-engines.json',
+                            'screening-refinement-compatibility.json'):
             policy_path = root.parent / policy_name
             if not policy_path.is_file():continue
             signature=file_signature(policy_path)
             policy_hash=file_evidence(policy_path)['sha256']
             if file_signature(policy_path)!=signature:
                 raise ReportConflict('兼容策略在启动期间变化，请重新启动')
-            artifact_name='performance-compatibility-policy' if policy_name=='performance-compatibility.json' else 'performance-parent-engines'
+            artifact_name={'performance-compatibility.json':'performance-compatibility-policy',
+                           'performance-parent-engines.json':'performance-parent-engines',
+                           'screening-refinement-compatibility.json':'screening-refinement-policy'}[policy_name]
             self.files[policy_path]=signature
             self.file_names[policy_path]=artifact_name
             self.file_hashes[policy_path]=policy_hash
@@ -212,6 +216,15 @@ class AnalysisRuntime:
             raise ReportConflict('升级证据不一致，未保留旧依据')
         with self._basis_binding_lock:
             self._basis_bindings[case['case_id']]=copy.deepcopy(certificate)
+
+    def compatibility_certificate(self, case):
+        """A detached certificate only while the exact executing inputs persist."""
+        current = self.direct_basis(case)
+        with self._basis_binding_lock:
+            entry = self._basis_bindings.get(case['case_id'])
+            if entry and entry['execution_basis'] == current['digest']:
+                return copy.deepcopy(entry)
+        return None
 
     def direct_basis(self, case):
         self.assert_current()

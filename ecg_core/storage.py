@@ -720,9 +720,21 @@ class Storage(ReviewWorkflowMixin, EvidenceCandidateMixin, ReportEvidenceMixin):
                 annotations=[x for x in annotations if x['details'].get('kind') not in ('AF','AFL')]
                 annotations+=episode_annotations(json.loads(rhythm['document']),stamp=rhythm['updated_at'])
                 annotations.append(dict(id='rhythm-control',sample_index=0,label='',internal=True,details={'rhythm_authoritative':True}))
-            report=db.execute('SELECT version,composition FROM report_drafts WHERE case_id=?',(case_id,)).fetchone()
+            report=db.execute('SELECT * FROM report_drafts WHERE case_id=?',(case_id,)).fetchone()
             if report and (report['version']!=certificate['report_version'] or digest(normalize_report_composition(json.loads(report['composition'])))!=certificate['report_composition_digest']):
                 raise ReportConflict('升级核对期间报告已有修改，请重新载入')
+            if certificate.get('continuity_kind') == 'stt_screening_refinement':
+                from .screening_compatibility import report_identity, POLICY_SCHEMA
+                if certificate.get('schema') != POLICY_SCHEMA:
+                    raise ReportConflict('筛查升级证据类型不一致，未保留旧复核')
+                if report:
+                    state = dict(report)
+                    state['composition'] = normalize_report_composition(json.loads(state['composition']))
+                    state['analysis_provenance'] = json.loads(state.get('analysis_provenance') or '{}')
+                    if report_identity(state) != certificate.get('report_state_digest'):
+                        raise ReportConflict('升级核对期间报告签署状态已变化，未保留旧复核')
+                elif certificate.get('signed_report_snapshot'):
+                    raise ReportConflict('升级核对期间原签署报告已不存在')
             # list_annotations has this same ordering and source DTO.
             if digest(annotations)!=certificate['authored_annotations_digest']:
                 raise ReportConflict('升级核对期间标注已变化，未保留旧复核')
@@ -742,7 +754,9 @@ class Storage(ReviewWorkflowMixin, EvidenceCandidateMixin, ReportEvidenceMixin):
                 (case_id,certificate['execution_engine_id'],certificate['execution_basis'],payload,utc_now()))
             if not exists or exists['certificate']!=payload:
                 db.execute('INSERT INTO audit_log(case_id,actor,action,detail,created_at) VALUES(?,?,?,?,?)',
-                    (case_id,actor,'analysis.performance_upgrade_verified',
+                    (case_id,actor,'analysis.screening_refinement_verified'
+                        if certificate.get('continuity_kind')=='stt_screening_refinement'
+                        else 'analysis.performance_upgrade_verified',
                      json.dumps(dict(reference_basis=certificate['reference_basis']['digest'],
                          execution_engine=certificate['execution_engine_id'],
                          proof_sha256=digest(certificate),retained_stt_records=certificate['retained_stt_records']),sort_keys=True),utc_now()))
@@ -803,7 +817,7 @@ class Storage(ReviewWorkflowMixin, EvidenceCandidateMixin, ReportEvidenceMixin):
             "analysis_provenance": {},
         }
 
-    def save_report(self, case_id: str, conclusion: str, status: str, actor: str, composition: dict | None = None, expected_version=None, expected_review_revision=None, expected_analysis_basis=None, check_source=None) -> dict:
+    def save_report(self, case_id: str, conclusion: str, status: str, actor: str, composition: dict | None = None, expected_version=None, expected_review_revision=None, expected_analysis_basis=None, check_source=None, *, execution_provenance=None) -> dict:
         allowed = {"draft", "reviewed", "returned"}
         if status not in allowed:
             raise ValueError("invalid report status")
@@ -835,6 +849,14 @@ class Storage(ReviewWorkflowMixin, EvidenceCandidateMixin, ReportEvidenceMixin):
             reviewed_by = actor if status == "reviewed" else ""
             from .analysis_provenance import digest
             provenance = {'basis': basis, 'composition_sha256': digest(next_composition)} if basis else {}
+            if execution_provenance is not None:
+                # Server-only provenance for an actual new save, never a rewrite
+                # of a retained signature during compatibility verification.
+                if (not isinstance(execution_provenance,dict)
+                        or set(execution_provenance)!={'execution_engine_id','screening_algorithm_version'}
+                        or any(not isinstance(v,str) or not v for v in execution_provenance.values())):
+                    raise ValueError('报告保存缺少有效执行程序依据')
+                provenance.update(execution_provenance)
             db.execute(
                 """INSERT INTO report_drafts(case_id,conclusion,composition,status,version,reviewed_by,updated_at,analysis_provenance)
                 VALUES(?,?,?,?,?,?,?,?)

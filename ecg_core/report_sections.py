@@ -79,6 +79,37 @@ def rr_derivatives(rows, excluded=()):
 from .evaluation_status import stt_status
 from .stt import LEADS as ST_LEADS
 
+
+def screening_presentation(st):
+    """The report fields influenced by automatic ST-T screening."""
+    raw = (st.get('analysis') or {}).get('trends', {}).get('leads', {})
+    return dict(st_evaluation=stt_status(st.get('automatic_candidates')),
+                st_trends={lead: [dict(p) for p in raw.get(lead, [])] for lead in ST_LEADS},
+                units='source_device_units', st_trend_resolution_s=60)
+
+
+def screening_snapshot(presentation):
+    """Store the old label and exact measurement identity outside report rows."""
+    from .analysis_provenance import digest
+    from copy import deepcopy
+    measurements = {key: presentation[key] for key in ('st_trends', 'units', 'st_trend_resolution_s')}
+    return dict(st_evaluation=deepcopy(presentation['st_evaluation']),
+                measurements_digest=digest(measurements))
+
+
+def apply_screening_snapshot(value, snapshot):
+    from .analysis_provenance import digest
+    from .review_workflow import ReportConflict
+    from copy import deepcopy
+    measurements = {key: value[key] for key in ('st_trends', 'units', 'st_trend_resolution_s')}
+    if digest(measurements) != snapshot.get('measurements_digest'):
+        raise ReportConflict('原签署报告的ST-T测量呈现已变化，请重新复核')
+    result = {**value, 'st_evaluation': deepcopy(snapshot['st_evaluation'])}
+    after = {key: result[key] for key in ('st_evaluation', 'st_trends', 'units', 'st_trend_resolution_s')}
+    if not digest(after) == snapshot.get('before_digest') == snapshot.get('after_digest'):
+        raise ReportConflict('原签署报告的ST-T呈现核验失败，请重新复核')
+    return result
+
 def st_report_events(index, family='ST'):
     from .stt_records import ST_RESULTS,T_RESULTS,evidence_findings
     result=[]

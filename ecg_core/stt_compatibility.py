@@ -1,4 +1,4 @@
-"""Read-only, record-specific evidence comparison for a performance-build upgrade.
+"""Read-only, record-specific evidence comparison for verified implementation changes.
 
 A compatibility certificate is not a diagnosis or a replacement review. It binds
 the untouched authored annotation to equal source contents, the same edited
@@ -24,6 +24,27 @@ SCHEMA = "stt-record-evidence-equivalence-v1"
 _SCOPE_KEYS = ("case_id", "analysis_basis", "beat_revision")
 _NUMERIC_KEYS = ("leads", "coverage", "counts", "method_profile")
 _FRAME = struct.Struct("<8h")
+SCREENING_TRANSITION_SCHEMA = "stt-screening-refinement-transition-v1"
+LEGACY_SCREENING_VERSION = "stt-screening-0.4.0-comprehensive-independent"
+REFINED_SCREENING_VERSION = "stt-screening-0.5.0-morphology-qualified"
+
+
+def screening_versions(transition=None):
+    """An explicit server-verified policy is the only historical-version grant."""
+    if transition is None:
+        return (ALGORITHM_VERSION,)
+    if (not isinstance(transition, dict)
+            or transition.get("schema") != SCREENING_TRANSITION_SCHEMA
+            or transition.get("from") != LEGACY_SCREENING_VERSION
+            or transition.get("to") != REFINED_SCREENING_VERSION
+            or transition.get("to") != ALGORITHM_VERSION):
+        return ()
+    for key in ("policy_digest", "measurement_identity"):
+        value = transition.get(key)
+        if (not isinstance(value, str) or len(value) != 64
+                or any(c not in "0123456789abcdef" for c in value)):
+            return ()
+    return (ALGORITHM_VERSION, LEGACY_SCREENING_VERSION)
 
 
 def annotation_digest(annotation):
@@ -43,7 +64,7 @@ def make_input_binding(feed, scope, source_basis):
                 measurement_method=METHOD, screening_method=ALGORITHM_VERSION)
 
 
-def _input_binding_matches(binding, annotation, basis, scope, feed):
+def _input_binding_matches(binding, annotation, basis, scope, feed, *, screening_transition=None):
     old_scope=_scope(annotation)
     return bool(isinstance(binding,dict) and binding.get("schema")=="stt-input-binding-v1"
                 and binding.get("case_id")==scope.get("case_id")
@@ -53,7 +74,7 @@ def _input_binding_matches(binding, annotation, basis, scope, feed):
                 and binding.get("source_contract")==_source_contract(basis)
                 and binding.get("beat_basis_version")==beat_basis_version(feed)
                 and binding.get("measurement_method")==METHOD
-                and binding.get("screening_method")==ALGORITHM_VERSION)
+                and binding.get("screening_method") in screening_versions(screening_transition))
 
 
 def _failure(reason):
@@ -120,7 +141,7 @@ def _point_proof(path, point, total_samples, protocol):
 
 def evaluate_record(annotation, previous_basis, current_basis, current_scope, current_feed,
                     waveform_path, *, persisted_basis_versions=(), range_analyzer=None,
-                    implementation_compatible=False):
+                    implementation_compatible=False, screening_transition=None):
     """Return an evidence-equivalence certificate or an explicit refusal.
 
     Caller must perform source, scope, annotation and report-version checks again
@@ -129,6 +150,9 @@ def evaluate_record(annotation, previous_basis, current_basis, current_scope, cu
     fabricated values; they prove the old full beat/settings identity where present.
     """
     original = copy.deepcopy(annotation)
+    versions = screening_versions(screening_transition)
+    if not versions:
+        return _failure("screening_policy_invalid")
     details = annotation.get("details") or {}
     if not isinstance(details, dict) or details.get("kind") not in ("ST", "ST_REVIEW_NOTE"):
         return _failure("not_a_st_review")
@@ -166,7 +190,8 @@ def evaluate_record(annotation, previous_basis, current_basis, current_scope, cu
             return _failure("missing_or_changed_previous_beat_identity")
         beat_evidence="persisted_receipt_basis"
     elif binding is not None:
-        if not _input_binding_matches(binding,annotation,current_basis,current_scope,current_feed):
+        if not _input_binding_matches(binding,annotation,current_basis,current_scope,current_feed,
+                                      screening_transition=screening_transition):
             return _failure("stored_input_binding_changed")
         beat_evidence="server_input_binding"
     elif implementation_compatible is True:
@@ -180,7 +205,7 @@ def evaluate_record(annotation, previous_basis, current_basis, current_scope, cu
     else:
         return _failure("missing_or_changed_previous_beat_identity")
     evidence = details.get("stt_event_evidence") or {}
-    if evidence.get("algorithm_version") not in (None, ALGORITHM_VERSION):
+    if evidence.get("algorithm_version") not in (None, *versions):
         return _failure("screening_algorithm_changed")
     if evidence and evidence.get("rhythm_policy") != RHYTHM_POLICY:
         return _failure("measurement_method_changed")
@@ -257,15 +282,20 @@ def evaluate_record(annotation, previous_basis, current_basis, current_scope, cu
                                             status=details.get("status"),
                                             physician_note=details.get("physician_note"),
                                             note=annotation.get("note"))))
+    if screening_transition is not None:
+        proof["screening_transition"] = copy.deepcopy(screening_transition)
     return dict(compatible=True, reason="exact_record_evidence_equal", proof=proof)
 
 
-def certificate_matches(proof, annotation, current_basis, current_scope, current_feed):
+def certificate_matches(proof, annotation, current_basis, current_scope, current_feed, *, screening_transition=None):
     """Check a persisted server-created certificate against current actual inputs."""
     if (not isinstance(proof, dict) or proof.get("schema") != SCHEMA
             or proof.get("verifier") != "exact-source-beats-method-and-measurements"):
         return False
     details = annotation.get("details") or {}
+    versions = screening_versions(screening_transition)
+    if not versions or proof.get("screening_transition") != screening_transition:
+        return False
     return bool(details.get("reviewed") is True and current_method(details)
                 and annotation.get("case_id") == current_scope.get("case_id")
                 and proof.get("record_id") == "annotation:"+str(annotation["id"])
@@ -276,4 +306,4 @@ def certificate_matches(proof, annotation, current_basis, current_scope, current
                 and proof.get("beat_revision") == current_scope.get("beat_revision")
                 and proof.get("beat_basis_version") == beat_basis_version(current_feed)
                 and proof.get("method_version") == METHOD
-                and proof.get("algorithm_version") in (None, ALGORITHM_VERSION))
+                and proof.get("algorithm_version") in (None, *versions))

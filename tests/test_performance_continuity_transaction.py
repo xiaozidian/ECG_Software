@@ -82,8 +82,15 @@ def prepare_known_parent(app,cid):
     store.sync_analysis_basis(cid,prior,'synthetic-upgrade-setup')
     old=approve(store,cid)
     policy=app.extensions['performance_compatibility']
-    assert policy.diagnostics()['code_matched']
+    # A changed source checkout must not regenerate the shipped performance
+    # policy. This fixture explicitly constructs its synthetic performance-only
+    # parent/current pair instead of authorizing the real screening change.
+    from ecg_core.performance_compatibility import code_fingerprints, POLICY_SCHEMA
+    policy.policy={'schema':POLICY_SCHEMA,'current_code':code_fingerprints(policy.root,
+        ('app',)+tuple('ecg_core.'+n for n in runtime.module_names))}
+    policy._code_ok=True
     policy.policy['parent_engines']=[parent];policy.policy['parent_engine_ids']=[digest(parent)]
+    policy.policy_digest=digest(policy.policy)
     return prior,old
 
 

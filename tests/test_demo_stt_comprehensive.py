@@ -20,7 +20,7 @@ def test_demo_new_T_types_compound_review_and_source_morphology(tmp_path):
     feed=EditedRecords([(r['sample_index'],0,1,0,0,0,r['rr_ms']) for r in rows],blank(),[],900)
     review=build_stt_review('Mathematical independent morphology',data,feed.records,900,analysis_revision='editor-0|overrides-none')
     expected={}
-    for kind,lead in [('t_persistent_inversion','V2'),('t_low_flat','V3'),('t_biphasic','V4'),('t_wave_inversion','V5')]:
+    for kind,lead in [('t_persistent_inversion','V6'),('t_low_flat','V3'),('t_biphasic','V4'),('t_wave_inversion','V5')]:
         candidate=next(c for c in review['automatic_candidates']['items'] if c['kind']==kind and c['leads']==[lead])
         expected[kind]=analyze_stt_range(data,feed.records,start_sample=round(candidate['start_s']*200),end_sample=round(candidate['end_s']*200),leads=[lead])
     payload=tmp_path/'fixture.json';payload.write_text(json.dumps(dict(raw_path=str(data),raw_sha256=hashlib.sha256(data.read_bytes()).hexdigest(),rows=rows,review=review,expected=expected)))
