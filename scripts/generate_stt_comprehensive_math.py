@@ -46,7 +46,8 @@ def generate(output: Path) -> dict:
         t_amplitudes = np.full(8, 180.)
         t_amplitudes[2] = -160.  # V1: expected-polarity context, not a missing trace.
         if second < 181:
-            t_amplitudes[3] = -180.  # V2: inversion present from recording start.
+            t_amplitudes[3] = -180.  # V2: variable negative background, not abnormal for sign alone.
+            t_amplitudes[7] = -180.  # V6: upright-context persistent inversion from start.
         if 61 <= second < 241:
             t_amplitudes[4] = 10.  # V3: genuine low T with preserved R.
         if 361 <= second < 541:
@@ -78,13 +79,14 @@ def generate(output: Path) -> dict:
                       CRECT=f'100,{100+i*80},2200,{160+i*80}').text = text
     ET.ElementTree(document).write(files['lps'], encoding='utf-16', xml_declaration=True)
     manifest = {
-        'profile': 'comprehensive-stt-mathematical-900s-v1',
+        'profile': 'comprehensive-stt-mathematical-900s-v2',
         'case_id': CASE_ID, 'wholly_synthetic': True, 'patient_inputs_read': False,
         'clinical_validation': False, 'duration_s': DURATION, 'sample_rate_hz': RATE,
         'stored_leads': ['I', 'II', 'V1', 'V2', 'V3', 'V4', 'V5', 'V6'],
         'design_intervals_s': {
             'I_ST_depression_from_start': [1, 899], 'II_ST_elevation': [121, 241],
-            'V2_persistent_inversion_from_start': [1, 181], 'V3_low_T': [61, 241],
+            'V2_variable_negative_background': [1, 181],
+            'V6_persistent_inversion_from_start': [1, 181], 'V3_low_T': [61, 241],
             'V4_biphasic_T': [181, 301], 'V5_dynamic_inversion': [361, 541],
             'V6_ST_depression': [421, 601],
         },
