@@ -72,6 +72,7 @@ jobs:
           python -m pytest -p no:cacheprovider -q tests/test_windows_screening_quality.py tests/test_windows_legacy_ddl_recovery.py tests/test_windows22_candidate_inputs.py --junitxml="$env:RUNNER_TEMP\screening22-native-controller.xml"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Authenticate and fetch original22 producer without rebuild
+        if: ${{ inputs.phase != 'profile' }}
         run: |
           python scripts/prepare_windows22_candidate.py --run "$env:SCREEN22_PRODUCER_RUN" --commit "$env:SCREEN22_PRODUCER_COMMIT" --output "$env:RUNNER_TEMP\screening22-producer"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -111,6 +112,8 @@ jobs:
       - name: Source-only 24h M01 cold-review timing diagnostic on pinned native dependencies
         if: ${{ inputs.phase == 'profile' }}
         run: |
+          python scripts/verify_public_release.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $baseline = Get-Content "$env:RUNNER_TEMP\screening22-baseline\baseline22-input.json" -Raw | ConvertFrom-Json
           python -B scripts/profile_m01_stt.py --source . --math-root "$($baseline.paths.math_source)" --out "$env:RUNNER_TEMP\screening22-native\source-profile-wall"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
