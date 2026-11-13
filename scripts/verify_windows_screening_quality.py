@@ -264,6 +264,105 @@ def require_cached_restart(first, restarted):
                 first_migration_independently_verified=True,cold_restart_used_existing_proof_without_full_recomputation=True)
 
 
+def owned_processes(exe):
+    """Only processes of this run's uniquely extracted executable; never commands/tokens."""
+    import psutil
+    expected=os.path.normcase(str(exe.resolve()))
+    matches=[]
+    for process in psutil.process_iter(['pid','ppid','exe','create_time']):
+        try:
+            value=process.info
+            if value['exe'] and os.path.normcase(str(Path(value['exe']).resolve()))==expected:
+                matches.append(dict(pid=value['pid'],parent_pid=value['ppid'],birth=value['create_time']))
+        except (psutil.NoSuchProcess,psutil.AccessDenied,OSError):
+            continue
+    return sorted(matches,key=lambda value:value['pid'])
+
+
+async def start_failure_diagnostics(context, home, output, *, sanitize, expected_source, expected_workspace=None):
+    """Observe the actual failed popup and scoped APIs without exposing control credentials."""
+    output.mkdir(parents=True,exist_ok=True)
+    result=dict(pages=[],runtime=[],session_cookie_categories={},patient_inputs_read=False)
+    try:
+        catalog=json.loads((home/'catalog.json').read_text(encoding='utf-8'))
+        result['catalog']={key:catalog.get(key) for key in ('profile','selected_workspace')}
+        result['catalog'].update(workspace_count=len(catalog.get('workspaces',[])),
+            selected_matches_requested=catalog.get('selected_workspace')==expected_workspace if expected_workspace else None)
+    except Exception as error:result['catalog_error']=sanitize(error)
+    try:
+        binding=json.loads((home/'source-selection.json').read_text(encoding='utf-8'))
+        result['source_selection']={key:binding.get(key) for key in ('profile','selected_dataset','source_manifest_sha256')}
+        matches=Path(binding['data_root']).resolve()==expected_source.resolve()
+        result['source_selection']['same_original_mathematical_source']=matches
+        if matches:
+            manifest=expected_source/'source-manifest.json'
+            result['source_selection']['source_root_exists']=expected_source.is_dir()
+            result['source_selection']['current_manifest_sha256']=sha256(manifest.read_bytes()).hexdigest()
+            metadata=json.loads(manifest.read_text(encoding='utf-8'))
+            result['source_selection']['manifest']={key:metadata.get(key) for key in
+                ('profile','kind','source_id','source_version','wholly_synthetic','patient_inputs_read','duration_seconds')}
+    except Exception as error:result['source_selection_error']=sanitize(error)
+    for index, page in enumerate(context.pages):
+        if page.is_closed():continue
+        address=urlsplit(page.url)
+        item=dict(index=index,origin=address.scheme+'://'+address.netloc,path=address.path)
+        try:
+            item['state']=await page.evaluate("""()=>({title:document.title,
+                app:typeof state==='undefined'?null:{page:state.currentPage,case_id:state.caseId,
+                case_loading:state.caseLoading,dashboard_status:state.dashboardStatus,
+                dashboard_error:state.dashboardError,case_count:state.cases?.length},
+                open_first_case_disabled:document.querySelector('#openFirstCase')?.disabled,
+                visible_text:document.body.innerText.slice(0,3500)})""")
+            item['state']['visible_text']=sanitize(item['state']['visible_text'])
+            if item['state'].get('app') and item['state']['app'].get('dashboard_error'):
+                item['state']['app']['dashboard_error']=sanitize(item['state']['app']['dashboard_error'])
+        except Exception as error:item['state_error']=sanitize(error)
+        try:
+            shot=output/f'failed-start-page-{index}.png'
+            await page.screenshot(path=str(shot),full_page=True)
+            item['screenshot']=str(shot)
+        except Exception as error:item['screenshot_error']=sanitize(error)
+        result['pages'].append(item)
+    try:
+        cookies=await context.cookies()
+        for cookie in cookies:
+            category='doctor-control' if cookie['name'].startswith('doctor_') else 'application-session' if cookie['name'].startswith('CardioInsightDoctorEval-') else 'other'
+            result['session_cookie_categories'][category]=result['session_cookie_categories'].get(category,0)+1
+    except Exception as error:result['cookie_read_error']=sanitize(error)
+    for path in sorted((home/'runtime').glob('*.json')):
+        try:
+            state=json.loads(path.read_text(encoding='utf-8'))
+            item={key:state.get(key) for key in ('profile','role','pid','birth','port','workspace_id')}
+            port=state.get('port')
+            require(type(port) is int and 1<=port<=65535,'Invalid owned diagnostic port')
+            origin='http://127.0.0.1:'+str(port)
+            try:
+                response=await context.request.get(origin+'/_doctor/health',headers={'X-Doctor-Control':state['token']},timeout=5000)
+                item['control_health_http_status']=response.status
+                value=await response.json()
+                item['control_health']={key:value.get(key) for key in ('profile','role','pid','birth','software_version','packaging_version','workspace_id')}
+            except Exception as error:item['control_health_error']=sanitize(error)
+            if state.get('role')=='workspace':
+                item['apis']={}
+                for endpoint in ('health','dashboard'):
+                    try:
+                        response=await context.request.get(origin+'/api/'+endpoint,timeout=10000)
+                        summary={'http_status':response.status}
+                        value=await response.json()
+                        if endpoint=='health':
+                            summary.update({key:value.get(key) for key in ('status','version','case_count','unavailable_case_count','screening_continuity','evidence_continuity')})
+                        else:
+                            summary.update(case_count=len(value.get('cases',[])),source_issue_count=len(value.get('source_issues',[])))
+                        for key in ('error','code'):
+                            if key in value:summary[key]=sanitize(str(value[key]))
+                        item['apis'][endpoint]=summary
+                    except Exception as error:item['apis'][endpoint]={'error':sanitize(error)}
+            result['runtime'].append(item)
+        except Exception as error:result['runtime'].append({'state_filename':path.name,'error':sanitize(error)})
+    (output/'start-diagnostics.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+    return result
+
+
 async def verify_hrv(page, case_id):
     from scripts.verify_windows_ui15_upgrade import get
     # UI_saveflow intentionally leaves a later ST draft unsaved. Navigate as a
@@ -596,7 +695,7 @@ async def run(args, result):
     from playwright.async_api import async_playwright
     from scripts.windows_deidentified_package import unpack
     from scripts.windows_doctor_build import verify_content_manifest
-    from scripts.verify_windows_doctor_browser import (launch, stop, live_state, manager_page, resume,
+    from scripts.verify_windows_doctor_browser import (launch, stop as native_stop, live_state, manager_page, resume,
         worklist_ready, pe_is_x64, process_modules, safe_error)
     from scripts.verify_windows_ui15_upgrade import cleanup_owned, get
     from scripts.verify_windows_stt_independent_upgrade import database_state, public_database, capture
@@ -605,7 +704,9 @@ async def run(args, result):
     from ecg_core.repository import CaseRepository
     from ecg_core import doctor_source
     checks = result['checks']
-    with tempfile.TemporaryDirectory(prefix='UI-saveflow-actual22-') as temporary:
+    # Explicit owned-process assertions below retain the primary failure;
+    # a locked CI scratch file must not overwrite it with an rmtree traceback.
+    with tempfile.TemporaryDirectory(prefix='UI-saveflow-actual22-',ignore_cleanup_errors=True) as temporary:
         work = Path(temporary)
         new = unpack(args.software_archive, work / 'new')
         verify_content_manifest(new)
@@ -631,9 +732,16 @@ async def run(args, result):
         context = browser = page = None
         active = exe
         after_mode = False
-        errors, blocked = [], []
+        errors, blocked, failed_http = [], [], []
         primary = None
         result['mathematical_source'] = declaration
+        async def stop(program, same_home):
+            observed=dict(program='actual22' if program==exe else 'original21',
+                          before=await asyncio.to_thread(owned_processes,program))
+            result.setdefault('owned_process_stops',[]).append(observed)
+            await native_stop(program,same_home)
+            observed['after']=await asyncio.to_thread(owned_processes,program)
+            require(not observed['after'],'Owned EXE process remains after acknowledged graceful shutdown')
         async with async_playwright() as pw:
             try:
                 browser = await pw.chromium.launch(channel='msedge', headless=True)
@@ -654,18 +762,37 @@ async def run(args, result):
                         p.set_default_timeout(90000)
                         p.set_default_navigation_timeout(90000)
                         p.on('pageerror', lambda e: errors.append(safe_error(e)))
+                        def response(value):
+                            address=urlsplit(value.url)
+                            if value.status>=400 and address.hostname in ('localhost','127.0.0.1','::1') and len(failed_http)<100:
+                                failed_http.append(dict(path=address.path,status=value.status,method=value.request.method))
+                        p.on('response',response)
                     value.on('page', observe)
                     await value.route('**/*', local_only)
                     return value
                 async def begin(program, reuse=False):
-                    manager, _ = await launch(program, home, None if reuse else source)
-                    if reuse:
-                        return await resume(context, manager, workspace)
-                    manager_tab = await manager_page(context, manager)
-                    async with manager_tab.expect_response(lambda r: urlsplit(r.url).path == '/continue'):
-                        await manager_tab.locator('#continueExperience').click()
-                    await worklist_ready(manager_tab)
-                    return manager_tab
+                    attempt=result['start_attempts']=result.get('start_attempts',0)+1
+                    try:
+                        manager, _ = await launch(program, home, None if reuse else source)
+                        if reuse:
+                            return await resume(context, manager, workspace)
+                        manager_tab = await manager_page(context, manager)
+                        async with manager_tab.expect_response(lambda r: urlsplit(r.url).path == '/continue'):
+                            await manager_tab.locator('#continueExperience').click()
+                        await worklist_ready(manager_tab)
+                        return manager_tab
+                    except Exception as error:
+                        observation=dict(attempt=attempt,reused_workspace=reuse,
+                            program='actual22' if program==exe else 'original21',error=safe_error(error),
+                            owned_processes=await asyncio.to_thread(owned_processes,program),failed_http=failed_http[:])
+                        try:
+                            observation['diagnostics']=await start_failure_diagnostics(context,home,
+                                args.output.parent/('start-failure-'+str(attempt)),sanitize=safe_error,
+                                expected_source=source,expected_workspace=workspace if reuse else None)
+                        except Exception as diagnostic_error:
+                            observation['diagnostic_error']=safe_error(diagnostic_error)
+                        result.setdefault('start_failures',[]).append(observation)
+                        raise
                 from scripts.verify_screening_legacy_ui import verify as old_stt_flow
                 from scripts.verify_screening_quality_ui import verify as stt_flow
                 from scripts.verify_af_multistrip_ui import verify as af_flow
@@ -830,6 +957,7 @@ async def run(args, result):
             except Exception as error:
                 primary = error
                 result.update(status='failed', error=safe_error(error), page_errors=errors, blocked_requests=blocked)
+                result['failed_local_http_requests']=failed_http
                 if page and not page.is_closed():
                     try:
                         await page.screenshot(path=str(args.output.parent / 'mathematical-native-failure.png'))

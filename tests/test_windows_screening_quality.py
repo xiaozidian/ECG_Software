@@ -321,3 +321,60 @@ def test_current_screening_verifier_keeps_final_V6_positive_and_V2_negative_asse
     assert b'stt-screening-0.5.0-morphology-qualified' in current
     assert b"('t_persistent_inversion', 'V6')" in current
     assert b'Variable lead negative background is not an abnormal event for sign alone' in current
+
+
+def test_failed_start_diagnostics_keep_real_popup_API_session_and_source_boundary_without_credentials(tmp_path):
+    import asyncio,json
+    from types import SimpleNamespace
+    from scripts.verify_windows_screening_quality import start_failure_diagnostics
+    from scripts.verify_windows_doctor_browser import safe_error
+    secret='1234567890abcdef'*4
+    source=tmp_path/'original-math';source.mkdir()
+    (source/'source-manifest.json').write_text(json.dumps({'kind':'mathematical_deidentified_fixture','patient_inputs_read':False}))
+    home=tmp_path/'home';(home/'runtime').mkdir(parents=True)
+    (home/'catalog.json').write_text(json.dumps({'profile':'profile','selected_workspace':'owned','workspaces':[{'id':'owned'}]}))
+    (home/'source-selection.json').write_text(json.dumps({'profile':'profile','selected_dataset':'P01','data_root':str(source)}))
+    (home/'runtime/owned.json').write_text(json.dumps({'profile':'profile','role':'workspace','pid':12,'birth':'birth','port':44001,'workspace_id':'owned','token':secret}))
+    class Reply:
+        def __init__(self,status,body):self.status=status;self.body=body
+        async def json(self):return self.body
+    class Requests:
+        async def get(self,url,**kwargs):
+            if url.endswith('/_doctor/health'):
+                assert kwargs['headers']=={'X-Doctor-Control':secret}
+                return Reply(200,{'profile':'profile','role':'workspace','pid':12,'token':secret})
+            if url.endswith('/api/health'):return Reply(200,{'version':APP,'case_count':1,'screening_continuity':{'verified_certificate_reuses':1,'full_verification_attempts':0}})
+            assert url.endswith('/api/dashboard')
+            return Reply(409,{'error':'exact-snapshot conflict','code':'analysis_changed'})
+    class Page:
+        url='http://127.0.0.1:44001/_doctor/open?token='+secret
+        def is_closed(self):return False
+        async def evaluate(self,_):return {'app':{'page':'dashboard','dashboard_status':'error','dashboard_error':'API 409'},'visible_text':'actual popup: API 409'}
+        async def screenshot(self,*,path,full_page):Path(path).write_bytes(b'test-screenshot')
+    class Context:
+        pages=[Page()];request=Requests()
+        async def cookies(self):return [{'name':'doctor_'+secret[:20],'value':secret},{'name':'CardioInsightDoctorEval-owned','value':'session-secret'}]
+    result=asyncio.run(start_failure_diagnostics(Context(),home,tmp_path/'diagnostics',sanitize=safe_error,
+        expected_source=source,expected_workspace='owned'))
+    text= json.dumps(result)
+    assert secret not in text and secret[:20] not in text and 'session-secret' not in text
+    assert result['pages'][0]['path']=='/_doctor/open'
+    assert result['pages'][0]['state']['app']['dashboard_status']=='error'
+    assert result['runtime'][0]['control_health_http_status']==200
+    assert result['runtime'][0]['apis']['dashboard']['http_status']==409
+    assert result['session_cookie_categories']=={'doctor-control':1,'application-session':1}
+    assert result['catalog']['selected_matches_requested'] is True
+    assert result['source_selection']['same_original_mathematical_source'] is True
+    assert (tmp_path/'diagnostics/start-diagnostics.json').is_file()
+
+
+def test_owned_process_inventory_uses_exact_executable_and_never_records_command_credentials(tmp_path,monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    from scripts.verify_windows_screening_quality import owned_processes
+    exe=tmp_path/'owned/CardioInsightDoctorEval.exe';exe.parent.mkdir();exe.write_bytes(b'owned-test')
+    entries=[SimpleNamespace(info={'pid':4,'ppid':3,'exe':str(exe),'create_time':10.0,'cmdline':'must-not-be-exposed'}),
+             SimpleNamespace(info={'pid':5,'ppid':3,'exe':str(tmp_path/'other/CardioInsightDoctorEval.exe'),'create_time':11.0})]
+    psutil=SimpleNamespace(process_iter=lambda _:entries,NoSuchProcess=ProcessLookupError,AccessDenied=PermissionError)
+    monkeypatch.setitem(sys.modules,'psutil',psutil)
+    assert owned_processes(exe)==[{'pid':4,'parent_pid':3,'birth':10.0}]
