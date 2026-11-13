@@ -20,6 +20,7 @@ on:
           - legacy21ddl
           - m01
           - profile
+          - combo
 permissions:
   contents: read
   actions: read
@@ -72,7 +73,7 @@ jobs:
           python -m pytest -p no:cacheprovider -q tests/test_windows_screening_quality.py tests/test_windows_legacy_ddl_recovery.py tests/test_windows22_candidate_inputs.py --junitxml="$env:RUNNER_TEMP\screening22-native-controller.xml"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Authenticate and fetch original22 producer without rebuild
-        if: ${{ inputs.phase != 'profile' }}
+        if: ${{ inputs.phase != 'profile' && inputs.phase != 'combo' }}
         run: |
           python scripts/prepare_windows22_candidate.py --run "$env:SCREEN22_PRODUCER_RUN" --commit "$env:SCREEN22_PRODUCER_COMMIT" --output "$env:RUNNER_TEMP\screening22-producer"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -119,8 +120,26 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -B scripts/profile_m01_stt.py --source . --math-root "$($baseline.paths.math_source)" --out "$env:RUNNER_TEMP\screening22-native\source-profile-cprofile" --cprofile
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Experimental source-only full M01 baseline versus combo1 exact-body timing
+        if: ${{ inputs.phase == 'combo' }}
+        run: |
+          python scripts/verify_public_release.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $baseline = Get-Content "$env:RUNNER_TEMP\screening22-baseline\baseline22-input.json" -Raw | ConvertFrom-Json
+          python -B qa/experimental_combo1/run_combo_comparison.py --source . --math-root "$($baseline.paths.math_source)" --out "$env:RUNNER_TEMP\screening22-combo-experiment" --require-windows-pinned
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Preserve experimental source-only comparison separately from PE acceptance
+        if: ${{ always() && inputs.phase == 'combo' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-pinned-source-only-experimental-combo1
+          path: |
+            ${{ runner.temp }}/screening22-combo-experiment/**/*
+            ${{ runner.temp }}/screening22-baseline/baseline22-input.json
+          if-no-files-found: warn
+          retention-days: 30
       - name: Retain distinct native attempt and immutable producer attribution
-        if: always()
+        if: ${{ always() && inputs.phase != 'combo' }}
         uses: actions/upload-artifact@v4
         with:
           name: Windows-screening-native-1.0.22-${{ inputs.phase }}
