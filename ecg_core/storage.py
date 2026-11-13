@@ -735,6 +735,20 @@ class Storage(ReviewWorkflowMixin, EvidenceCandidateMixin, ReportEvidenceMixin):
                         raise ReportConflict('升级核对期间报告签署状态已变化，未保留旧复核')
                 elif certificate.get('signed_report_snapshot'):
                     raise ReportConflict('升级核对期间原签署报告已不存在')
+            from .performance_compatibility import CONTINUITY_KIND as PERFORMANCE_KIND, trusted_certificate_shape
+            performance_cache=certificate.get('continuity_kind')==PERFORMANCE_KIND
+            if performance_cache:
+                from .screening_compatibility import report_identity
+                if not trusted_certificate_shape(certificate) or certificate['case_id']!=case_id:
+                    raise ReportConflict('性能升级证据类型或完整性不一致，未保留旧复核')
+                if bool(report)!=certificate['report_row_present']:
+                    raise ReportConflict('升级核对期间报告存在状态已变化，未保留旧复核')
+                if report:
+                    state=dict(report)
+                    state['composition']=normalize_report_composition(json.loads(state['composition']))
+                    state['analysis_provenance']=json.loads(state.get('analysis_provenance') or '{}')
+                    if report_identity(state)!=certificate['report_state_digest']:
+                        raise ReportConflict('升级核对期间报告签署状态已变化，未保留旧复核')
             # list_annotations has this same ordering and source DTO.
             if digest(annotations)!=certificate['authored_annotations_digest']:
                 raise ReportConflict('升级核对期间标注已变化，未保留旧复核')
@@ -756,7 +770,7 @@ class Storage(ReviewWorkflowMixin, EvidenceCandidateMixin, ReportEvidenceMixin):
                     if certificate.get('continuity_kind')=='stt_screening_refinement'
                     else 'analysis.performance_upgrade_verified')
             needs_audit=not exists or exists['certificate']!=payload
-            if action=='analysis.screening_refinement_verified':
+            if action=='analysis.screening_refinement_verified' or performance_cache:
                 # A full re-verification repairs a missing or damaged audit even
                 # when the resulting numerical certificate is byte-for-byte equal.
                 # A read cache cannot create this independent evidence.
@@ -784,12 +798,13 @@ class Storage(ReviewWorkflowMixin, EvidenceCandidateMixin, ReportEvidenceMixin):
         return False
 
     def get_compatible_implementation(self,case_id,execution_engine_id,execution_basis):
-        """Read one independently audited screening certificate, never authorize it.
+        """Read an explicitly typed, independently audited upgrade certificate.
 
         The caller must still match its entire live snapshot and policy, then
         run the ordinary atomic commit guards. Unattested JSON is a cache miss.
         """
         from .screening_compatibility import POLICY_SCHEMA,CONTINUITY_KIND
+        from .performance_compatibility import trusted_certificate_shape, AUDIT_ACTION
         with self.connect() as db:
             db.execute('BEGIN')
             if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='analysis_implementation_compatibility'").fetchone():
@@ -800,13 +815,16 @@ class Storage(ReviewWorkflowMixin, EvidenceCandidateMixin, ReportEvidenceMixin):
             if not row:return None
             try:certificate=json.loads(row['certificate'])
             except (ValueError,TypeError):return None
-            if (not isinstance(certificate,dict) or certificate.get('schema')!=POLICY_SCHEMA
-                    or certificate.get('continuity_kind')!=CONTINUITY_KIND
-                    or certificate.get('case_id')!=case_id
+            if (not isinstance(certificate,dict) or certificate.get('case_id')!=case_id
                     or certificate.get('execution_engine_id')!=execution_engine_id
                     or certificate.get('execution_basis')!=execution_basis):
                 return None
-            try:audited=self._compatible_audit_matches(db,case_id,certificate,'analysis.screening_refinement_verified')
+            if certificate.get('schema')==POLICY_SCHEMA and certificate.get('continuity_kind')==CONTINUITY_KIND:
+                action='analysis.screening_refinement_verified'
+            elif trusted_certificate_shape(certificate):
+                action=AUDIT_ACTION
+            else:return None
+            try:audited=self._compatible_audit_matches(db,case_id,certificate,action)
             except (ValueError,TypeError,AttributeError,OverflowError):return None
             if not audited:
                 return None

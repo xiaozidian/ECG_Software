@@ -15,11 +15,35 @@ from types import CodeType
 
 POLICY_NAME = "performance-compatibility.json"
 POLICY_SCHEMA = "performance-evidence-continuity-v1"
+CONTINUITY_KIND = "performance_evidence_continuity"
+CACHE_SCHEMA = "performance-verified-snapshot-v1"
+AUDIT_ACTION = "analysis.performance_upgrade_verified"
 
 
 def digest(value):
     return sha256(json.dumps(value,sort_keys=True,ensure_ascii=False,
                              separators=(",",":"),allow_nan=False).encode()).hexdigest()
+
+
+def trusted_certificate_shape(value):
+    """Only the explicit, complete performance cache format can be attested."""
+    if not isinstance(value,dict):return False
+    if (value.get("schema")!=POLICY_SCHEMA or value.get("continuity_kind")!=CONTINUITY_KIND
+            or value.get("cache_schema")!=CACHE_SCHEMA):return False
+    for key in ("policy_digest","execution_basis","execution_engine_id","source_inputs_digest",
+                "authored_annotations_digest","editor_document_digest","report_composition_digest",
+                "edited_feed_digest","report_state_digest"):
+        item=value.get(key)
+        if not isinstance(item,str) or len(item)!=64 or any(c not in "0123456789abcdef" for c in item):return False
+    if (not isinstance(value.get("case_id"),str) or not value["case_id"]
+            or not isinstance(value.get("reference_basis"),dict)
+            or not isinstance(value.get("beat_basis_version"),str) or not value["beat_basis_version"]
+            or type(value.get("report_row_present")) is not bool
+            or not isinstance(value.get("screening_algorithm_version"),str)
+            or not isinstance(value.get("stt_proofs"),list)
+            or not isinstance(value.get("retained_stt_records"),list)):return False
+    return all(type(value.get(key)) is int and value[key]>=minimum for key,minimum in
+               (("beat_revision",0),("review_revision",0),("report_version",1)))
 
 
 def _constant(value):
@@ -66,6 +90,7 @@ class PerformanceCompatibility:
     def __init__(self, root, runtime, storage, editor):
         self.root=Path(root);self.runtime=runtime;self.storage=storage;self.editor=editor
         self.policy=None;self.policy_digest=None;self._code_ok=False;self._lock=threading.RLock()
+        self._performance_cache_reuses=0;self._performance_full_verification_attempts=0
         path=self.root/self.policy_name
         if not path.is_file():return
         runtime.assert_current()
@@ -81,9 +106,14 @@ class PerformanceCompatibility:
             self._code_ok=False
 
     def diagnostics(self):
-        return dict(policy_present=self.policy is not None,code_matched=self._code_ok,
+        result=dict(policy_present=self.policy is not None,code_matched=self._code_ok,
                     parent_builds=len(self.policy.get("parent_engine_ids",[])) if self.policy else 0,
                     executing_engine_id=self.runtime.engine_id)
+        if self.policy_schema==POLICY_SCHEMA:
+            result.update(continuity_kind=CONTINUITY_KIND,
+                verified_certificate_reuses=self._performance_cache_reuses,
+                full_verification_attempts=self._performance_full_verification_attempts)
+        return result
 
     def build_allowed(self, previous, current):
         if not self.policy or not self._code_ok:return False
@@ -106,6 +136,24 @@ class PerformanceCompatibility:
 
     def resolve(self, case, previous, current, feed, annotations, report, review_revision, beat_revision):
         if not self.build_allowed(previous,current):return None
+        performance=self.policy_schema==POLICY_SCHEMA
+        if performance:
+            # A reference basis may be retained, but the executing build and
+            # its direct source basis are always independently exact.
+            body={key:current[key] for key in ("schema","engine_id","inputs") if key in current}
+            if current.get("recovery_epoch"):body["recovery_epoch"]=current["recovery_epoch"]
+            if (current.get("engine_id")!=self.runtime.engine_id
+                    or current.get("engine_id")!=digest(current.get("engine") or {})
+                    or current.get("digest")!=digest(body)):return None
+            if self.storage is not None:
+                cached=self.storage.get_compatible_implementation(case["case_id"],
+                    self.runtime.engine_id,current["digest"])
+                if cached and self._cached_performance_snapshot_matches(cached,case,previous,current,
+                        feed,annotations,report,review_revision,beat_revision):
+                    self.runtime.assert_current()
+                    with self._lock:self._performance_cache_reuses+=1
+                    return copy.deepcopy(cached)
+            with self._lock:self._performance_full_verification_attempts+=1
         from .stt_records import review_metadata
         from .stt_compatibility import evaluate_record, annotation_digest
         scope=dict(case_id=case["case_id"],analysis_basis=current["digest"],
@@ -132,13 +180,49 @@ class PerformanceCompatibility:
                          implementation_compatible=True, **self.record_evaluation_options())
             if not checked["compatible"]:return None
             proofs.append(checked["proof"]);preserved.append(record["id"])
-        return dict(schema=self.policy_schema,policy_digest=self.policy_digest,
+        certificate=dict(schema=self.policy_schema,policy_digest=self.policy_digest,
                     reference_basis=copy.deepcopy(previous),execution_basis=current["digest"],
                     execution_engine_id=self.runtime.engine_id,
                     source_inputs_digest=digest(current["inputs"]),beat_revision=scope["beat_revision"],
                     authored_annotations_digest=digest(annotations),editor_document_digest=digest(feed.document),
                     review_revision=review_revision,report_version=report.get("version",1),
                     report_composition_digest=digest(comp),stt_proofs=proofs,retained_stt_records=preserved)
+        if performance:
+            from .stt import ALGORITHM_VERSION
+            certificate.update(continuity_kind=CONTINUITY_KIND,cache_schema=CACHE_SCHEMA,
+                case_id=case["case_id"],screening_algorithm_version=ALGORITHM_VERSION,
+                **self._performance_snapshot(feed,annotations,report,review_revision,beat_revision))
+            self.runtime.assert_current()
+        return certificate
+
+    @staticmethod
+    def _performance_snapshot(feed, annotations, report, review_revision, beat_revision):
+        # Delayed import avoids the screening subclass/base import cycle. These
+        # helpers only fingerprint authored state; they do not grant a transition.
+        from .screening_compatibility import report_identity, edited_feed_identity
+        from .clinical_analysis import beat_basis_version
+        return dict(beat_revision=beat_revision,beat_basis_version=beat_basis_version(feed),
+            edited_feed_digest=edited_feed_identity(feed),editor_document_digest=digest(feed.document),
+            authored_annotations_digest=digest(annotations),review_revision=review_revision,
+            report_version=report.get("version",1),report_composition_digest=digest(report.get("composition") or {}),
+            report_state_digest=report_identity(report),report_row_present=bool(report.get("updated_at")))
+
+    def _cached_performance_snapshot_matches(self, cached, case, previous, current, feed,
+                                            annotations, report, review_revision, beat_revision):
+        from .stt import ALGORITHM_VERSION
+        if not trusted_certificate_shape(cached):return False
+        context=dict(case_id=case["case_id"],policy_digest=self.policy_digest,
+            reference_basis=previous,execution_basis=current["digest"],
+            execution_engine_id=self.runtime.engine_id,source_inputs_digest=digest(current["inputs"]),
+            screening_algorithm_version=ALGORITHM_VERSION)
+        if any(cached.get(key)!=value for key,value in context.items()):return False
+        snapshot=self._performance_snapshot(feed,annotations,report,review_revision,beat_revision)
+        if (cached["report_version"]==snapshot["report_version"]
+                and (cached["report_state_digest"]!=snapshot["report_state_digest"]
+                     or cached["report_row_present"]!=snapshot["report_row_present"])):
+            from .review_workflow import ReportConflict
+            raise ReportConflict("同一版本报告的内容或签署状态已变化，未复用升级证明")
+        return all(cached.get(key)==value for key,value in snapshot.items())
 
     def record_evaluation_options(self):
         # Performance upgrades retain the strict current-screening requirement.

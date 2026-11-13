@@ -68,7 +68,7 @@ jobs:
         run: python -m pytest -q tests/test_chart_source_render.py tests/test_template_source_render.py tests/test_chart_write_owner.py tests/test_full_record_geometry.py tests/test_demo_full_record_overview.py tests/test_hospital_template_interactions.py tests/test_morphology_scope.py tests/test_dashboard_arrival.py -p no:cacheprovider --junitxml=build/core-verification/source-render-ui-20261108-junit.xml
       - name: Verify morphology-qualified ST-T screening and authored-review continuity
         run: |
-          python -m pytest -q tests/test_stt_candidate_quality.py tests/test_stt_candidate_screening_integration.py tests/test_screening_compatibility.py tests/test_screening_continuity_transaction.py tests/test_screening_certificate_cache.py -p no:cacheprovider --junitxml=build/core-verification/stt-candidate-quality-33-junit.xml
+          python -m pytest -q tests/test_stt_candidate_quality.py tests/test_stt_candidate_quality_numerical_parity.py tests/test_stt_candidate_screening_integration.py tests/test_screening_compatibility.py tests/test_screening_continuity_transaction.py tests/test_screening_certificate_cache.py -p no:cacheprovider --junitxml=build/core-verification/stt-candidate-quality-33-junit.xml
       - name: Verify comprehensive ST-T morphology continuous episodes and AF independence
         run: |
           python -m pytest -q tests/test_stt_comprehensive_engine.py tests/test_stt_comprehensive_records.py tests/test_stt_representatives.py tests/test_stt_multistrip_transactions.py tests/test_stt_multistrip_reactivation.py tests/test_demo_stt_comprehensive.py tests/test_stt_rhythm_independence.py -p no:cacheprovider --junitxml=build/core-verification/stt-comprehensive-30-junit.xml
@@ -97,7 +97,7 @@ jobs:
       - name: Verify actual mathematical AF candidate and multi-figure workflow in Chromium
         run: python scripts/verify_af_multistrip_ui.py --output build/core-verification/af-multistrip-web
       - name: Verify performance caches and authored ST-T review preservation
-        run: python -m pytest -q tests/test_stt_compatibility.py tests/test_performance_compatibility.py tests/test_performance_continuity_transaction.py tests/test_windows21_continuation.py tests/test_stt_light_receipts.py tests/test_stt_projection.py tests/test_hrv_evidence_cache.py tests/test_report_pdf_page_dependencies.py -p no:cacheprovider --junitxml=build/core-verification/performance-review-preservation-junit.xml
+        run: python -m pytest -q tests/test_stt_compatibility.py tests/test_performance_compatibility.py tests/test_performance_continuity_transaction.py tests/test_performance_certificate_cache.py tests/test_windows21_continuation.py tests/test_stt_light_receipts.py tests/test_stt_projection.py tests/test_hrv_evidence_cache.py tests/test_report_pdf_page_dependencies.py -p no:cacheprovider --junitxml=build/core-verification/performance-review-preservation-junit.xml
       - name: Retain source identity and test evidence
         if: always()
         uses: actions/upload-artifact@v4
