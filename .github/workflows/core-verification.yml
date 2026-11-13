@@ -49,7 +49,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y poppler-utils
-          python -m pytest -q tests/test_report_evidence_review.py tests/test_review_candidates.py tests/test_report_curation.py -p no:cacheprovider --junitxml=build/core-verification/report-evidence-junit.xml
+          python -m pytest -q tests/test_report_evidence_review.py tests/test_review_candidates.py tests/test_report_curation.py tests/test_read_request_signals.py -p no:cacheprovider --junitxml=build/core-verification/report-evidence-junit.xml
       - name: Verify doctor AF segments, interval ST means and simplified report protections
         run: python -m pytest -q tests/test_stt_range.py tests/test_doctor_feedback_api.py tests/test_local_review_signed_mean.py tests/test_rhythm_range_editor.py tests/test_doctor_feedback_browser.py tests/test_report_workspace_simplified.py tests/test_report_st_note.py tests/test_report_saved_st_note_layout.py tests/test_dashboard_icons.py -p no:cacheprovider --junitxml=build/core-verification/doctor-feedback-junit.xml
       - name: Verify centered template twelve-lead navigation and asynchronous return ownership
@@ -64,6 +64,40 @@ jobs:
         run: python -m pytest -q tests/test_stt_hospital_records.py tests/test_stt_hospital_report_output.py tests/test_stt_hospital_ui.py tests/test_stt_record_mirror.py tests/test_stt_report_adoption.py tests/test_demo_stt_hospital.py tests/test_startup_dom_bindings.py tests/test_demo_stt_text_reconciliation.py -p no:cacheprovider --junitxml=build/core-verification/stt-hospital-28-junit.xml
       - name: Verify independent ST-T method and mathematical Demo parity
         run: python -m pytest -q tests/test_stt_rhythm_independence.py tests/test_demo_stt_independent.py -p no:cacheprovider --junitxml=build/core-verification/stt-independent-29-junit.xml
+      - name: Verify source-render geometry, actual paint owners and full-record Demo parity
+        run: python -m pytest -q tests/test_chart_source_render.py tests/test_template_source_render.py tests/test_chart_write_owner.py tests/test_full_record_geometry.py tests/test_demo_full_record_overview.py tests/test_hospital_template_interactions.py tests/test_morphology_scope.py tests/test_dashboard_arrival.py -p no:cacheprovider --junitxml=build/core-verification/source-render-ui-20261108-junit.xml
+      - name: Verify morphology-qualified ST-T screening and authored-review continuity
+        run: |
+          python -m pytest -q tests/test_stt_candidate_quality.py tests/test_stt_candidate_screening_integration.py tests/test_screening_compatibility.py tests/test_screening_continuity_transaction.py tests/test_screening_certificate_cache.py -p no:cacheprovider --junitxml=build/core-verification/stt-candidate-quality-33-junit.xml
+      - name: Verify comprehensive ST-T morphology continuous episodes and AF independence
+        run: |
+          python -m pytest -q tests/test_stt_comprehensive_engine.py tests/test_stt_comprehensive_records.py tests/test_stt_representatives.py tests/test_stt_multistrip_transactions.py tests/test_stt_multistrip_reactivation.py tests/test_demo_stt_comprehensive.py tests/test_stt_rhythm_independence.py -p no:cacheprovider --junitxml=build/core-verification/stt-comprehensive-30-junit.xml
+      - name: Verify actual mathematical ST-T doctor-flow in Chromium
+        run: |
+          python -m pip install "playwright==1.63.0"
+          python scripts/verify_stt_web.py --output build/core-verification/stt-comprehensive-web
+      - name: Verify observed partial ST-T values retain coverage without joining gaps
+        run: python -m pytest -q tests/test_stt_partial_display.py -p no:cacheprovider --junitxml=build/core-verification/stt-partial-display-31-junit.xml
+      - name: Verify native ST-T scalar parity and independent analytic T morphology oracles
+        run: python -m pytest -q tests/test_performance_equivalence.py -p no:cacheprovider --junitxml=build/core-verification/stt-scalar-parity-31-junit.xml
+      - name: Verify AF per-episode figure adoption and grouped report output
+        run: |
+          python -m pytest -q tests/test_af_multistrip_rail.py tests/test_af_multistrip_report_groups.py tests/test_af_confirmed_subtype_counts.py -p no:cacheprovider --junitxml=build/core-verification/af-multistrip-31-junit.xml
+      - name: Verify case navigation clears ST-T results and preserves pending saves
+        run: python -m pytest -q tests/test_case_lifecycle.py::test_browser_case_lifecycle -p no:cacheprovider --junitxml=build/core-verification/case-lifecycle-31-junit.xml
+      - name: Verify ST-T controls after A4 preview and pending-save intents
+        run: python -m pytest -q tests/test_report_preview_interactions.py tests/test_stt_use_save_wait.py tests/test_stt_membership_remount.py tests/test_rate_candidates.py::test_rate_controls_are_wired_to_backend_sort_and_pagination -p no:cacheprovider --junitxml=build/core-verification/stt-report-buttons-32-junit.xml
+      - name: Frontend-only ST-T AF save refresh and report-card interaction guards
+        run: python -m pytest -q tests/test_review_write_local_sync.py tests/test_af_review_write_refresh.py tests/test_report_card_and_stt_controls.py tests/test_overview_identity_refresh_fallback.py -p no:cacheprovider --junitxml=build/core-verification/ui-saveflow-20261111-junit.xml
+      - name: Verify report concurrency and rollback on an explicit mathematical source
+        run: |
+          ecgConsistencyMath="$RUNNER_TEMP/af-report-consistency-math"
+          python scripts/generate_stt_comprehensive_math.py --output "$ecgConsistencyMath"
+          ECG_DATA_ROOT="$ecgConsistencyMath" ECG_APP_DATA_ROOT="$RUNNER_TEMP/af-report-consistency-runtime" ECG_CONFIG_PATH="$RUNNER_TEMP/af-report-consistency-unused.json" python -m pytest -q tests/test_report_consistency.py -p no:cacheprovider --junitxml=build/core-verification/report-consistency-31-junit.xml
+      - name: Verify actual mathematical AF candidate and multi-figure workflow in Chromium
+        run: python scripts/verify_af_multistrip_ui.py --output build/core-verification/af-multistrip-web
+      - name: Verify performance caches and authored ST-T review preservation
+        run: python -m pytest -q tests/test_stt_compatibility.py tests/test_performance_compatibility.py tests/test_performance_continuity_transaction.py tests/test_windows21_continuation.py tests/test_stt_light_receipts.py tests/test_stt_projection.py tests/test_hrv_evidence_cache.py tests/test_report_pdf_page_dependencies.py -p no:cacheprovider --junitxml=build/core-verification/performance-review-preservation-junit.xml
       - name: Retain source identity and test evidence
         if: always()
         uses: actions/upload-artifact@v4

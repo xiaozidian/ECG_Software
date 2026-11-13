@@ -15,7 +15,7 @@ def test_math_payload_contains_native_minute_st_evidence(tmp_path):
     generate(output, 'math-test-only')
     case = json.loads((output / 'case-data.js').read_text().split(' = ', 1)[1].rstrip(';\n'))
     review = case['stt_review']
-    assert review['analysis']['algorithm_version'] == 'stt-screening-0.4.0-comprehensive-independent'
+    assert review['analysis']['algorithm_version'] == 'stt-screening-0.5.0-morphology-qualified'
     assert review['analysis']['trends']['block_seconds'] == 60
     assert set(review['analysis']['trends']['leads']) == {'I','II','III','aVR','aVL','aVF','V1','V2','V3','V4','V5','V6'}
     assert all(len(rows) == 10 for rows in review['analysis']['trends']['leads'].values())

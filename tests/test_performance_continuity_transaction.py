@@ -1,6 +1,7 @@
 """A verified performance release must preserve authored work atomically."""
 from copy import deepcopy
 from io import BytesIO
+from pathlib import Path
 import json
 
 import pytest
@@ -81,8 +82,15 @@ def prepare_known_parent(app,cid):
     store.sync_analysis_basis(cid,prior,'synthetic-upgrade-setup')
     old=approve(store,cid)
     policy=app.extensions['performance_compatibility']
-    assert policy.diagnostics()['code_matched']
+    # A changed source checkout must not regenerate the shipped performance
+    # policy. This fixture explicitly constructs its synthetic performance-only
+    # parent/current pair instead of authorizing the real screening change.
+    from ecg_core.performance_compatibility import code_fingerprints, POLICY_SCHEMA
+    policy.policy={'schema':POLICY_SCHEMA,'current_code':code_fingerprints(policy.root,
+        ('app',)+tuple('ecg_core.'+n for n in runtime.module_names))}
+    policy._code_ok=True
     policy.policy['parent_engines']=[parent];policy.policy['parent_engine_ids']=[digest(parent)]
+    policy.policy_digest=digest(policy.policy)
     return prior,old
 
 
@@ -113,3 +121,15 @@ def test_real_source_change_after_compatible_upgrade_still_invalidates(synthetic
     assert changed.json['status']=='draft' and changed.json['reviewed_by']==''
     assert changed.json['current_analysis_basis']['digest']!=prior['digest']
     assert client.get(base+'/report.pdf',query_string={'expected_version':old['version']}).status_code==409
+
+
+def test_upgraded_workspace_can_be_backed_up_with_continuity_receipt(approved_store,tmp_path):
+    from ecg_core.workspace_backup import create_backup,verify_backup
+    store=approved_store
+    store.record_compatible_implementation('case',certificate(store),'upgrade-checker',lambda:None)
+    before=rows(store)
+    result=create_backup(store.path,tmp_path/'saved-work')
+    archive=Path(result['path'])
+    checked=verify_backup(archive)
+    assert checked['tables']['analysis_implementation_compatibility']==1
+    assert rows(store)==before

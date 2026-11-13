@@ -1,21 +1,31 @@
-name: Windows1.0.21 original PE strict native continuation
-
-# Reuse only exact producer43295463674 binaries after authenticated failed-step and
-# ACL/418/build/PE/policy/source proofs; every native business gate reruns.
+name: Windows1.0.22 original candidate native acceptance
 on:
   workflow_dispatch:
-
+    inputs:
+      producer_run:
+        description: Exact successful original22 producer run ID
+        required: true
+        type: string
+      producer_commit:
+        description: Exact full original22 producer commit
+        required: true
+        type: string
+      phase:
+        description: Independently retained native phase
+        required: true
+        type: choice
+        options:
+          - fresh
+          - upgrade
+          - m01
 permissions:
   contents: read
   actions: read
-
 concurrency:
-  group: windows-doctor-deidentified-${{ github.ref }}
+  group: windows22-screening-native-${{ inputs.phase }}-${{ github.ref }}
   cancel-in-progress: false
-
 jobs:
-  build:
-    name: Original21 PE native acceptance with preserved producer failure
+  native:
     runs-on: windows-latest
     timeout-minutes: 90
     env:
@@ -24,16 +34,14 @@ jobs:
       ECG_ALLOW_PHI: "0"
       PYTHONDONTWRITEBYTECODE: "1"
       GH_TOKEN: ${{ github.token }}
-      DOCTOR_PACKAGING_VERSION: "1.0.21"
-      DOCTOR_SOURCE_VERSION: "M01-24h-v1"
-      DOCTOR_RELEASE_NOTES: "优化 ST-T 保存、HRV 更新和正式 PDF 导出；性能更新以逐记录等价验算保留原医生复核、表文图及报告审核。病例默认进入总览。"
+      SCREEN22_PRODUCER_RUN: ${{ inputs.producer_run }}
+      SCREEN22_PRODUCER_COMMIT: ${{ inputs.producer_commit }}
     defaults:
       run:
         shell: pwsh
         working-directory: project
     steps:
-      - name: Checkout doctor evaluation branch
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           path: project
       - uses: actions/setup-python@v5
@@ -45,142 +53,60 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Create clean isolated Windows build environment
+      - name: Isolate pinned controller environment
         run: |
-          python -m venv "$env:RUNNER_TEMP\doctor-build-env"
+          python -m venv "$env:RUNNER_TEMP\screening22-controller"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          "$env:RUNNER_TEMP\doctor-build-env\Scripts" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-      - name: Install pinned doctor build dependencies and CI-only browser test tools
+          "$env:RUNNER_TEMP\screening22-controller\Scripts" | Out-File $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Install controller dependencies
         run: |
           python -m pip install -r requirements-doctor-build.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m pip check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -c "import json,subprocess,sys; print('DOCTOR_BUILD_FREEZE_JSON='+json.dumps(subprocess.check_output([sys.executable,'-m','pip','freeze','--all'],text=True).splitlines()))"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Configure CI-only Node tests with installed system Edge
+      - name: Strict native controller and original input refusal tests
         run: |
-          $jsTools = "$env:RUNNER_TEMP\doctor-node-browser"
-          New-Item -ItemType Directory -Path $jsTools -Force | Out-Null
-          npm install --prefix "$jsTools" --no-save --ignore-scripts --no-audit --no-fund playwright-core@1.63.0
+          python -m pytest -p no:cacheprovider -q tests/test_windows_screening_quality.py --junitxml="$env:RUNNER_TEMP\screening22-native-controller.xml"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $edgeCandidates = @("$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe", "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe")
-          $edgePath = @($edgeCandidates | Where-Object { Test-Path $_ })[0]
-          if (-not $edgePath) { throw "Installed system Microsoft Edge is unavailable." }
-          "ECG_PLAYWRIGHT_CORE=$jsTools\node_modules\playwright-core" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "ECG_CHROME=$edgePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "ECG_CHROME_PATH=$edgePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      - name: Verify unchanged frozen production source fingerprint
-        run: python scripts/verify_public_release.py
-      - name: Bind exact original21 compiled ZIPs and passed producer prerequisites
+      - name: Authenticate and fetch original22 producer without rebuild
         run: |
-          python scripts/prepare_windows21_continuation.py --output "$env:RUNNER_TEMP\PERF21-producer" --validator-commit "${{ github.sha }}" --validator-run-id "${{ github.run_id }}"
+          python scripts/prepare_windows22_candidate.py --run "$env:SCREEN22_PRODUCER_RUN" --commit "$env:SCREEN22_PRODUCER_COMMIT" --output "$env:RUNNER_TEMP\screening22-producer"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $inputs = Get-Content "$env:RUNNER_TEMP\PERF21-producer\continuation21-input.json" -Raw | ConvertFrom-Json
-          if ($inputs.source_compile_commit -ne "0c7b634ef77297d388d1e9075b01c58809e0c0aa" -or $inputs.producer_run_id -ne 43295463674) { throw "Fixed producer differs." }
-          $proofHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $inputs.paths.producer_proof).Hash.ToLowerInvariant()
-          if ($proofHash -ne $inputs.producer_proof_sha256) { throw "Producer proof changed." }
-          $proof = Get-Content $inputs.paths.producer_proof -Raw | ConvertFrom-Json
-          if ($proof.source_compile_commit -ne $inputs.expected_windows_build_commit -or $proof.producer.run_id -ne 43295463674) { throw "Build commit is not authenticated." }
-          "ECG_EXPECTED_WINDOWS_BUILD_COMMIT=$($proof.source_compile_commit)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          foreach ($key in @("full_root", "p01", "full", "software", "source", "p01_build_report", "build_report", "verification_upgrade_fixture", "producer_qa_root")) {
-            $value = $inputs.paths.$key
-            if (-not $value -or -not (Test-Path -LiteralPath $value)) { throw "Missing exact producer path: $key" }
-            "PERF21_$($key.ToUpper())=$value" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          }
-      - name: Fetch exact accepted20 P01 and unchanged original M01 inputs
+      - name: Authenticate and fetch original accepted21 baseline
         run: |
-          python scripts/prepare_windows21_baseline.py --output "$env:RUNNER_TEMP\PERF21-baseline"
+          python scripts/prepare_windows22_baseline.py --output "$env:RUNNER_TEMP\screening22-baseline"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $inputs = Get-Content "$env:RUNNER_TEMP\PERF21-baseline\baseline21-input.json" -Raw | ConvertFrom-Json
-          "ECG_DATA_ROOT=$($inputs.paths.math_source)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "ECG_APP_DATA_ROOT=$env:RUNNER_TEMP\doctor-regression-work" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      - name: Validate changed controller readiness and strict continuation refusal contracts
+      - name: Actual fresh22 screening morphology and doctor save workflow
+        if: ${{ inputs.phase == 'fresh' }}
         run: |
-          python -m pytest -p no:cacheprovider -q tests/test_windows21_continuation.py tests/test_windows_af_editor_ui21.py tests/test_windows_performance_preserve.py tests/test_windows_ui_saveflow_controller.py --junitxml="$env:RUNNER_TEMP\doctor21-continuation-controller-tests.xml"
+          $inputs = Get-Content "$env:RUNNER_TEMP\screening22-producer\candidate22-input.json" -Raw | ConvertFrom-Json
+          python scripts/verify_windows_screening_quality.py --software-archive "$($inputs.paths.p01)" --output "$env:RUNNER_TEMP\screening22-native\fresh.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Complete original21 M01 three native rounds plus actual draft PDF and HRV operations
+          $baseline = Get-Content "$env:RUNNER_TEMP\screening22-baseline\baseline22-input.json" -Raw | ConvertFrom-Json
+          python scripts/verify_windows_p01.py --software-archive "$($inputs.paths.p01)" --math-source-root "$($baseline.paths.math_source)" --output "$env:RUNNER_TEMP\screening22-native\p01.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Actual original21 to original22 signatures uses RR and HRV retention
+        if: ${{ inputs.phase == 'upgrade' }}
         run: |
-          python scripts/verify_windows_doctor_browser_ui21.py --package-root "$env:PERF21_FULL_ROOT" --software-archive "$env:PERF21_VERIFICATION_UPGRADE_FIXTURE" --output "$env:RUNNER_TEMP\doctor-native\evidence\browser-validation.json" --repeats 3
+          $inputs = Get-Content "$env:RUNNER_TEMP\screening22-producer\candidate22-input.json" -Raw | ConvertFrom-Json
+          $baseline = Get-Content "$env:RUNNER_TEMP\screening22-baseline\baseline22-input.json" -Raw | ConvertFrom-Json
+          python scripts/verify_windows_screening_quality.py --base-software-archive "$($baseline.paths.p01)" --software-archive "$($inputs.paths.p01)" --nonempty-reviewed-scopes --output "$env:RUNNER_TEMP\screening22-native\upgrade21-to22.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Actual original21 P01 source save reopen and packaging update
+      - name: Actual unchanged M01 complete package three rounds
+        if: ${{ inputs.phase == 'm01' }}
         run: |
-          python scripts/verify_windows_p01.py --software-archive "$env:PERF21_P01" --math-source-root "$env:ECG_DATA_ROOT" --output "$env:RUNNER_TEMP\doctor-native\evidence\p01-native.json"
+          $inputs = Get-Content "$env:RUNNER_TEMP\screening22-producer\candidate22-input.json" -Raw | ConvertFrom-Json
+          python scripts/verify_windows_doctor_browser_ui21.py --package-root "$($inputs.paths.full_root)" --software-archive "$($inputs.paths.software)" --repeats 3 --output "$env:RUNNER_TEMP\screening22-native\m01-three-rounds.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Actual fresh21 ST-T AF incremental saving and report card operations
-        run: |
-          python scripts/verify_windows_performance_preserve.py --software-archive "$env:PERF21_P01" --output "$env:RUNNER_TEMP\doctor-native\evidence\comprehensive-native.json"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Actual original20 to original21 same-workspace reviewed signature UUID and formal PDF retention
-        run: |
-          $inputs = Get-Content "$env:RUNNER_TEMP\PERF21-baseline\baseline21-input.json" -Raw | ConvertFrom-Json
-          python scripts/verify_windows_performance_preserve.py --base-software-archive "$($inputs.paths.p01)" --software-archive "$env:PERF21_P01" --output "$env:RUNNER_TEMP\doctor-native\evidence\upgrade20-to21-native.json"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Prove original21 full source matches unchanged original20 M01
-        run: |
-          python scripts/prepare_windows21_baseline.py --baseline-proof "$env:RUNNER_TEMP\PERF21-baseline\baseline21-input.json" --package-root "$env:PERF21_FULL_ROOT" --output "$env:RUNNER_TEMP\doctor-native\evidence\original-M01-payload-parity.json"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Require every new native receipt and unchanged original deliverable before acceptance
-        run: |
-          python scripts/prepare_windows21_continuation.py --output "$env:RUNNER_TEMP\PERF21-producer" --finalize-evidence "$env:RUNNER_TEMP\doctor-native\evidence"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Deliver exact original p01 bytes only after all native gates succeed
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: CardioInsight-Windows-x64-1.0.21-P01-software-only
-          path: |
-            ${{ env.PERF21_P01 }}
-            ${{ env.PERF21_P01 }}.sha256
-            ${{ env.PERF21_P01_BUILD_REPORT }}
-          if-no-files-found: error
-          retention-days: 30
-          compression-level: 0
-      - name: Deliver exact original full bytes only after all native gates succeed
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: CardioInsight-Windows-x64-1.0.21-M01-full
-          path: |
-            ${{ env.PERF21_FULL }}
-            ${{ env.PERF21_FULL }}.sha256
-            ${{ env.PERF21_BUILD_REPORT }}
-          if-no-files-found: error
-          retention-days: 30
-          compression-level: 0
-      - name: Deliver exact original software bytes only after all native gates succeed
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: CardioInsight-Windows-x64-1.0.21-software-update
-          path: |
-            ${{ env.PERF21_SOFTWARE }}
-            ${{ env.PERF21_SOFTWARE }}.sha256
-          if-no-files-found: error
-          retention-days: 30
-          compression-level: 0
-      - name: Deliver exact original source bytes only after all native gates succeed
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: CardioInsight-Synthetic-M01-24h-v1-for-1.0.21
-          path: |
-            ${{ env.PERF21_SOURCE }}
-            ${{ env.PERF21_SOURCE }}.sha256
-          if-no-files-found: error
-          retention-days: 30
-          compression-level: 0
-      - name: Preserve original failure and distinct new native acceptance evidence
+      - name: Retain distinct native attempt and immutable producer attribution
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Windows-doctor-eval-mathematical-validation-1.0.21
+          name: Windows-screening-native-1.0.22-${{ inputs.phase }}
           path: |
-            ${{ runner.temp }}/PERF21-producer/continuation21-input.json
-            ${{ runner.temp }}/PERF21-producer/evidence/**/*
-            ${{ runner.temp }}/PERF21-producer/original-artifacts/qa/**/*
-            ${{ runner.temp }}/PERF21-baseline/baseline21-input.json
-            ${{ runner.temp }}/doctor21-continuation-controller-tests.xml
-            ${{ runner.temp }}/doctor-native/evidence/**/*
-          if-no-files-found: error
+            ${{ runner.temp }}/screening22-native/**/*
+            ${{ runner.temp }}/screening22-producer/candidate22-input.json
+            ${{ runner.temp }}/screening22-baseline/baseline22-input.json
+            ${{ runner.temp }}/screening22-native-controller.xml
+          if-no-files-found: warn
           retention-days: 30

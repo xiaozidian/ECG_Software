@@ -23,7 +23,7 @@ a = Analysis(
     pathex=[str(root)],
     binaries=reportlab[1],
     datas=datas,
-    hiddenimports=reportlab[2],
+    hiddenimports=reportlab[2]+['ecg_core.stt_candidate_quality', 'ecg_core.stt_screening_legacy', 'ecg_core.screening_compatibility'],
     hookspath=[], hooksconfig={}, runtime_hooks=[],
     excludes=["pytest", "IPython", "matplotlib", "pandas", "scipy", "playwright", "psutil", "selenium"],
     noarchive=False, optimize=0,

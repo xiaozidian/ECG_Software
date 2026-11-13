@@ -23,6 +23,8 @@ import tempfile
 import zipfile
 
 ASSET_FILES = (
+    'screening-refinement-compatibility.json',
+    'screening-parent-engines.json',
     'performance-compatibility.json',
     'static/css/report-wave-menu.css',
     'static/js/report-wave-menu.js',
@@ -227,8 +229,13 @@ def package_inventory(package, *, with_source=True):
     legacy = re.fullmatch(r'1\.0\.(\d+)', str(release.get('packaging_version', '')))
     if legacy and int(legacy.group(1)) < 21 and policy_path not in files:
         expected_assets.remove(policy_path)
+    screening_policies = {'_internal/screening-refinement-compatibility.json',
+                          '_internal/screening-parent-engines.json'}
+    if legacy and int(legacy.group(1)) < 22:
+        expected_assets.difference_update(screening_policies-set(files))
     actual_assets = {name for name in files if name.startswith(("_internal/static/", "_internal/templates/"))
-                     or name in {"_internal/shared-source-build.json", policy_path}}
+                     or name in {"_internal/shared-source-build.json", policy_path}
+                     or name in screening_policies}
     if actual_assets != expected_assets:
         raise PackageError("Bundled application assets differ from the explicit software allowlist.")
     for name, path in files.items():

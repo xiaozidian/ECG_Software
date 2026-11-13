@@ -14,7 +14,7 @@ import re
 import statistics
 import struct
 from hashlib import sha256
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from bisect import bisect_left, insort
 from pathlib import Path
 
@@ -24,7 +24,7 @@ from .config import CHANNEL_COUNT, SAMPLE_RATE
 from .source_identity import require_waveform_file, source_read
 from .stt_records import RHYTHM_POLICY
 
-ALGORITHM_VERSION = "stt-screening-0.4.0-comprehensive-independent"
+ALGORITHM_VERSION = "stt-screening-0.5.0-morphology-qualified"
 LEADS = ("I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6")
 _FRAME = struct.Struct("<8h")
 _CACHE: OrderedDict[tuple, dict] = OrderedDict()
@@ -55,6 +55,13 @@ DEFAULT_CONFIG = {
 # continuously negative aVR is not called an inverted T merely for its sign.
 T_UPRIGHT_LEADS = frozenset(("I", "II", "V3", "V4", "V5", "V6"))
 T_VARIABLE_LEADS = frozenset(("III", "aVL", "aVF", "V1", "V2"))
+_CANDIDATE_POINT_FLAGS = (
+    't_shape_quality_good','st_baseline_quality_good','t_positive_lobe_supported',
+    't_negative_lobe_supported','t_biphasic_supported','t_flat_supported',
+    'baseline_uncertain','t_rapid_alternation','t_roughness_excessive',
+    'st_roughness_excessive','t_noise_above_flat_limit',
+    't_positive_right_censored','t_negative_right_censored',
+)
 
 
 def t_polarity_context(lead):
@@ -329,7 +336,8 @@ def _episode(points,lead,config,kind,label,peak,*,continuous=None,criteria=()):
     flags=sorted({reason for p in points for reason in p.get('quality_flags',[])})
     if any(p.get('axis_shift_suspected') for p in points):flags=sorted(set(flags)|{'axis_shift_suspected'})
     if kind=='t_persistent_inversion' and lead in T_VARIABLE_LEADS:flags=sorted(set(flags)|{'normal_polarity_variation_possible'})
-    delta=peak.get('deviation_units') if kind.startswith('st_') else (peak.get('t_amplitude_units')-peak.get('t_reference_units') if _finite(peak.get('t_amplitude_units')) and _finite(peak.get('t_reference_units')) else None)
+    t_reference=peak.get('candidate_t_reference_units',peak.get('t_reference_units'))
+    delta=peak.get('deviation_units') if kind.startswith('st_') else (peak.get('t_amplitude_units')-t_reference if _finite(peak.get('t_amplitude_units')) and _finite(t_reference) else None)
     row=dict(kind=kind,label=label,start_s=round(start,3),end_s=round(end,3),duration_s=round(end-start,3),
         continuous_target_s=round(end-start if continuous is None else continuous,3),
         peak_time_s=round(peak['time_s'],3),peak_deviation_units=round(delta,2) if _finite(delta) else None,
@@ -340,9 +348,14 @@ def _episode(points,lead,config,kind,label,peak,*,continuous=None,criteria=()):
         threshold_scale='uncalibrated_source_device_research_units',measurement_basis='raw_per_beat_iso_and_stable_reference',
         reference_source=copy.deepcopy(peak.get('reference_source')),t_polarity_context=t_polarity_context(lead),
         boundary_resolution_s=max((p.get('boundary_resolution_s',config['block_seconds']) for p in points),default=config['block_seconds']))
+    if kind.startswith('t_') and 'candidate_t_reference_source' in peak:
+        row['reference_source']['t']=copy.deepcopy(peak['candidate_t_reference_source'])
+        row['screening_support']='local_lobe_prominence_width_noise_and_stable_polarity_background'
     if kind=='t_wave_inversion':
-        row['polarity_from']='positive' if peak.get('t_reference_units',0)>0 else 'negative'
+        row['polarity_from']='positive' if (t_reference or 0)>0 else 'negative'
         row['polarity_to']='positive' if peak.get('t_amplitude_units',0)>0 else 'negative'
+        if row['polarity_to']=='negative' and lead!='aVR':
+            row['criteria']=sorted(set(row['criteria'])|{'t_persistent_inversion'})
     return row
 
 
@@ -364,7 +377,9 @@ def _lead_episodes(points: list[dict], lead: str, config: dict) -> list[dict]:
                 episodes.append(_episode(active,lead,config,kind,label,peak,continuous=longest,criteria=sorted(criteria)))
         for point in points:
             start,end=_support(point,config)
-            valid=point.get('eligible') and end>start and any(_finite(point.get(k)) for k in ('st_level_units','deviation_units'))
+            valid=(point.get('eligible') and point.get('candidate_st_baseline_quality_good',True)
+                   and point.get('candidate_qrs_supported',True) and end>start
+                   and any(_finite(point.get(k)) for k in ('st_level_units','deviation_units')))
             if not valid or last_end is not None and abs(start-last_end)>1e-7:
                 finish();active=[];below=strong=longest=0.;criteria=set()
             last_end=end
@@ -385,25 +400,40 @@ def _lead_episodes(points: list[dict], lead: str, config: dict) -> list[dict]:
 
 
 def _t_conditions(point,lead,config):
-    value=point.get('t_amplitude_units');reference=point.get('t_reference_units')
+    value=point.get('t_amplitude_units');reference=point.get('candidate_t_reference_units',point.get('t_reference_units'))
     positive=point.get('t_positive_units',max(0.,value) if _finite(value) else None)
     negative=point.get('t_negative_units',min(0.,value) if _finite(value) else None)
-    if not point.get('eligible') or point.get('t_measurable') is False or not all(_finite(v) for v in (value,positive,negative)):
+    if (not point.get('eligible') or point.get('t_measurable') is False
+            or not point.get('candidate_t_shape_quality_good',True)
+            or not point.get('candidate_qrs_supported',True)
+            or not all(_finite(v) for v in (value,positive,negative))):
         return set()
     noise=max(1.,point.get('noise_units',1.))
     minimum=max(config['t_inversion_minimum_units'],config['t_noise_multiplier']*noise)
-    both=min(positive,-negative)>=max(config['t_biphasic_minimum_units'],config['t_noise_multiplier']*noise)
+    both=(min(positive,-negative)>=max(config['t_biphasic_minimum_units'],config['t_noise_multiplier']*noise)
+          and point.get('candidate_t_biphasic_supported',True))
+    directional=point.get('candidate_t_positive_lobe_supported' if value>0 else 'candidate_t_negative_lobe_supported',True)
+    reference_source=point.get('candidate_t_reference_source')
+    reference_precedes=(reference_source is None or
+                        point.get('start_s',point.get('time_s',0))>=reference_source['end_s']-1e-7)
+    departure=(value<0 if lead in T_UPRIGHT_LEADS else value>0 if lead=='aVR' else True)
     result=set()
-    if _finite(reference) and abs(value)>=minimum and abs(reference)>=minimum and value*reference<0 and not both:
+    if _finite(reference) and reference_precedes and departure and abs(value)>=minimum and abs(reference)>=minimum and value*reference<0 and not both and directional:
         result.add('t_wave_inversion')
-    if lead!='aVR' and negative<=-minimum and -negative>positive and not both:
+    # Variable-polarity leads need a reliable dynamic change from their own
+    # observed background. A stable negative aVL alone is not a new event.
+    variable_change=(lead not in T_VARIABLE_LEADS or
+                     _finite(reference) and reference_precedes and reference-value>=minimum)
+    if (lead!='aVR' and negative<=-minimum and -negative>positive and not both
+            and point.get('candidate_t_negative_lobe_supported',True) and variable_change
+            and 't_wave_inversion' not in result):
         result.add('t_persistent_inversion')
     if both:result.add('t_biphasic')
     r=point.get('r_amplitude_units');amplitude=max(positive,-negative)
     if (_finite(r) and r>=max(config['t_low_minimum_r_units'],noise*10)
             and amplitude<=config['t_low_maximum_units'] and amplitude/r<=config['t_low_r_ratio']
             and noise<=max(2.,config['t_low_maximum_units']/config['t_noise_multiplier'])
-            and not both):
+            and point.get('candidate_t_flat_supported',True) and not both):
         result.add('t_low_flat')
     return result
 
@@ -420,8 +450,8 @@ def _t_episodes(points: list[dict], lead: str, config: dict) -> list[dict]:
         if kind=='t_low_flat':peak=min(run,key=lambda p:max(p.get('t_positive_units',max(0.,p['t_amplitude_units'])),-p.get('t_negative_units',min(0.,p['t_amplitude_units']))))
         elif kind=='t_persistent_inversion':peak=min(run,key=lambda p:p.get('t_negative_units',p['t_amplitude_units']))
         elif kind=='t_biphasic':peak=max(run,key=lambda p:min(p.get('t_positive_units',0),-p.get('t_negative_units',0)))
-        else:peak=max(run,key=lambda p:abs(p['t_amplitude_units']-p['t_reference_units']))
-        label='T 波持续负向候选（导联背景待核对）' if kind=='t_persistent_inversion' and lead in T_VARIABLE_LEADS else labels[kind]
+        else:peak=max(run,key=lambda p:abs(p['t_amplitude_units']-p.get('candidate_t_reference_units',p['t_reference_units'])))
+        label='T 波负向加深候选（较本导联背景）' if kind=='t_persistent_inversion' and lead in T_VARIABLE_LEADS else labels[kind]
         result.append(_episode(run,lead,config,kind,label,peak,criteria=[kind]))
     for point in points:
         start,end=_support(point,config)
@@ -463,6 +493,62 @@ def _stable_reference(points,key,config,*,prefer=None):
         if fallback is None:fallback=(round(center,2),source)
         if prefer is None or prefer(center):return round(center,2),source
     return fallback if fallback is not None else (None,None)
+
+
+def _candidate_t_reference(points,lead,config):
+    """Qualify polarity background without changing any saved measurement.
+
+    A signed ISO extremum alone cannot establish a stable T morphology: a
+    small ripple on a negative platform would otherwise establish its own
+    purported abnormal reference. Copies keep legacy trends exactly intact.
+    """
+    qualified=[]
+    for point in points:
+        value=point.get('t_amplitude_units')
+        lobe=point.get('candidate_t_positive_lobe_supported' if _finite(value) and value>0
+                       else 'candidate_t_negative_lobe_supported',True)
+        flat=(point.get('candidate_t_flat_supported',True) and _finite(value)
+              and abs(value)<=config['t_low_maximum_units'])
+        qualified.append({key:point.get(key) for key in ('time_s','start_s','end_s',
+                          'axis_shift_suspected','t_amplitude_units')})
+        qualified[-1]['eligible']=bool(point.get('eligible')
+                and point.get('candidate_t_shape_quality_good',True)
+                and point.get('candidate_qrs_supported',True) and (lobe or flat))
+    # The first reliable observed morphology is the background. A positive
+    # period discovered later must not retrospectively make an initial
+    # negative period a polarity reversal from a future reference.
+    # Do not let a median over a mixed positive/negative window manufacture a
+    # stable reference. Sixty seconds must support the same polarity class.
+    run=[];previous_class=None
+    for point in qualified:
+        value=point.get('t_amplitude_units')
+        polarity=(1 if value>config['t_low_maximum_units'] else -1 if value<-config['t_low_maximum_units'] else 0) if _finite(value) else None
+        if previous_class is not None and polarity!=previous_class:
+            reference=_stable_reference(run,'t_amplitude_units',config)
+            if reference[0] is not None:return reference
+            run=[]
+        run.append(point);previous_class=polarity
+    return _stable_reference(run,'t_amplitude_units',config)
+
+
+def _candidate_quality_summary(points,lead,config):
+    reasons=Counter();supported=0.;background=0.
+    keys=('baseline_uncertain','t_rapid_alternation','t_roughness_excessive',
+          'st_roughness_excessive','t_noise_above_flat_limit')
+    for point in points:
+        if not point.get('eligible'):continue
+        start,end=_support(point,config);seconds=max(0.,end-start)
+        if point.get('candidate_t_shape_quality_good') and point.get('candidate_qrs_supported'):
+            supported+=seconds
+        for key in keys:
+            if point.get('candidate_'+key):reasons[key]+=seconds
+        value=point.get('t_amplitude_units');ref=point.get('candidate_t_reference_units')
+        if lead in T_VARIABLE_LEADS and _finite(value) and value<0:
+            conditions=_t_conditions(point,lead,config)
+            if not conditions.intersection(('t_persistent_inversion','t_wave_inversion')):background+=seconds
+    return dict(shape_supported_s=round(supported,3),
+                variable_negative_without_dynamic_event_s=round(background,3),
+                reason_duration_s={key:round(value,3) for key,value in sorted(reasons.items())})
 
 
 def _merge_episodes(items: list[dict]) -> list[dict]:
@@ -529,6 +615,7 @@ def _screening_masks(intervals,total_samples):
 @source_read
 def analyze_stt(waveform_path: str | Path, records, duration_s: float | None = None, *, analysis_revision=None, config=None,excluded_intervals=(),project=None) -> dict:
     """Analyze a recording and return automatic review candidates and trends."""
+    from .stt_candidate_quality import candidate_t_support, CANDIDATE_QUALITY_DEFAULTS
     path, settings = Path(waveform_path), {**DEFAULT_CONFIG, **(config or {})}
     stat, normalized = require_waveform_file(path), _normalize_records(records)
     total_samples = stat.st_size // (CHANNEL_COUNT * 2)
@@ -538,7 +625,7 @@ def analyze_stt(waveform_path: str | Path, records, duration_s: float | None = N
     # record, including middle edits, rather than only the count and endpoints.
     signature = (sha256(repr(normalized).encode("ascii")).hexdigest(), analysis_revision)
     from .source_identity import file_signature
-    cache_key = (str(path.resolve()), file_signature(path), signature, duration, tuple(sorted(settings.items())),masks)
+    cache_key = (ALGORITHM_VERSION,str(path.resolve()), file_signature(path), signature, duration, tuple(sorted(settings.items())),masks)
     if cache_key in _CACHE:
         _CACHE.move_to_end(cache_key)
         value = _CACHE[cache_key]
@@ -584,7 +671,32 @@ def analyze_stt(waveform_path: str | Path, records, duration_s: float | None = N
             base['observation_index']={r[0]:i for i,r in enumerate(usable)}
             blocks.append(base)
 
-    lead_points,episodes={},[]
+        # Preserve each block's J and real next-R, while evaluating source
+        # morphology in bounded vector batches instead of thousands of tiny
+        # NumPy calls. Only selection flags are retained per point; all raw
+        # numeric measurements still come exclusively from the legacy path.
+        batch=[];count=0
+        def flush_candidate_batch():
+            if not batch:return
+            rows=[row for _,block in batch for row in block['usable']]
+            js=[round(block['j_offset_ms']*SAMPLE_RATE/1000) for _,block in batch for _ in block['usable']]
+            groups=[block_id for block_id,block in batch for _ in block['usable']]
+            support=candidate_t_support(buffer,rows,total_samples,settings,j_sample=js,
+                    next_samples=[next_anchors[row[0]] if next_anchors[row[0]] is not None else row[0] for row in rows],
+                    alignment_groups=groups)
+            offset=0
+            for _,block in batch:
+                stop=offset+len(block['usable'])
+                block['candidate_support']={key:support[key][offset:stop] for key in _CANDIDATE_POINT_FLAGS}
+                offset=stop
+        for block_id,block in enumerate(blocks):
+            if not block['observations']:continue
+            batch.append((block_id,block));count+=len(block['usable'])
+            if count>=2048:
+                flush_candidate_batch();batch=[];count=0
+        flush_candidate_batch()
+
+    lead_points,episodes,screening_quality={},[],{}
     for column,lead in enumerate(LEADS):
         points=[]
         for block in blocks:
@@ -631,6 +743,13 @@ def analyze_stt(waveform_path: str | Path, records, duration_s: float | None = N
                 # quality measured value is preserved independently of eligibility.
                 if not observed:
                     p['st_level_units']=p['t_amplitude_units']=None
+                if observed:
+                    for key,values in block['candidate_support'].items():
+                        p['candidate_'+key]=bool(values[index,column])
+                    p['candidate_qrs_supported']=bool(p['qrs_amplitude_units']>=max(40.,6.*p['noise_units']))
+                else:
+                    p['candidate_t_shape_quality_good']=p['candidate_st_baseline_quality_good']=False
+                    p['candidate_qrs_supported']=False
                 points.append(p)
         qrs_ref,qrs_source=_stable_reference(points,'qrs_amplitude_units',settings)
         for point in points:
@@ -644,8 +763,13 @@ def analyze_stt(waveform_path: str | Path, records, duration_s: float | None = N
             point['reference_units']=st_ref;point['t_reference_units']=t_ref
             point['reference_source']=dict(st=st_source,t=t_source,qrs=qrs_source)
             point['deviation_units']=round(point['st_level_units']-st_ref,3) if _finite(point.get('st_level_units')) and _finite(st_ref) else None
+        candidate_t_ref,candidate_t_source=_candidate_t_reference(points,lead,settings)
+        for point in points:
+            point['candidate_t_reference_units']=candidate_t_ref
+            point['candidate_t_reference_source']=candidate_t_source
         episodes.extend(_lead_episodes(points,lead,settings));episodes.extend(_t_episodes(points,lead,settings))
         lead_points[lead]=minute_trends(points,duration,settings)
+        screening_quality[lead]=_candidate_quality_summary(points,lead,settings)
 
     candidates = _merge_episodes(episodes)
     eligible_blocks = sum(block["eligible"] for block in blocks)
@@ -653,6 +777,10 @@ def analyze_stt(waveform_path: str | Path, records, duration_s: float | None = N
         "algorithm_version": ALGORITHM_VERSION, "analysis_revision": analysis_revision, "status": "completed", "rhythm_policy":RHYTHM_POLICY,
         "sample_rate_hz": SAMPLE_RATE, "units": "source_device_units", "unit_label": "设备原始单位",
         "calibration_status": "unverified", "parameters": copy.deepcopy(settings),
+        "screening_quality":dict(policy='morphology_qualified_candidates_v1',
+            parameters={key:settings.get(key,value) for key,value in CANDIDATE_QUALITY_DEFAULTS.items()},
+            leads=screening_quality,raw_and_trend_measurements_preserved=True,
+            count_cap=None,threshold_interpretation='engineering_support_in_source_device_units_not_clinical_diagnostic_thresholds'),
         "quality": {"total_blocks": len(blocks), "eligible_blocks": eligible_blocks,
                     "coverage_pct": round(eligible_blocks * 100 / max(1, len(blocks)), 1),
                     "analyzed_duration_s": round(min(duration, len(blocks) * settings["block_seconds"]), 1),

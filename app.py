@@ -315,23 +315,25 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
             case = repository.get_case(case_id)
             basis = runtime.basis(case)
             previous = storage.get_analysis_basis(case_id)
-            compatibility = app.extensions.get('performance_compatibility')
-            if (previous and previous.get('digest')!=basis.get('digest')
-                    and compatibility and not app.config['DEMO_READONLY']
-                    and compatibility.build_allowed(previous,basis)):
-                snapshot=editor.snapshot(case_id)
-                annotations=storage.list_annotations(case_id)
-                prior_report=storage.get_report(case_id,case.get('conclusion',''))
-                revision=storage.get_review(case_id)['revision']
-                certificate=compatibility.resolve(case,previous,basis,build_feed(case,snapshot['document']),
-                              annotations,prior_report,revision,snapshot['revision'])
-                if certificate:
-                    def current_source():
-                        if runtime.direct_basis(case)['digest']!=certificate['execution_basis']:
-                            raise ReportConflict('升级核对期间原始数据已变化')
-                    storage.record_compatible_implementation(case_id,certificate,ACTOR,current_source)
-                    runtime.bind_compatible_basis(case,certificate)
-                    basis=runtime.basis(case)
+            if previous and previous.get('digest')!=basis.get('digest') and not app.config['DEMO_READONLY']:
+                for name in ('performance_compatibility', 'screening_compatibility'):
+                    compatibility = app.extensions.get(name)
+                    if not compatibility or not compatibility.build_allowed(previous,basis):
+                        continue
+                    snapshot=editor.snapshot(case_id)
+                    annotations=storage.list_annotations(case_id)
+                    prior_report=storage.get_report(case_id,case.get('conclusion',''))
+                    revision=storage.get_review(case_id)['revision']
+                    certificate=compatibility.resolve(case,previous,basis,build_feed(case,snapshot['document']),
+                                  annotations,prior_report,revision,snapshot['revision'])
+                    if certificate:
+                        def current_source():
+                            if runtime.direct_basis(case)['digest']!=certificate['execution_basis']:
+                                raise ReportConflict('升级核对期间原始数据已变化')
+                        storage.record_compatible_implementation(case_id,certificate,ACTOR,current_source)
+                        runtime.bind_compatible_basis(case,certificate)
+                        basis=runtime.basis(case)
+                        break
             storage.sync_analysis_basis(case_id, basis, ACTOR, app.config['DEMO_READONLY'])
             return case
         except CaseNotFound:
@@ -366,6 +368,8 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
     hrv_reviews = HrvReviewStore(storage)
     from ecg_core.performance_compatibility import PerformanceCompatibility
     app.extensions['performance_compatibility']=PerformanceCompatibility(base,runtime,storage,editor)
+    from ecg_core.screening_compatibility import ScreeningCompatibility
+    app.extensions['screening_compatibility']=ScreeningCompatibility(base,runtime,storage,editor)
 
     terminology = TerminologyStore(storage)
     app.extensions['hrv_reviews'] = hrv_reviews
@@ -637,6 +641,7 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
             "allow_phi": app.config["ALLOW_PHI"],
             "workspace_epoch": workspace_epoch,
             "evidence_continuity": app.extensions["performance_compatibility"].diagnostics(),
+            "screening_continuity": app.extensions["screening_compatibility"].diagnostics(),
         })
 
     @app.get("/api/dashboard")
@@ -1103,6 +1108,9 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
     def report_section_evidence(case,index=None):
         from ecg_core.report_sections import evidence
         value=evidence(index if index is not None else clinical_index(case),stt_review(case['case_id']).get_json())
+        compatibility=app.extensions['screening_compatibility']
+        value=compatibility.apply_report_presentation(case,
+            storage.get_report(case['case_id'],case.get('conclusion','')),value,edited_feed(case))
         rows=value['st_events'];roles=[]
         for role,field,anchor in [('st_min','minimum_st_level_units','minimum_st_sample'),('st_max','maximum_st_level_units','maximum_st_sample'),('reference','reference_st_level_units','reference_sample')]:
             usable=[r for r in rows if r.get(field) is not None and r.get(anchor) is not None]
@@ -2249,9 +2257,12 @@ def create_app(data_root: str | os.PathLike[str] | None = None, db_path: str | o
         if composition.get('advanced_options',{}).get('markers'):
             case=case_or_404(case_id)
             advanced_evidence(case,clinical_index(case),composition['advanced_options'])
+        from ecg_core.stt import ALGORITHM_VERSION as screening_algorithm_version
         saved = storage.save_report(case_id, conclusion, status, ACTOR, composition,
                                     payload["expected_version"], progress["revision"], basis['digest'],
-                                    lambda: assert_source_basis(case, basis))
+                                    lambda: assert_source_basis(case, basis),
+                                    execution_provenance=dict(execution_engine_id=runtime.engine_id,
+                                        screening_algorithm_version=screening_algorithm_version))
         return jsonify({**saved, 'rr_merged_event_ids': merged_rr})
 
     def report_source_token(case):

@@ -60,15 +60,18 @@ def code_fingerprints(root, module_names):
 
 
 class PerformanceCompatibility:
+    policy_name = POLICY_NAME
+    policy_schema = POLICY_SCHEMA
+
     def __init__(self, root, runtime, storage, editor):
         self.root=Path(root);self.runtime=runtime;self.storage=storage;self.editor=editor
         self.policy=None;self.policy_digest=None;self._code_ok=False;self._lock=threading.RLock()
-        path=self.root/POLICY_NAME
+        path=self.root/self.policy_name
         if not path.is_file():return
         runtime.assert_current()
         policy=json.loads(path.read_bytes())
         runtime.assert_current()
-        if policy.get("schema")!=POLICY_SCHEMA:return
+        if policy.get("schema")!=self.policy_schema:return
         self.policy=policy;self.policy_digest=digest(policy)
         try:
             names=("app",)+tuple("ecg_core."+n for n in runtime.module_names)
@@ -126,13 +129,18 @@ class PerformanceCompatibility:
             if not was_current:continue
             checked=evaluate_record(record,previous,current,scope,feed,case["paths"]["data"],
                          persisted_basis_versions=references.get("annotation:"+str(record["id"]),()),
-                         implementation_compatible=True)
+                         implementation_compatible=True, **self.record_evaluation_options())
             if not checked["compatible"]:return None
             proofs.append(checked["proof"]);preserved.append(record["id"])
-        return dict(schema=POLICY_SCHEMA,policy_digest=self.policy_digest,
+        return dict(schema=self.policy_schema,policy_digest=self.policy_digest,
                     reference_basis=copy.deepcopy(previous),execution_basis=current["digest"],
                     execution_engine_id=self.runtime.engine_id,
                     source_inputs_digest=digest(current["inputs"]),beat_revision=scope["beat_revision"],
                     authored_annotations_digest=digest(annotations),editor_document_digest=digest(feed.document),
                     review_revision=review_revision,report_version=report.get("version",1),
                     report_composition_digest=digest(comp),stt_proofs=proofs,retained_stt_records=preserved)
+
+    def record_evaluation_options(self):
+        # Performance upgrades retain the strict current-screening requirement.
+        # A separately verified refinement policy may supply its own transition.
+        return {}

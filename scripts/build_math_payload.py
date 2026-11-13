@@ -55,7 +55,7 @@ def generate(output: Path, release_id: str) -> dict:
     case['stt_review'] = build_stt_review(case['conclusion'], waveform,
         feed.records, duration,
         analysis_revision='editor-0|overrides-none')
-    assert ALGORITHM_VERSION == 'stt-screening-0.4.0-comprehensive-independent'
+    assert ALGORITHM_VERSION == 'stt-screening-0.5.0-morphology-qualified'
     assert case['stt_review']['analysis']['algorithm_version'] == ALGORITHM_VERSION
     assert case['stt_review']['analysis']['rhythm_policy'] == RHYTHM_POLICY == 'independent_of_AF_AFL_reviews'
     case['stt_review_binding'] = {'case_id': case_id,

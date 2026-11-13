@@ -27,7 +27,9 @@
     "demo/static/js/stt-range-math.js",
     "platforms/windows-doctor/base-3ee41f44.json",
     "performance-parent-engines.json",
-    "scripts/build_performance_policy.py"
+    "scripts/build_performance_policy.py",
+    "screening-parent-engines.json",
+    "scripts/build_screening_policy.py"
   ],
   "adapters": {
     "local": [
@@ -37,7 +39,8 @@
       "ecg_core/source_identity.py",
       "ecg_core/workspace_backup.py",
       "requirements.txt",
-      "performance-compatibility.json"
+      "performance-compatibility.json",
+      "screening-refinement-compatibility.json"
     ],
     "windows-doctor": [
       "app.py",
@@ -51,7 +54,8 @@
       "requirements.txt",
       "requirements-doctor-build.txt",
       "scripts/windows_doctor_build.py",
-      "performance-compatibility.json"
+      "performance-compatibility.json",
+      "screening-refinement-compatibility.json"
     ]
   },
   "capabilities": {

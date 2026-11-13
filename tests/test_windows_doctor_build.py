@@ -112,3 +112,16 @@ def test_software_only_manifest_rejects_any_source(tmp_path):
     (root / "_internal" / "accidental.DATA").write_bytes(b"unapproved raw")
     with pytest.raises(PackageError, match="Forbidden"):
         verify_content_manifest(root)
+
+
+@pytest.mark.parametrize('version,accepted', [('1.0.21', True),('1.0.22', False)])
+def test_screening_policy_assets_required_only_for_new_package(tmp_path, version, accepted):
+    root=minimal_package(tmp_path)
+    (root/'RELEASE.json').write_text(json.dumps({'packaging_version':version,'source_id':'M01'}))
+    for name in ['screening-refinement-compatibility.json','screening-parent-engines.json']:
+        (root/'_internal'/name).unlink()
+    if accepted:
+        assert package_inventory(root)
+    else:
+        with pytest.raises(PackageError,match='software allowlist'):
+            package_inventory(root)

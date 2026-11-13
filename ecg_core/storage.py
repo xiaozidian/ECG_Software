@@ -721,9 +721,21 @@ class Storage(ReviewWorkflowMixin, EvidenceCandidateMixin, ReportEvidenceMixin):
                 annotations=[x for x in annotations if x['details'].get('kind') not in ('AF','AFL')]
                 annotations+=episode_annotations(json.loads(rhythm['document']),stamp=rhythm['updated_at'])
                 annotations.append(dict(id='rhythm-control',sample_index=0,label='',internal=True,details={'rhythm_authoritative':True}))
-            report=db.execute('SELECT version,composition FROM report_drafts WHERE case_id=?',(case_id,)).fetchone()
+            report=db.execute('SELECT * FROM report_drafts WHERE case_id=?',(case_id,)).fetchone()
             if report and (report['version']!=certificate['report_version'] or digest(normalize_report_composition(json.loads(report['composition'])))!=certificate['report_composition_digest']):
                 raise ReportConflict('升级核对期间报告已有修改，请重新载入')
+            if certificate.get('continuity_kind') == 'stt_screening_refinement':
+                from .screening_compatibility import report_identity, POLICY_SCHEMA
+                if certificate.get('schema') != POLICY_SCHEMA:
+                    raise ReportConflict('筛查升级证据类型不一致，未保留旧复核')
+                if report:
+                    state = dict(report)
+                    state['composition'] = normalize_report_composition(json.loads(state['composition']))
+                    state['analysis_provenance'] = json.loads(state.get('analysis_provenance') or '{}')
+                    if report_identity(state) != certificate.get('report_state_digest'):
+                        raise ReportConflict('升级核对期间报告签署状态已变化，未保留旧复核')
+                elif certificate.get('signed_report_snapshot'):
+                    raise ReportConflict('升级核对期间原签署报告已不存在')
             # list_annotations has this same ordering and source DTO.
             if digest(annotations)!=certificate['authored_annotations_digest']:
                 raise ReportConflict('升级核对期间标注已变化，未保留旧复核')
@@ -741,12 +753,65 @@ class Storage(ReviewWorkflowMixin, EvidenceCandidateMixin, ReportEvidenceMixin):
                 ON CONFLICT(case_id,execution_engine_id,execution_basis)
                 DO UPDATE SET certificate=excluded.certificate,created_at=excluded.created_at""",
                 (case_id,certificate['execution_engine_id'],certificate['execution_basis'],payload,utc_now()))
-            if not exists or exists['certificate']!=payload:
+            action=('analysis.screening_refinement_verified'
+                    if certificate.get('continuity_kind')=='stt_screening_refinement'
+                    else 'analysis.performance_upgrade_verified')
+            needs_audit=not exists or exists['certificate']!=payload
+            if action=='analysis.screening_refinement_verified':
+                # A full re-verification repairs a missing or damaged audit even
+                # when the resulting numerical certificate is byte-for-byte equal.
+                # A read cache cannot create this independent evidence.
+                needs_audit=needs_audit or not self._compatible_audit_matches(db,case_id,certificate,action)
+            if needs_audit:
                 db.execute('INSERT INTO audit_log(case_id,actor,action,detail,created_at) VALUES(?,?,?,?,?)',
-                    (case_id,actor,'analysis.performance_upgrade_verified',
+                    (case_id,actor,action,
                      json.dumps(dict(reference_basis=certificate['reference_basis']['digest'],
                          execution_engine=certificate['execution_engine_id'],
                          proof_sha256=digest(certificate),retained_stt_records=certificate['retained_stt_records']),sort_keys=True),utc_now()))
+
+    @staticmethod
+    def _compatible_audit_matches(db,case_id,certificate,action):
+        from .analysis_provenance import digest
+        expected=digest(certificate)
+        for row in db.execute('SELECT detail FROM audit_log WHERE case_id=? AND action=? ORDER BY id DESC',
+                              (case_id,action)):
+            try:detail=json.loads(row['detail'])
+            except (ValueError,TypeError):continue
+            if (isinstance(detail,dict) and detail.get('proof_sha256')==expected
+                    and detail.get('execution_engine')==certificate.get('execution_engine_id')
+                    and detail.get('reference_basis')==(certificate.get('reference_basis') or {}).get('digest')
+                    and detail.get('retained_stt_records')==certificate.get('retained_stt_records')):
+                return True
+        return False
+
+    def get_compatible_implementation(self,case_id,execution_engine_id,execution_basis):
+        """Read one independently audited screening certificate, never authorize it.
+
+        The caller must still match its entire live snapshot and policy, then
+        run the ordinary atomic commit guards. Unattested JSON is a cache miss.
+        """
+        from .screening_compatibility import POLICY_SCHEMA,CONTINUITY_KIND
+        with self.connect() as db:
+            db.execute('BEGIN')
+            if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='analysis_implementation_compatibility'").fetchone():
+                return None
+            row=db.execute('SELECT certificate FROM analysis_implementation_compatibility '
+                           'WHERE case_id=? AND execution_engine_id=? AND execution_basis=?',
+                           (case_id,execution_engine_id,execution_basis)).fetchone()
+            if not row:return None
+            try:certificate=json.loads(row['certificate'])
+            except (ValueError,TypeError):return None
+            if (not isinstance(certificate,dict) or certificate.get('schema')!=POLICY_SCHEMA
+                    or certificate.get('continuity_kind')!=CONTINUITY_KIND
+                    or certificate.get('case_id')!=case_id
+                    or certificate.get('execution_engine_id')!=execution_engine_id
+                    or certificate.get('execution_basis')!=execution_basis):
+                return None
+            try:audited=self._compatible_audit_matches(db,case_id,certificate,'analysis.screening_refinement_verified')
+            except (ValueError,TypeError,AttributeError,OverflowError):return None
+            if not audited:
+                return None
+            return certificate
 
     def sync_analysis_basis(self, case_id, basis, actor, readonly=False):
         """Idempotent, atomic invalidation; keep text and selected evidence intact."""
@@ -804,7 +869,7 @@ class Storage(ReviewWorkflowMixin, EvidenceCandidateMixin, ReportEvidenceMixin):
             "analysis_provenance": {},
         }
 
-    def save_report(self, case_id: str, conclusion: str, status: str, actor: str, composition: dict | None = None, expected_version=None, expected_review_revision=None, expected_analysis_basis=None, check_source=None) -> dict:
+    def save_report(self, case_id: str, conclusion: str, status: str, actor: str, composition: dict | None = None, expected_version=None, expected_review_revision=None, expected_analysis_basis=None, check_source=None, *, execution_provenance=None) -> dict:
         allowed = {"draft", "reviewed", "returned"}
         if status not in allowed:
             raise ValueError("invalid report status")
@@ -836,6 +901,14 @@ class Storage(ReviewWorkflowMixin, EvidenceCandidateMixin, ReportEvidenceMixin):
             reviewed_by = actor if status == "reviewed" else ""
             from .analysis_provenance import digest
             provenance = {'basis': basis, 'composition_sha256': digest(next_composition)} if basis else {}
+            if execution_provenance is not None:
+                # Server-only provenance for an actual new save, never a rewrite
+                # of a retained signature during compatibility verification.
+                if (not isinstance(execution_provenance,dict)
+                        or set(execution_provenance)!={'execution_engine_id','screening_algorithm_version'}
+                        or any(not isinstance(v,str) or not v for v in execution_provenance.values())):
+                    raise ValueError('报告保存缺少有效执行程序依据')
+                provenance.update(execution_provenance)
             db.execute(
                 """INSERT INTO report_drafts(case_id,conclusion,composition,status,version,reviewed_by,updated_at,analysis_provenance)
                 VALUES(?,?,?,?,?,?,?,?)

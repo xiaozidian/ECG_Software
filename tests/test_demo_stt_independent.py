@@ -27,7 +27,7 @@ def independent_math(tmp_path_factory):
     rows=[{'sample_index':second*200,'group':1,'rr_ms':1000} for second in range(1,duration)]
     review=build_stt_review('Original mathematical signal; no clinical conclusion',data,rows,duration,
                             analysis_revision='editor-0|overrides-none')
-    assert review['analysis']['algorithm_version']=='stt-screening-0.4.0-comprehensive-independent'
+    assert review['analysis']['algorithm_version']=='stt-screening-0.5.0-morphology-qualified'
     assert review['automatic_candidates']['items']
     fixture=folder/'fixture.json'
     fixture.write_text(json.dumps({'raw_path':str(data),'raw_sha256':hashlib.sha256(raw).hexdigest(),
