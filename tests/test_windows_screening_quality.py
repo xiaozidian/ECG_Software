@@ -239,24 +239,37 @@ def test_cold_restart_diagnostics_refuse_unproven_or_recomputed_cache(fault):
 def restart_snapshot():
     return {'recovery_epoch':'original-epoch','tables':{
         'annotations':{'columns':['id','created_at','uuid'],'rows':[{'id':1,'created_at':'old-reviewed-time','uuid':'original'}]},
-        'audit_log':{'columns':['id','action','detail','created_at'],'rows':[{'id':1,'action':'analysis.screening_refinement_verified','detail':'original-proof-hash','created_at':'first-migration-time'}]},
+        'audit_log':{'columns':['id','case_id','actor','action','detail','created_at'],'rows':[
+            {'id':1,'case_id':'P01','actor':'original-actor','action':'analysis.screening_refinement_verified','detail':'original-proof-hash','created_at':'first-migration-time'},
+            {'id':2,'case_id':'P01','actor':'original-actor','action':'case.open','detail':'','created_at':'original-open-time'}]},
         'analysis_implementation_compatibility':{'columns':['case_id','certificate','created_at'],
             'rows':[{'case_id':'P01','certificate':'original-canonical-certificate','created_at':'first-registration'}]}}}
 
 
+def restart_pair():
+    from datetime import datetime,timezone
+    before=restart_snapshot();after=copy.deepcopy(before)
+    after['tables']['audit_log']['rows'].append(dict(id=3,case_id='P01',actor='original-actor',
+        action='case.open',detail='',created_at='2026-11-13T03:00:01+00:00'))
+    context=dict(case_id='P01',started_at=datetime(2026,11,13,3,0,0,tzinfo=timezone.utc),
+                 finished_at=datetime(2026,11,13,3,0,2,tzinfo=timezone.utc))
+    return before,after,context
+
+
 def test_cold_restart_compares_full_database_while_naming_only_registration_timestamp_exception():
     from scripts.verify_windows_screening_quality import compare_restart_database
-    before=restart_snapshot();after=copy.deepcopy(before)
+    before,after,context=restart_pair()
     after['tables']['analysis_implementation_compatibility']['rows'][0]['created_at']='second-registration'
-    proof=compare_restart_database(before,after)
-    assert proof['all_clinical_rows_and_complete_audit_exact']
+    proof=compare_restart_database(before,after,**context)
+    assert proof['all_clinical_rows_and_original_complete_audit_exact']
+    assert proof['expected_visible_reopen_audit']==after['tables']['audit_log']['rows'][-1]
     assert proof['excluded_nonclinical_registration_fields']==['analysis_implementation_compatibility.created_at']
 
 
 @pytest.mark.parametrize('fault',['clinical-time','clinical-uuid','audit-time','audit-proof','certificate','extra-certificate','missing-table','epoch'])
 def test_cold_restart_rejects_any_clinical_audit_or_certificate_change(fault):
     from scripts.verify_windows_screening_quality import compare_restart_database
-    before=restart_snapshot();after=copy.deepcopy(before);tables=after['tables']
+    before,after,context=restart_pair();tables=after['tables']
     if fault=='clinical-time':tables['annotations']['rows'][0]['created_at']='rewritten-time'
     if fault=='clinical-uuid':tables['annotations']['rows'][0]['uuid']='rewritten'
     if fault=='audit-time':tables['audit_log']['rows'][0]['created_at']='new-time'
@@ -265,4 +278,46 @@ def test_cold_restart_rejects_any_clinical_audit_or_certificate_change(fault):
     if fault=='extra-certificate':tables['analysis_implementation_compatibility']['rows'].append(dict(tables['analysis_implementation_compatibility']['rows'][0]))
     if fault=='missing-table':tables.pop('annotations')
     if fault=='epoch':after['recovery_epoch']='new-epoch'
-    with pytest.raises(AssertionError):compare_restart_database(before,after)
+    with pytest.raises(AssertionError):compare_restart_database(before,after,**context)
+
+
+@pytest.mark.parametrize('fault',['absent','two-opens','new-proof','wrong-case','wrong-actor','nonempty-detail','early-time','late-time','no-timezone'])
+def test_cold_restart_allows_only_its_one_actual_case_open_append(fault):
+    from scripts.verify_windows_screening_quality import compare_restart_database
+    before,after,context=restart_pair();audit=after['tables']['audit_log']['rows'];appended=audit[-1]
+    if fault=='absent':audit.pop()
+    if fault=='two-opens':audit.append({**appended,'id':4})
+    if fault=='new-proof':appended['action']='analysis.screening_refinement_verified'
+    if fault=='wrong-case':appended['case_id']='other-case'
+    if fault=='wrong-actor':appended['actor']='different-actor'
+    if fault=='nonempty-detail':appended['detail']='unexpected'
+    if fault=='early-time':appended['created_at']='2026-11-13T02:59:59+00:00'
+    if fault=='late-time':appended['created_at']='2026-11-13T03:00:03+00:00'
+    if fault=='no-timezone':appended['created_at']='2026-11-13T03:00:01'
+    with pytest.raises(AssertionError):compare_restart_database(before,after,**context)
+
+
+def test_original21_verifier_remains_exact_accepted_source_and_isolates_old_algorithm():
+    import ast
+    from hashlib import sha256
+    from scripts import verify_screening_legacy_ui as legacy
+    from scripts import verify_windows_screening_quality as controller
+    path=Path(legacy.__file__)
+    assert sha256(path.read_bytes()).hexdigest()=='e801afe1503ee970a921960fa0c30188d0b7306e25ea3fad26fef3390244188c'
+    source=path.read_text()
+    assert 'stt-screening-0.4.0-comprehensive-independent' in source
+    assert 'stt-screening-0.5.0-morphology-qualified' not in source
+    tree=ast.parse(Path(controller.__file__).read_text())
+    aliases={alias.asname:node.module for node in ast.walk(tree) if isinstance(node,ast.ImportFrom) for alias in node.names if alias.asname}
+    assert aliases['old_stt_flow']=='scripts.verify_screening_legacy_ui'
+    assert aliases['stt_flow']=='scripts.verify_screening_quality_ui'
+
+
+def test_current_screening_verifier_keeps_final_V6_positive_and_V2_negative_assertions():
+    from scripts import verify_screening_quality_ui as quality
+    root=Path(quality.__file__).parent
+    current=Path(quality.__file__).read_bytes()
+    assert current==(root/'verify_stt_comprehensive_ui.py').read_bytes()
+    assert b'stt-screening-0.5.0-morphology-qualified' in current
+    assert b"('t_persistent_inversion', 'V6')" in current
+    assert b'Variable lead negative background is not an abnormal event for sign alone' in current

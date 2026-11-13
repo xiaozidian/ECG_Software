@@ -44,11 +44,11 @@ async def verify(page, case_id, output):
     await st_ready()
     assert await page.locator('#workflowNext').is_hidden(), 'No global ST-T confirmation gate'
     initial = await read('stt-review')
-    assert initial['analysis']['algorithm_version'] == 'stt-screening-0.4.0-comprehensive-independent'
+    assert initial['analysis']['algorithm_version'] == 'stt-screening-0.5.0-morphology-qualified'
     candidates = initial['automatic_candidates']['items']
     # Defined by the independent waveform generator; no hardcoded candidate IDs.
     targets = [('st_depression', 'I'), ('st_elevation', 'II'),
-               ('t_persistent_inversion', 'V2'), ('t_low_flat', 'V3'),
+               ('t_persistent_inversion', 'V6'), ('t_low_flat', 'V3'),
                ('t_biphasic', 'V4'), ('t_wave_inversion', 'V5')]
     chosen = []
     for kind, lead in targets:
@@ -56,6 +56,7 @@ async def verify(page, case_id, output):
         assert matches, ('Independent source category was not detected', kind, lead)
         chosen.append(max(matches, key=lambda c: c['duration_s']))
     assert not any(c['kind'] == 't_biphasic' and c['leads'] in (['I'], ['V6']) for c in candidates), 'ST plateau must not become a false T lobe'
+    assert not any(c['kind']=='t_persistent_inversion' and c['leads']==['V2'] and c['start_s']<181 for c in candidates), 'Variable lead negative background is not an abnormal event for sign alone'
     checks.append('six-source-measured-ST-T-categories-and-ST-platform-negative-control')
     saved = []
     for i, candidate in enumerate(chosen):

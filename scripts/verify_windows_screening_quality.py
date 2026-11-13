@@ -217,13 +217,29 @@ def compare_database(before, after, package):
                 approved_report_signature_and_selection_preserved=True)
 
 
-def compare_restart_database(before, after):
-    """A read-only new22 restart cannot rewrite a clinical row or audit proof."""
+def compare_restart_database(before, after, *, case_id, started_at, finished_at):
+    """A visible reopen appends one case.open; prior clinical/audit rows stay exact."""
     exact(before['recovery_epoch'],after['recovery_epoch'],'Read-only restart changed recovery epoch')
     left,right=before['tables'],after['tables']
     exact(sorted(left),sorted(right),'Read-only restart changed workspace tables')
+    require('audit_log' in left,'Cold restart requires the complete original audit table')
     for name in left:
-        if name=='analysis_implementation_compatibility':
+        if name=='audit_log':
+            exact(left[name]['columns'],right[name]['columns'],'Read-only restart changed audit schema')
+            original=sorted(left[name]['rows'],key=lambda r:r['id'])
+            current=sorted(right[name]['rows'],key=lambda r:r['id'])
+            require(len(current)==len(original)+1,'Visible cold reopen must append exactly one case.open audit')
+            exact(original,current[:-1],'Cold restart rewrote original audit rows or their times')
+            previous_opens=[row for row in original if row['action']=='case.open' and row['case_id']==case_id]
+            require(previous_opens and previous_opens[-1].get('actor'),'Cold restart has no original actor-bound case.open baseline')
+            appended=current[-1]
+            require(appended['action']=='case.open' and appended['case_id']==case_id
+                    and appended['actor']==previous_opens[-1]['actor'] and appended['detail']=='',
+                    'Cold restart appended an unexpected action, case, actor or detail')
+            recorded=datetime.fromisoformat(appended['created_at'])
+            require(recorded.tzinfo is not None and started_at.replace(microsecond=0)<=recorded<=finished_at,
+                    'Cold reopen audit time lies outside its actual process-restart window')
+        elif name=='analysis_implementation_compatibility':
             exact(left[name]['columns'],right[name]['columns'],'Read-only restart changed certificate schema')
             # Atomic storage still updates this registration timestamp while
             # retaining the independently audited numerical proof byte-for-byte.
@@ -232,8 +248,9 @@ def compare_restart_database(before, after):
             exact(rows(left[name]),rows(right[name]),'Read-only restart replaced, added or rewrote an original certificate')
         else:
             exact(left[name],right[name],'Read-only restart changed a persisted row or audit: '+name)
-    return dict(status='passed',same_tables=len(left),all_clinical_rows_and_complete_audit_exact=True,
+    return dict(status='passed',same_tables=len(left),all_clinical_rows_and_original_complete_audit_exact=True,
                 original_certificate_payload_exact=True,
+                expected_visible_reopen_audit=appended,
                 excluded_nonclinical_registration_fields=['analysis_implementation_compatibility.created_at'])
 
 
@@ -649,7 +666,7 @@ async def run(args, result):
                         await manager_tab.locator('#continueExperience').click()
                     await worklist_ready(manager_tab)
                     return manager_tab
-                from scripts.verify_stt_comprehensive_ui import verify as old_stt_flow
+                from scripts.verify_screening_legacy_ui import verify as old_stt_flow
                 from scripts.verify_screening_quality_ui import verify as stt_flow
                 from scripts.verify_af_multistrip_ui import verify as af_flow
                 async def capture_current():
@@ -748,6 +765,7 @@ async def run(args, result):
                     context = None
                     await stop(exe, home)
                     database_migrated=database_state(database)
+                    restart_first=datetime.now(timezone.utc)
                     restart_started=time.perf_counter()
                     context=await new_context()
                     page=await begin(exe,reuse=True)
@@ -776,7 +794,8 @@ async def run(args, result):
                     await stop(exe,home)
                     last = datetime.now(timezone.utc)
                     database1 = database_state(database)
-                    result['actual_cold_restart']['database']=compare_restart_database(database_migrated,database1)
+                    result['actual_cold_restart']['database']=compare_restart_database(database_migrated,database1,
+                        case_id=doctor_source.CASE_ID,started_at=restart_first,finished_at=last)
                     result['database_upgrade'] = compare_database(database0, database1, package)
                     result['database_before'] = public_database(database0)
                     result['database_after'] = public_database(database1)

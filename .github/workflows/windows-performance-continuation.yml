@@ -36,6 +36,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       SCREEN22_PRODUCER_RUN: ${{ inputs.producer_run }}
       SCREEN22_PRODUCER_COMMIT: ${{ inputs.producer_commit }}
+      ECG_EXPECTED_WINDOWS_BUILD_COMMIT: ${{ inputs.producer_commit }}
     defaults:
       run:
         shell: pwsh
