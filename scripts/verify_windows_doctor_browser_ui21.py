@@ -1009,6 +1009,19 @@ async def verify(args, receipt):
                         else:
                             await route.continue_()
                     await context.route("**/*", loopback_only)
+                    api_reads = {}
+                    api_read_timings = []
+                    def read_started(request):
+                        path = urlsplit(request.url).path
+                        if path.startswith('/api/'):
+                            api_reads[id(request)] = {'method': request.method, 'path': path,
+                                'started_monotonic': time.perf_counter()}
+                    def read_terminal(request):
+                        row = api_reads.pop(id(request), None)
+                        if row is not None:
+                            start = row.pop('started_monotonic')
+                            api_read_timings.append({**row, 'elapsed_s': round(time.perf_counter()-start, 4),
+                                'transport_error': safe_error(request.failure or '', private_values)})
                     def failed(request):
                         error = request.failure or ""
                         if request.resource_type in ("script", "stylesheet", "image", "font", "document"):
@@ -1040,6 +1053,9 @@ async def verify(args, receipt):
                         except Exception as error:
                             item["observation_error"]=safe_error(error,private_values)
                     def http_response(response,page):
+                        active = api_reads.get(id(response.request))
+                        if active is not None:
+                            active['status'] = response.status
                         if response.status >= 400:
                             item={"path":urlsplit(response.url).path,"status":response.status,
                                 "method":response.request.method,"last_completed_check":receipt["checks"][-1]["name"] if receipt["checks"] else None}
@@ -1049,6 +1065,9 @@ async def verify(args, receipt):
                         page.set_default_timeout(TIMEOUT_MS)
                         page.set_default_navigation_timeout(TIMEOUT_MS)
                         page.on("pageerror", lambda error: network["page_errors"].append(safe_error(error, private_values)))
+                        page.on("request", read_started)
+                        page.on("requestfinished", read_terminal)
+                        page.on("requestfailed", read_terminal)
                         page.on("requestfailed", failed)
                         page.on("response", lambda response: http_response(response,page))
                         async def accept_local_dialog(dialog):
@@ -1238,8 +1257,18 @@ async def verify(args, receipt):
                                     nextStep:typeof state==='undefined'?null:state.cases?.[0]?.review_workflow?.next_step,
                                     editRead:document.querySelector('#editTemplateGallery')?.dataset.readState,
                                     editWaves:document.querySelectorAll('#editTemplateGallery .occurrence-wave svg').length,
-                                    reportSaving:typeof state==='undefined'?null:state.reportSaving
+                                    reportSaving:typeof state==='undefined'?null:state.reportSaving,
+                                    sttEvidence:typeof state==='undefined'?null:Boolean(state.sttEvidence),
+                                    sttReview:typeof state==='undefined'?null:Boolean(state.sttReview),
+                                    sttRequestId:typeof state==='undefined'?null:state.sttRequestId,
+                                    sttWaveState:document.querySelector('#sttWaveCanvasWrap')?.dataset.sttWaveState,
+                                    sttStatus:document.querySelector('#sttAnalysisStatus')?.textContent,
+                                    sttCaseSummary:document.querySelector('#sttRangeScope')?.textContent
                                 })""")
+                                receipt['failure_api_reads'] = {'completed': list(api_read_timings),
+                                    'pending': [{key:value for key,value in row.items() if key!='started_monotonic'} |
+                                        {'elapsed_s': round(time.perf_counter()-row['started_monotonic'], 4)}
+                                        for row in api_reads.values()]}
                                 await live_page.screenshot(path=str(screenshots/'mathematical-failure-state.png'))
                         except Exception as diagnostic_error:
                             receipt['failure_ui_observation_error'] = safe_error(diagnostic_error, private_values)
