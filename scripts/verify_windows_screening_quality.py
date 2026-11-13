@@ -31,6 +31,13 @@ BASE_APP = '0.12.32-stt-report-buttons.20261110'
 BASE_VERSION = '1.0.21'
 BASE_P01_SHA = 'd59e378e28feabbf338032133a6efccbf728227f97076542eee31493c7649e41'
 BASE_PE_SHA = 'bb1b6d277e0fa85bdb265efa4077641fdf15f2c6e5a0b71d84e4b09ae32b225a'
+PERFORMANCE_PARENT = 'e1235a1342e50fd668dcf37e6fe08137cfebb38422144b28203870c6758da29f'
+SCREENING_PARENTS = frozenset({
+    '17fc754d7c3ff2996b14c6e56ea2fd5e339aee9bc1f98b467e377ed04f217245',
+    '4e150f50ce5d42545de56dcd0644167b9c4fbbac6b06bbf6b810b07c4baabd61',
+    '7fcc35194c80b1c4c6ba4a3591f1f2ff3959b6e7e69d2b8656bd434484184a5d',
+    'a3ff9361cfc717dc5a560ec02dd09e5a9991349ed32e87126c8f0d3b7f58ffd2',
+})
 READONLY_POSTS = {'open', 'scatter-selection', 'waveform-strips', 'event-waveforms',
                   'waveform-density', 'advanced-analysis', 'rr-locate', 'stt-range'}
 
@@ -52,6 +59,29 @@ def exact(left, right, message):
 def files(root):
     return {p.relative_to(root).as_posix(): sha256(p.read_bytes()).hexdigest()
             for p in root.rglob('*') if p.is_file()}
+
+
+def verify_policy_pair(root, packaged):
+    """Each independently typed policy and exact parent set is packaged as frozen."""
+    read=lambda path:json.loads(path.read_text(encoding='utf-8-sig'))
+    proof={}
+    for kind,policy_name,parents_name,schema,parents in [
+        ('performance','performance-compatibility.json','performance-parent-engines.json',
+         'performance-evidence-continuity-v1',{PERFORMANCE_PARENT}),
+        ('screening','screening-refinement-compatibility.json','screening-parent-engines.json',
+         'stt-screening-refinement-continuity-v1',set(SCREENING_PARENTS))]:
+        policy=read(root/policy_name);engines=read(root/parents_name)
+        exact(policy,read(packaged/policy_name),'Packaged '+kind+' policy differs from frozen source')
+        exact(engines,read(packaged/parents_name),'Packaged '+kind+' parents differ from frozen source')
+        require(policy['schema']==schema,'Unexpected '+kind+' policy schema')
+        require(isinstance(engines,list) and len(engines)==len(parents),'Unexpected '+kind+' parent count')
+        require({fingerprint(engine) for engine in engines}==parents,'Unapproved '+kind+' parent engine')
+        require(policy['parent_engine_ids']==sorted(parents),'Policy parent IDs do not match '+kind+' allowlist')
+        require({fingerprint(engine) for engine in policy['parent_engines']}==parents,'Policy parent manifests do not match '+kind+' allowlist')
+        require('f1a6856075c041df55f179ddd6b9cf959763ad9bd66838b6ed04f23f8f16025e' not in policy['parent_engine_ids'],
+                'Undelivered fbaa candidate was incorrectly trusted as a parent')
+        proof[kind]=dict(schema=schema,policy_sha256=fingerprint(policy),parent_engine_ids=sorted(parents))
+    return proof
 
 
 def metadata_identity(release, shared, *, old_release=None, old_shared=None,
@@ -101,6 +131,7 @@ def program_identity(new, old=None):
     exact(policy, read(ROOT / policy_name), 'Actual packaged compatibility policy differs from frozen Windows source')
     require(policy['schema']=='stt-screening-refinement-continuity-v1', 'Unexpected compatibility policy schema')
     proof['screening_policy_sha256'] = fingerprint(policy)
+    proof['independent_policy_pair']=verify_policy_pair(ROOT,new/'_internal')
     proof.update(source_compile_commit=release['source_commit'], acceptance_controller_commit=os.environ.get('GITHUB_SHA'), production_source_identity=release['production_source_identity'],
                  common_source_fingerprint=shared['source_fingerprint'], actual_UI_files_verified=len(assets))
     return proof
@@ -118,7 +149,7 @@ def embedded_modules(exe, root):
     require(len(paths) >= 45, 'Screening release is missing a frozen runtime module')
     require(all((root/'ecg_core'/(n+'.py')).is_file() for n in ('screening_compatibility','stt_screening_legacy','stt_candidate_quality')), 'Missing new screening runtime modules')
     from ecg_core.performance_compatibility import code_value
-    policy = json.loads((root / 'screening-refinement-compatibility.json').read_text())
+    policies={name:json.loads((root/name).read_text()) for name in ('screening-refinement-compatibility.json','performance-compatibility.json')}
     semantics = {}
     hashes = {}
     for path in paths:
@@ -135,9 +166,12 @@ def embedded_modules(exe, root):
         expected = compile(path.read_bytes(), name, 'exec', optimize=0, dont_inherit=True)
         require(normalized_code(actual) == normalized_code(expected), 'Actual PE differs from frozen source: ' + name)
         hashes[name] = sha256(path.read_bytes()).hexdigest()
-    require({name:semantics.get(name) for name in policy['current_code']}==policy['current_code'], 'Actual frozen module semantics do not match packaged compatibility policy')
+    for policy in policies.values():
+        require({name:semantics.get(name) for name in policy['current_code']}==policy['current_code'],
+                'Actual frozen module semantics do not match packaged '+policy['schema'])
     return dict(runtime_python_files_verified=len(hashes), runtime_python_sha256=hashes,
-                code_semantics_matches_packaged_policy=True, policy_code_modules_verified=len(policy['current_code']))
+                code_semantics_matches_packaged_policy=True, policy_code_modules_verified=len(policy['current_code']),
+                independently_verified_policy_schemas=sorted(p['schema'] for p in policies.values()))
 
 
 def compare_api(before, after, package):

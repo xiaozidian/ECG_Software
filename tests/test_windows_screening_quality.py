@@ -422,3 +422,43 @@ def test_annotation_attempt_uses_browser_fetch_and_preserves_rejection_response(
     assert args['headers']['X-CardioInsight-Request']=='1'
     assert args['headers']['X-CardioInsight-Workspace']=='actual-browser-workspace-epoch'
     assert 'Origin' not in args['headers']
+
+
+def policy_pair_copy(tmp_path):
+    import shutil
+    from scripts import verify_windows_screening_quality as controller
+    source=tmp_path/'frozen-source';packaged=tmp_path/'actual-package';source.mkdir();packaged.mkdir()
+    for name in ('performance-compatibility.json','performance-parent-engines.json','screening-refinement-compatibility.json','screening-parent-engines.json'):
+        shutil.copyfile(controller.ROOT/name,source/name)
+        shutil.copyfile(controller.ROOT/name,packaged/name)
+    return source,packaged
+
+
+def test_C34_requires_both_independent_policy_and_parent_sets(tmp_path):
+    from scripts.verify_windows_screening_quality import verify_policy_pair,PERFORMANCE_PARENT,SCREENING_PARENTS
+    source,packaged=policy_pair_copy(tmp_path)
+    result=verify_policy_pair(source,packaged)
+    assert APP=='0.12.34-stt-candidate-performance.20261113'
+    assert result['performance']['parent_engine_ids']==[PERFORMANCE_PARENT]
+    assert result['screening']['parent_engine_ids']==sorted(SCREENING_PARENTS)
+    assert PERFORMANCE_PARENT not in SCREENING_PARENTS
+
+
+@pytest.mark.parametrize('fault',['packaged-performance-policy','packaged-screening-parents','performance-add-fbaa','screening-alias-performance','unknown-performance-parent'])
+def test_dual_policy_verdict_rejects_missing_mismatched_or_broadened_authority(tmp_path,fault):
+    import json
+    from scripts.verify_windows_screening_quality import verify_policy_pair
+    source,packaged=policy_pair_copy(tmp_path)
+    if fault=='packaged-performance-policy':
+        path=packaged/'performance-compatibility.json';value=json.loads(path.read_text());value['schema']='different';path.write_text(json.dumps(value))
+    elif fault=='packaged-screening-parents':
+        (packaged/'screening-parent-engines.json').write_text('[]')
+    else:
+        for root in (source,packaged):
+            name='screening-refinement-compatibility.json' if fault=='screening-alias-performance' else 'performance-compatibility.json'
+            path=root/name;value=json.loads(path.read_text())
+            if fault=='performance-add-fbaa':value['parent_engine_ids'].append('f1a6856075c041df55f179ddd6b9cf959763ad9bd66838b6ed04f23f8f16025e')
+            elif fault=='screening-alias-performance':value['schema']='performance-evidence-continuity-v1'
+            else:value['parent_engine_ids']=['a'*64]
+            path.write_text(json.dumps(value))
+    with pytest.raises(AssertionError):verify_policy_pair(source,packaged)

@@ -8,7 +8,7 @@ from scripts.prepare_ui15_baseline import api,download,dump,one
 from scripts.windows_doctor_build import digest,verify_content_manifest
 from scripts.windows_deidentified_package import unpack
 REPO='xiaozidian/ECG_Software'
-EXPECTED_WORKFLOW='Windows1.0.22 ST-T screening candidate producer'
+EXPECTED_WORKFLOW='Windows1.0.22 ST-T0.5 exact performance candidate producer'
 NAMES={'p01':'CardioInsight-Windows-x64-1.0.22-P01-software-only',
        'software_full':'CardioInsight-Windows-x64-1.0.22-M01-software-and-full'}
 def prepare(args):
@@ -36,7 +36,7 @@ def prepare(args):
     assert release['packaging_version']=='1.0.22' and release['source_commit']==args.commit
     identity=release['production_source_identity']
     verify=__import__('scripts.verify_public_release',fromlist=['verify']).verify(ROOT)
-    assert identity['release_id']==verify['release_id']=='0.12.33-stt-candidate-quality.20261113'
+    assert identity['release_id']==verify['release_id']=='0.12.34-stt-candidate-performance.20261113'
     assert identity['source_sha256']==verify['source_sha256'] and identity['production_files_verified']==141
     p01=unpack(Path(paths['p01']),args.output/'p01-program');verify_content_manifest(p01)
     assert digest(p01/'CardioInsightDoctorEval.exe')==digest(full/'CardioInsightDoctorEval.exe')

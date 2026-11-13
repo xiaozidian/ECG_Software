@@ -16,7 +16,7 @@
   },
   "clinical_acceptance": false,
   "core_contract": "ecg-core-1",
-  "core_version": "core-cf0c36e25738fc31",
+  "core_version": "core-37dd937162d5ef3b",
   "files": {
     "demo/static/js/demo-api.js": {
       "bytes": 100588,
@@ -104,9 +104,9 @@
       "sha256": "6715f00c5816ff531b2b8126c6438fd6f89c259115cb4ba83328ad15d2dee1c1"
     },
     "ecg_core/performance_compatibility.py": {
-      "bytes": 7988,
+      "bytes": 13821,
       "component": "core",
-      "sha256": "5bb9939a5654397e778774b8362bd08fe8b9cb3dbb197f844fdb25df36a273a3"
+      "sha256": "1cfcf33fc9c85fe99baf99bd5401248628cfdb26b4a42cea2070bac9b4d0a5ab"
     },
     "ecg_core/report_curation.py": {
       "bytes": 2155,
@@ -184,14 +184,14 @@
       "sha256": "6a33721d4e3b38d09228d8ce4604675b89a1a92bdb98c6e675824db164ec88c6"
     },
     "ecg_core/stt.py": {
-      "bytes": 54605,
+      "bytes": 54738,
       "component": "core",
-      "sha256": "870531819d6973d167e4040a48ff649357e8b4cf0384b17b6cfb7b0086c9640f"
+      "sha256": "c475c00420199d7259d27901546cef65fb9003e132623376a879b21af3db89f8"
     },
     "ecg_core/stt_candidate_quality.py": {
-      "bytes": 20248,
+      "bytes": 21332,
       "component": "core",
-      "sha256": "6e37ccddfcf5fee152ac2c419d3870af3c3ad0c94565d038157a1385d51a8868"
+      "sha256": "488d8a9aedd317c0d7cd467bbf79034e4509f8b3d4fd89b267a5260c9b15fe6f"
     },
     "ecg_core/stt_compatibility.py": {
       "bytes": 17869,
@@ -224,9 +224,9 @@
       "sha256": "52d0c3dfc40ea0e8129bbd997974dfff54974782eb0b953561f81e1f16a4fbf7"
     },
     "performance-parent-engines.json": {
-      "bytes": 7547,
+      "bytes": 4638,
       "component": "build",
-      "sha256": "9de5a8468240c5db9a95de3f4302e79d1285e8b9c3a601a58daae55bf951c2d0"
+      "sha256": "81d0e05767bc72933842bb217815325d8a556d08af081a13c6697bf6aaa807b5"
     },
     "platforms/windows-doctor/base-3ee41f44.json": {
       "bytes": 9396,
@@ -254,9 +254,9 @@
       "sha256": "c8e9c25d577aec796c2abb41db8b2457348bfd7760053518904a922aa53fc97a"
     },
     "scripts/build_static_demo.py": {
-      "bytes": 12193,
+      "bytes": 12197,
       "component": "build",
-      "sha256": "325da02c338cdd590813b9400bb6fa83aef852b35dcd419a1d45def7f38a80cd"
+      "sha256": "6c39c8073cdd8515e6bdf3216aa6482cd4860153ad2520da9f5b6fd2b6f4b526"
     },
     "scripts/generate_synthetic_demo.py": {
       "bytes": 16740,
@@ -441,7 +441,7 @@
     "static/js/app.js": {
       "bytes": 331531,
       "component": "ui",
-      "sha256": "7535f0e82bedd8720dd5fb2834862bec5a10961d94345a02ec0f2acb15a5c323"
+      "sha256": "df5826e534328785e7c3d83d39a02f0738a868e7b770e1d3b92c0a01d25a04be"
     },
     "static/js/beat-editor-ui.js": {
       "bytes": 53326,
@@ -680,7 +680,7 @@
     }
   },
   "schema": 1,
-  "source_fingerprint": "758c908ccf05520370398a236c6ec4dfcbc8fa216f727744410b551167212eb3",
+  "source_fingerprint": "dba35ed796dda93c5de4710679d0a6bb6375c678a284ed7ab41e3f79e006e356",
   "source_revision": null,
-  "ui_version": "ui-5246a685b1574c29"
+  "ui_version": "ui-cc0be8320175a5cb"
 }

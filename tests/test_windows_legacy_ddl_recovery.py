@@ -9,9 +9,10 @@ from types import SimpleNamespace
 import pytest
 import win_doctor_eval as doctor
 from ecg_core.storage import Storage,IMPLEMENTATION_COMPATIBILITY_DDL
+from ecg_core.config import APP_VERSION
 
 OLD_APP='0.12.32-stt-report-buttons.20261110'
-NEW_APP='0.12.33-stt-candidate-quality.20261113'
+NEW_APP=APP_VERSION
 
 
 def rows(path):

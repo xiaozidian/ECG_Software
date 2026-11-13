@@ -684,10 +684,11 @@ def analyze_stt(waveform_path: str | Path, records, duration_s: float | None = N
             support=candidate_t_support(buffer,rows,total_samples,settings,j_sample=js,
                     next_samples=[next_anchors[row[0]] if next_anchors[row[0]] is not None else row[0] for row in rows],
                     alignment_groups=groups)
+            packed=np.stack([support[key] for key in _CANDIDATE_POINT_FLAGS],axis=-1)
             offset=0
             for _,block in batch:
                 stop=offset+len(block['usable'])
-                block['candidate_support']={key:support[key][offset:stop] for key in _CANDIDATE_POINT_FLAGS}
+                block['candidate_flags']=packed[offset:stop]
                 offset=stop
         for block_id,block in enumerate(blocks):
             if not block['observations']:continue
@@ -697,11 +698,13 @@ def analyze_stt(waveform_path: str | Path, records, duration_s: float | None = N
         flush_candidate_batch()
 
     lead_points,episodes,screening_quality={},[],{}
+    candidate_names=tuple('candidate_'+key for key in _CANDIDATE_POINT_FLAGS)
     for column,lead in enumerate(LEADS):
         points=[]
         for block in blocks:
             measure=block['leads'].get(lead,{})
             observations=block['observations'];positions=block.get('observation_index',{})
+            flags_rows=block['candidate_flags'][:,column,:].tolist() if observations else []
             for row in block['rows']:
                 sample,group,rr=row;next_sample=next_anchors[sample]
                 if next_sample is None:continue  # no invented source-tail interval
@@ -744,8 +747,7 @@ def analyze_stt(waveform_path: str | Path, records, duration_s: float | None = N
                 if not observed:
                     p['st_level_units']=p['t_amplitude_units']=None
                 if observed:
-                    for key,values in block['candidate_support'].items():
-                        p['candidate_'+key]=bool(values[index,column])
+                    p.update(zip(candidate_names,flags_rows[index]))
                     p['candidate_qrs_supported']=bool(p['qrs_amplitude_units']>=max(40.,6.*p['noise_units']))
                 else:
                     p['candidate_t_shape_quality_good']=p['candidate_st_baseline_quality_good']=False

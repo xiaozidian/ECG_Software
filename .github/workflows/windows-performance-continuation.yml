@@ -1,4 +1,4 @@
-name: Windows1.0.22 original candidate native acceptance
+name: Windows1.0.22 .34 original candidate native acceptance
 on:
   workflow_dispatch:
     inputs:

@@ -116,109 +116,131 @@ def _halfwidth(signed, allowed, peak_index, peak_prominence):
     return np.where(peak_prominence > 0.0, width, 0.0)
 
 
-def _lobes(values, allowed, noise, settings):
-    """Two-sided prominence and contiguous half-prominence width, per sign.
+def _row_halfwidth(signed, allowed, peak_index, prominence):
+    peak = np.take_along_axis(signed, peak_index[..., None], axis=-1)[..., 0]
+    above = (signed >= (peak-prominence/2)[..., None]) & allowed
+    indices = np.arange(signed.shape[-1])
+    # A sentinel guarantees argmax finds the same nearest outside cell as the
+    # old integer where+max/min reductions, with boolean workspaces only.
+    left = (indices < peak_index[..., None]) & ~above
+    right = (indices > peak_index[..., None]) & ~above
+    left = np.pad(left, [(0, 0)]*(left.ndim-1)+[(1, 0)], constant_values=True)
+    right = np.pad(right, [(0, 0)]*(right.ndim-1)+[(0, 1)], constant_values=True)
+    left_out = signed.shape[-1]-1-np.argmax(left[..., ::-1], axis=-1)
+    right_out = np.argmax(right, axis=-1)
+    width = np.maximum(0, right_out-left_out-1)*1000.0/SAMPLE_RATE
+    return np.where(prominence > 0.0, width, 0.0)
 
-    Endpoint prominence preserves broad lobes; a 50 ms neighbourhood permits
-    each genuine biphasic lobe.  A single sample can have large prominence but
-    its halfwidth remains exactly one 5 ms source cell at 200 Hz.
-    """
+
+def _row_minimum10(values):
+    pairs = np.minimum(values[..., :-1], values[..., 1:])
+    fours = np.minimum(pairs[..., :-2], pairs[..., 2:])
+    eights = np.minimum(fours[..., :-4], fours[..., 4:])
+    return np.minimum(eights[..., :-2], pairs[..., 8:])
+
+
+def _lobes(values, allowed, noise, settings):
+    # Only min/max/argmax and elementwise arithmetic move axes here.  All
+    # floating sums/means/measurement medians retain their frozen code/order.
+    rows = np.ascontiguousarray(values.transpose(0, 2, 1))
+    valid = allowed[:, None, :]
     count = np.count_nonzero(allowed, axis=1)
     last = np.maximum(0, count-1)
-    first, final = values[:, 0, :], values[np.arange(len(values)), last, :]
+    first = rows[..., 0]
+    final = np.take_along_axis(rows, np.broadcast_to(last[:, None, None],
+                                                    (*rows.shape[:2], 1)), axis=-1)[..., 0]
     result = {}
     for direction, name in ((1.0, "positive"), (-1.0, "negative")):
-        signed = direction * values
-        # Exactly the original bounded ten-sample neighbourhood at all indices
-        # at once; +inf padding excludes absent neighbours from each minimum.
-        left_min = _minimum10(
-            np.pad(signed, ((0, 0), (10, 0), (0, 0)), constant_values=np.inf))[:, :values.shape[1], :]
-        right_min = _minimum10(
-            np.pad(np.where(allowed[..., None], signed, np.inf),
-                   ((0, 0), (0, 10), (0, 0)), constant_values=np.inf))[:, 1:values.shape[1]+1, :]
+        signed = direction*rows
+        left_min = _row_minimum10(np.pad(signed, ((0, 0), (0, 0), (10, 0)),
+                                         constant_values=np.inf))[..., :rows.shape[-1]]
+        right_min = _row_minimum10(np.pad(np.where(valid, signed, np.inf),
+                                          ((0, 0), (0, 0), (0, 10)),
+                                          constant_values=np.inf))[..., 1:rows.shape[-1]+1]
         local = signed-np.maximum(left_min, right_min)
-        whole = signed-np.maximum(direction*first, direction*final)[:, None, :]
-        prominence = np.where(allowed[..., None] & (signed > 0.0),
+        whole = signed-np.maximum(direction*first, direction*final)[..., None]
+        prominence = np.where(valid & (signed > 0.0),
                               np.maximum(0.0, np.maximum(local, whole)), 0.0)
-        prominence[:, 0, :] = 0.0
-        prominence[:, -1, :] = 0.0
-        peak_index = np.argmax(prominence, axis=1)
-        peak_prominence = np.max(prominence, axis=1)
-        width = _halfwidth(signed, allowed, peak_index, peak_prominence)
+        prominence[..., 0] = 0.0
+        prominence[..., -1] = 0.0
+        peak_index = np.argmax(prominence, axis=-1)
+        peak_prominence = np.max(prominence, axis=-1)
+        width = _row_halfwidth(signed, valid, peak_index, peak_prominence)
         result[name] = (peak_prominence, width, prominence, peak_index,
                         np.zeros_like(peak_prominence, dtype=bool))
-    # A genuine late biphasic lobe can be partly truncated by the unchanged
-    # legacy T window.  Accept only what is observed: a reliable earlier
-    # opposite lobe, an ISO crossing, an interior peak followed by substantial
-    # actual recovery, and enough *observed* halfheight width.  Do not extend
-    # the window or infer its missing right tail.  A monotonic edge cannot pass.
     original = result.copy()
-    indices = np.arange(values.shape[1])[None, :, None]
+    indices = np.arange(rows.shape[-1])
     for direction, name, opposite_name in ((1.0, "positive", "negative"),
-                                            (-1.0, "negative", "positive")):
-        signed = direction*values
-        peak_index = np.argmax(np.where(allowed[..., None], signed, -np.inf), axis=1)
-        peak = np.take_along_axis(signed, peak_index[:, None, :], axis=1)[:, 0, :]
+                                           (-1.0, "negative", "positive")):
+        signed = direction*rows
+        peak_index = np.argmax(np.where(valid, signed, -np.inf), axis=-1)
+        peak = np.take_along_axis(signed, peak_index[..., None], axis=-1)[..., 0]
         opposite = original[opposite_name]
-        opposite_floor = np.maximum(settings["candidate_t_biphasic_prominence_units"],
-                                    settings["candidate_t_noise_multiplier"]*noise)
+        floor = np.maximum(settings["candidate_t_biphasic_prominence_units"],
+                            settings["candidate_t_noise_multiplier"]*noise)
         possible = ((peak > 0) & (direction*final > peak/2) &
-                    (peak_index < last[:, None]) &
-                    (opposite[0] >= opposite_floor) &
+                    (peak_index < last[:, None]) & (opposite[0] >= floor) &
                     (opposite[1] >= settings["candidate_t_minimum_halfwidth_ms"]) &
                     (opposite[3] < peak_index))
         if not np.any(possible):
             continue
-        right = (indices > peak_index[:, None, :]) & allowed[..., None]
-        recovered = peak-np.min(np.where(right, signed, np.inf), axis=1)
-        left = (indices < peak_index[:, None, :]) & allowed[..., None]
-        left_floor = np.min(np.where(left, signed, np.inf), axis=1)
-        recovery_floor = np.maximum(settings["candidate_t_noise_multiplier"]*noise,
-                                     settings["candidate_t_partial_minimum_recovery_fraction"]*peak)
-        observed_width = _halfwidth(signed, allowed, peak_index, np.maximum(0.0, peak))
-        censored = (possible & (left_floor <= noise) &
-                    (recovered >= recovery_floor) &
-                    (observed_width >= settings["candidate_t_minimum_halfwidth_ms"]))
+        beat, lead = np.nonzero(possible)
+        selected = signed[beat, lead, :]
+        selected_valid = allowed[beat, :]
+        selected_index = peak_index[beat, lead]
+        selected_peak = peak[beat, lead]
+        recovered = selected_peak-np.min(np.where(
+            (indices > selected_index[:, None]) & selected_valid, selected, np.inf), axis=-1)
+        left_floor = np.min(np.where(
+            (indices < selected_index[:, None]) & selected_valid, selected, np.inf), axis=-1)
+        recovery_floor = np.maximum(settings["candidate_t_noise_multiplier"]*noise[beat, lead],
+                                     settings["candidate_t_partial_minimum_recovery_fraction"]*selected_peak)
+        observed_width = _row_halfwidth(selected, selected_valid, selected_index,
+                                        np.maximum(0.0, selected_peak))
         old_prominence, old_width, profile, old_index, _ = original[name]
-        censored &= peak > old_prominence
-        # The censored prominence is the observed one-sided ISO height; its
-        # halfwidth is a measured lower bound, explicitly marked in the API.
-        result[name] = (np.where(censored, peak, old_prominence),
-                        np.where(censored, observed_width, old_width), profile,
-                        np.where(censored, peak_index, old_index), censored)
-    return result
+        use = ((left_floor <= noise[beat, lead]) & (recovered >= recovery_floor) &
+               (observed_width >= settings["candidate_t_minimum_halfwidth_ms"]) &
+               (selected_peak > old_prominence[beat, lead]))
+        censored = np.zeros_like(possible)
+        censored[beat, lead] = use
+        updated_prominence = old_prominence.copy()
+        updated_width = old_width.copy()
+        updated_index = old_index.copy()
+        chosen_beat, chosen_lead = beat[use], lead[use]
+        updated_prominence[chosen_beat, chosen_lead] = selected_peak[use]
+        updated_width[chosen_beat, chosen_lead] = observed_width[use]
+        updated_index[chosen_beat, chosen_lead] = selected_index[use]
+        result[name] = (updated_prominence, updated_width, profile, updated_index, censored)
+    # Existing callers/API still receive [beat,time,lead] profile views.
+    return {name: (value[0], value[1], value[2].transpose(0, 2, 1), value[3], value[4])
+            for name, value in result.items()}
 
 
 def _rapid_alternation(lobes, noise, settings):
-    """Flag more than two rapid alternating *prominent extrema*, not samples."""
-    positive, negative = lobes["positive"][2], lobes["negative"][2]
+    positive = np.ascontiguousarray(lobes["positive"][2].transpose(0, 2, 1))
+    negative = np.ascontiguousarray(lobes["negative"][2].transpose(0, 2, 1))
     floor = np.maximum(settings["candidate_t_alternation_floor_units"],
                        settings["candidate_t_noise_multiplier"]*noise)
-    # Only local maxima of the prominence profile represent extrema.  Counting
-    # every point on one smooth lobe would falsely call it repeated activity.
     sign = np.zeros_like(positive, dtype=np.int8)
     for prominence, polarity in ((positive, 1), (negative, -1)):
         local_peak = np.zeros_like(prominence, dtype=bool)
-        local_peak[:, 1:-1, :] = ((prominence[:, 1:-1, :] > prominence[:, :-2, :]) &
-                                  (prominence[:, 1:-1, :] >= prominence[:, 2:, :]))
-        sign = np.where(local_peak & (prominence >= floor[:, None, :]), polarity, sign)
-    indices = np.arange(sign.shape[1])[None, :, None]
+        local_peak[..., 1:-1] = ((prominence[..., 1:-1] > prominence[..., :-2]) &
+                                (prominence[..., 1:-1] >= prominence[..., 2:]))
+        sign = np.where(local_peak & (prominence >= floor[..., None]), polarity, sign)
+    indices = np.arange(sign.shape[-1])
     present = sign != 0
-    seen = np.maximum.accumulate(np.where(present, indices, -1), axis=1)
-    previous_index = np.concatenate((np.full_like(seen[:, :1, :], -1), seen[:, :-1, :]), axis=1)
-    previous = np.take_along_axis(sign, np.maximum(previous_index, 0), axis=1)
-    max_gap = settings["candidate_t_fast_alternation_ms"]*SAMPLE_RATE/1000.0
+    seen = np.maximum.accumulate(np.where(present, indices, -1), axis=-1)
+    previous_index = np.concatenate((np.full_like(seen[..., :1], -1), seen[..., :-1]), axis=-1)
+    previous = np.take_along_axis(sign, np.maximum(previous_index, 0), axis=-1)
     changed = present & (previous_index >= 0) & (previous != 0) & (sign != previous)
-    fast_count = np.sum(changed & ((indices-previous_index) <= max_gap), axis=1)
+    fast_count = np.sum(changed & ((indices-previous_index) <=
+                       settings["candidate_t_fast_alternation_ms"]*SAMPLE_RATE/1000.0), axis=-1)
     return fast_count > settings["candidate_t_maximum_fast_alternations"]
 
 
 def _alignment(values, allowed, groups=None):
-    """Polarity-independent shape agreement; descriptive, never a hard gate.
-
-    Sudden genuine reversal or onset in a short block must not be invalidated
-    because the neighbouring beats have a different physiological morphology.
-    """
+    # All floating arithmetic/reduction axes remain exactly as frozen.  Only
+    # NaN padding/sort machinery for group references is avoided.
     last = np.maximum(0, np.count_nonzero(allowed, axis=1)-1)
     final = values[np.arange(len(values)), last, :]
     fraction = np.arange(values.shape[1])[None, :, None] / np.maximum(1, last)[:, None, None]
@@ -235,15 +257,15 @@ def _alignment(values, allowed, groups=None):
         _, inverse, counts = np.unique(groups, return_inverse=True, return_counts=True)
         order = np.argsort(inverse, kind="stable")
         starts = np.r_[0, np.cumsum(counts)[:-1]]
-        rank = np.arange(len(values))-np.repeat(starts, counts)
-        padded = np.full((len(counts), int(np.max(counts)), *normalized.shape[1:]), np.nan)
-        padded[inverse[order], rank] = normalized[order]
-        references = np.nanmedian(padded, axis=1)
+        references = np.empty((len(counts), *normalized.shape[1:]), dtype=float)
+        for count in np.unique(counts):
+            selected = np.flatnonzero(counts == count)
+            positions = starts[selected, None]+np.arange(count)[None, :]
+            references[selected] = np.median(normalized[order[positions]], axis=1)
         reference = references[inverse]
         reference_norm = np.sqrt(np.sum(references*references, axis=1))[inverse]
-    correlation = np.divide(np.sum(normalized*reference, axis=1),
-                            reference_norm, out=np.ones_like(norm),
-                            where=reference_norm > 0)
+    correlation = np.divide(np.sum(normalized*reference, axis=1), reference_norm,
+                            out=np.ones_like(norm), where=reference_norm > 0)
     return correlation, norm
 
 

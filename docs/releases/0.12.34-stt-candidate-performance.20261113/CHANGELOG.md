@@ -1,0 +1,15 @@
+# ST-T 候选计算与升级连续性
+
+保留 .33 的候选形态、噪声和导联背景筛选规则；算法版本仍为 0.5.0，测量方法、阈值、全部原始趋势及房颤独立分析均不变。通过批量布尔字段分配及连续时间轴工作区减少冷计算成本。
+
+同 Windows 固定依赖、同全天数学数据的独立源端点对照：111.958 秒降至98.800秒，两份25,984,226字节响应完全相同。这是源实验；正式包的三次原生冷读、升级与交付校验以最终验收收据为准。
+
+升级分开核验：原0.4到0.5继续使用明确四父的筛查修正策略；已实际发布的本地 .33 到本版本使用独立0.5性能等价策略。后者新增完整报告身份、业务快照及独立审计均严格匹配的持久凭证复用。旧版缺字段凭证不作可信缓存；新程序生成新凭证/新审计，保留原复核、签名与原过期状态。
+
+Windows 适配另含兼容表初始化时机及严格匹配的旧1.0.21结构恢复，产品等待阈值未提高。
+
+## Windows adapter
+
+The new native candidate retains the verified startup lifecycle repair: the canonical continuity table exists before schema registration; only the released official21 exact late-table drift may be recovered, with a complete WAL-inclusive DB backup and original WORKSPACE bytes/SHA before completion. Unknown schema differences remain refused. Internal child failures exit without a modal dialog. These platform adapters do not change common132 numerical code or candidate thresholds.
+
+The unreleased .33 Windows candidates are not production performance parents. Current exact-performance trust is limited to the explicitly published local .33 engine; original .4 programs remain under the separately validated screening-refinement chain. Final delivery still requires actual frozen-PE three-round full24h cold reads below the unchanged120-second acceptance bound.
