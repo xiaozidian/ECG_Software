@@ -142,8 +142,8 @@
       "sha256": "1e01f431ad78966b11b12729bb644521a23aee286e9cdb9d9f139d99bc94a418"
     },
     "ecg_core/storage.py": {
-      "bytes": 60102,
-      "sha256": "051c46e03bc6b526ba3636904076a7842f07040993bcd1dfef6ce5c2215c9d1f"
+      "bytes": 60459,
+      "sha256": "854c000809a89600bdcad23faa44dd0af413056066e4f1e52b9b2620f91834e3"
     },
     "ecg_core/stt.py": {
       "bytes": 54605,
@@ -199,7 +199,7 @@
     },
     "screening-refinement-compatibility.json": {
       "bytes": 32234,
-      "sha256": "fe5c0d8708675328e5bb7cb8ee906b26cce7b9e0fd53cefe6117d385239558f8"
+      "sha256": "80a0c39ddeb0dc25ffe87c4fc3e879f7d9984ce27a5bc5b2cf93fb9237de2fc5"
     },
     "scripts/build_performance_policy.py": {
       "bytes": 1844,
@@ -576,6 +576,6 @@
   "release_id": "0.12.33-stt-candidate-quality.20261113",
   "screening_algorithm": "stt-screening-0.5.0-morphology-qualified",
   "shared_source_fingerprint": "758c908ccf05520370398a236c6ec4dfcbc8fa216f727744410b551167212eb3",
-  "source_sha256": "dd667e4ae9dc612d60430b79cb292cdec5b4da72ef05b162d1dec9ce459540b4",
+  "source_sha256": "192ad754c2104899469e5861414444b6e4c6225b0e4d3414285f0923fcca60ec",
   "ui_build": "UI 20261113.3"
 }

@@ -32,6 +32,8 @@ import webbrowser
 import zipfile
 
 PROFILE = "cardioinsight-windows-doctor-eval-v1"
+LEGACY21_COMPATIBILITY_SQL_SHA256 = '70df330343c90e185639b4ebc7bdc362beb21e7d4d2af8932b885d6d1d3f11af'
+LEGACY21_COMPILE_COMMIT = '0c7b634ef77297d388d1e9075b01c58809e0c0aa'
 CASE_ID = "9900000000000001"
 WORKSPACE_ID = re.compile(r"[0-9a-f]{32}\Z")
 TOKEN = re.compile(r"[0-9a-f]{64}\Z")
@@ -272,6 +274,53 @@ def database_schema(path):
     return dict(user_version=version, fingerprint=sha256(payload.encode("utf-8")).hexdigest())
 
 
+def known_legacy_ddl_reconciliation(path, declared, prior, prior_package):
+    """Recognize only official21's exact, single canonical late-created table.
+
+    Read-only recognition is not a schema migration and never blesses arbitrary
+    table/index/trigger changes. All remaining schema rows and user_version must
+    still reproduce the exact previously registered fingerprint.
+    """
+    if ((prior,prior_package)!=('0.12.32-stt-report-buttons.20261110','1.0.21')
+            or not isinstance(declared,dict) or set(declared)!={'user_version','fingerprint'}
+            or type(declared.get('user_version')) is not int
+            or not isinstance(declared.get('fingerprint'),str)
+            or not TOKEN.fullmatch(declared['fingerprint'])):
+        return None
+    from ecg_core.storage import IMPLEMENTATION_COMPATIBILITY_DDL
+    query="SELECT type,name,tbl_name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name,tbl_name"
+    with closing(sqlite3.connect(':memory:')) as canonical:
+        canonical.execute(IMPLEMENTATION_COMPATIBILITY_DDL)
+        canonical_rows=canonical.execute(query).fetchall()
+        canonical_objects=canonical.execute('SELECT type,name,tbl_name,sql FROM sqlite_master WHERE tbl_name=? ORDER BY type,name',
+                                            ('analysis_implementation_compatibility',)).fetchall()
+    if (len(canonical_rows)!=1
+            or sha256(canonical_rows[0][3].encode('utf-8')).hexdigest()!=LEGACY21_COMPATIBILITY_SQL_SHA256):
+        return None
+    with closing(sqlite3.connect(_plain(path).resolve().as_uri()+'?mode=ro',uri=True,timeout=5)) as db:
+        db.execute('PRAGMA query_only=ON');db.execute('PRAGMA trusted_schema=OFF');db.execute('BEGIN')
+        version=db.execute('PRAGMA user_version').fetchone()[0]
+        rows=db.execute(query).fetchall()
+        actual_objects=db.execute('SELECT type,name,tbl_name,sql FROM sqlite_master WHERE tbl_name=? ORDER BY type,name',
+                                  ('analysis_implementation_compatibility',)).fetchall()
+    if version!=declared['user_version']:
+        return None
+    target=canonical_rows[0]
+    matching=[row for row in rows if row[1]=='analysis_implementation_compatibility']
+    if matching!=canonical_rows or actual_objects!=canonical_objects:
+        return None
+    fingerprint=lambda value:sha256(json.dumps(value,ensure_ascii=False,separators=(',',':')).encode('utf-8')).hexdigest()
+    filtered=[row for row in rows if row!=target]
+    if fingerprint(filtered)!=declared['fingerprint']:
+        return None
+    return dict(kind='known-legacy-DDL-reconciliation',released_software_version=prior,
+        released_packaging_version=prior_package,declared_schema=declared,
+        actual_schema=dict(user_version=version,fingerprint=fingerprint(rows)),
+        only_added_object='analysis_implementation_compatibility',
+        canonical_sql_sha256=sha256(target[3].encode('utf-8')).hexdigest(),
+        filtered_schema_fingerprint=fingerprint(filtered),read_only_recognition=True)
+
+
 
 def check_workspace_version(folder):
     record = _read_json(Path(folder) / "WORKSPACE.json", required=True)
@@ -293,8 +342,13 @@ def prepare_upgrade(folder):
     path, database = folder / "WORKSPACE.json", folder / "data" / "cardioinsight.db"
     record, prior, current, prior_package, current_package = check_workspace_version(folder)
     before = database_schema(database)
+    reconciliation=None
     if before != record.get("sqlite_schema"):
-        _error("workspace_schema_changed", "数据库结构与工作区版本记录不一致，未迁移或创建空库。请使用匹配版本核对。")
+        if record.get('source_commit') not in (None,LEGACY21_COMPILE_COMMIT):
+            _error("workspace_schema_changed", "旧版程序来源标记与已知发布不一致，未迁移工作区。")
+        reconciliation=known_legacy_ddl_reconciliation(database,record.get('sqlite_schema'),prior,prior_package)
+        if not reconciliation or reconciliation['actual_schema']!=before:
+            _error("workspace_schema_changed", "数据库结构与工作区版本记录不一致，未迁移或创建空库。请使用匹配版本核对。")
     if prior == current and prior_package == current_package:
         return None
     snapshots = _plain(folder / "upgrade-snapshots")
@@ -316,10 +370,22 @@ def prepare_upgrade(folder):
     with open(target, "r+b") as stream:
         stream.flush()
         os.fsync(stream.fileno())
+    if database_schema(target)!=before:
+        _error('upgrade_snapshot_changed','升级前副本的数据库结构已变化，未打开体验。')
+    workspace_name=name.removesuffix('.sqlite3')+'.WORKSPACE.json'
+    workspace_target=_plain(snapshots/workspace_name)
+    workspace_bytes=path.read_bytes()
+    if json.loads(workspace_bytes)!=record:
+        _error('upgrade_snapshot_metadata_changed','升级前工作区版本记录已变化，未打开体验。')
+    with workspace_target.open('xb') as stream:
+        stream.write(workspace_bytes);stream.flush();os.fsync(stream.fileno())
     pending = dict(from_version=prior, to_version=current, from_packaging_version=prior_package,
                    to_packaging_version=current_package, snapshot=name,
                    snapshot_sha256=_hash_file(target), before_schema=before,
-                   snapshot_integrity="ok")
+                   snapshot_integrity="ok",workspace_snapshot=workspace_name,
+                   workspace_snapshot_sha256=sha256(workspace_bytes).hexdigest())
+    if reconciliation:
+        pending['known_legacy_ddl_reconciliation']=reconciliation
     record["upgrade_pending"] = pending
     _write_json(path, record)
     return pending
@@ -334,6 +400,8 @@ def complete_upgrade(folder, pending):
     record.update(software_version=_software_version(), packaging_version=_packaging_version(),
                   sqlite_schema=after, application_initialized=True)
     if pending is not None:
+        if pending.get('known_legacy_ddl_reconciliation') and after!=pending['before_schema']:
+            _error('workspace_reconciliation_changed','已知旧版结构核对期间出现其他结构变化，已保留升级前副本。')
         record["last_upgrade"] = dict(pending, after_schema=after)
         record.pop("upgrade_pending", None)
     _write_json(path, record)
@@ -1156,7 +1224,8 @@ def main(argv=None):
         message = str(error) if isinstance(error, DoctorEvalError) else "本机文件或服务不可用，请保留工作区并重新检查。"
         if sys.stderr is not None:
             print(json.dumps(dict(error=code, message=message), ensure_ascii=False), file=sys.stderr)
-        if os.name == "nt" and not args.no_browser and not args.self_check and not args.smoke_test:
+        if (os.name == "nt" and not args.no_browser and not args.self_check and not args.smoke_test
+                and args.action not in {'_serve-manager','_serve-workspace'}):
             import ctypes
             ctypes.windll.user32.MessageBoxW(None, message, "医生离线体验未完成", 0x10)
         return 2

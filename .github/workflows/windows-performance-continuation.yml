@@ -17,7 +17,9 @@ on:
         options:
           - fresh
           - upgrade
+          - legacy21ddl
           - m01
+          - profile
 permissions:
   contents: read
   actions: read
@@ -67,7 +69,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Strict native controller and original input refusal tests
         run: |
-          python -m pytest -p no:cacheprovider -q tests/test_windows_screening_quality.py --junitxml="$env:RUNNER_TEMP\screening22-native-controller.xml"
+          python -m pytest -p no:cacheprovider -q tests/test_windows_screening_quality.py tests/test_windows_legacy_ddl_recovery.py tests/test_windows22_candidate_inputs.py --junitxml="$env:RUNNER_TEMP\screening22-native-controller.xml"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Authenticate and fetch original22 producer without rebuild
         run: |
@@ -93,11 +95,26 @@ jobs:
           $baseline = Get-Content "$env:RUNNER_TEMP\screening22-baseline\baseline22-input.json" -Raw | ConvertFrom-Json
           python scripts/verify_windows_screening_quality.py --base-software-archive "$($baseline.paths.p01)" --software-archive "$($inputs.paths.p01)" --nonempty-reviewed-scopes --output "$env:RUNNER_TEMP\screening22-native\upgrade21-to22.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Isolated mathematical reproduction of official21 known lazy-DDL drift
+        if: ${{ inputs.phase == 'legacy21ddl' }}
+        run: |
+          $inputs = Get-Content "$env:RUNNER_TEMP\screening22-producer\candidate22-input.json" -Raw | ConvertFrom-Json
+          $baseline = Get-Content "$env:RUNNER_TEMP\screening22-baseline\baseline22-input.json" -Raw | ConvertFrom-Json
+          python scripts/verify_windows_screening_quality.py --base-software-archive "$($baseline.paths.p01)" --software-archive "$($inputs.paths.p01)" --nonempty-reviewed-scopes --known-legacy-ddl-fixture --output "$env:RUNNER_TEMP\screening22-native\known21-lazy-DDL-reconciliation.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Actual unchanged M01 complete package three rounds
         if: ${{ inputs.phase == 'm01' }}
         run: |
           $inputs = Get-Content "$env:RUNNER_TEMP\screening22-producer\candidate22-input.json" -Raw | ConvertFrom-Json
           python scripts/verify_windows_doctor_browser_ui21.py --package-root "$($inputs.paths.full_root)" --repeats 3 --output "$env:RUNNER_TEMP\screening22-native\m01-three-rounds.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Source-only 24h M01 cold-review timing diagnostic on pinned native dependencies
+        if: ${{ inputs.phase == 'profile' }}
+        run: |
+          $baseline = Get-Content "$env:RUNNER_TEMP\screening22-baseline\baseline22-input.json" -Raw | ConvertFrom-Json
+          python -B scripts/profile_m01_stt.py --source . --math-root "$($baseline.paths.math_source)" --out "$env:RUNNER_TEMP\screening22-native\source-profile-wall"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -B scripts/profile_m01_stt.py --source . --math-root "$($baseline.paths.math_source)" --out "$env:RUNNER_TEMP\screening22-native\source-profile-cprofile" --cprofile
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Retain distinct native attempt and immutable producer attribution
         if: always()

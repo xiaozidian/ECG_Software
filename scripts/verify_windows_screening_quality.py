@@ -198,8 +198,17 @@ def compare_database(before, after, package):
     exact(audit1[:len(audit0)], audit0, 'Original audit history changed')
     added = audit1[len(audit0):]
     require(any(r['action']=='analysis.screening_refinement_verified' for r in added), 'No explicit screening-refinement audit was written')
-    certificates = right.get('analysis_implementation_compatibility', {}).get('rows', [])
-    require(len(certificates)==1, 'Expected one immutable-workspace compatibility bridge')
+    registry='analysis_implementation_compatibility'
+    original_registry=left.get(registry,{}).get('rows',[])
+    key=lambda row:(row['case_id'],row['execution_engine_id'],row['execution_basis'])
+    originals={key(row):row for row in original_registry}
+    all_certificates=right.get(registry,{}).get('rows',[])
+    actuals={key(row):row for row in all_certificates}
+    for identifier,row in originals.items():
+        require(identifier in actuals,'Original implementation registry record disappeared')
+        exact(row,actuals[identifier],'Original implementation registry record or registration time changed')
+    certificates=[row for row in all_certificates if key(row) not in originals]
+    require(len(certificates)==1, 'Expected exactly one new immutable-workspace compatibility bridge')
     certificate = json.loads(certificates[0]['certificate'])
     original_basis = json.loads(left['case_analysis_basis']['rows'][0]['basis'])
     exact(certificate['reference_basis'], original_basis, 'Audit bridge is not bound to original physician evidence')
@@ -215,6 +224,71 @@ def compare_database(before, after, package):
                 preserved_UUID_submissions=len(left['stt_review_submissions']['rows']),
                 appended_tables=sorted(set(right)-set(left)), appended_audit_actions=[r['action'] for r in added],
                 approved_report_signature_and_selection_preserved=True)
+
+
+def inject_known_legacy_ddl_fixture(folder, case_id):
+    """Explicit mathematical table drift; never claim execution by an old20 binary."""
+    import sqlite3
+    from contextlib import closing
+    from ecg_core.storage import IMPLEMENTATION_COMPATIBILITY_DDL
+    from scripts.verify_windows_stt_independent_upgrade import database_state
+    import win_doctor_eval as launcher
+    folder=folder.resolve();database=folder/'data/cardioinsight.db';metadata=folder/'WORKSPACE.json'
+    original_bytes=metadata.read_bytes();record=json.loads(original_bytes)
+    require((record.get('software_version'),record.get('packaging_version'))==(BASE_APP,BASE_VERSION),
+            'Known DDL fixture requires actual original21 workspace registration')
+    require(record.get('source_kind')=='mathematical_deidentified_fixture' and record.get('selected_dataset')=='P01',
+            'Known DDL fixture is restricted to this controller mathematical P01 source')
+    require(record.get('sqlite_schema')==launcher.database_schema(database),'Original21 registration was already out of sync before explicit fixture')
+    before=database_state(database)
+    require('analysis_implementation_compatibility' not in before['tables'],'Known DDL fixture must add exactly one absent table')
+    marker=dict(schema='mathematical-untrusted-lazy-DDL-fixture',mathematical_fixture_only=True,
+                not_actual20_runtime=True,does_not_authorize_compatibility=True)
+    with closing(sqlite3.connect(database)) as db:
+        with db:
+            db.execute(IMPLEMENTATION_COMPATIBILITY_DDL)
+            db.execute('INSERT INTO analysis_implementation_compatibility VALUES(?,?,?,?,?)',
+                (case_id,fingerprint({'fixture':'not-an-execution-engine'}),fingerprint(marker),
+                 json.dumps(marker,sort_keys=True),'mathematical-fixture-not-a-clinical-time'))
+    after=database_state(database)
+    exact(before['tables'],{key:value for key,value in after['tables'].items() if key!='analysis_implementation_compatibility'},
+          'Mathematical DDL fixture changed existing clinical rows or schema')
+    require(metadata.read_bytes()==original_bytes,'Mathematical fixture rewrote the original workspace registration')
+    return dict(status='math-injected-known-lazy-DDL-not-actual20-runtime',
+                mathematical_fixture_only=True,patient_inputs_read=False,actual20_runtime_executed=False,
+                original_workspace_sha256=sha256(original_bytes).hexdigest(),
+                declared_schema=record['sqlite_schema'],injected_schema=launcher.database_schema(database),
+                only_added_table='analysis_implementation_compatibility',
+                registry_marker=marker,existing_tables_and_rows_exact=True)
+
+
+def verify_known_legacy_reconciliation(folder, original_database, fixture):
+    from scripts.verify_windows_stt_independent_upgrade import database_state
+    import win_doctor_eval as launcher
+    record=json.loads((folder/'WORKSPACE.json').read_text(encoding='utf-8'))
+    upgrade=record['last_upgrade'];proof=upgrade['known_legacy_ddl_reconciliation']
+    require(proof['kind']=='known-legacy-DDL-reconciliation','Native launcher did not explicitly reconcile the known released21 defect')
+    exact(proof['declared_schema'],fixture['declared_schema'],'Native repair changed the original declared schema')
+    exact(proof['actual_schema'],fixture['injected_schema'],'Native repair did not recognize the exact injected single-table structure')
+    snapshots=folder/'upgrade-snapshots'
+    paths=[]
+    for field in ('snapshot','workspace_snapshot'):
+        name=upgrade[field]
+        require(isinstance(name,str) and Path(name).name==name and name not in ('.','..'),'Native backup receipt escapes snapshot folder')
+        paths.append(snapshots/name)
+    database,metadata=paths
+    require(sha256(database.read_bytes()).hexdigest()==upgrade['snapshot_sha256'],'Native pre-upgrade database backup hash differs')
+    exact(database_state(database),original_database,'Native pre-upgrade backup omitted original WAL data, registry or clinical rows')
+    original_sha=sha256(metadata.read_bytes()).hexdigest()
+    require(original_sha==upgrade['workspace_snapshot_sha256']==fixture['original_workspace_sha256'],
+            'Native repair did not retain the exact original WORKSPACE bytes before updating metadata')
+    exact(record['sqlite_schema'],launcher.database_schema(folder/'data/cardioinsight.db'),'Completed native schema registration differs')
+    require(not record.get('upgrade_pending'),'Known schema reconciliation was left pending')
+    return dict(status='passed',kind=proof['kind'],actual20_runtime_executed=False,
+        full_original_database_backup_exact=True,original_workspace_bytes_exact=True,
+        database_backup_sha256=upgrade['snapshot_sha256'],original_workspace_sha256=original_sha,
+        only_known_canonical_table_reconciled=True,original_clinical_rows_retained=True,
+        declared_schema=proof['declared_schema'],actual_registered_schema=record['sqlite_schema'])
 
 
 def compare_restart_database(before, after, *, case_id, started_at, finished_at):
@@ -851,6 +925,8 @@ async def run(args, result):
                     context = None
                     await stop(old_exe, home)
                     database = home / 'workspaces' / workspace / 'data/cardioinsight.db'
+                    if args.known_legacy_ddl_fixture:
+                        result['known_legacy_ddl_fixture']=inject_known_legacy_ddl_fixture(home/'workspaces'/workspace,doctor_source.CASE_ID)
                     database0 = database_state(database)
                     (args.output.parent / 'original21-before-report.json').write_text(json.dumps(before['report'], ensure_ascii=False, indent=2) + '\n')
                     after_mode = True
@@ -892,6 +968,9 @@ async def run(args, result):
                     context = None
                     await stop(exe, home)
                     database_migrated=database_state(database)
+                    if args.known_legacy_ddl_fixture:
+                        result['known_legacy_ddl_reconciliation']=verify_known_legacy_reconciliation(home/'workspaces'/workspace,
+                            database0,result['known_legacy_ddl_fixture'])
                     restart_first=datetime.now(timezone.utc)
                     restart_started=time.perf_counter()
                     context=await new_context()
@@ -973,15 +1052,20 @@ def main():
     parser.add_argument('--software-archive', type=Path, required=True)
     parser.add_argument('--base-software-archive', type=Path)
     parser.add_argument('--nonempty-reviewed-scopes', action='store_true')
+    parser.add_argument('--known-legacy-ddl-fixture',action='store_true')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     require(not args.nonempty_reviewed_scopes or args.base_software_archive,
             'Authored nonempty scope retention requires an actual original21 upgrade')
+    require(not args.known_legacy_ddl_fixture or (args.base_software_archive and args.nonempty_reviewed_scopes),
+            'Explicit mathematical legacy DDL fixture requires original21 and nonempty authored scopes')
     require(not args.output.exists(), 'Preserve original native attempts')
     args.output.parent.mkdir(parents=True, exist_ok=True)
     result = dict(status='running', mode='actual-original21-to22' if args.base_software_archive else 'actual-fresh22-UI-saveflow',
                   checks=[], patient_inputs_read=False, clinical_accuracy_validated=False,
                   physical_hospital_Windows10_verified=False, pdf_operations=0)
+    if args.known_legacy_ddl_fixture:
+        result['mode']='math-injected-known-lazy-DDL-not-actual20-runtime'
     try:
         asyncio.run(run(args, result))
     except BaseException:

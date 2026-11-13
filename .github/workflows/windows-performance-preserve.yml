@@ -55,7 +55,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Screening contracts and package boundary preflight
         run: |
-          python -m pytest -p no:cacheprovider -q tests/test_stt_candidate_quality.py tests/test_stt_candidate_screening_integration.py tests/test_screening_compatibility.py tests/test_screening_continuity_transaction.py tests/test_screening_certificate_cache.py tests/test_windows_screening_package_assets.py tests/test_windows_doctor_build.py tests/test_windows_deidentified_package.py tests/test_shared_source.py tests/test_static_demo_builder.py --junitxml="$env:RUNNER_TEMP\screening22-preflight.xml"
+          python -m pytest -p no:cacheprovider -q tests/test_stt_candidate_quality.py tests/test_stt_candidate_screening_integration.py tests/test_screening_compatibility.py tests/test_screening_continuity_transaction.py tests/test_screening_certificate_cache.py tests/test_windows_screening_package_assets.py tests/test_windows_doctor_eval.py tests/test_windows_legacy_ddl_recovery.py tests/test_windows_screening_quality.py tests/test_windows22_candidate_inputs.py tests/test_windows_doctor_build.py tests/test_windows_deidentified_package.py tests/test_shared_source.py tests/test_static_demo_builder.py --junitxml="$env:RUNNER_TEMP\screening22-preflight.xml"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Fetch exact accepted21 software and unchanged mathematical M01
         run: |

@@ -12,3 +12,11 @@
 候选阈值使用设备原始单位，是工程形态支持条件。没有增加自动诊断或全量逐条确认关卡；医生仍可查看全部趋势并自选范围复核。
 
 验证覆盖短尖峰、负向平台波纹、局部噪声、真宽 T、ST 改变、双相、低平、59/60/61 秒边界、真实 next-R 截断和房颤／房扑全生命周期。具体执行结果随发布验收记录保存。
+
+## Windows native schema lifecycle
+
+The Windows adapter initializes its canonical implementation-continuity table before the launcher records the workspace schema. A later physician read or continuity proof does not create schema objects. This fixes a verified failure in the rejected first1.0.22 candidate: a second real process restart was refused after a lazy-created table changed the registered schema.
+
+A narrowly identified official1.0.21 workspace may be recovered only when the actual schema differs from its recorded schema by exactly the released canonical continuity table and implicit primary-key index, with the same user_version and every remaining schema object byte-exact. Recognition is read-only. A complete SQLite WAL-inclusive backup and the original WORKSPACE bytes and SHA are preserved before completion records `known-legacy-DDL-reconciliation`. Unknown DDL, indexes, triggers, release identity or schema differences still fail closed.
+
+Internal manager/workspace child failures exit without a modal MessageBox, allowing the parent launcher to report the failure promptly. Interactive launcher errors retain their user-facing dialog. These changes are native adapters; clinical measurements, candidate thresholds and common132 source bytes are unchanged.

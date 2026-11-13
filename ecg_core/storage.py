@@ -150,6 +150,14 @@ def utc_now() -> str:
 from .review_workflow import ReviewWorkflowMixin
 
 
+# Keep this exact definition shared with the native launcher's narrowly scoped
+# recognition of the released21 lazy-DDL defect.
+IMPLEMENTATION_COMPATIBILITY_DDL = """CREATE TABLE IF NOT EXISTS analysis_implementation_compatibility (
+                case_id TEXT NOT NULL, execution_engine_id TEXT NOT NULL,
+                execution_basis TEXT NOT NULL, certificate TEXT NOT NULL, created_at TEXT NOT NULL,
+                PRIMARY KEY(case_id,execution_engine_id,execution_basis))"""
+
+
 class Storage(ReviewWorkflowMixin, EvidenceCandidateMixin, ReportEvidenceMixin):
     def __init__(self, path: Path, *, connection_factory=sqlite3.Connection):
         self._connection_factory = connection_factory
@@ -160,6 +168,9 @@ class Storage(ReviewWorkflowMixin, EvidenceCandidateMixin, ReportEvidenceMixin):
         self.initialize_candidates()
         self.initialize_report_evidence()
         with self.connect() as db:
+            # Native complete_upgrade records the schema before any case read.
+            # A later continuity proof must never introduce new schema objects.
+            db.execute(IMPLEMENTATION_COMPATIBILITY_DDL)
             if "details" not in {r[1] for r in db.execute("PRAGMA table_info(annotations)")}:
                 db.execute("ALTER TABLE annotations ADD COLUMN details TEXT NOT NULL DEFAULT '{}'")
 
@@ -703,10 +714,6 @@ class Storage(ReviewWorkflowMixin, EvidenceCandidateMixin, ReportEvidenceMixin):
         """Audit verified implementation continuity without changing a doctor's work."""
         from .analysis_provenance import digest
         with self.connect() as db:
-            db.execute("""CREATE TABLE IF NOT EXISTS analysis_implementation_compatibility (
-                case_id TEXT NOT NULL, execution_engine_id TEXT NOT NULL,
-                execution_basis TEXT NOT NULL, certificate TEXT NOT NULL, created_at TEXT NOT NULL,
-                PRIMARY KEY(case_id,execution_engine_id,execution_basis))""")
             db.execute('BEGIN IMMEDIATE')
             old=db.execute('SELECT basis FROM case_analysis_basis WHERE case_id=?',(case_id,)).fetchone()
             if not old or json.loads(old['basis'])!=certificate['reference_basis']:
