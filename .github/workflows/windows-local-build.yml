@@ -16,6 +16,8 @@ jobs:
       PYTHONDONTWRITEBYTECODE: "1"
       ECG_ALLOW_PHI: "0"
     steps:
+      - name: Preserve the verified source line endings
+        run: git config --global core.autocrlf false
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
