@@ -1,0 +1,593 @@
+"use strict";
+
+/* One command surface for review strips, continuous ECG and template editing. */
+const beatEditor=(()=>{
+  const E=ECGBeatEngine,esc=escapeHtml;
+  let context=null,selected=new Set(),info=null,busy=false,openToken=0,dialog,dialogToken=0,committing=false;
+  let historySnapshot=null;
+  let lastRelabelPreview=null;
+  function currentHistory(){
+    if(!state.caseId||state.caseLoading)return null;
+    const data=state.caseData;
+    if(data?.case_id===state.caseId&&data.beat_editor_history?.revision===data.analysis_revision)return data.beat_editor_history;
+    return historySnapshot?.caseId===state.caseId&&historySnapshot.caseToken===state.caseRequestId?historySnapshot.value:null;
+  }
+  function caseEditorSnapshot(){
+    const data=state.caseData, history=data?.beat_editor_history;
+    if(state.caseLoading||!data||data.case_id!==state.caseId||!data.beat_editor_settings||
+       !Number.isSafeInteger(data.analysis_revision)||history?.revision!==data.analysis_revision)return null;
+    return {...history,settings:data.beat_editor_settings};
+  }
+  function readOnlySnapshot(wave){
+    const data=state.caseData;
+    if(wave.case_id!==undefined&&wave.case_id!==state.caseId)throw Error('只读波形来自其他病例，请重新选择');
+    // This is the already displayed case snapshot, not a new cache. A read-only
+    // menu cannot edit beats and needs no all-record editor reconstruction.
+    if(state.caseLoading||data?.case_id!==state.caseId||!data.clinical_identity||
+       !Number.isSafeInteger(data.analysis_revision)||!data.beat_editor_settings||
+       data.beat_editor_history?.revision!==data.analysis_revision||
+       wave.analysis_basis===undefined||wave.analysis_revision===undefined)return null;
+    ECGAnalysisConsistency.assertSame(data.clinical_identity,wave);
+    return {revision:data.analysis_revision,settings:{...data.beat_editor_settings},can_undo:false,can_redo:false};
+  }
+  const basisKey=()=>JSON.stringify([state.caseData?.clinical_identity||null,state.caseData?.analysis_revision??null]);
+  function begin(value){context={...value,caseToken:state.caseRequestId,basisKey:basisKey()};info=null;}
+  function owner(){
+    return {context,caseId:context?.caseId,caseToken:state.caseRequestId,token:openToken,
+      page:state.currentPage,samples:[...selected],
+      // Card clicks can change the visible selection without reopening this editor.
+      editSamples:state.currentPage==='edit'?[...state.editSelectedSamples]:null,
+      editFocus:state.editSelectedSample};
+  }
+  const sameSamples=(snapshot,live)=>snapshot.length===live.size&&snapshot.every(s=>live.has(s));
+  function currentOwner(value){
+    return value.context===context&&value.caseId===state.caseId&&value.caseToken===state.caseRequestId&&
+      context?.caseToken===state.caseRequestId&&value.token===openToken&&value.page===state.currentPage&&
+      (!context.isCurrent||context.isCurrent())&&
+      context.basisKey===basisKey()&&
+      sameSamples(value.samples,selected)&&
+      (value.editSamples===null||(sameSamples(value.editSamples,state.editSelectedSamples)&&value.editFocus===state.editSelectedSample));
+  }
+  function requireOwner(value){if(!currentOwner(value))throw Error("病例或所选心搏已变化，本次操作已停止；请重新选择并核对后修改");}
+  const occurrenceCards=new WeakMap();
+  let occurrenceSummary=null,occurrenceUniverseCount=null;
+  function syncOccurrenceSelection(){
+    if(occurrenceSummary)renderOccurrenceToolbar({...occurrenceSummary,selectedCount:state.editSelectedSamples.size});
+    document.querySelectorAll('.occurrence-tile').forEach(card=>{
+      const item=occurrenceCards.get(card)?.item;if(!item)return;
+      ECGOccurrenceCard.syncSelection(card,item,state);
+    });
+  }
+  async function occurrenceContext(card,event,menu=true,code=null){
+    const value=occurrenceCards.get(card);if(!value||busy||committing||value.scope.isCurrent?.()===false)return;
+    const {item,scope}=value,token=++openToken,rect=card.getBoundingClientRect();
+    const targets=item.target_samples||[item.sample_index];
+    selected=targets.some(s=>state.editSelectedSamples.has(s))?new Set(state.editSelectedSamples):new Set(targets);
+    begin({caseId:state.caseId,surface:'edit',anchor:{...item,class_code:item.class_code||scope.code},time:item.time_s,x:event?.clientX??rect.left+20,y:event?.clientY??rect.top+20,occurrenceScope:scope,canvas:card,waveform:card.occurrenceWave,isCurrent:scope.isCurrent,onPreview:()=>openEditTwelveLead(card.querySelector('.occurrence-open')||card,item,{expectedScope:scope.identity,isCurrent:scope.isCurrent})});
+    state.editSelectedSamples=new Set(selected);state.editSelectedSample=item.sample_index;
+    syncOccurrenceSelection();renderEditScatter();
+    if(!menu)return perform('relabel',{class_code:code},true);
+    const scopeAtOpen=owner();
+    let result;
+    try{result=caseEditorSnapshot()||await request('','GET',undefined,scopeAtOpen);}
+    catch(error){if(!currentOwner(scopeAtOpen))return;throw error;}
+    if(token!==openToken||context.caseId!==state.caseId)return;
+    info=result;context.revision=result.revision;
+    renderMenu();$('#beatRelabelMenu [data-editor-code]:not(:disabled)')?.focus({preventScroll:true});
+  }
+  function registerOccurrence(card,item,scope){
+    occurrenceCards.set(card,{item,scope});
+    card.querySelector('.occurrence-open')?.setAttribute('aria-description','Ctrl 或 ⌘ 加右击可加入选集或取消选择。');
+    card.oncontextmenu=event=>{
+      // A Mac Control-click can open the native menu with button 0.
+      // Only a modified right click changes the selection here.
+      if(event.button!==2||!(event.ctrlKey||event.metaKey)){miniMenu(card,event);return;}
+      event.preventDefault();
+      event.stopPropagation();
+      if(busy||committing||scope.isCurrent?.()===false)return;
+      close();
+      const targets=item.target_samples||[item.sample_index];
+      const samples=state.editSelectedSamples;
+      const remove=targets.every(sample=>samples.has(sample));
+      for(const sample of targets){
+        if(remove)samples.delete(sample);
+        else samples.add(sample);
+      }
+      state.editSelectedSample=item.sample_index;
+      syncOccurrenceSelection();
+      renderEditScatter();
+      card.querySelector('.occurrence-open')?.focus({preventScroll:true});
+    };
+    card.ondblclick=event=>{
+      if(event.ctrlKey||event.metaKey||!scope.isCurrent?.())return;
+      event.preventDefault();event.stopPropagation();
+      openEditTwelveLead(card.querySelector('.occurrence-open')||card,item,{expectedScope:scope.identity,isCurrent:scope.isCurrent}).catch(handleError);
+    };
+  }
+  function miniMenu(card,event){
+    event?.preventDefault();event?.stopPropagation();
+    occurrenceContext(card,event).catch(handleError);
+  }
+  async function request(suffix,method="GET",body,scope=owner()){
+    requireOwner(scope);
+    const result=await api('/api/cases/'+encodeURIComponent(scope.caseId)+'/beat-editor'+suffix,{method,...(body?{body:JSON.stringify(body)}:{})});
+    // A submitted write belongs to its original case; do not retry it or refresh another case.
+    if(method!=="PUT")requireOwner(scope);
+    return result;
+  }
+  const button=(label,action,extra="")=>'<button type="button" role="menuitem" data-editor-action="'+action+'" '+extra+'>'+label+"</button>";
+  const codeButtons=(codes,neighbor="")=>codes.map(code=>'<button type="button" role="menuitem" data-editor-code="'+code+'" '+(neighbor?'data-editor-neighbor="'+neighbor+'"':"")+'><kbd>'+code+'</kbd><span>'+esc(E.types[code].name)+'</span></button>').join("");
+  const mainCodes=["N","S","V","J","G","A","C","F","E","R","W","O","Z","M","H","Y","T","X","OTHER"];
+  function renderMenu(){
+    const menu=$("#beatRelabelMenu");menu.classList.add("full-beat-menu");
+    menu.dataset.contextKind=context.anchor?'beat':'wave';
+    const primaryCodes=['N','S','V','J','G','P','B','A','C','F','E','R','W','O','Z','M','H','Y','T','X','OTHER'];
+    const primary=primaryCodes.map(code=>code==='P'?'<details><summary><kbd>P</kbd> 起搏</summary><div class="editor-types">'+codeButtons(['P','PA','PV','PD','PF'])+'</div></details>':code==='B'?'<details><summary><kbd>B</kbd> 束支传导阻滞</summary><div class="editor-types">'+codeButtons(['B','BL','BR'])+'</div></details>':codeButtons([code])).join('');
+    menu.innerHTML='<header><strong>'+(context.readOnly?'波形只读复核':context.anchor?'心搏修订':'波形操作')+'</strong><button type="button" data-editor-action="close" aria-label="关闭心搏菜单">×</button></header>'+
+      '<p class="editor-context">'+(context?.anchor?formatElapsedPrecise(context.anchor.time_s)+' · '+esc(context.anchor.class_code||context.anchor.label||""):"此位置无心搏标记")+
+      ' · 操作：心搏修订 · 范围：'+esc(context.occurrenceScope?'当前筛选记录集合':context.strip?'散点所选图条':'当前波形所选心搏')+' · 已选 <b>'+selected.size+'</b> 搏 · 修订 r'+info.revision+' · 导联 '+esc(info.settings.lead||state.editLead||state.leads?.join('/')||'待核对')+'</p>'+
+      '<div class="editor-menu-scroll">'+(context.anchor&&!context.readOnly?'':'<details data-beat-tools><summary>心搏操作'+(context.readOnly?'（只读）':'（先选择心搏）')+'</summary>')+'<div class="editor-types editor-primary">'+primary+'</div>'+
+      '<div class="editor-actions">'+button("删除标记 <kbd>D</kbd>","delete")+button("恢复源类型 / 位置","restore")+
+      button("手动批量添加 QRS","insert")+button("手动调整 QRS 位置","move")+
+      '<details><summary>自动向前 / 向后插入候选</summary><p>参考导联 '+esc(info.settings.lead)+' · 搜索 '+info.settings.search_seconds+' 秒 · 只预览，不直接写入</p>'+
+      button("向前搜索","detect-before")+button("向后搜索","detect-after")+'</details>'+
+      '<details><summary>修改前一心搏 ‹</summary><div class="editor-types">'+codeButtons(Object.keys(E.types),"previous")+'</div></details>'+
+      '<details><summary>修改后一心搏 ›</summary><div class="editor-types">'+codeButtons(Object.keys(E.types),"next")+'</div></details>'+
+      button("加入自选 RR 候选 <kbd>L</kbd>","longest")+
+      '<div class="editor-selection-tools">'+button(context.occurrenceScope||context.sampleScope?"全选当前集合":"全选全记录心搏","all")+button("当前页全选 <kbd>K</kbd>","page")+button(context.occurrenceScope||context.sampleScope?"反选当前集合":"反选全记录心搏","invert")+button("当前页反选 <kbd>I</kbd>","invert-page")+button("清除选择","clear")+'</div>'+
+      button("撤销最近修订","undo",info.can_undo?"":"disabled")+button("重做","redo",info.can_redo?"":"disabled")+
+      button("设置选项","settings")+'</div>'+(context.anchor&&!context.readOnly?'':'</details>')+'<details data-wave-tools'+(context.anchor&&!context.readOnly?'':' open')+'><summary>图条 / 波形操作</summary>'+button(context.previewLabel||(Object.keys(context.waveform?.leads||{}).length>6?(context.onPreview?"放大当前 12 导联":"返回原波形"):"查看 12 导联"),"wave-preview")+button("转到原始诊断波形","wave-locate")+button("插入报告图条…","wave-strip")+button("插入缩略图条…","wave-strip-short")+button("选择起始位置（总览）","wave-range-anchor")+button("删除前面区段的标记…","wave-delete-before")+button("删除后面区段的标记…","wave-delete-after")+button("测量尺（总览）","wave-measure")+button("分规尺（总览）","wave-divider")+button("平行尺（总览）","wave-parallel")+button("设为最快心率图条…","wave-bookmark-fastest")+button("设为最慢心率图条…","wave-bookmark-slowest")+button("设为最快窦性心率图条…","wave-bookmark-fastest_nn")+button("设为最慢窦性心率图条…","wave-bookmark-slowest_nn")+button("跳转到时间…","wave-jump")+(context.onLeadSettings?button("显示导联设置…","wave-leads"):"")+'</details></div><footer>源记录只读 · 修订后重算 · 可撤销<br>'+(context.readOnly?'此处为只读复核图；先转到原始诊断波形再修订。':'房颤 / 房扑为人工逐搏节律标记；P/T 波不计入心搏。')+'</footer>';
+    menu.querySelectorAll("[data-editor-code]").forEach(b=>{b.disabled=!selected.size});
+    ["delete","restore","longest","move"].forEach(a=>{menu.querySelector('[data-editor-action="'+a+'"]').disabled=!selected.size||(a==="move"&&selected.size!==1)});
+    if(context.readOnly)menu.querySelectorAll('[data-editor-code],.editor-actions button,[data-editor-action=wave-strip],[data-editor-action=wave-strip-short],[data-editor-action^=wave-delete],[data-editor-action^=wave-bookmark]').forEach(b=>{b.disabled=true;b.title='此处为只读复核图；请转到原始诊断波形修订后重新核对';});
+    menu.querySelector('[data-editor-action="wave-preview"]').disabled=!context.onPreview&&!['edit','review','stt'].includes(context.surface);
+    menu.hidden=false;positionBeatRelabelMenu(menu,context.x,context.y);
+    try{if(!menu.matches(":popover-open"))menu.showPopover()}catch(_){}
+  }
+  function savesSingleBeatDirectly(code, count){
+    return count===1&&["N","S","V","X"].includes(code);
+  }
+  function quickBeatHint(code){
+    return savesSingleBeatDirectly(code,state.editSelectedSamples.size)?'修改这一搏并保存，可撤销':'预览所选心搏的改型，确认后保存';
+  }
+  function updateQuickBeatControls(reading){
+    const reason=busy||committing?'正在处理当前修订，请等待完成':!clinicalWorkflow.writable()?'当前版本只读':reading?'当前列表尚未读取完成，请重试后选择心搏':!state.editSelectedSamples?.size?'请先用 Ctrl / ⌘ 加点击或右击，或按空格选择心搏':'';
+    document.querySelectorAll('[data-clinical-beat]').forEach(button=>{
+      button.disabled=Boolean(reason);
+      button.title=reason||quickBeatHint(button.dataset.clinicalBeat);
+    });
+    return reason;
+  }
+  function renderOccurrenceToolbar(summary){
+    const heading=$("#editGalleryTitle")?.closest('.edit-panel-heading');if(!heading)return;
+    if(!occurrenceSummary||['sourceLabel','totalRecords','revision'].some(k=>occurrenceSummary[k]!==summary[k]))occurrenceUniverseCount=null;occurrenceSummary=summary;
+    let toolbar=$("#occurrenceSelectionToolbar");
+    if(!toolbar){toolbar=document.createElement('div');toolbar.id='occurrenceSelectionToolbar';toolbar.className='occurrence-selection-toolbar';toolbar.setAttribute('role','toolbar');toolbar.setAttribute('aria-label','逐搏所选目标操作');heading.after(toolbar);
+      toolbar.innerHTML='<p data-occurrence-scope role="status"></p><div>'+['N','S','V','X'].map(code=>'<button type="button" data-occurrence-code="'+code+'">设为 '+code+'</button>').join('')+'<button type="button" data-occurrence-tool="restore">恢复源标记</button><button type="button" data-occurrence-tool="clear">清除选择</button><button type="button" data-occurrence-tool="advanced">高级操作</button></div>';
+      toolbar.addEventListener('click',event=>{const b=event.target.closest('button');if(!b||b.disabled)return;const task=b.dataset.occurrenceCode?quickEdit(b.dataset.occurrenceCode):b.dataset.occurrenceTool==='restore'?restoreSelection():b.dataset.occurrenceTool==='clear'?clearOccurrenceSelection():occurrenceContext(document.querySelector('.occurrence-tile[data-selected="true"],.occurrence-tile[data-selected="mixed"]')||document.querySelector('.occurrence-tile'),null);Promise.resolve(task).catch(handleError);});
+    }
+    toolbar.querySelector('[data-occurrence-scope]').textContent=summary.sourceLabel+' · 全集 '+summary.totalRecords+' 条记录（'+(occurrenceUniverseCount===null?'心搏数待核对':occurrenceUniverseCount+' 搏')+'） · 本页 '+summary.visibleRecords+' 条 / '+summary.visibleSampleCount+' 搏 · 已选 '+summary.selectedCount+' 搏 · '+summary.lead+' · '+(summary.revision==null?'修订待核对':'复核修订 '+summary.revision);
+    if(summary.totalSampleCount!=null){
+      const scope=toolbar.querySelector('[data-occurrence-scope]'),label=document.createElement('span'),counts=document.createElement('span');
+      label.className='workspace-collection-label';label.textContent=summary.sourceLabel;label.title=summary.sourceLabel;
+      counts.className='workspace-collection-counts';counts.textContent='全集 '+summary.totalSampleCount+' 搏 · 屏内 '+summary.visibleRecords+' 条 / '+(summary.visibleRecords&&!summary.visibleSampleCount?'读取中':summary.visibleSampleCount+' 搏')+' · 已选 '+summary.selectedCount+' 搏 · '+summary.lead+' · 复核修订 '+summary.revision;
+      scope.replaceChildren(label,counts);scope.classList.add('workspace-collection-scope');
+    }
+    const readState=$("#editTemplateGallery")?.dataset?.readState;
+    const reading=['loading','error','cancelled'].includes(readState);
+    if(reading)toolbar.querySelector('[data-occurrence-scope]').textContent=summary.sourceLabel+' · '+({loading:'正在读取，数量待核对',error:'读取失败，数量尚未核对',cancelled:'已取消读取，数量尚未核对'})[readState]+' · 所选操作暂不可用';
+    const reason=updateQuickBeatControls(reading);
+    toolbar.querySelectorAll('button').forEach(b=>{b.disabled=Boolean(reason);b.title=reason||(b.dataset.occurrenceCode?quickBeatHint(b.dataset.occurrenceCode):b.dataset.occurrenceTool==='restore'?'恢复所选心搏的源类型与位置，先预览确认':b.dataset.occurrenceTool==='clear'?'仅清除当前选择，不修改心搏或模板':'打开所选心搏的完整操作菜单');});
+    const rhythm=$("#occDisease");if(rhythm){const supported=['S','V','A','C'].includes(summary.code||state.editSelectedClass?.slice(7));rhythm.disabled=Boolean(reason)||!supported||summary.savingRhythm;rhythm.title=summary.savingRhythm?'正在保存当前节律确认，请等待':reason||(!supported?'当前类别没有此节律确认入口，请选择 S、V、房颤或房扑目标':'记录所选区间的医生节律判断；不改变心搏分类，仍需独立确认');}
+  }
+  function clearOccurrenceSelection(){if(busy||committing)return;begin({caseId:state.caseId,surface:'edit'});selected.clear();state.editSelectedSamples.clear();syncSelection();}
+  function restoreSelection(){if(busy||committing)return;begin({caseId:state.caseId,surface:'edit'});selected=new Set(state.editSelectedSamples);return perform('restore');}
+  function syncSelection(){
+    if(context.surface==="edit"){state.editSelectedSamples=new Set(selected);state.editSelectedSample=context.anchor?.sample_index??null}
+    refreshBeatOverrideViews();
+  }
+  async function open(event,canvas,waveform,surface="review",keyboard=false,options={}){
+    event.preventDefault?.();if(!state.caseId||!waveform||busy||committing)return;
+    if(options.isCurrent?.()===false)return;
+    globalThis.ecgRhythmRangeEditor?.closeMenu?.();globalThis.ECGOccurrenceCard?.closeMenu();
+    try{if(waveform.analysis_basis!==undefined&&state.caseData?.clinical_identity)ECGAnalysisConsistency.assertSame(state.caseData.clinical_identity,waveform);}catch(error){handleError(error);return;}
+    const token=++openToken,rect=canvas.getBoundingClientRect(),x=keyboard?rect.left+rect.width/2:event.clientX,y=keyboard?rect.top+40:event.clientY;
+    const marker=event.target?.closest?.('[data-fiducial-sample]'),marked=marker&&canvas.contains(marker)?Number(marker.dataset.fiducialSample):undefined;
+    const annotation=keyboard||!Number.isFinite(event.clientY)||event.clientY-rect.top<=24||marked!==undefined;
+    const pointerWaveOnly=!annotation&&options.anchorSample===undefined;
+    const exact=options.anchorSample??marked;
+    const anchor=exact!==undefined?(waveform.beats||[]).find(b=>b.sample_index===exact):annotation?nearestBeatForRelabel(canvas,waveform,x,surface,keyboard?Infinity:12):null;
+    if(options.anchorSample!==undefined&&!anchor){toast('小图未包含其原心搏，不能编辑邻近心搏；请重新读取','error');return;}
+    const g=waveMenuGeometry(canvas,waveform,surface),time=anchor&&(keyboard||options.anchorSample!==undefined)?anchor.time_s:g.start+Math.max(0,Math.min(1,(x-rect.left-g.l)/g.w))*g.duration;
+    const same=context?.caseId===state.caseId&&context.caseToken===state.caseRequestId&&context.canvas===canvas&&context.waveform===waveform;
+    begin({caseId:state.caseId,surface,anchor,time,x,y,canvas,waveform,pointerWaveOnly,strip:!!canvas.closest("[data-scatter-sample]"),...options});
+    selected=surface==="edit"?new Set(state.editSelectedSamples):same?selected:new Set();
+    if(anchor&&!selected.has(anchor.sample_index))selected=new Set([anchor.sample_index]);
+    if(!anchor)selected.clear();
+    state.beatRelabelTarget=anchor?{...anchor,caseId:state.caseId,surface}:null;
+    if(!pointerWaveOnly)syncSelection();
+    const scopeAtOpen=owner();
+    try{const result=(context.readOnly?readOnlySnapshot(waveform):caseEditorSnapshot())||await request("","GET",undefined,scopeAtOpen);if(token!==openToken||context.caseId!==state.caseId)return;info=result;context.revision=result.revision;renderMenu();$("#beatRelabelMenu [data-editor-code]:not(:disabled)")?.focus({preventScroll:true})}catch(error){if(currentOwner(scopeAtOpen))handleError(error)}
+  }
+  function close(restoreFocus=false){
+    const host=context?.canvas;
+    const opener=host?.querySelector?.('.occurrence-open')||host;
+    openToken++;closeBeatRelabelMenu();
+    if(restoreFocus&&opener?.isConnected)opener.focus({preventScroll:true});
+  }
+  function showDialog(title,content,accept,acceptLabel="预览修改",pending=false,workingLabel=acceptLabel){
+    close();const scope=owner(),generation=++dialogToken;dialog.innerHTML='<form method="dialog"><header><h2>'+esc(title)+'</h2><button type="button" data-dialog-close aria-label="关闭">×</button></header><div class="editor-dialog-body">'+content+'</div><p class="editor-error" role="alert"></p><footer><button type="button" data-dialog-close class="button secondary">取消</button><button type="submit" class="button primary">'+esc(acceptLabel)+'</button></footer></form>';
+    const submit=dialog.querySelector('[type="submit"]');submit.disabled=pending;
+    dialog.querySelectorAll("[data-dialog-close]").forEach(b=>b.onclick=()=>dialog.close());
+    dialog.querySelector("form").onsubmit=async event=>{
+      event.preventDefault();if(submit.disabled)return;submit.disabled=true;
+      try{if(!dialog.open||generation!==dialogToken)throw Error("确认窗口已关闭，请重新选择心搏");requireOwner(scope);submit.textContent=workingLabel;await accept(new FormData(event.target))}catch(error){if(generation===dialogToken)dialog.querySelector(".editor-error").textContent=error.message}finally{if(generation===dialogToken){submit.disabled=false;submit.textContent=acceptLabel}}
+    };
+    if(!dialog.open)dialog.showModal();
+    return {scope,submit,generation};
+  }
+  function contextOK(){if(!context||context.caseId!==state.caseId||context.caseToken!==state.caseRequestId||context.isCurrent?.()===false)throw Error("病例或波形已切换，请重新选择心搏");if(context.readOnly)throw Error('报告图条只读；请先转到原始诊断波形');if(!clinicalWorkflow.writable())throw Error("当前服务为只读")}
+  async function afterCommit(value,operation){
+    const caseId=context.caseId;
+    const bookmark=typeof clinicalUI!=='undefined'?clinicalUI.occurrenceBookmark(context.occurrenceScope?(context.anchor?.start_sample??context.anchor?.sample_index):null):null;
+    lastRelabelPreview=null;info=value;dialog.close();close();
+    selected.clear();state.editSelectedSamples.clear();state.editSelectedSample=null;
+    state.scatterStripCache.clear();state.reportComposer=null;
+    if(!await loadCase(caseId))return;
+    const caseToken=state.caseRequestId,isCurrent=()=>state.caseId===caseId&&state.caseRequestId===caseToken;
+    if(state.currentPage==="edit")await loadEdit(bookmark?{...bookmark,caseToken}:null);
+    if(!isCurrent())return;
+    if(state.currentPage==="review"){clearScatterSelection();await loadScatter()}
+    else if(state.currentPage==='report')await clinicalUI.refreshReport();
+    else if(state.currentPage==='trends')await loadTrends();
+    else if(state.currentPage==='stt')await loadStt();
+    if(!isCurrent())return;
+    await clinicalWorkflow.refresh(caseId);
+    if(!isCurrent())return;
+    toast("已保存修订 r"+value.revision+" · RR / HRV / 候选已更新；可撤销", "success",5000);
+    updateStatus(value);
+  }
+  async function commit(payload,scope=owner()){
+    requireOwner(scope);contextOK();if(committing)return;committing=true;historyBusy(true);
+    try{const value=await request("","PUT",{...payload,confirmed:true},scope);
+      if(!currentOwner(scope))return;
+      await afterCommit(value,payload.operation);
+    }finally{committing=false;historyBusy(busy)}
+  }
+  async function previewChange(payload,scope){
+    const basis=state.caseData?.clinical_identity;
+    if(payload.operation!=="relabel"||payload.selection.samples.length!==1||!basis||state.demoReadonly){
+      return request("/preview","POST",payload,scope);
+    }
+    const key=JSON.stringify([scope.caseId,scope.caseToken,basis.analysis_basis,basis.analysis_revision,payload]);
+    const checkBasis=async()=>{
+      const live=await api(ECGAnalysisConsistency.url(scope.caseId,"analysis-basis",{},basis));
+      requireOwner(scope);
+      ECGAnalysisConsistency.assertSame(basis,live);
+    };
+    await checkBasis();
+    if(lastRelabelPreview?.key===key)return lastRelabelPreview.result;
+    const preview=await request("/preview","POST",payload,scope);
+    await checkBasis();
+    // Retain only the four values the doctor saw, never all marker rows.
+    const counts=value=>({metrics:{valid_beats:value.metrics.valid_beats,longest_rr_ms:value.metrics.longest_rr_ms},
+      hrv:{nn_count:value.hrv.nn_count},marker_count:value.markers.length});
+    const result={affected:preview.affected,before:counts(preview.before),after:counts(preview.after)};
+    lastRelabelPreview={key,result};
+    return result;
+  }
+  function changeTable(preview){
+    const values=summary=>summary?[summary.metrics.valid_beats,summary.hrv.nn_count??0,summary.metrics.longest_rr_ms,(summary.marker_count??summary.markers.length)]:[];
+    const before=values(preview?.before),after=values(preview?.after);
+    const rows=["有效心搏","NN 间期数","最长 RR (ms)","非心搏标记"].map((label,i)=>
+      "<tr><th>"+label+"</th><td>"+(before[i]??"—")+"</td><td>"+(after[i]??"—")+"</td></tr>").join("");
+    return '<table class="beat-change-preview"><thead><tr><th>重算项目</th><th>修改前</th><th>修改后</th></tr></thead><tbody>'+rows+'</tbody></table>';
+  }
+  function affectedPositions(operation,extra,samples){
+    if(operation==="settings")return Object.entries(extra.settings||{}).map(([key,value])=>key+"="+value).join("；");
+    const positions=extra.positions||samples;
+    const times=positions.slice().sort((a,b)=>a-b).slice(0,8).map(s=>formatElapsedPrecise(s/200));
+    const text=times.join("、")+(positions.length>8?" …":"");
+    return operation==="move"?text+" → "+formatElapsedPrecise(extra.target_sample/200):text;
+  }
+  async function perform(operation,extra={},quick=false,targetMode=null){
+    contextOK();if(busy||committing)return;
+    const code=extra.class_code;
+    const direct=operation==="undo"||operation==="redo"||(quick&&savesSingleBeatDirectly(code,selected.size));
+    // The case reply carries the editor revision. Both preview and commit validate it on the server.
+    const snapshot=info||caseEditorSnapshot();
+    const title="确认"+({relabel:"改型 · "+(E.types[code]?.name||""),delete:"删除标记",restore:"恢复源标记",insert:"补标 QRS",move:"移动 QRS",settings:"分析设置"}[operation]||"修订");
+    let payload,previewDialog;
+    let note="修订后需重新确认相关复核环节；源 DATA / EBI 不会改写。";
+    if(E.types[code]?.kind==="nonbeat")note+=" 该类型不是 QRS，原标记将从心搏和 NN 统计中排除。";
+    if(E.types[code]?.kind==="rhythm")note+=" 这是医生指定的逐搏节律属性，不是自动房颤 / 房扑识别或完整发作负荷分析。";
+    const summary=(status,position,preview)=>'<p><span role="status">'+esc(status)+'</span> '+esc(note)+
+      '</p><p><strong>本次目标：</strong>'+esc(position)+'</p>'+changeTable(preview);
+    if(direct){busy=true;historyBusy(true);}
+    else{
+      const position=targetMode?{previous:"前一心搏",next:"后一心搏",nearest:"当前时间最近心搏"}[targetMode]:affectedPositions(operation,extra,[...selected]);
+      previewDialog=showDialog(title,summary("正在核对修改前后的结果…",position),
+        ()=>commit(payload,previewDialog.scope),"确认保存修订",true,"正在保存…");
+    }
+    const scope=previewDialog?.scope||owner();
+    const active=()=>!previewDialog||(dialog.open&&previewDialog.generation===dialogToken);
+    try{
+      requireOwner(scope);
+      let samples=scope.samples;
+      if(targetMode){
+        const feed=await request("/beats","GET",undefined,scope);
+        if(!active())return;
+        const anchors=new Set(samples);
+        if(!anchors.size){
+          const closest=context.anchor||feed.items.reduce((a,b)=>!a||Math.abs(b.time_s-context.time)<Math.abs(a.time_s-context.time)?b:a,null);
+          if(closest)anchors.add(closest.sample_index);
+        }
+        if(targetMode==="nearest")samples=[...anchors];
+        else{
+          const step=targetMode==="previous"?-1:1;
+          samples=feed.items.flatMap((row,i)=>anchors.has(row.sample_index)&&feed.items[i+step]?[feed.items[i+step].sample_index]:[]);
+        }
+        if(!samples.length)throw Error("此位置未找到目标心搏");
+      }
+      const current=snapshot||await request("","GET",undefined,scope);
+      if(!active())return;
+      requireOwner(scope);
+      payload={operation,selection:{scope:"samples",samples},revision:current.revision,...extra};
+      if(operation==="undo"||operation==="redo"){await commit(payload,scope);return;}
+      const preview=await previewChange(payload,scope);
+      if(!active())return;
+      requireOwner(scope);
+      if(direct){await commit(payload,scope);return;}
+      const status="基于已保存修订 r"+payload.revision+"；已选 "+samples.length+" 搏；将影响 "+preview.affected+" 个标记。";
+      dialog.querySelector(".editor-dialog-body").innerHTML=summary(status,affectedPositions(operation,extra,samples),preview);
+      previewDialog.submit.disabled=false;
+    }catch(error){
+      if(!previewDialog)throw error;
+      if(!active())return;
+      if(!currentOwner(scope)){dialog.close();return;}
+      dialog.querySelector('[role="status"]').textContent="未能完成核对";
+      dialog.querySelector(".editor-error").textContent=error.message;
+    }finally{
+      if(direct){busy=false;historyBusy(committing);if(occurrenceSummary)renderOccurrenceToolbar({...occurrenceSummary,selectedCount:state.editSelectedSamples.size});}
+    }
+  }
+  async function quickEdit(code,samples=[...state.editSelectedSamples]){
+    if(busy||committing)return;
+    if(!samples.length)return toast("请先选中心搏","error");
+    begin({caseId:state.caseId,surface:state.currentPage==="edit"?"edit":"review",anchor:null,time:state.editStart,x:0,y:0,canvas:$("#editWaveformCanvas"),waveform:state.editWaveform});
+    selected=new Set(samples);return perform("relabel",{class_code:code},true);
+  }
+  async function universe(page=false){
+    if(context.sampleScope)return context.sampleScope(page);
+    if(context.occurrenceScope)return context.occurrenceScope.samples(page);
+    if(page){
+      if(context.strip)return [...document.querySelectorAll("[data-scatter-sample]")].filter(el=>{const a=el.getBoundingClientRect(),b=$("#scatterSelectionList").getBoundingClientRect();return a.bottom>b.top&&a.top<b.bottom}).map(el=>Number(el.dataset.scatterSample));
+      if(context.canvas?.closest("#editLibraryMatrix"))return [...document.querySelectorAll("#editLibraryMatrix [data-edit-sample]")].map(el=>Number(el.dataset.editSample));
+      if(context.canvas?.closest("#editTemplateGallery"))return [...document.querySelectorAll("#editTemplateGallery [data-edit-sample]")].map(el=>Number(el.dataset.editSample));
+      return (context.waveform?.beats||[]).map(r=>r.sample_index);
+    }
+    if(context.strip&&state.scatterSelectedSamples.length)return state.scatterSelectedSamples.slice();
+    const feed=await request("/beats");let rows=feed.items.concat(feed.markers);
+    if(context.surface==="edit"){
+      const group=({"source-N":1,"source-S":2,"source-V":3,"source-X":34})[state.editSelectedClass],code=state.editSelectedClass?.startsWith('source-')?state.editSelectedClass.slice(7):null;
+      if(code==='other')rows=rows.filter(r=>!['N','S','V'].includes(r.class_code));
+      else if(code&&E.types[code])rows=rows.filter(r=>r.class_code===code);
+      else if(group)rows=rows.filter(r=>r.group===group);
+      else{const template=state.editTemplates.find(r=>"custom-"+r.id===state.editSelectedClass);if(template){const set=new Set(template.sample_indices);rows=rows.filter(r=>set.has(r.sample_index))}}
+    }
+    return rows.map(r=>r.sample_index);
+  }
+  function manual(op){
+    const time=op==="move"?(context.anchor?.time_s??context.time):context.time;
+    showDialog(op==="move"?"调整 QRS 位置":"手动批量添加 QRS",
+      '<p>输入从记录开始计的秒数，200 Hz 下按 5 ms 采样点定位；补标默认为未分类。目标位置必须在记录内，且距其他 QRS 至少 100 ms（软件编辑保护）。</p>'+
+      (op==="move"?'<label>目标时间（秒）<input name="time" type="number" step="0.005" min="0" value="'+(Math.round(time*200)/200).toFixed(3)+'" required></label><div class="editor-nudges"><button type="button" data-nudge="-0.005">← 5 ms</button><button type="button" data-nudge="0.005">5 ms →</button></div>':
+      '<label>QRS 位置（秒，以逗号、空格或换行分隔；最多 500 个）<textarea name="times" rows="4" required>'+Math.max(0,Math.round(time*200)/200).toFixed(3)+'</textarea></label><label>新心搏类型<select name="type">'+Object.values(E.types).filter(t=>t.kind==="beat").map(t=>'<option value="'+t.code+'" '+(t.code==="OTHER"?"selected":"")+'>'+t.code+" · "+t.name+"</option>").join("")+'</select></label>'),
+      data=>{
+        if(op==="move")return perform("move",{target_sample:Math.round(Number(data.get("time"))*200)});
+        const values=String(data.get("times")).trim().split(/[\s,，;；]+/).map(Number);if(!values.length||values.some(v=>!Number.isFinite(v)))throw Error("请输入有效秒数");
+        return perform("insert",{positions:values.map(v=>Math.round(v*200)),class_code:data.get("type")});
+      });
+    dialog.querySelectorAll("[data-nudge]").forEach(b=>b.onclick=()=>{const input=dialog.querySelector('[name="time"]');input.value=(Number(input.value)+Number(b.dataset.nudge)).toFixed(3)});
+  }
+  function settingsDialog(){
+    const labels={refractory_ms:"候选排重间隔（ms，100–500）",sensitivity:"能量阈值系数（1–12；越大越保守）",search_seconds:"前后搜索时长（秒，1–60）",brady:"慢心率候选阈值（bpm，20–100）",tachy:"快心率候选阈值（bpm，80–250）",pause:"长 RR 阈值（秒，1.5–10）",nn_min:"NN 纳入下限（ms，250–1000）",nn_max:"NN 纳入上限（ms，1000–5000）"};
+    showDialog("当前病例已保存分析参数 · 心搏修订 "+info.revision,'<p>当前显示已保存参数；表单修改需预览并确认保存才会生效。仅作用于当前病例。候选阈值不是疾病诊断标准；排重间隔是算法参数。修改后会重新计算并撤回复核确认。</p><div class="editor-settings"><label>QRS 搜索导联<select name="lead">'+ALL_LEADS.map(l=>'<option '+(l===info.settings.lead?"selected":"")+'>'+l+'</option>').join("")+'</select></label>'+Object.entries(labels).map(([key,label])=>'<label>'+label+'<input name="'+key+'" type="number" step="any" required value="'+info.settings[key]+'"></label>').join("")+'</div>',
+      data=>{const opts={};for(const key of Object.keys(E.defaults))opts[key]=key==="lead"?data.get(key):Number(data.get(key));E.settings(opts);return perform("settings",{settings:opts})});
+  }
+  async function detect(direction,locateOverviewBeat=false){
+    contextOK();
+    let revision;
+    const pending=showDialog("漏标 QRS 候选预览",'<p role="status">正在读取候选与原始波形…</p>',async data=>{
+      const positions=data.getAll("candidates").map(Number);
+      if(!positions.length)throw Error("请核对并选择至少一个候选");
+      await perform("insert",{positions,class_code:"OTHER",revision});
+    },"预览修改",true);
+    const {scope}=pending,active=()=>dialog.open&&dialogToken===pending.generation;
+    try{
+      const snapshot=info||caseEditorSnapshot()||await request("","GET",undefined,scope);
+      if(!active())return;
+      requireOwner(scope);
+      let t=context.anchor?.time_s??context.time;
+      if(locateOverviewBeat){
+        const feed=await request("/beats","GET",undefined,scope);
+        if(!active())return;
+        const anchor=feed.items.find(row=>selected.has(row.sample_index))||
+          feed.items.reduce((nearest,row)=>!nearest||Math.abs(row.time_s-t)<Math.abs(nearest.time_s-t)?row:nearest,null);
+        t=anchor?.time_s??t;
+      }
+      const total=state.caseData.technical.duration_seconds_raw,{lead,search_seconds:span}=snapshot.settings;
+      const start=Math.max(0,direction==="before"?t-span:t),seconds=Math.min(span,total-start,direction==="before"?t-start:Infinity);
+      if(seconds<1)throw Error("此方向剩余记录不足 1 秒");
+      const [result,wave]=await Promise.all([
+        request("/preview","POST",{operation:"detect",revision:snapshot.revision,start_s:start,duration_s:seconds},scope),
+        api("/api/cases/"+encodeURIComponent(scope.caseId)+"/waveform?start="+start+"&duration="+seconds+"&leads="+encodeURIComponent(lead)+"&filter=raw&max_points=12000")
+      ]);
+      if(!active())return;
+      requireOwner(scope);
+      if(wave.case_id!==undefined&&wave.case_id!==scope.caseId)throw Error("候选波形来自其他病例，请重新检测");
+      if(wave.analysis_basis!==undefined&&state.caseData?.clinical_identity)ECGAnalysisConsistency.assertSame(wave,state.caseData.clinical_identity);
+      if(result.revision!==snapshot.revision)throw Error("版本已变化，请重新检测");
+      revision=result.revision;
+      const candidates=result.candidates,values=wave.leads?.[lead];
+      if(!values?.length)throw Error("未读取到候选对应导联的原始波形");
+      const body=dialog.querySelector(".editor-dialog-body");
+      body.innerHTML='<p>'+esc(result.method)+'</p><p>搜索 '+formatElapsedPrecise(start)+'—'+formatElapsedPrecise(start+seconds)+' · '+esc(lead)+' · <b>'+candidates.length+'</b> 个候选。默认不勾选；核对原始波形后逐个选择。</p><canvas id="qrsCandidatePreview" height="190" aria-label="原始波形与 QRS 候选位置"></canvas><div class="qrs-candidate-list">'+
+        (candidates.map(r=>'<label><input type="checkbox" name="candidates" value="'+r.sample_index+'">'+formatElapsedPrecise(r.time_s)+'<small>阈值比 '+r.score+'（非置信概率）</small></label>').join("")||"<p>未发现候选。可调整导联／阈值，或手动补标；未检测到不代表无漏搏。</p>")+'</div>';
+      const canvas=$("#qrsCandidatePreview"),box=canvas.getBoundingClientRect();canvas.width=Math.max(500,Math.round(box.width*devicePixelRatio));canvas.height=190*devicePixelRatio;
+      const ctx=canvas.getContext("2d");ctx.scale(devicePixelRatio,devicePixelRatio);const w=canvas.width/devicePixelRatio,h=190,low=Math.min(...values),high=Math.max(...values),heightSpan=Math.max(1,high-low);
+      ctx.fillStyle="#f8fbfb";ctx.fillRect(0,0,w,h);ctx.strokeStyle="#263e48";ctx.beginPath();values.forEach((v,i)=>{const x=i/Math.max(1,values.length-1)*w,y=170-(v-low)/heightSpan*150;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();
+      candidates.forEach((r,i)=>{const x=(r.time_s-wave.start_s)/wave.duration_s*w;ctx.strokeStyle="#ca6919";ctx.beginPath();ctx.moveTo(x,5);ctx.lineTo(x,h);ctx.stroke();ctx.fillStyle="#9d4d11";ctx.fillText(String(i+1),x+2,12)});
+      pending.submit.disabled=false;
+    }catch(error){
+      if(!active())return;
+      if(!currentOwner(scope)){dialog.close();return;}
+      dialog.querySelector(".editor-dialog-body").textContent="未能读取本次候选";
+      dialog.querySelector(".editor-error").textContent=error.message;
+    }
+  }
+  function updateStatus(value){
+    if(value)historySnapshot={caseId:state.caseId,caseToken:state.caseRequestId,value};
+    historyBusy(busy||committing);
+  }
+  function historyBusy(on){
+    updateQuickBeatControls(['loading','error','cancelled'].includes($("#editTemplateGallery")?.dataset?.readState));
+    const value=currentHistory(),readonly=!clinicalWorkflow.writable();
+    document.querySelectorAll('[data-history]').forEach(button=>{const action=button.dataset?.history||'undo',allowed=value?.['can_'+action];button.disabled=on||readonly||!allowed;button.title=on?'正在保存修订并更新结果，请等待':readonly?'当前版本只读':!value?'请等待当前病例读取并核对修订历史':!allowed?`当前没有可${action==='undo'?'撤销':'重做'}的心搏修订`:`${action==='undo'?'撤销最近心搏修订（⌘ / Ctrl+Z）':'重做心搏修订（⌘ / Ctrl+Shift+Z）'}；保留审计`;});
+    document.querySelectorAll('[data-editor-status]').forEach(el=>{el.textContent=on?'更新修订…':!value?'历史待核对':!value.can_undo&&!value.can_redo?'暂无修订历史':'心搏修订 '+value.revision;el.title='右击波形或按 Shift+F10 编辑；撤销 / 重做均保留审计';});
+    document.querySelectorAll('.beat-edit-history').forEach(bar=>bar.setAttribute('aria-busy',String(on)));
+  }
+  function refreshHistory(){historyBusy(busy||committing);}
+  function openSettings(){
+    contextOKForSettings();if(busy||committing)return;
+    ++openToken;begin({caseId:state.caseId,surface:state.currentPage});selected=new Set();
+    info={revision:state.caseData.analysis_revision,settings:{...state.caseData.beat_editor_settings}};context.revision=info.revision;
+    settingsDialog();
+  }
+  function contextOKForSettings(){
+    if(!state.caseId||state.caseLoading||state.caseData?.case_id!==state.caseId||!state.caseData.beat_editor_settings||!Number.isSafeInteger(state.caseData.analysis_revision))throw Error('请先选择病例并等待读取当前参数');
+    if(!clinicalWorkflow.writable())throw Error('当前版本只读，不能修改分析参数');
+  }
+  async function action(name){
+    if(name==="close")return close(true);
+    if(name==='longest'){
+      contextOK();if(selected.size!==1||!context.anchor||!selected.has(context.anchor.sample_index))throw Error('请选择一个有前 RR 的原心搏');
+      close();const scope=owner(),item={...context.anchor},basis=context.waveform||state.caseData.clinical_identity;
+      return ECGReviewCandidates.choose({item,population:{origin:context.surface==='review'?'overview-card':'edit-card'},isCurrent:()=>currentOwner(scope),
+        loadIdentity:async()=>{
+          const identity=await api(`/api/cases/${scope.caseId}/evidence-candidates`);
+          requireOwner(scope);ECGAnalysisConsistency.assertSame(basis,identity);
+          return identity;
+        }});
+    }
+    if(name.startsWith('wave-')){
+      const scope=owner();requireOwner(scope);const target=context;
+      if(name==='wave-leads'){close();return target.onLeadSettings?.();}
+      if(name==='wave-preview'){
+        close();if(target.onPreview)return target.onPreview();
+        if(target.surface==='edit')return openEditTwelveLead(target.canvas);
+        if(target.surface==='stt')return openSttTwelveLead();
+        return toggleWaveformFullscreen();
+      }
+      if(name==='wave-locate'){close();target.canvas?.closest?.('dialog')?.close();return jumpTo(target.anchor?.time_s??target.time);}
+      if(name==='wave-jump')return showDialog('跳转到记录时间','<label>记录开始后的秒数<input name="time" type="number" min="0" max="'+state.caseData.technical.duration_seconds_raw+'" step=".005" required value="'+target.time.toFixed(3)+'"></label>',data=>{dialog.close();target.canvas?.closest?.('dialog')?.close();jumpTo(Number(data.get('time')));},'定位');
+      close();target.canvas?.closest?.('dialog')?.close();return overviewWorkbench.waveAction(name.slice(5),{time:target.time,bounds:target.waveform?[target.waveform.start_s,target.waveform.start_s+target.waveform.duration_s]:[Math.max(0,target.time-2),target.time+2],caseId:scope.caseId,caseToken:scope.caseToken});
+    }
+    if(name==="clear"){selected.clear();syncSelection();return renderMenu()}
+    if(["all","page","invert","invert-page"].includes(name)){const scope=owner(),universeSamples=await universe(name.includes("page"));requireOwner(scope);if(context.occurrenceScope&&!name.includes("page"))occurrenceUniverseCount=universeSamples.length;selected=new Set(name.startsWith("invert")?universeSamples.filter(s=>!selected.has(s)):universeSamples);syncSelection();return renderMenu()}
+    if(name==="insert"||name==="move")return manual(name);
+    if(name==="settings")return settingsDialog();
+    if(name.startsWith("detect-"))return detect(name.slice(7));
+    return perform(name);
+  }
+  function bind(){
+    dialog=document.createElement("dialog");dialog.id="beatEditorDialog";dialog.className="beat-editor-dialog";document.body.appendChild(dialog);
+    $("#beatRelabelMenu").addEventListener("click",event=>{
+      const b=event.target.closest("button");if(!b||b.disabled)return;
+      const task=b.dataset.editorCode?(b.dataset.editorNeighbor?perform("relabel",{class_code:b.dataset.editorCode},false,b.dataset.editorNeighbor):perform("relabel",{class_code:b.dataset.editorCode})):b.dataset.editorAction?action(b.dataset.editorAction):null;
+      Promise.resolve(task).catch(handleError);
+    });
+    // Dialog/menu keystrokes must not leak to global navigation or beat shortcuts.
+    document.addEventListener("keydown",event=>{
+      if(event.target.closest?.('[contenteditable="true"],[role="textbox"],input,textarea,select'))return;
+      if(dialog.open){event.stopImmediatePropagation();return}
+      const menu=$("#beatRelabelMenu");
+      if(!menu.hidden&&context){
+        if(event.key==="Escape"){event.preventDefault();event.stopImmediatePropagation();close(true);return}
+        if(!event.ctrlKey&&!event.metaKey&&!event.altKey&&({D:"delete",K:"page",I:"invert-page",L:"longest"})[event.key.toUpperCase()]){event.preventDefault();event.stopImmediatePropagation();action(({D:"delete",K:"page",I:"invert-page",L:"longest"})[event.key.toUpperCase()]).catch(handleError);return}
+        if((event.ctrlKey||event.metaKey)&&["a","i"].includes(event.key.toLowerCase())){event.preventDefault();event.stopImmediatePropagation();action(event.key.toLowerCase()==="a"?"all":"invert").catch(handleError);return}
+        if(!event.ctrlKey&&!event.metaKey&&!event.altKey&&E.types[event.key.toUpperCase()]){
+          event.preventDefault();event.stopImmediatePropagation();if(context.pointerWaveOnly&&!context.readOnly){toast('请右击 R 标注或原心搏小图后改型','warning');return;}perform("relabel",{class_code:event.key.toUpperCase()}).catch(handleError);return;
+        }
+        if(["ArrowDown","ArrowUp","Home","End"].includes(event.key)){
+          event.preventDefault();event.stopImmediatePropagation();
+          const buttons=[...menu.querySelectorAll("button:not(:disabled),summary")].filter(el=>
+            el.getClientRects().length&&!el.closest('details:not([open]) > :not(summary)'));
+          const i=buttons.indexOf(document.activeElement);
+          const next=event.key==="Home"?0:event.key==="End"?buttons.length-1:(i+(event.key==="ArrowDown"?1:-1)+buttons.length)%buttons.length;
+          buttons[next]?.focus();return;
+        }
+      }
+      if(["INPUT","TEXTAREA","SELECT"].includes(document.activeElement.tagName))return;
+      const occurrenceCard=event.target.closest?.('[data-occ-index]');
+      if(occurrenceCard&&occurrenceCards.has(occurrenceCard)&&!event.repeat){
+        const menuKey=event.key==='ContextMenu'||event.shiftKey&&event.key==='F10',code=event.key.toUpperCase();
+        if(menuKey||(!event.ctrlKey&&!event.metaKey&&!event.altKey&&E.types[code])){
+          event.preventDefault();event.stopImmediatePropagation();if(menuKey)miniMenu(occurrenceCard,null);else occurrenceContext(occurrenceCard,null,false,code).catch(handleError);return;
+        }
+      }
+      if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="z"&&["review","edit"].includes(state.currentPage)){
+        event.preventDefault();event.stopImmediatePropagation();if(busy||committing)return;const operation=event.shiftKey?'redo':'undo';if(!currentHistory()?.['can_'+operation]){toast('当前没有可'+(operation==='undo'?'撤销':'重做')+'的心搏修订','warning');return;}begin({caseId:state.caseId,surface:state.currentPage});perform(operation).catch(handleError);
+      }
+    },true);
+    document.addEventListener("contextmenu",event=>{
+      const card=event.target.closest("[data-edit-sample]");if(!card)return;
+      const item=state.editTemplateStrips.find(r=>r.sample_index===Number(card.dataset.editSample)),canvas=card.querySelector("canvas");if(!item||!canvas)return;
+      event.preventDefault();event.stopImmediatePropagation();open(event,canvas,{...item,beats:[item]},"edit",true);
+    },true);
+    document.addEventListener("dblclick",event=>{
+      const card=event.target.closest?.('[data-edit-sample]');if(!card||state.currentPage!=='edit')return;
+      const item=state.editTemplateStrips.find(row=>Number(row.sample_index)===Number(card.dataset.editSample));if(!item)return;
+      event.preventDefault();event.stopPropagation();openEditTwelveLead(card,item).catch(handleError);
+    });
+    ["#waveformCanvas","#editWaveformCanvas","#editLibraryWaveformCanvas"].forEach(id=>{
+      const canvas=$(id);if(!canvas)return;const bar=document.createElement("div");bar.className="beat-edit-history";
+      bar.innerHTML='<span data-editor-status>心搏修订</span><button type="button" data-history="undo" title="⌘ / Ctrl+Z">撤销</button><button type="button" data-history="redo" title="⌘ / Ctrl+Shift+Z">重做</button>';
+      const controls=canvas.parentElement.querySelector('.clinical-beat-toolbar');
+      if(controls)controls.append(bar);else canvas.closest('.waveform-card')?.querySelector('.waveform-foot')?.append(bar);
+      bar.setAttribute("aria-label","心搏修订历史");bar.querySelectorAll("button").forEach(b=>b.onclick=()=>{if(busy||committing)return;begin({caseId:state.caseId,surface:id==="#waveformCanvas"?"review":"edit"});perform(b.dataset.history).catch(handleError)});
+    });
+    refreshHistory();
+  }
+  async function invoke(name,options={}){
+    if(busy||committing)return;
+    const time=options.time??state.start;
+    begin({caseId:state.caseId,surface:"review",time,x:0,y:0,canvas:$("#waveformCanvas"),waveform:state.waveform});
+    selected=new Set(options.samples||[]);
+    if(name==="insert"){contextOK();return manual(name);}
+    if(name.startsWith("detect-"))return detect(name.slice(7),true);
+    if(name==="settings"){
+      contextOK();info=caseEditorSnapshot()||await request("");context.revision=info.revision;
+      return settingsDialog();
+    }
+    if(name==="previous"||name==="next")return perform("relabel",{class_code:options.code},false,name);
+    if(["relabel","delete","restore"].includes(name))
+      return perform(name,name==="relabel"?{class_code:options.code}:{},false,selected.size?null:"nearest");
+    const feed=await request("/beats");
+    context.anchor=feed.items.find(r=>selected.has(r.sample_index))||feed.items.reduce((a,b)=>!a||Math.abs(b.time_s-time)<Math.abs(a.time_s-time)?b:a,null);
+    if(!selected.size&&context.anchor)selected.add(context.anchor.sample_index);
+    info=await request("");context.revision=info.revision;
+    return action(name);
+  }
+  document.addEventListener("DOMContentLoaded",bind);
+  function bindWaveSurface(host,{wave,isCurrent=()=>true,onPreview=null,readOnly=false,anchorSample,sampleScope,previewLabel}={}){
+    if(!host)return;host._beatWaveMenu={wave,isCurrent,onPreview,readOnly,anchorSample,sampleScope,previewLabel};
+    if(!host.hasAttribute('tabindex'))host.setAttribute('tabindex','0');
+    host.setAttribute('aria-description','右键或 Shift+F10 打开心搏与图条操作；双击查看十二导联。');
+    if(host._beatWaveMenuBound)return;host._beatWaveMenuBound=true;
+    const show=event=>{const value=host._beatWaveMenu;if(!value||!value.isCurrent()||!host.isConnected)return;event.preventDefault();event.stopImmediatePropagation();if(state.currentPage==='report'&&value.readOnly&&globalThis.ECGReportWaveMenu){try{ECGReportWaveMenu.open({event,host,wave:value.wave,isCurrent:value.isCurrent,keyboard:event.type==='keydown'});}catch(error){handleError(error);}return;}open(event,host,value.wave,state.currentPage,event.type==='keydown',value).catch(handleError);};
+    host.addEventListener('contextmenu',event=>{const reportWave=state.currentPage==='report'&&host._beatWaveMenu?.readOnly&&!event.target.closest?.('input,textarea,select,[contenteditable]');if(reportWave||event.target.closest?.('svg,canvas,.occurrence-wave'))show(event);},true);
+    host.addEventListener('keydown',event=>{if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10')show(event);},true);
+  }
+  return {open,bindWaveSurface,quickEdit,invoke,openSettings,refreshHistory,renderOccurrenceToolbar,registerOccurrence,syncOccurrenceSelection,occurrenceMenu:(card)=>occurrenceContext(card,null),invalidate(){openToken++},restore:()=>{if(busy||committing)return;begin({caseId:state.caseId,surface:"edit"});selected=new Set(state.editSelectedSamples);return perform("restore")},selected:sample=>context?.caseId===state.caseId&&context.surface==="review"&&selected.has(sample)};
+})();

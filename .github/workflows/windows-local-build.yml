@@ -1,0 +1,73 @@
+name: CardioInsight Windows 1.0.30 local delivery
+on:
+  push:
+    branches:
+      - codex/windows-local-1.0.30-20261123
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      PYTHONUTF8: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+      ECG_ALLOW_PHI: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12.10"
+          architecture: x64
+          cache: pip
+          cache-dependency-path: requirements-doctor-build.txt
+      - name: Create the same pinned Windows x64 build environment
+        run: |
+          python -m venv "$env:RUNNER_TEMP\doctor-build"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "$env:RUNNER_TEMP\doctor-build\Scripts" | Out-File $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Verify software inputs
+        run: |
+          python -m pip install -r requirements-doctor-build.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/verify_public_release.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pytest -q -p no:cacheprovider tests/test_windows_doctor_build.py tests/test_windows_deidentified_package.py tests/test_windows_legacy_ddl_recovery.py tests/test_report_strip_recovery.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build and verify the offline Windows package
+        run: |
+          $origin = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          python scripts/windows_doctor_build.py --output "$env:RUNNER_TEMP\local-windows30" --source-commit "$env:GITHUB_SHA" --version "1.0.30" --release-notes "报告待办单行显示，图条批量移除和撤销，按原位置核对旧图条。Windows 离线医生评估版。" --ci-run-url "$origin"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/windows_deidentified_package.py template --software-archive "$env:RUNNER_TEMP\local-windows30\CardioInsight-DoctorEval-Windows-x64-1.0.30-software.zip" --output "$env:RUNNER_TEMP\local-windows30-p01"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify the built application in Edge using synthetic data
+        run: |
+          python scripts/verify_windows_report_curation_30.py --package-root "$env:RUNNER_TEMP\local-windows30\verify-package\CardioInsight-DoctorEval-Windows-x64" --output "$env:RUNNER_TEMP\windows30-native.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CardioInsight-Windows-1.0.30-local-delivery
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            ${{ runner.temp }}/local-windows30/CardioInsight-DoctorEval-Windows-x64-1.0.30-full.zip
+            ${{ runner.temp }}/local-windows30/CardioInsight-DoctorEval-Windows-x64-1.0.30-full.zip.sha256
+            ${{ runner.temp }}/local-windows30/CardioInsight-DoctorEval-Windows-x64-1.0.30-software.zip
+            ${{ runner.temp }}/local-windows30/CardioInsight-DoctorEval-Windows-x64-1.0.30-software.zip.sha256
+            ${{ runner.temp }}/local-windows30/build-report.json
+            ${{ runner.temp }}/local-windows30-p01/CardioInsight-DoctorEval-Windows-x64-1.0.30-P01-software.zip
+            ${{ runner.temp }}/local-windows30-p01/CardioInsight-DoctorEval-Windows-x64-1.0.30-P01-software.zip.sha256
+            ${{ runner.temp }}/local-windows30-p01/p01-software-build-report.json
+            ${{ runner.temp }}/windows30-native.json
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: Windows-1.0.30-diagnostics
+          retention-days: 7
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/windows30-native.json

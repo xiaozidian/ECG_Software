@@ -1,0 +1,360 @@
+{
+  "schema_version": 1,
+  "namespace": "local.ecg.original-examples",
+  "version": "draft-v1",
+  "title": "原创术语与复核示例",
+  "description": "少量原创中文界面示例，均未医生核准；非完整医院词库。仅用于医生人工选择和编辑，不包含诊断规则；界面分组不是医学本体。适用范围为软件示例的展示范围，临床适用性仍需医生核对。",
+  "completeness": "example",
+  "approval": "draft",
+  "source": {
+    "name": "CardioInsight 软件原创示例（非医院词库）",
+    "url": "",
+    "verification": "declared"
+  },
+  "license": {
+    "name": "MIT",
+    "url": "https://opensource.org/license/mit",
+    "text": "Copyright (c) 2026 CardioInsight original report-phrase examples.\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE."
+  },
+  "scope": {
+    "population": [
+      "adult",
+      "pediatric"
+    ],
+    "recording": [
+      "resting_12lead",
+      "holter"
+    ]
+  },
+  "nodes": [
+    {
+      "stable_id": "group.review",
+      "parent_id": null,
+      "kind": "group",
+      "label": "复核提示",
+      "text": "",
+      "aliases": [],
+      "approval": "draft",
+      "source": {
+        "name": "CardioInsight 软件原创示例（非医院词库）",
+        "url": "",
+        "verification": "declared"
+      },
+      "license": {
+        "name": "MIT",
+        "url": "https://opensource.org/license/mit",
+        "text": "Copyright (c) 2026 CardioInsight original report-phrase examples.\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE."
+      },
+      "scope": {
+        "population": [
+          "adult",
+          "pediatric"
+        ],
+        "recording": [
+          "resting_12lead",
+          "holter"
+        ]
+      },
+      "deprecated": false,
+      "replacement_id": null,
+      "review": {
+        "reviewer": "",
+        "reviewed_at": ""
+      }
+    },
+    {
+      "stable_id": "review.waveform",
+      "parent_id": "group.review",
+      "kind": "term",
+      "label": "结合原始波形复核",
+      "text": "建议结合原始波形和临床资料复核。",
+      "aliases": [
+        "人工复核"
+      ],
+      "approval": "draft",
+      "source": {
+        "name": "CardioInsight 软件原创示例（非医院词库）",
+        "url": "",
+        "verification": "declared"
+      },
+      "license": {
+        "name": "MIT",
+        "url": "https://opensource.org/license/mit",
+        "text": "Copyright (c) 2026 CardioInsight original report-phrase examples.\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE."
+      },
+      "scope": {
+        "population": [
+          "adult",
+          "pediatric"
+        ],
+        "recording": [
+          "resting_12lead",
+          "holter"
+        ]
+      },
+      "deprecated": false,
+      "replacement_id": null,
+      "review": {
+        "reviewer": "",
+        "reviewed_at": ""
+      }
+    },
+    {
+      "stable_id": "review.quality",
+      "parent_id": "group.review",
+      "kind": "term",
+      "label": "核对记录质量",
+      "text": "需结合记录质量核对分析结果。",
+      "aliases": [
+        "噪声",
+        "伪差"
+      ],
+      "approval": "draft",
+      "source": {
+        "name": "CardioInsight 软件原创示例（非医院词库）",
+        "url": "",
+        "verification": "declared"
+      },
+      "license": {
+        "name": "MIT",
+        "url": "https://opensource.org/license/mit",
+        "text": "Copyright (c) 2026 CardioInsight original report-phrase examples.\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE."
+      },
+      "scope": {
+        "population": [
+          "adult",
+          "pediatric"
+        ],
+        "recording": [
+          "resting_12lead",
+          "holter"
+        ]
+      },
+      "deprecated": false,
+      "replacement_id": null,
+      "review": {
+        "reviewer": "",
+        "reviewed_at": ""
+      }
+    },
+    {
+      "stable_id": "group.description",
+      "parent_id": null,
+      "kind": "group",
+      "label": "基础描述",
+      "text": "",
+      "aliases": [],
+      "approval": "draft",
+      "source": {
+        "name": "CardioInsight 软件原创示例（非医院词库）",
+        "url": "",
+        "verification": "declared"
+      },
+      "license": {
+        "name": "MIT",
+        "url": "https://opensource.org/license/mit",
+        "text": "Copyright (c) 2026 CardioInsight original report-phrase examples.\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE."
+      },
+      "scope": {
+        "population": [
+          "adult",
+          "pediatric"
+        ],
+        "recording": [
+          "resting_12lead",
+          "holter"
+        ]
+      },
+      "deprecated": false,
+      "replacement_id": null,
+      "review": {
+        "reviewer": "",
+        "reviewed_at": ""
+      }
+    },
+    {
+      "stable_id": "description.rate",
+      "parent_id": "group.description",
+      "kind": "term",
+      "label": "心率描述",
+      "text": "心率描述：",
+      "aliases": [
+        "心率"
+      ],
+      "approval": "draft",
+      "source": {
+        "name": "CardioInsight 软件原创示例（非医院词库）",
+        "url": "",
+        "verification": "declared"
+      },
+      "license": {
+        "name": "MIT",
+        "url": "https://opensource.org/license/mit",
+        "text": "Copyright (c) 2026 CardioInsight original report-phrase examples.\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE."
+      },
+      "scope": {
+        "population": [
+          "adult",
+          "pediatric"
+        ],
+        "recording": [
+          "resting_12lead",
+          "holter"
+        ]
+      },
+      "deprecated": false,
+      "replacement_id": null,
+      "review": {
+        "reviewer": "",
+        "reviewed_at": ""
+      }
+    },
+    {
+      "stable_id": "description.rhythm",
+      "parent_id": "group.description",
+      "kind": "term",
+      "label": "节律描述",
+      "text": "节律描述：",
+      "aliases": [
+        "节律"
+      ],
+      "approval": "draft",
+      "source": {
+        "name": "CardioInsight 软件原创示例（非医院词库）",
+        "url": "",
+        "verification": "declared"
+      },
+      "license": {
+        "name": "MIT",
+        "url": "https://opensource.org/license/mit",
+        "text": "Copyright (c) 2026 CardioInsight original report-phrase examples.\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE."
+      },
+      "scope": {
+        "population": [
+          "adult",
+          "pediatric"
+        ],
+        "recording": [
+          "resting_12lead",
+          "holter"
+        ]
+      },
+      "deprecated": false,
+      "replacement_id": null,
+      "review": {
+        "reviewer": "",
+        "reviewed_at": ""
+      }
+    },
+    {
+      "stable_id": "group.activity",
+      "parent_id": null,
+      "kind": "group",
+      "label": "活动描述",
+      "text": "",
+      "aliases": [],
+      "approval": "draft",
+      "source": {
+        "name": "CardioInsight 软件原创示例（非医院词库）",
+        "url": "",
+        "verification": "declared"
+      },
+      "license": {
+        "name": "MIT",
+        "url": "https://opensource.org/license/mit",
+        "text": "Copyright (c) 2026 CardioInsight original report-phrase examples.\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE."
+      },
+      "scope": {
+        "population": [
+          "adult",
+          "pediatric"
+        ],
+        "recording": [
+          "resting_12lead",
+          "holter"
+        ]
+      },
+      "deprecated": false,
+      "replacement_id": null,
+      "review": {
+        "reviewer": "",
+        "reviewed_at": ""
+      }
+    },
+    {
+      "stable_id": "activity.atrial",
+      "parent_id": "group.activity",
+      "kind": "term",
+      "label": "房性异位活动",
+      "text": "房性异位活动：",
+      "aliases": [
+        "房性"
+      ],
+      "approval": "draft",
+      "source": {
+        "name": "CardioInsight 软件原创示例（非医院词库）",
+        "url": "",
+        "verification": "declared"
+      },
+      "license": {
+        "name": "MIT",
+        "url": "https://opensource.org/license/mit",
+        "text": "Copyright (c) 2026 CardioInsight original report-phrase examples.\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE."
+      },
+      "scope": {
+        "population": [
+          "adult",
+          "pediatric"
+        ],
+        "recording": [
+          "resting_12lead",
+          "holter"
+        ]
+      },
+      "deprecated": false,
+      "replacement_id": null,
+      "review": {
+        "reviewer": "",
+        "reviewed_at": ""
+      }
+    },
+    {
+      "stable_id": "activity.ventricular",
+      "parent_id": "group.activity",
+      "kind": "term",
+      "label": "室性异位活动",
+      "text": "室性异位活动：",
+      "aliases": [
+        "室性"
+      ],
+      "approval": "draft",
+      "source": {
+        "name": "CardioInsight 软件原创示例（非医院词库）",
+        "url": "",
+        "verification": "declared"
+      },
+      "license": {
+        "name": "MIT",
+        "url": "https://opensource.org/license/mit",
+        "text": "Copyright (c) 2026 CardioInsight original report-phrase examples.\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE."
+      },
+      "scope": {
+        "population": [
+          "adult",
+          "pediatric"
+        ],
+        "recording": [
+          "resting_12lead",
+          "holter"
+        ]
+      },
+      "deprecated": false,
+      "replacement_id": null,
+      "review": {
+        "reviewer": "",
+        "reviewed_at": ""
+      }
+    }
+  ],
+  "sha256": "6125fbda0f83c36b56688db93211d881f54b1c694d3aeb12be3b943f774a2c1c"
+}

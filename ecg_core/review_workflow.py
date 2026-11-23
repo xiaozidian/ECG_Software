@@ -1,0 +1,164 @@
+"""Explicit physician review checkpoints; never infer completion from navigation."""
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+
+STEPS = ("edit", "stt")
+LABELS = {"edit":"模板编辑", "stt":"ST-T"}
+
+
+class ReportConflict(ValueError):
+    """A report must not silently overwrite or export a different revision."""
+
+
+def stamp():
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+class ReviewWorkflowMixin:
+    def initialize_review(self):
+        with self.connect() as db:
+            db.execute("""CREATE TABLE IF NOT EXISTS case_review (
+                case_id TEXT PRIMARY KEY, revision INTEGER NOT NULL DEFAULT 0,
+                steps TEXT NOT NULL DEFAULT '{}', events TEXT NOT NULL DEFAULT '{}')""")
+
+    def _review(self, db, case_id):
+        row = db.execute("SELECT * FROM case_review WHERE case_id=?", (case_id,)).fetchone()
+        return dict(case_id=case_id, revision=row["revision"] if row else 0,
+                    steps=json.loads(row["steps"]) if row else {},
+                    events=json.loads(row["events"]) if row else {})
+
+    def _write_review(self, db, value):
+        db.execute("""INSERT INTO case_review(case_id,revision,steps,events) VALUES(?,?,?,?)
+            ON CONFLICT(case_id) DO UPDATE SET revision=excluded.revision,
+            steps=excluded.steps,events=excluded.events""",
+            (value["case_id"], value["revision"], json.dumps(value["steps"], ensure_ascii=False),
+             json.dumps(value["events"], ensure_ascii=False)))
+
+    def invalidate_review(self, db, case_id, action, *, rhythm_only=False):
+        if not case_id:
+            return
+        rhythm_only=(rhythm_only and action.startswith('annotation.')) or action.startswith('annotation.rhythm')
+        if action in ("analysis.basis_changed", "workspace.restored"):
+            affected = STEPS
+        elif action.startswith("beat_override."):
+            affected = STEPS  # waveform and classifications changed, source statistics did not
+        elif action.startswith("beat_template."):
+            affected = STEPS
+        elif rhythm_only:
+            # Episode decisions do not modify QRS types or ST markings. Their
+            # own status guards AF report use; the new review revision below
+            # still refreshes NN-derived evidence and invalidates report approval.
+            affected = ()
+        elif action.startswith("annotation."):
+            affected = ("stt",)
+        elif action == "patient.update":
+            affected = STEPS
+        elif action == "event.review":
+            affected = ("events",)
+        elif action in ("hrv_review.changed", "hrv_review.confirmed", "report_evidence.confirmed"):
+            affected = ()  # HRV selections change report evidence, not beat/ST classification.
+        else:
+            return
+        value = self._review(db, case_id)
+        # A report acknowledgement changes neither the analysed signal nor the
+        # clinical review basis. Its own report version below guards concurrency.
+        # Advancing the analysis revision here invalidates unrelated live reads.
+        if action != "report_evidence.confirmed":
+            value["revision"] += 1
+        for step in affected:
+            if step in value["steps"]:
+                value["steps"][step]["status"] = "stale"
+                value["steps"][step]["reason"] = action
+        if action.startswith("beat_override.") or action in ("analysis.basis_changed", "workspace.restored"):
+            for event in value["events"].values():
+                event["status"] = "pending"
+        self._write_review(db, value)
+        report=db.execute("SELECT composition FROM report_drafts WHERE case_id=?",(case_id,)).fetchone()
+        if report:
+            composition=json.loads(report["composition"] or "{}")
+            reviews=composition.get("category_reviews",{})
+            if rhythm_only:
+                st_review=reviews.get('ST');reviews.clear()
+                if st_review is not None:reviews['ST']=st_review
+            elif action.startswith("annotation."):reviews.pop("ST",None)
+            elif action != "event.review" and not action.startswith(("hrv_review.", "report_evidence.")):reviews.clear()
+            composition["category_reviews"]=reviews
+            # Preserve the doctor's prose, but never carry its acknowledgement
+            # across a changed clinical basis (including undo/redo).
+            for block in composition.get("diagnosis_blocks", []):
+                if (block.get("manual") and not action.startswith("report_evidence.")
+                        and not (rhythm_only and str(block.get('key','')).startswith('ST:'))):
+                    block.update(needs_review=True, acknowledged=False)
+            db.execute("UPDATE report_drafts SET composition=? WHERE case_id=?",(json.dumps(composition,ensure_ascii=False),case_id))
+        db.execute("""UPDATE report_drafts SET status='draft', reviewed_by='', version=version+1,
+            updated_at=? WHERE case_id=?""", (stamp(), case_id))
+
+    def get_review(self, case_id):
+        with self.connect() as db:
+            db.execute("BEGIN")
+            value = self._review(db, case_id)
+            report = db.execute("SELECT status,version FROM report_drafts WHERE case_id=?", (case_id,)).fetchone()
+        value["pending_steps"] = [step for step in STEPS if value["steps"].get(step, {}).get("status") != "done"]
+        value["report_status"] = report["status"] if report else "draft"
+        value["report_version"] = report["version"] if report else 1
+        value["next_step"] = value["pending_steps"][0] if value["pending_steps"] else "report"
+        return value
+
+    def complete_review(self, case_id, payload, actor):
+        step, note, revision = payload.get("step"), payload.get("note", ""), payload.get("revision")
+        if step not in STEPS or payload.get("confirmed") is not True:
+            raise ValueError("请选择复核环节并明确确认")
+        if not isinstance(note, str) or len(note) > 1200:
+            raise ValueError("复核备注必须是 1200 字以内的文本")
+        if isinstance(revision, bool) or not isinstance(revision, int):
+            raise ValueError("缺少复核版本，请刷新后重试")
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            value = self._review(db, case_id)
+            if revision != value["revision"]:
+                raise ValueError("病例已发生修改，请重新核对当前环节")
+            value["revision"] += 1
+            value["steps"][step] = dict(status="done", note=note.strip(), actor=actor, updated_at=stamp())
+            self._write_review(db, value)
+            db.execute("INSERT INTO audit_log(case_id,actor,action,detail,created_at) VALUES(?,?,?,?,?)",
+                       (case_id, actor, "workflow.complete", step + ": " + note.strip(), stamp()))
+        return self.get_review(case_id)
+
+    def save_event_review(self, case_id, payload, actor, valid_samples):
+        records, status = payload.get("items"), payload.get("status")
+        if status not in ("retained", "excluded", "pending"):
+            raise ValueError("事件状态必须为 retained、excluded 或 pending")
+        if not isinstance(records, list) or not 1 <= len(records) <= 500:
+            raise ValueError("每次处理 1–500 个事件")
+        clean = {}
+        for record in records:
+            if not isinstance(record, dict):
+                raise ValueError("事件必须为对象")
+            sample, kind = record.get("sample_index"), record.get("type")
+            if isinstance(sample, bool) or not isinstance(sample, int) or sample not in valid_samples:
+                raise ValueError("事件心搏不存在")
+            if kind not in ("V", "S", "pause", "tachy", "brady", "noise", "AF", "AFL", "manual"):
+                raise ValueError("不支持的候选类型")
+            clean[f"{kind}:{sample}"] = dict(sample_index=sample, type=kind, status=status,
+                                           actor=actor, updated_at=stamp())
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            value = self._review(db, case_id)
+            value["events"].update(clean)
+            self._write_review(db, value)
+            self.invalidate_review(db, case_id, "event.review")
+            db.execute("INSERT INTO audit_log(case_id,actor,action,detail,created_at) VALUES(?,?,?,?,?)",
+                       (case_id, actor, "event.review", f"{status}: {len(clean)}", stamp()))
+        return self.get_review(case_id)
+
+    def assert_report_ready(self, db, case_id, conclusion):
+        value = self._review(db, case_id)
+        # ST/T report use is checked per adopted current review record by
+        # validate_report. Unused candidates and trend-only pages are not gates.
+        pending = [LABELS[step] for step in ('edit',) if value["steps"].get(step, {}).get("status") != "done"]
+        if pending:
+            raise ValueError("报告审核前请确认：" + "、".join(pending))
+        if not conclusion.strip():
+            raise ValueError("请先填写并保存医生复核结论")

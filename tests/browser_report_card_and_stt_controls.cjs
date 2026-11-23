@@ -1,0 +1,137 @@
+'use strict';
+// Production DOM handlers with mathematical fixtures only. No clinical service.
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),crypto=require('node:crypto');
+const {chromium}=require(process.env.ECG_PLAYWRIGHT_CORE||'playwright-core');
+const root=path.resolve(__dirname,'..'),read=n=>fs.readFileSync(path.join(root,n),'utf8');
+function fixture(file,boundary,expression){const source=read(file),i=source.indexOf(boundary);assert(i>0);const sandbox={require,process,__dirname,Buffer};vm.runInNewContext(source.slice(0,i)+'\nglobalThis.fixtureHTML='+expression+';',sandbox);return sandbox.fixtureHTML;}
+function region(source,a,b){const i=source.indexOf(a),j=source.indexOf(b,i);assert(i>=0&&j>i);return source.slice(i,j);}
+const scripts=names=>names.map(n=>'<script>'+read('static/js/'+n+'.js')+'</script>').join('');
+function menuHTML({withBatch=false}={}){
+ let html=fixture('tests/browser_report_workspace_simplified.cjs','\n(async()=>{\n let browser,context;','fixture()');
+ html=html.replace('<script>\nconst clone=',scripts(['chart-inspection','report-strip-editor','report-wave-menu'])+'<script>\nconst clone=');
+ html=html.replace('loadWave:()=>holdWave?',"loadWave:()=>window.failRead?Promise.reject(Error('mathematical unavailable')):holdWave?");
+ html=html.replace('onPreview:()=>run(previewPaper),renderAdvanced:',"onPreview:()=>run(previewPaper),onStripEdit:i=>actions.push(['edit',i]),onStripLeads:(i,leads)=>{const pick=selected()[i];pick.leads=leads;qs('#reportV2Content')._rwUpdateCard(i,pick,{wave:true});},onStripRemove:i=>actions.push(['remove',i]),renderAdvanced:");
+  if(withBatch)html=html.replace("onStripRemove:i=>actions.push(['remove',i]),", "onStripRemove:i=>actions.push(['remove',i]),onStripRemoveMany:indices=>actions.push(['batch',indices]),canRemoveStrips:()=>window.readonlyBatch!==true,batchScope:window.batchScope,");
+ const bind=region(read('static/js/beat-editor-ui.js'),'  function bindWaveSurface(','  return {open,bindWaveSurface');
+ html+='<script>window.actions=[];window.editOpens=[];window.failRead=false;function handleError(e){throw e;}const beatEditor=(()=>{async function open(event,host,wave,surface){editOpens.push(surface);}'+bind+'return {bindWaveSurface};})();fixture.state.caseData.technical={duration_seconds_raw:90};fixture.mount();window.menuFixture={remount(){fixture.mount();},stale(){fixture.state.caseId="other-mathematical";},bindOutside(readOnly){const n=document.createElement("section");n.id="outsideWave";n.innerHTML=ECGReportWorkspace.reviewWaveSvg(fixture.entry.waveform);document.body.append(n);beatEditor.bindWaveSurface(n,{wave:fixture.entry.waveform,readOnly,isCurrent:()=>true});return n;}};</script>';
+ return html;
+}
+function sttHTML(){
+ let html=fixture('tests/browser_stt_membership_remount.cjs','\n(async()=>{let browser;','html');
+ html=html.replace('renderSTTReportBody(qs(\'#reportV2Content\'),()=>true)','renderSTTReportBody(qs(\'#reportV2Content\'),()=>window.currentOwner!==false)');
+ const show=region(read('static/js/clinical-ui.js'),'  async function showSTRecord(','  let reportAutosaveTimer=');
+ html+='<script>window.navigation=[];window.holdLeave=false;window.leaveDone=null;const resolveWorkstationLeave=()=>holdLeave?new Promise(r=>leaveDone=r):Promise.resolve(true);function goPage(page){navigation.push(page);state.currentPage=page;}'+show+'window.sttFixture={async show(review,eligible,code="st_depression",old=false){state.currentPage="report";state.caseId="fixture";state.caseRequestId=1;window.currentOwner=true;eventA.stt_review_state=review;eventA.stt_report_eligibility=eligible;eventA.stt_result_code=code;state.reportComposition.selected_events=state.reportComposition.selected_events.filter(s=>s.event_id!==eventA.event_id);state.reportComposition.stt_report_use=old?[{event_id:eventA.event_id,basis_version:"old-proof",table:true,text:false,strip:false}]:[];await renderReportBody();},event:eventA,state};</script>';
+ return html;
+}
+const scenario=process.argv[2]||'menu',out=path.resolve(process.env.ECG_CARD_STT_EVIDENCE||'/tmp/ecg-card-stt-controls'),result={scope:'actual production DOM and isolated mathematical transport; not real-patient E2E',scenario,checks:[],page_errors:[],network:[]};
+const record=n=>{result.checks.push(n);console.log('PASS '+n);};
+(async()=>{let browser;fs.mkdirSync(out,{recursive:true});try{
+ browser=await chromium.launch({headless:true,chromiumSandbox:true,executablePath:process.env.ECG_CHROME||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});const page=await browser.newPage({viewport:{width:1600,height:1000}});page.setDefaultTimeout(10000);page.on('pageerror',e=>result.page_errors.push(e.message));await page.route('**/*',r=>{result.network.push(r.request().url());return r.abort();});
+ if(scenario==='menu'){
+  await page.setContent(menuHTML());await page.locator('[data-rw-mini="0"] svg').waitFor();const snapshot=await page.evaluate(()=>JSON.stringify(fixture.state.reportComposition)),menu=page.getByRole('menu',{name:'本条报告图条操作'});
+  await page.locator('[data-rw-tools="0"] summary').click();const labels=await menu.getByRole('menuitem').allTextContents();assert.equal(labels.length,8);await page.keyboard.press('Escape');
+  for(const surface of ['[data-rw-mini="0"] svg','[data-rw-mini="0"]','[data-rw-key="math-first"]>header']){await page.locator(surface).click({button:'right'});await menu.waitFor();assert.deepEqual(await menu.getByRole('menuitem').allTextContents(),labels);assert.equal(await page.locator('#reportWaveMenu:visible').count(),0);await page.keyboard.press('Escape');}record('card-SVG-mini-and-blank-use-the-same-eight-button-actions-without-clinical-menu');
+  await page.locator('[data-rw-toggle="0"]').click();await page.locator('[data-rw-wave="0"] svg').waitFor();await page.locator('[data-rw-wave="0"] svg').click({button:'right'});await menu.waitFor();await menu.getByRole('menuitem',{name:'编辑图条',exact:true}).click();assert.deepEqual(await page.evaluate(()=>actions),[['edit',0]]);record('expanded-wave-routes-to-the-existing-correct-strip-edit-callback');
+  await page.locator('[data-rw-wave="0"]').focus();await page.keyboard.press('Shift+F10');await menu.waitFor();await page.keyboard.press('ArrowDown');await page.keyboard.press('Escape');assert.equal(await page.locator('[data-rw-key="math-first"]').evaluate(n=>n===document.activeElement),true);await page.keyboard.press('ContextMenu');await menu.waitFor();await page.keyboard.press('Escape');
+  assert.equal(await page.locator('[data-caption="0"]').evaluate(n=>{const e=new MouseEvent('contextmenu',{bubbles:true,cancelable:true});n.dispatchEvent(e);return e.defaultPrevented;}),false);record('keyboard-context-and-Escape-return-focus-and-form-native-context-stays-unprevented');
+  await page.evaluate(()=>{window.neighbour=document.querySelector('[data-rw-mini="1"]');window.waveEditor=document.querySelector('#conclusionEditor');});
+  for(const [name,leads] of [['1L · II',1],['12L',12],['3L · II / V1 / V5',3]]){
+    await page.locator('[data-rw-mini="0"] svg').click({button:'right'});await menu.getByRole('menuitem',{name,exact:true}).click();
+    await page.waitForFunction(count=>document.querySelector('[data-rw-mini="0"] svg').querySelectorAll('[data-wave-lead]').length===count,leads);
+    assert(await page.evaluate(()=>neighbour.isConnected&&waveEditor===document.querySelector('#conclusionEditor')));
+  }
+  record('changing-one-strip-preserves-the-neighbour-and-conclusion-on-each-lead-mode');
+  await page.evaluate(()=>{fixture.entry.strip.leads=Object.keys(fixture.entry.waveform.leads);menuFixture.remount();});await page.locator('[data-rw-mini="0"] [data-wave-lead="V6"]').waitFor();await page.locator('[data-rw-mini="0"] svg').click({button:'right'});await menu.waitFor();assert.deepEqual(await menu.getByRole('menuitem').allTextContents(),labels);await page.keyboard.press('Escape');await page.locator('[data-rw-mini="0"] svg').dblclick();const preview=page.locator('.rw-event-preview-dialog[open]');await preview.locator('[data-wave-lead="V6"]').waitFor();await preview.locator('svg').click({button:'right'});await page.locator('#reportWaveMenu').waitFor({state:'visible'});assert.equal(await menu.count(),0);await page.keyboard.press('Escape');await preview.locator('[data-rw-close]').click();record('twelve-lead-card-context-is-curation-but-doubleclick-preview-keeps-hospital-wave-menu');
+  await page.evaluate(()=>{window.holdWave=true;menuFixture.remount();});await page.locator('[data-rw-mini="0"]').getByText('正在读取本条真实波形…').waitFor();await page.locator('[data-rw-mini="0"]').click({button:'right'});await menu.waitFor();await page.keyboard.press('Escape');await page.evaluate(()=>{window.holdWave=false;heldWaves.splice(0).forEach(resolve=>resolve());});await page.locator('[data-rw-mini="0"] svg').waitFor();record('loading-placeholder-exposes-the-existing-strip-menu-without-waiting-for-wave-data');
+  await page.locator('[data-rw-mini="1"]').click({button:'right'});await menu.waitFor();assert.deepEqual(await menu.getByRole('menuitem').evaluateAll(ns=>ns.map(n=>n.disabled)),[true,true,true,true,true,true,true,false]);await page.keyboard.press('Escape');record('stale-card-placeholder-opens-the-same-menu-with-only-existing-removal-enabled');
+  await page.evaluate(()=>{window.failRead=true;menuFixture.remount();});await page.locator('[data-rw-mini="0"]').getByText('图条读取失败：mathematical unavailable').waitFor();await page.locator('[data-rw-mini="0"]').click({button:'right'});await menu.waitFor();await page.keyboard.press('Escape');record('failed-wave-placeholder-does-not-require-a-successful-wave-to-open-curation');
+  await page.evaluate(()=>{window.failRead=false;menuFixture.bindOutside(true);});await page.locator('#outsideWave svg').click({button:'right'});await page.locator('#reportWaveMenu').waitFor({state:'visible'});assert.equal(await menu.count(),0);await page.locator('[data-rw-key="math-first"]').focus();await page.keyboard.press('Shift+F10');await menu.waitFor();assert.equal(await page.locator('#reportWaveMenu:visible').count(),0);await page.keyboard.press('Escape');await page.evaluate(()=>{document.querySelector('#outsideWave').remove();fixture.state.currentPage='edit';menuFixture.bindOutside(false);});await page.locator('#outsideWave svg').click({button:'right'});assert.deepEqual(await page.evaluate(()=>editOpens),['edit']);record('outside-card-readonly-hospital-menu-and-editable-heartbeat-route-remain-independent');
+  await page.evaluate(()=>fixture.state.currentPage='report');
+  // Keyboard users can move directly to later report controls after inspecting a strip.
+  await page.locator('[data-rw-key="math-first"]').focus();
+  await page.keyboard.press('Shift+F10');
+  await page.keyboard.press('End');
+  assert.match(await page.evaluate(()=>document.activeElement.textContent), /删除图条/);
+  await page.keyboard.press('Home');
+  assert.match(await page.evaluate(()=>document.activeElement.textContent), /3L/);
+  await page.keyboard.press('Tab');
+  assert.equal(await menu.count(),0);
+  record('card-menu-Home-End-and-Tab-dismissal');
+  await page.evaluate(async()=>{
+    window.draftChecks={applied:0,reads:0};
+    await ECGReportStripEditor.open({selection:fixture.picks[0],event:{label:'测试',hr:60},
+      metadata:{},total:90,loadWave:async()=>{draftChecks.reads++;return fixture.entry;},
+      onApply:async()=>{draftChecks.applied++;}});
+  });
+  const stripEditor=page.locator('.rw-strip-editor-dialog[open]');
+  const start=stripEditor.locator('[data-se-start]'), clock=stripEditor.locator('[data-se-clock]');
+  assert(await clock.isDisabled());
+  await start.fill('');
+  await stripEditor.locator('[data-se-preview-button]').click();
+  await page.waitForFunction(()=>document.querySelector('[data-se-status]')?.textContent.includes('范围须位于'));
+  assert.deepEqual(await page.evaluate(()=>draftChecks),{applied:0,reads:1});
+  await stripEditor.locator('button[type=submit]').click();
+  assert(await clock.isDisabled());
+  assert(await stripEditor.isVisible());
+  await start.fill('0');
+  await stripEditor.locator('button[type=submit]').click();
+  await stripEditor.waitFor({state:'detached'});
+  assert.deepEqual(await page.evaluate(()=>draftChecks),{applied:1,reads:2});
+  record('empty-offset-cannot-preview-or-save-as-zero-and-source-clock-stays-readonly');
+  await page.evaluate(()=>ECGReportStripEditor.open({selection:fixture.picks[0],event:{label:'时钟测试',hr:60},
+    metadata:{start_time:'2026-01-01 08:00:00'},total:90,loadWave:async()=>fixture.entry,onApply:async()=>{draftChecks.applied++;}}));
+  await clock.fill('');
+  assert.equal(await start.inputValue(),'');
+  await stripEditor.locator('[data-se-preview-button]').click();
+  assert.match(await stripEditor.locator('[data-se-status]').textContent(),/范围须位于/);
+  await clock.fill('2026-01-01T08:00');
+  assert.equal(await start.inputValue(),'0');
+  await stripEditor.locator('button[type=submit]').click();
+  await stripEditor.waitFor({state:'detached'});
+  assert.equal(await page.evaluate(()=>draftChecks.applied),2);
+  record('clearing-record-clock-also-clears-offset-and-explicit-origin-remains-valid');
+  await page.evaluate(()=>{fixture.state.currentPage='report';menuFixture.stale();});await page.locator('[data-rw-mini="0"]').click({button:'right'});assert.equal(await menu.count(),0);assert.equal(await page.evaluate(()=>JSON.stringify(fixture.state.reportComposition)),snapshot);assert.equal(await page.evaluate(()=>calls.some(c=>['POST','PUT','PATCH','DELETE'].includes(c.method))),false);record('expired-owner-cannot-open-and-opening-cancelling-never-writes-report-or-beats');
+ }else if(scenario==='batch'){
+  await page.setContent(menuHTML({withBatch:true}));
+  const pick=page.locator('[data-rw-batch-pick]'),first=page.locator('[data-rw-mini="0"]'),stale=page.locator('[data-rw-mini="1"]');
+  const remove=page.locator('[data-rw-batch-remove]');
+  await first.locator('svg').waitFor();
+  await page.evaluate(()=>{window.originalWave=document.querySelector('[data-rw-mini="0"]');window.originalEditor=document.querySelector('#conclusionEditor');});
+  await pick.first().check();
+  await stale.click({button:'right',modifiers:['Control']});
+  assert.equal(await pick.evaluateAll(nodes=>nodes.filter(node=>node.checked).length),2);
+  assert(await page.evaluate(()=>originalWave===document.querySelector('[data-rw-mini="0"]')&&originalEditor===document.querySelector('#conclusionEditor')));
+  await first.click({button:'right',modifiers:['Meta']});
+  assert.equal(await pick.first().isChecked(),false);
+  await page.locator('[data-review-filter=stale]').click();
+  await page.locator('[data-rw-batch-all]').uncheck();
+  await page.locator('[data-rw-batch-all]').check();
+  assert.equal(await pick.first().isChecked(),false);
+  await stale.click({button:'right'});
+  await page.getByRole('menuitem',{name:'移除所选图条（1）'}).click();
+  const dialog=page.getByRole('dialog',{name:'移除 1 张图条？'});
+  await dialog.getByRole('button',{name:'取消',exact:true}).click();
+  await page.locator('.rw-strip-remove-dialog').waitFor({state:'detached'});
+  assert.deepEqual(await page.evaluate(()=>actions),[]);
+  await remove.click();
+  await dialog.getByRole('button',{name:'确认移除'}).click();
+  await page.locator('.rw-strip-remove-dialog').waitFor({state:'detached'});
+  assert.deepEqual(await page.evaluate(()=>actions),[['batch',[1]]]);
+  assert(await remove.isDisabled());
+  await pick.nth(1).check();
+  await page.evaluate(()=>{window.batchScope='reopened';menuFixture.remount();});
+  assert.equal(await page.locator('[data-rw-batch-pick]:checked').count(),0);
+  await page.evaluate(()=>{window.readonlyBatch=true;menuFixture.remount();});
+  assert.equal(await pick.count(),0);
+  record('click-and-modified-right-click-select-without-redrawing-filters-and-reopened-drafts-limit-selection-confirmation-reaches-current-indices');
+ }else if(scenario==='stt'){
+  await page.setContent(sttHTML());await page.evaluate(()=>initial);const show=(state,elig,code,old=false)=>page.evaluate(async v=>sttFixture.show(...v),[state,elig,code,old]);const flags=()=>page.locator('[data-stt-use][data-stt-index="0"]').evaluateAll(ns=>ns.map(n=>({key:n.dataset.sttUse,disabled:n.disabled,checked:n.checked})));
+  for(const state of ['unreviewed','stale']){await show(state,{table:false,text:false,strip:false},'indeterminate');assert((await flags()).every(n=>n.disabled));assert.match(await page.locator('[data-stt-use-reason="0"]').textContent(),state==='stale'?/依据已变化/:/待复核/);assert.equal(await page.locator('[data-stt-edit-record="0"]').isVisible(),true);}record('unreviewed-and-stale-records-explain-disabled-purposes-and-offer-direct-edit');
+  for(const code of ['no_change','indeterminate']){await show('reviewed',{table:false,text:true,strip:true},code);assert.deepEqual((await flags()).map(n=>n.disabled),[true,false,false]);assert.match(await page.locator('[data-stt-use-reason="0"]').textContent(),/事件表需≥1分钟/);}record('current-no-change-and-indeterminate-keep-text-and-strip-available-with-table-rule-explained');
+  await show('reviewed',{table:true,text:true,strip:true},'st_depression');assert((await flags()).every(n=>!n.disabled));await show('reviewed',{table:true,text:true,strip:true},'st_depression',true);assert.deepEqual((await flags()).map(n=>n.disabled),[false,true,true]);assert.equal((await flags())[0].checked,true);assert.match(await page.locator('[data-stt-use-reason="0"]').textContent(),/先取消旧用途/);record('valid-abnormal-purposes-stay-open-and-old-adopted-purpose-can-only-be-withdrawn');
+  await page.locator('[data-stt-edit-record="0"]').click();await page.evaluate(()=>memberFixture.settle());assert.deepEqual(await page.evaluate(()=>navigation),['stt']);assert.equal(await page.evaluate(()=>state.sttRequestedRecordId),await page.evaluate(()=>eventA.event_id));record('row-edit-uses-existing-leave-guard-and-opens-the-exact-review-record');
+  await show('stale',{table:false,text:false,strip:false},'indeterminate');await page.evaluate(()=>{window.holdLeave=true;window.navigation=[];});await page.locator('[data-stt-edit-record="0"]').click();await page.waitForFunction(()=>typeof leaveDone==='function');await page.evaluate(()=>{state.caseId='changed-mathematical';state.caseRequestId++;leaveDone(true);});await page.evaluate(()=>memberFixture.settle());assert.deepEqual(await page.evaluate(()=>navigation),[]);record('case-change-during-leave-resolution-refuses-old-record-navigation');
+  await show('stale',{table:false,text:false,strip:false},'indeterminate');await page.screenshot({path:path.join(out,'stt-reason-1600.png')});await page.setViewportSize({width:1280,height:720});await page.screenshot({path:path.join(out,'stt-reason-1280.png')});
+ }else throw Error('Unknown scenario');
+ assert.deepEqual(result.page_errors,[]);assert.deepEqual(result.network,[]);result.passed=true;
+}catch(error){result.failure=error.stack;throw error;}finally{await browser?.close();fs.writeFileSync(path.join(out,scenario+'-results.json'),JSON.stringify(result,null,2)+'\n');}})().catch(e=>{console.error(e);process.exitCode=1;});

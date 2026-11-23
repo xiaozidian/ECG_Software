@@ -1,0 +1,238 @@
+from __future__ import annotations
+
+import math
+import sys
+from array import array
+from pathlib import Path
+
+from .config import CHANNEL_COUNT, SAMPLE_RATE
+from .signal_profile import raw_signal_metadata
+from .source_identity import require_waveform_file, source_read, SourceInvalid
+
+ALL_LEADS = ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
+
+
+def _selected_leads(leads):
+    if leads is None:
+        return ["II", "V1", "V5"]
+    if (not isinstance(leads, list) or not leads
+            or any(not isinstance(lead, str) or lead not in ALL_LEADS for lead in leads)):
+        raise ValueError("导联包含不支持的值")
+    if len(set(leads)) != len(leads):
+        raise ValueError("导联不能重复")
+    return list(leads)
+
+
+def _seconds(value, label, *, positive=False):
+    if (isinstance(value, bool) or not isinstance(value, (int, float))
+            or not math.isfinite(value) or value < 0 or (positive and value == 0)):
+        raise ValueError(f"{label}必须为{'正' if positive else '非负'}有限秒数")
+    return float(value)
+
+
+def _point_limit(value):
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError("max_points 必须为整数")
+    return max(200, min(value, 12000))
+
+
+def _display_filter(values: list[float], sample_rate: int) -> list[float]:
+    if not values:
+        return values
+    highpass_decay = math.exp(-2 * math.pi * 0.5 / sample_rate)
+    lowpass_mix = 1 - math.exp(-2 * math.pi * 40 / sample_rate)
+    baseline = values[0]
+    low = 0.0
+    output: list[float] = []
+    for value in values:
+        baseline = highpass_decay * baseline + (1 - highpass_decay) * value
+        high = value - baseline
+        low += lowpass_mix * (high - low)
+        output.append(round(low, 2))
+    return output
+
+
+def _derive(channels: list[list[int]]) -> dict[str, list[float]]:
+    lead_i, lead_ii = channels[0], channels[1]
+    result: dict[str, list[float]] = {
+        "I": lead_i,
+        "II": lead_ii,
+        "III": [b - a for a, b in zip(lead_i, lead_ii)],
+        "aVR": [-(a + b) / 2 for a, b in zip(lead_i, lead_ii)],
+        "aVL": [a - b / 2 for a, b in zip(lead_i, lead_ii)],
+        "aVF": [b - a / 2 for a, b in zip(lead_i, lead_ii)],
+    }
+    for index, name in enumerate(("V1", "V2", "V3", "V4", "V5", "V6"), start=2):
+        result[name] = channels[index]
+    return result
+
+
+@source_read
+def read_waveform_overview(path: Path, leads=None, bins=1000):
+    """Every raw sample contributes to a bounded min/max envelope, including QS.
+
+    Only one bin is in memory. This is a navigation envelope, not a diagnostic
+    resampling, and never replaces or rewrites the source signal.
+    """
+    import numpy as np
+    path=Path(path); selected=_selected_leads(leads)
+    if type(bins) is not int or not 50 <= bins <= 1600: raise ValueError('全览分箱须为50–1600')
+    total=require_waveform_file(path).st_size//(CHANNEL_COUNT*2)
+    boundaries=[i*total//min(total,bins) for i in range(min(total,bins)+1)]
+    output={lead:[] for lead in selected}
+    with path.open('rb') as stream:
+        for a,b in zip(boundaries,boundaries[1:]):
+            raw=stream.read((b-a)*CHANNEL_COUNT*2)
+            if len(raw)!=(b-a)*CHANNEL_COUNT*2: raise SourceInvalid('全记录波形读取不完整')
+            values=np.frombuffer(raw,dtype='<i2').reshape((-1,CHANNEL_COUNT))
+            for lead in selected:
+                if lead in ('I','II'): v=values[:,('I','II').index(lead)]
+                elif lead.startswith('V'): v=values[:,int(lead[1:])+1]
+                else:
+                    one,two=values[:,0].astype(np.float64),values[:,1].astype(np.float64)
+                    v={'III':lambda:two-one,'aVR':lambda:-(one+two)/2,'aVL':lambda:one-two/2,'aVF':lambda:two-one/2}[lead]()
+                output[lead].append([float(v.min()),float(v.max())])
+    return dict(start_s=0,total_duration_s=total/SAMPLE_RATE,total_samples=total,
+        sample_rate_hz=SAMPLE_RATE,bin_edges_s=[s/SAMPLE_RATE for s in boundaries],
+        leads=output,**raw_signal_metadata(),method='全记录原始采样逐箱最小/最大包络；仅用于时间导航，请在局部原始波形复核；不改变采样、增益、R点或RR。')
+
+
+@source_read
+def read_waveform(
+    path: Path,
+    start_s: float,
+    duration_s: float,
+    leads: list[str] | None = None,
+    max_points: int = 4000,
+    apply_filter: bool = True,
+) -> dict:
+    return _read_waveform(path, start_s, duration_s, leads, max_points, apply_filter)
+
+
+def _read_waveform(path, start_s, duration_s, leads, max_points, apply_filter, *, exact_window=False):
+    selected = _selected_leads(leads)
+    start_s = _seconds(start_s, "波形起点")
+    duration_s = max(1 / SAMPLE_RATE if exact_window else 1.0,
+                     min(_seconds(duration_s, "波形时长", positive=True), 120.0))
+    point_limit = _point_limit(max_points)
+    total_samples = require_waveform_file(path).st_size // (CHANNEL_COUNT * 2)
+    # Match event reads: floor off-grid times, but correct binary float error
+    # at an exact 5 ms boundary (tolerance 1e-7 sample, not a new nearest rule).
+    start_sample = min(int(start_s * SAMPLE_RATE + 1e-7), max(total_samples - 1, 0))
+    requested = int(duration_s * SAMPLE_RATE + 1e-7)
+    if exact_window:
+        # A strip is a requested interval, including subsecond/edge excerpts.
+        # Floor both endpoints independently, matching event overview reads.
+        requested = max(1, int((start_s + duration_s) * SAMPLE_RATE + 1e-7) - start_sample)
+    sample_count = min(requested, total_samples - start_sample)
+    byte_count = sample_count * CHANNEL_COUNT * 2
+    with path.open("rb") as stream:
+        stream.seek(start_sample * CHANNEL_COUNT * 2)
+        raw = stream.read(byte_count)
+    if len(raw) != byte_count:
+        raise SourceInvalid('DATA 波形读取不完整，请核对原始文件与存储设备后重试。')
+    samples = array("h")
+    samples.frombytes(raw)
+    if sys.byteorder != "little":
+        samples.byteswap()
+    channels = [list(samples[index::CHANNEL_COUNT]) for index in range(CHANNEL_COUNT)]
+    derived = _derive(channels)
+    stride = max(1, math.ceil(sample_count / point_limit))
+    output = {}
+    for lead in selected:
+        values = derived[lead]
+        if apply_filter:
+            values = _display_filter(values, SAMPLE_RATE)
+        output[lead] = values[::stride]
+    return {
+        "start_s": round(start_sample / SAMPLE_RATE, 3),
+        "duration_s": round(sample_count / SAMPLE_RATE, 3),
+        "sample_rate_hz": SAMPLE_RATE,
+        "display_sample_rate_hz": SAMPLE_RATE / stride,
+        "stride": stride,
+        **raw_signal_metadata(),
+        "leads": output,
+        "total_duration_s": round(total_samples / SAMPLE_RATE, 3),
+        "filter": "0.5–40 Hz display filter" if apply_filter else "raw",
+    }
+
+
+@source_read
+def read_waveform_strips(
+    path: Path,
+    sample_indices: list[int],
+    pre_s: float = 1.5,
+    post_s: float = 2.5,
+    leads: list[str] | None = None,
+    max_points: int = 800,
+    apply_filter: bool = True,
+) -> dict:
+    """Read small, independently centered waveform excerpts for a virtual list."""
+    selected = _selected_leads(leads)
+    pre_s = _seconds(pre_s, "片段前窗")
+    post_s = _seconds(post_s, "片段后窗")
+    if pre_s + post_s <= 0:
+        raise ValueError("片段总时长必须为正有限秒数")
+    _point_limit(max_points)
+    total_samples = require_waveform_file(path).st_size // (CHANNEL_COUNT * 2)
+    result = []
+    for sample_index in sample_indices:
+        if isinstance(sample_index, bool) or not isinstance(sample_index, int):
+            raise ValueError("sample_indices 必须全部为整数")
+        if not 0 <= sample_index < total_samples:
+            raise ValueError("片段位置超出波形记录范围")
+        anchor_s = sample_index / SAMPLE_RATE
+        start_s = max(0.0, anchor_s - pre_s)
+        end_s = min(total_samples / SAMPLE_RATE, anchor_s + post_s)
+        payload = _read_waveform(
+            path,
+            start_s,
+            max(end_s - start_s, 1 / SAMPLE_RATE),
+            selected,
+            max_points,
+            apply_filter,
+            exact_window=True,
+        )
+        result.append({
+            **raw_signal_metadata(),
+            "sample_rate_hz": SAMPLE_RATE,
+            "sample_index": sample_index,
+            "time_s": round(anchor_s, 3),
+            "start_s": payload["start_s"],
+            "duration_s": payload["duration_s"],
+            "anchor_offset_s": round(anchor_s - payload["start_s"], 3),
+            "display_sample_rate_hz": payload["display_sample_rate_hz"],
+            "stride": payload["stride"],
+            "leads": payload["leads"],
+        })
+    return {
+        "sample_rate_hz": SAMPLE_RATE,
+        **raw_signal_metadata(),
+        "filter": "0.5–40 Hz display filter" if apply_filter else "raw",
+        "leads": selected,
+        "items": result,
+    }
+
+
+@source_read
+def read_event_waveform(path, start_s, end_s, leads=None, max_points=2400):
+    """Whole event overview. Directly sample bounded positions; no 120 s truncation."""
+    import mmap
+    import struct
+    selected = _selected_leads(leads)
+    start_s = _seconds(start_s, "事件波形起点")
+    end_s = _seconds(end_s, "事件波形终点", positive=True)
+    if end_s <= start_s:
+        raise ValueError("事件波形终点必须晚于起点")
+    point_limit = _point_limit(max_points)
+    frame_bytes=CHANNEL_COUNT*2
+    total=require_waveform_file(path).st_size//frame_bytes
+    first=max(0,min(total-1,int(start_s*SAMPLE_RATE+1e-7)))
+    last=min(total,max(first+1,int(end_s*SAMPLE_RATE+1e-7)))
+    stride=max(1,math.ceil((last-first)/point_limit))
+    channels=[[] for _ in range(CHANNEL_COUNT)]
+    with Path(path).open('rb') as f, mmap.mmap(f.fileno(),0,access=mmap.ACCESS_READ) as raw:
+        for sample in range(first,last,stride):
+            for i,value in enumerate(struct.unpack_from(f'<{CHANNEL_COUNT}h',raw,sample*frame_bytes)):channels[i].append(value)
+    derived=_derive(channels)
+    return dict(start_s=first/SAMPLE_RATE,duration_s=(last-first)/SAMPLE_RATE,sample_rate_hz=SAMPLE_RATE,display_sample_rate_hz=SAMPLE_RATE/stride,stride=stride,**raw_signal_metadata(),filter='raw overview',leads={k:derived[k] for k in selected},beats=[],annotations=[])

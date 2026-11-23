@@ -1,0 +1,405 @@
+"""Paper-report data contract. No diagnosis, source-data mutation or invented leads."""
+from __future__ import annotations
+
+from bisect import bisect_left
+from datetime import datetime, timedelta
+import math
+from .rr_quality import qrs_rows, interval_mask, valid_rr_rows, consistent_rate, rhythm_episodes, rhythm_summary
+
+LEADS = ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
+DEFAULT_LEADS = ["II", "V1", "V5"]
+
+
+def strip_review_note(entry):
+    """Episode confirmation is independent of beat review and report approval."""
+    if entry.get('category') != 'AF':
+        return ''
+    name = '房扑' if entry.get('subtype') == 'AFL' else '房颤'
+    status = entry.get('rhythm_status')
+    if status == 'confirmed':
+        return f'{name}片段已确认 · 不代表报告已审核'
+    if status == 'excluded':
+        return f'{name}片段已排除 · 不应入报'
+    return f'{name}片段待复核 · 非确诊'
+
+
+def group_af_report_strips(entries):
+    """Arrange printable AF figures under their unchanged parent episode.
+
+    This is a presentation projection: it never writes a selection, changes a
+    strip identity or supplies an episode to the diagnostic statistics. An old
+    selection without a guarded event identity keeps its existing presentation.
+    """
+    printable = list(entries)
+    groups = {}
+    keys = {}
+    for position, entry in enumerate(printable):
+        event, basis = entry.get('event_id'), entry.get('basis_version')
+        if entry.get('print_enabled') is False or entry.get('category') != 'AF' or not isinstance(event, str) or not event or not isinstance(basis, str) or not basis:
+            continue
+        key = (event, basis)
+        groups.setdefault(key, []).append((position, entry))
+        keys[position] = key
+
+    def finite(value):
+        return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+    def bounds(entry):
+        strip, wave = entry.get('strip') or {}, entry.get('waveform') or {}
+        start = strip.get('start_s', wave.get('start_s', entry.get('range_start_s')))
+        end = strip.get('end_s', entry.get('range_end_s'))
+        if not finite(end) and finite(start):
+            duration = strip.get('actual_duration_s', wave.get('duration_s'))
+            end = start + duration if finite(duration) else None
+        return start, end
+
+    result, emitted = [], set()
+    episode_number = 0
+    for position, original in enumerate(printable):
+        key = keys.get(position)
+        if key is None:
+            result.append(original)
+            continue
+        if key in emitted:
+            continue
+        emitted.add(key)
+        episode_number += 1
+        members = groups[key]
+        members.sort(key=lambda item: (
+            bounds(item[1])[0] if finite(bounds(item[1])[0]) else math.inf,
+            bounds(item[1])[1] if finite(bounds(item[1])[1]) else math.inf,
+            item[0]))
+        parent = members[0][1]
+        first_sample, end = parent.get('start_sample'), parent.get('end_s')
+        start = first_sample / 200 if finite(first_sample) else parent.get('time_s')
+        if not finite(start) or not finite(end) or end <= start:
+            # Do not manufacture a whole-episode range from one short figure.
+            result.extend(entry for _, entry in members)
+            continue
+        for strip_index, (_, entry) in enumerate(members, 1):
+            strip_start, strip_end = bounds(entry)
+            result.append({**entry, 'af_report_group': dict(
+                event_id=key[0], basis_version=key[1],
+                rhythm_episode_id=parent.get('rhythm_episode_id'),
+                episode_number=episode_number, kind=parent.get('subtype', 'AF'),
+                episode_start_s=start, episode_end_s=end, episode_duration_s=end - start,
+                strip_index=strip_index, strip_count=len(members),
+                representative_role=entry.get('representative_role'),
+                strip_start_s=strip_start, strip_end_s=strip_end)})
+    return result
+
+
+def valid_rr_pairs(rows, duration):
+    """Project exact endpoints using the unchanged shared interval quality rules.
+
+    A cached RR can differ by up to 10 ms under that contract; it is not an
+    exact coordinate. Keep original row references and never bridge artifacts.
+    """
+    qrs = qrs_rows(rows)
+    valid = interval_mask(qrs)
+    return [(qrs[i-1], r) for i, r in enumerate(qrs)
+            if valid[i] and r['sample_index']/200 < duration]
+
+
+def paper_segments(entry, paper=None):
+    """Split only the rendered paper, never the curated event or its samples.
+
+    Half-open sample-aligned windows assign boundary beats exactly once.
+    Legacy reports retain their full-window fit until explicitly switched.
+    """
+    paper = paper or {}
+    if paper.get('time_scale', 'fit') != 'fixed':
+        return [entry]
+    speed = float(str(paper.get('speed', '25 mm/s')).split()[0])
+    if speed not in (12.5, 25, 50):
+        raise ValueError('不支持的固定纸速')
+    wave = entry['waveform']
+    first = round(wave['start_s'] * 200)
+    count = round(wave['duration_s'] * 200)
+    capacity = int(175 / speed * 200)
+    total = math.ceil(count / capacity)
+    result = []
+    for i, offset in enumerate(range(0, count, capacity)):
+        duration = min(capacity, count - offset) / 200
+        start = (first + offset) / 200
+        beats = sum(first + offset <= b['sample_index'] < first + offset + round(duration * 200)
+                    for b in wave.get('beats', []))
+        result.append({**entry, 'paper_segment': {'index': i + 1, 'count': total,
+            'start_s': start, 'duration_s': duration, 'width_mm': duration * speed,
+            'beat_count': beats}})
+    return result
+
+
+def strip_settings(raw=None):
+    raw = raw or {}
+    leads = raw.get("leads", DEFAULT_LEADS)
+    if not isinstance(leads, list) or not leads or len(leads) > 12 or any(x not in LEADS for x in leads) or len(set(leads)) != len(leads):
+        raise ValueError("请选择 1–12 个不重复的有效导联")
+    seconds = raw.get("duration_s", 7)
+    if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or not math.isfinite(seconds) or not 1 <= seconds <= 120:
+        raise ValueError("入报时长须为 1–120 秒；不足 5 搏将自动延长")
+    result = {"leads": [x for x in LEADS if x in leads], "duration_s": seconds}
+    if 'range_start_s' in raw or 'range_end_s' in raw:
+        a, b = raw.get('range_start_s'), raw.get('range_end_s')
+        if any(isinstance(x,bool) or not isinstance(x,(int,float)) or not math.isfinite(x) for x in (a,b)) or a<0 or not 1<=b-a<=120:
+            raise ValueError('人工入报区间须为非负起点、1–120 秒，并同时提供起止时间')
+        result.update(range_start_s=math.floor(a*200+.5)/200,range_end_s=math.floor(b*200+.5)/200)
+    return result
+
+
+def beat_rows(index):
+    return sorted((r for r in index["rows"] if r.get("class_code") not in ("X", "O", "Y", "T") and 0 <= r["sample_index"] < index["duration_s"] * 200), key=lambda r: r["sample_index"])
+
+
+def resolve_strip(index, event, settings=None):
+    settings = strip_settings(settings)
+    total = max(.005, index["duration_s"])
+    anchor = min(max(0, event["start_sample"] / 200), total)
+    if event.get('category')=='ST' and isinstance(event.get('stt_event_evidence'),dict):
+        anchor=min(max(0,event['stt_event_evidence'].get('peak_time_s',anchor)),total)
+    length = min(total, settings["duration_s"])
+    start = max(0, min(anchor - length / 2, total - length))
+    end = start + length
+    pause_start_sample = None
+    if event.get('category') in ('pause','rr_candidate'):
+        # Re-read the current endpoints rather than trusting a saved event's
+        # cached RR or supplied coordinates. Noise remains an interval boundary.
+        pairs = [(a,b) for a,b in valid_rr_pairs(index['rows'], index['duration_s'])
+                 if b['sample_index'] == event['start_sample'] and (b['rr_ms'] > 2500 if event.get('category')=='pause' else a['sample_index']==event.get('candidate_context',{}).get('rr_start_sample'))]
+        if len(pairs) != 1:
+            raise ValueError('长 RR 的 R 峰依据已变化，请重新选择事件')
+        pause_start_sample = pairs[0][0]['sample_index']
+        start = max(0, min(start, pause_start_sample / 200 - .2))
+        end = min(total, max(end, anchor + .3))
+    rows = beat_rows(index)
+    times = [r["sample_index"] / 200 for r in rows]
+    # Keep a little ECG on each side of each R peak, including at record edges.
+    count = lambda a, b: sum(a <= t < b for t in times)
+    manual = 'range_start_s' in settings
+    if manual:
+        start,end=settings['range_start_s'],settings['range_end_s']
+        if end > total:
+            raise ValueError('人工区间须在记录范围内，并包含当前事件定位心搏')
+        if event.get('category') in ('AF','ST'):
+            episode_start = event['start_sample']/200
+            episode_end = event.get('end_s', event.get('end_sample', event['start_sample'])/200)
+            if not start < episode_end or not end > episode_start:
+                raise ValueError('代表图条须与当前房颤／房扑或 ST 事件片段相交')
+        elif not start<=anchor<end:
+            raise ValueError('人工区间须在记录范围内，并包含当前事件定位心搏')
+        if pause_start_sample is not None and round(start*200)>pause_start_sample:
+            raise ValueError('RR 候选入图须包含完整间期的两个 R 峰（原始计时点）')
+        if count(start,end)<min(5,len(times)):
+            raise ValueError('人工入报区间至少包含 5 个可用心搏，请向外拖动橘色边界')
+    if not manual and count(start, end) < 5 and times:
+        n = min(5, len(times))
+        pivot = min(len(times) - 1, bisect_left(times, anchor))
+        candidates = []
+        for i in range(max(0, pivot - n), min(pivot + 1, len(times) - n + 1)):
+            lo, hi = max(0, min(start, times[i] - .2)), min(total, max(end, times[i + n - 1] + .3))
+            candidates.append((hi - lo, abs((hi + lo) / 2 - anchor), lo, hi))
+        if candidates:
+            _, _, start, end = min(candidates)
+    start = math.floor(start * 200 + 1e-7) / 200
+    end = min(total, math.ceil(end * 200 - 1e-7) / 200)
+    visible = [{k: r.get(k) for k in ("sample_index", "class_code", "hr", "rr_ms")} for r in rows if start <= r["sample_index"] / 200 < end]
+    actual = round(end - start, 3)
+    warning = f"记录可用心搏不足 5 个，当前仅 {len(visible)} 搏" if len(visible) < 5 else ""
+    if not manual and actual > settings["duration_s"] + .01:
+        reason = '覆盖完整 RR 间期并包含至少 5 搏' if event.get('category') == 'pause' else '包含至少 5 搏'
+        warning = f"为{reason}，已由 {settings['duration_s']:g} 秒延长至 {actual:g} 秒" + (f"；{warning}" if warning else "")
+    context_anchor = (start + end)/2 if manual and event.get('category') in ('AF','ST') else anchor
+    return {**settings, "start_s": start, "end_s": end, "actual_duration_s": actual,
+            "visible_beats": visible, "visible_beat_count": len(visible), "warning": warning,
+            "context_start_s": max(0, min(context_anchor - max(30, actual * 3) / 2, total - min(total, max(30, actual * 3)))),
+            "context_duration_s": min(total, max(30, actual * 3))}
+
+
+def prepare_strip(index, event, settings, reader):
+    spec = resolve_strip(index, event, settings)
+    wave = reader(spec["start_s"], spec["end_s"], spec["leads"], 12000)
+    wave["beats"] = spec["visible_beats"]
+    context = reader(spec["context_start_s"], spec["context_start_s"] + spec["context_duration_s"], ["II"], 1600)
+    return {**event, "strip": spec, "waveform": wave, "context": context}
+
+
+def af_representatives(index, event, settings=None):
+    """Read-only recommendations; the rhythm episode itself is never changed."""
+    if event.get('category') != 'AF':
+        raise ValueError('仅房颤／房扑片段支持代表图条推荐')
+    settings = strip_settings(settings)
+    settings.pop('range_start_s',None); settings.pop('range_end_s',None)
+    a, b = event['start_sample']/200, event.get('end_s', event['end_sample']/200)
+    length = settings['duration_s']
+    anchors = dict(start=a+length/2, middle=(a+b)/2, end=b-length/2)
+    if b-a <= length:
+        anchors = dict.fromkeys(anchors, (a+b)/2)
+    positions = {}
+    for role, anchor in anchors.items():
+        spec = resolve_strip(index, {**event, 'start_sample': math.floor(anchor*200+.5)}, settings)
+        selectable = spec['visible_beat_count'] >= 5 and spec['actual_duration_s'] <= 120
+        warning = spec['warning']
+        if spec['actual_duration_s'] > 120:
+            warning = '包含 5 搏所需范围超过 120 秒，请人工回看后选择可用图条'
+        positions[role] = dict(representative_role=role, start_s=spec['start_s'], end_s=spec['end_s'],
+            visible_beat_count=spec['visible_beat_count'], duration_s=spec['actual_duration_s'],
+            warning=warning, selectable=selectable)
+    available = {role: p for role,p in positions.items() if p['selectable']}
+    whole = next((available[role] for role in ('middle','start','end') if role in available
+                  and available[role]['start_s'] <= a and available[role]['end_s'] >= b), None)
+    if whole:
+        items = [whole]
+    else:
+        items = []
+        for role in ('start','end'):
+            p = available.get(role)
+            if p and not any((p['start_s'],p['end_s']) == (q['start_s'],q['end_s']) for q in items):
+                items.append(p)
+        middle = available.get('middle')
+        if middle:
+            cursor = middle['start_s']
+            for p in sorted(items, key=lambda q:q['start_s']):
+                if p['start_s'] <= cursor: cursor = max(cursor,p['end_s'])
+            if cursor < middle['end_s']: items.append(middle)
+        items.sort(key=lambda p: ('start','middle','end').index(p['representative_role']))
+    return dict(items=items, positions=positions, episode_start_s=a, episode_end_s=b,
+                units='seconds', minimum_visible_beats=5, requested_duration_s=length)
+
+
+def stt_representatives(index, event, settings=None):
+    """Recommend actual start/extreme/end evidence without adopting report uses.
+
+    The legacy representative role ``middle`` denotes the actual measured
+    extreme here. This keeps saved strip identities compatible; anchor_kind
+    and label explicitly describe the position instead of claiming a midpoint.
+    """
+    if event.get('category') != 'ST':
+        raise ValueError('仅 ST-T 复核记录支持此代表图条推荐')
+    settings = strip_settings(settings)
+    settings.pop('range_start_s', None)
+    settings.pop('range_end_s', None)
+    a = event['start_sample'] / 200
+    b = event.get('end_s', event.get('end_sample', event['start_sample']) / 200)
+    if not b > a:
+        raise ValueError('ST-T 复核范围无效')
+    proof = event.get('stt_event_evidence') or {}
+    extreme = proof.get('peak_time_s')
+    if not isinstance(extreme, (int, float)) or isinstance(extreme, bool) or not math.isfinite(extreme) or not a <= extreme < b:
+        children = proof.get('findings') or []
+        extreme = next((c['peak_time_s'] for c in children
+                        if isinstance(c.get('peak_time_s'), (int, float))
+                        and not isinstance(c.get('peak_time_s'), bool)
+                        and math.isfinite(c['peak_time_s']) and a <= c['peak_time_s'] < b), None)
+    # No synthetic extreme: a midpoint is labelled as such if no whole-event
+    # measurement provides a real peak (for example a short doctor's note).
+    anchor_kind = 'extreme' if extreme is not None else 'middle'
+    length = settings['duration_s']
+    anchors = dict(start=a + min(length, b-a)/2,
+                   middle=extreme if extreme is not None else (a+b)/2,
+                   end=b - min(length, b-a)/2)
+    positions = {}
+    for role, anchor in anchors.items():
+        # Use the common resolver's real five-beat expansion. Remove the ST
+        # automatic peak override only in this temporary, unpersisted view.
+        view = {**event, 'start_sample': math.floor(anchor*200+.5)}
+        view.pop('stt_event_evidence', None)
+        spec = resolve_strip(index, view, settings)
+        selectable = spec['visible_beat_count'] >= 5 and spec['actual_duration_s'] <= 120
+        positions[role] = dict(
+            representative_role=role, anchor_kind=anchor_kind if role == 'middle' else role,
+            label=('极值' if anchor_kind == 'extreme' else '段中') if role == 'middle' else '起始' if role == 'start' else '末尾',
+            start_s=spec['start_s'], end_s=spec['end_s'], duration_s=spec['actual_duration_s'],
+            visible_beat_count=spec['visible_beat_count'], selectable=selectable,
+            warning=spec['warning'] if spec['actual_duration_s'] <= 120 else '包含 5 搏所需范围超过 120 秒，请人工选择图条')
+    available = {k: v for k, v in positions.items() if v['selectable']}
+    covering = next((available[r] for r in ('middle', 'start', 'end') if r in available
+                     and available[r]['start_s'] <= a and available[r]['end_s'] >= b), None)
+    items = [covering] if covering else []
+    if not covering:
+        for role in ('start', 'end', 'middle'):
+            p = available.get(role)
+            if not p:
+                continue
+            cursor = p['start_s']
+            for previous in sorted(items, key=lambda q: q['start_s']):
+                if previous['start_s'] <= cursor:
+                    cursor = max(cursor, previous['end_s'])
+            if cursor < p['end_s']:
+                items.append(p)
+        items.sort(key=lambda p: ('start', 'middle', 'end').index(p['representative_role']))
+    return dict(items=items, positions=positions, episode_start_s=a, episode_end_s=b,
+                units='seconds', minimum_visible_beats=5, requested_duration_s=length)
+
+
+def report_statistics(index, start_time, settings, pause_edges_ms=None):
+    """Beat counts by actual clock hour; pattern episodes assigned to onset hour.
+
+    Runs and repeating patterns are overlapping descriptors, not extra beats or
+    automatic diagnoses. Noise never becomes a valid heartbeat or a heart rate.
+    """
+    rows = beat_rows(index)
+    rr_rows = valid_rr_rows(index['rows'], index['duration_s'])
+    rate_rows = [r for r in rr_rows if consistent_rate(r)]
+    episodes = rhythm_episodes(index['events'])
+    def time_window(items, time_of):
+        times = [time_of(item) for item in items]
+        ordered = (all(math.isfinite(t) for t in times)
+                   and all(a <= b for a, b in zip(times, times[1:])))
+        def select(lo, hi):
+            if ordered:
+                return items[bisect_left(times, lo):bisect_left(times, hi)]
+            # Preserve source order, ties and the scalar predicate for malformed
+            # input; indexing must never repair or sort the clinical population.
+            return [item for item, t in zip(items, times) if lo <= t < hi]
+        return select
+    beats_in = time_window(rows, lambda r: r['sample_index'] / 200)
+    rates_in = time_window(rate_rows, lambda r: r['sample_index'] / 200)
+    intervals_in = time_window(rr_rows, lambda r: r['sample_index'] / 200)
+    events_in = time_window(index['events'], lambda e: e['time_s'])
+    noise_in = time_window([r for r in index['rows'] if r['class_code'] == 'X'],
+                           lambda r: r['sample_index'] / 200)
+    try:
+        clock = datetime.fromisoformat(str(start_time).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        clock = None
+    def aggregate(lo, hi):
+        beats = beats_in(lo, hi)
+        rates = rates_in(lo, hi)
+        intervals = intervals_in(lo, hi)
+        events = events_in(lo, hi)
+        slow = min(rates, key=lambda r: r["hr"]) if rates else None
+        fast = max(rates, key=lambda r: r["hr"]) if rates else None
+        longest = max(intervals, key=lambda r: r["rr_ms"]) if intervals else None
+        rhythm = rhythm_summary(episodes, index['duration_s'], lo, hi)
+        def point(r):
+            return {"hr": r['hr'] if consistent_rate(r) else None, "time_s": r["sample_index"] / 200, "rr_ms": r["rr_ms"]} if r else None
+        result = {"total": len(beats), "noise": len(noise_in(lo, hi)),
+                  "rr_interval_count": len(intervals), "rate_interval_count": len(rates),
+                  "min_hr": slow["hr"] if slow else None, "max_hr": fast["hr"] if fast else None,
+                  "avg_hr": round(60000 / (sum(r["rr_ms"] for r in rates) / len(rates)), 2) if rates else None,
+                  "fastest": point(fast), "slowest": point(slow), "longest": point(longest),
+                  "tachy_beats": sum(r["hr"] >= settings["tachy"] for r in rates),
+                  "brady_beats": sum(r["hr"] <= settings["brady"] for r in rates),
+                  "pause": sum(e["category"] == "pause" for e in events),
+                  "pause_over3": sum(e["category"] == "pause" and e["rr_ms"] > 3000 for e in events),
+                  "af": rhythm['confirmed_any']['count'], "rhythm": rhythm}
+        for code in ("V", "S"):
+            total = sum(r["class_code"] == code for r in beats)
+            result[code] = {"total": total, "pct": round(total / len(beats) * 100, 2) if beats else None,
+                **{kind: sum(e["category"] == code and e["subtype"] in subtypes for e in events) for kind, subtypes in {
+                    "single": ["single"], "couplet": ["couplet"], "run": ["triplet", "run"],
+                    "bigeminy": ["bigeminy"], "trigeminy": ["nnp", "npp"]}.items()}}
+        return result
+    hourly = []
+    t = 0
+    while t < index["duration_s"]:
+        dt = clock + timedelta(seconds=t) if clock else None
+        length = min(index["duration_s"] - t, 3600 - (dt.minute * 60 + dt.second + dt.microsecond / 1e6 if dt else t % 3600))
+        end = t + length
+        hourly.append({"label": dt.strftime("%m-%d %H:%M") if dt else f"+{t / 3600:g}h", "start_s": t, "end_s": end, **aggregate(t, end)})
+        t = end
+    from .review_candidates import rr_distribution
+    distribution=rr_distribution(index['rows'],index['duration_s'],pause_edges_ms)
+    for bucket in distribution['bins']:bucket.pop('samples')
+    return {"pause_distribution":distribution,"summary": aggregate(0, index["duration_s"]), "hourly": hourly, "settings": settings,
+            "method": "当前修订逐搏统计；心率由有效 RR 计算。成对、短阵和联律按起点计次，模式可重叠，不与总心搏相加；长 RR 为阈值候选，房颤/房扑仅计医生已确认片段。"}

@@ -1,0 +1,36 @@
+.ecg-terminology-tree{color:#29414c;font-size:13px;line-height:1.55;min-width:0;padding:12px;border:1px solid #d3dfe3;border-radius:9px;background:#f7fafb}
+.ecg-terminology-tree h3,.ecg-terminology-tree h4{margin:0 0 8px;font-size:15px;color:#173d4c}
+.ecg-terminology-tree p{margin:7px 0}
+.ecg-terminology-tree .tt-notice{padding:8px 10px;background:#fff5db;border:1px solid #ead7a0;border-radius:6px;color:#64491b}
+.ecg-terminology-tree .tt-declaration,.ecg-terminology-tree .tt-usage-info{font-size:12px;color:#566d78}
+.ecg-terminology-tree .tt-tools,.ecg-terminology-tree .tt-expand-actions,.ecg-terminology-tree .tt-insert-actions{display:flex;align-items:flex-end;gap:7px;flex-wrap:wrap;margin:9px 0}
+.ecg-terminology-tree .tt-tools label{flex:1;min-width:160px}
+.ecg-terminology-tree select,.ecg-terminology-tree input[type=search]{display:block;width:100%;min-width:0;box-sizing:border-box;padding:7px;border:1px solid #bacbd2;border-radius:5px;background:white;color:inherit;font:inherit}
+.ecg-terminology-tree .tt-search{display:block}
+.ecg-terminology-tree button{padding:6px 9px;border:1px solid #bacbd2;border-radius:5px;color:#284957;background:white;font:inherit;text-align:left;cursor:pointer;max-width:100%}
+.ecg-terminology-tree button:disabled{opacity:.5;cursor:default}
+.ecg-terminology-tree button:focus-visible,.ecg-terminology-tree input:focus-visible,.ecg-terminology-tree select:focus-visible{outline:2px solid #187c94;outline-offset:2px}
+.ecg-terminology-tree .tt-catalog-info,.ecg-terminology-tree .tt-meta{font-size:12px;overflow-wrap:anywhere}
+.ecg-terminology-tree .tt-status{min-height:20px;color:#416775;font-size:12px}
+.ecg-terminology-tree .tt-columns{display:grid;grid-template-columns:minmax(135px,.85fr) minmax(165px,1.15fr);gap:10px;min-width:0}
+.ecg-terminology-tree .tt-tree{max-height:380px;overflow:auto;padding:4px;background:white;border:1px solid #d3dfe3;border-radius:6px}
+.ecg-terminology-tree ul{list-style:none;padding:0 0 0 13px;margin:0}
+.ecg-terminology-tree .tt-tree>ul{padding:0}
+.ecg-terminology-tree .tt-row>button{display:block;width:100%;margin:2px 0;padding:6px;border-color:transparent;background:transparent;overflow-wrap:anywhere}
+.ecg-terminology-tree .tt-row>button:hover{background:#edf5f8}
+.ecg-terminology-tree .tt-row>button[aria-selected=true]{background:#e1f0f4;border-color:#91bac6;color:#125166}
+.ecg-terminology-tree .tt-row>button[data-tt-kind=group]{font-weight:600}
+.ecg-terminology-tree .tt-preview{background:white;padding:9px;border:1px solid #d3dfe3;border-radius:6px;min-width:0;max-height:380px;overflow:auto}
+.ecg-terminology-tree pre{font:inherit;white-space:pre-wrap;overflow-wrap:anywhere;margin:7px 0}
+.ecg-terminology-tree .tt-original{padding:9px;background:#edf4f7;border-left:3px solid #43879a;font-size:14px;color:#233d49}
+.ecg-terminology-tree .tt-license summary,.ecg-terminology-tree .tt-import summary{cursor:pointer;font-weight:600}
+.ecg-terminology-tree .tt-license pre{font-size:11px}
+.ecg-terminology-tree .tt-insert-actions button[data-tt-insert]{background:#215f73;border-color:#215f73;color:white}
+.ecg-terminology-tree .tt-import{margin-top:12px;padding-top:8px;border-top:1px solid #d3dfe3}
+.ecg-terminology-tree .tt-import input[type=file]{max-width:100%;display:block;font:inherit;margin:6px 0}
+.ecg-terminology-tree .tt-import-preview{max-height:390px;overflow:auto}
+.ecg-terminology-tree .tt-import-consent{display:flex;gap:7px;align-items:flex-start;margin:10px 0}
+.ecg-terminology-tree .tt-import-consent input{flex:none;margin-top:4px}
+.ecg-terminology-tree .tt-import-content li{padding:7px 0;border-top:1px solid #d3dfe3}
+@media(max-width:620px){.ecg-terminology-tree .tt-columns{grid-template-columns:1fr}.ecg-terminology-tree .tt-tree{max-height:220px}.ecg-terminology-tree .tt-preview{max-height:290px}}
+@media print{.ecg-terminology-tree{display:none!important}}
