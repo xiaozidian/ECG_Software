@@ -3,8 +3,8 @@
   "clinical_acceptance": false,
   "files": {
     ".gitattributes": {
-      "bytes": 303,
-      "sha256": "49d77b6dbafd06f726f9bc11da11b5a4a73542ced8f9c6f7816f341bda0c00ec"
+      "bytes": 380,
+      "sha256": "dec30d737ca261c349cada21e933ee41bb06fc2fdf279396bb0586f3569d4842"
     },
     ".gitignore": {
       "bytes": 657,
@@ -654,6 +654,6 @@
   "release_id": "0.12.34-windows-workbench.20261123",
   "schema": 1,
   "shared_source_fingerprint": "f3afbd342cacf51e22ebdc54473dcb9681943601d1f769f99be631133c3be051",
-  "source_sha256": "92c367d1b4e83284b4a05cd967c30015443742de58dcaaf02de7da84b978738e",
+  "source_sha256": "d87a47fc68395fe962f1a6b9e1e58137128915dc68da932157e432cdaad42bfb",
   "ui_build": "UI 20261123.1"
 }
