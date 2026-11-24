@@ -2,6 +2,22 @@ html[data-demo-portal-blocked] body {
   visibility: hidden;
 }
 
+/* Audit viewing keeps the shared navigation, filters and waveform controls. */
+html[data-demo-review-mode] :is(
+  #workflowNext, #saveReport, #returnReport, #approveReport, #openReportSettings,
+  #reportStatus, #reportSaveState, #saveSttAnnotation, #occDisease, #saveEditClass,
+  .clinical-beat-toolbar, .rw-strip-tools, .rw-output-options,
+  [data-voltage-report], [data-event-decision], [data-include], [data-review-include], [data-review-undo],
+  [data-report-page], .rw-evidence-reference, .rr-stat-config,
+  [data-review-rhythm], [data-confirm-rhythm], [data-rhythm-replace], [data-af-confirm-whole],
+  [data-af-include-current], [data-af-use-view], [data-af-strip-check], [data-af-clear-strips], [data-af-select-recommended],
+  [data-stt-use], [data-stt-active-use], [data-stt-edit], [data-stt-edit-record], [data-stt-include-recommended],
+  [data-range-apply], [data-paper-setting], [data-strip-settings], [data-caption],
+  [data-remove], [data-move], [data-rw-sort], [data-rw-terms]
+) {
+  display: none !important;
+}
+
 .demo-portal {
   margin: 0;
   min-height: 100dvh;

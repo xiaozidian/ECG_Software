@@ -6,12 +6,16 @@
   const page = root.dataset.demoPortalPage;
   const roleKey = 'cardioinsight.demo.portal.role';
   const destinations = {diagnosis: 'diagnosis.html', review: 'review.html'};
-  const requiredRole = {diagnosis: 'diagnosis', workbench: 'diagnosis', review: 'review'}[page];
+  const requiredRole = {diagnosis: 'diagnosis', review: 'review'}[page];
   const caseId = 'math-4314-001';
   const desk = page === 'diagnosis' || page === 'review';
   const labels = {draft: '待诊断', pending: '待审核', returned: '已退回', approved: '已通过（演示）'};
   const feedback = {save: '已保存演示草稿', submit: '已提交演示报告，请切换为审核医生', withdraw: '已撤回送审', return: '已退回诊断医生', approve: '演示审核已通过'};
   const allowed = {diagnosis: {draft: ['save', 'submit'], returned: ['save', 'submit'], pending: ['withdraw']}, review: {pending: ['approve', 'return']}};
+  // Some workbench reads use POST to carry waveform ranges and event selections.
+  const evidenceReadPosts = new Set(['event-waveforms', 'waveform-density', 'scatter-selection', 'waveform-strips',
+    'rr-review/locate', 'stt-range', 'report-evidence/preview']);
+  const workbenchView = new URLSearchParams(location.search).get('view');
   let viewed = null;
   let viewedConclusion = '';
 
@@ -26,7 +30,7 @@
 
   function guardRole() {
     const role = currentRole();
-    if (!requiredRole || role === requiredRole) return true;
+    if (page === 'workbench' ? role : !requiredRole || role === requiredRole) return true;
     root.dataset.demoPortalBlocked = '';
     location.replace(destinations[role] || 'index.html');
     return false;
@@ -34,14 +38,16 @@
 
   function allowWorkbench() {
     if (!guardRole()) return false;
+    const role = currentRole();
     try {
       const {status} = readWorkspace();
-      if (status !== 'pending' && status !== 'approved') return true;
+      const submitted = status === 'pending' || status === 'approved';
+      if (role === 'review' ? submitted : !submitted) return true;
     } catch {
-      return true; // The shared workbench handles an unreadable local store.
+      if (role === 'diagnosis') return true; // The shared workbench reports storage errors.
     }
     root.dataset.demoPortalBlocked = '';
-    location.replace(destinations.diagnosis);
+    location.replace(destinations[role]);
     return false;
   }
 
@@ -152,30 +158,109 @@
     }
   }
 
+  function guardWorkbenchWrites(reviewer) {
+    const workbenchFetch = window.fetch.bind(window);
+    window.fetch = (input, options = {}) => {
+      const path = new URL(typeof input === 'string' || input instanceof URL ? input : input.url, location.href).pathname;
+      const method = String(options.method || input?.method || 'GET').toUpperCase();
+      if (!path.startsWith('/api/') || method === 'GET' || method === 'HEAD') return workbenchFetch(input, options);
+      const action = path.match(/^\/api\/cases\/[^/]+\/(.+)$/)?.[1];
+      if (method === 'POST' && evidenceReadPosts.has(action)) return workbenchFetch(input, options);
+      if (reviewer && method === 'POST' && action === 'open') return Promise.resolve(Response.json({ok: true}));
+      if (!reviewer && allowWorkbench()) return workbenchFetch(input, options);
+      return Promise.resolve(Response.json({error: '送审报告处于只读复核状态。修改前请退回或撤回送审。'}, {status: 403}));
+    };
+  }
+
+  function setReviewerView() {
+    // The shared UI consults this capability when mounting the editing controls.
+    clinicalWorkflow.writable = () => false;
+    loadLocalReportComposition = () => null;
+    window.addEventListener('load', () => {
+      const editor = document.getElementById('conclusionEditor');
+      editor.readOnly = true;
+      editor.placeholder = '送审报告结论';
+      const dock = editor.closest('article');
+      dock.querySelector('.report-panel-heading small').textContent = '送审版本 · 只读复核';
+      dock.querySelector('footer span').textContent = '审核决定在审核工作台提交';
+    }, {once: true});
+    const suppressEditingMenu = event => {
+      if (!event.target.closest('.rw-strip, #editTemplateGallery, #scatterSelectionList, #waveformCard')) return;
+      if (event.type === 'keydown' && event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    document.addEventListener('contextmenu', suppressEditingMenu, true);
+    document.addEventListener('keydown', suppressEditingMenu, true);
+  }
+
+  function openSubmittedReport() {
+    const content = document.getElementById('reportV2Content');
+    const finalTab = document.querySelector('#reportV2Nav [data-category="final"]');
+    if (!content || !finalTab) return;
+    if (!state.reportEvidenceLoading && !state.reportViewLoading) {
+      if (!state.reportEvidenceError && !state.reportViewError) finalTab.click();
+      return;
+    }
+    const observer = new MutationObserver(() => {
+      if (state.currentPage === 'report' && (state.reportEvidenceLoading || state.reportViewLoading)) return;
+      observer.disconnect();
+      if (state.currentPage === 'report' && !state.reportEvidenceError && !state.reportViewError) finalTab.click();
+    });
+    observer.observe(content, {attributes: true, attributeFilter: ['aria-busy'], childList: true});
+  }
+
   function mountWorkbenchAccount() {
+    const role = currentRole();
+    const reviewer = role === 'review';
     const host = document.getElementById('demoAccountActions');
     const card = document.querySelector('.topbar .role-chip');
+    let evidenceToken;
+    guardWorkbenchWrites(reviewer);
+    if (reviewer) {
+      const {token, version} = readWorkspace();
+      evidenceToken = token;
+      setReviewerView();
+      if (card) card.querySelector('small').textContent = `报告 v${version} · 只读复核`;
+    }
     if (card) {
-      card.querySelector('strong').textContent = '诊断医生';
-      card.querySelector('small').textContent = '演示登录';
+      card.querySelector('strong').textContent = reviewer ? '审核医生' : '诊断医生';
+      if (!reviewer) card.querySelector('small').textContent = '演示登录';
     }
     if (!host) return;
     host.setAttribute('aria-label', '演示账号');
     const worklist = document.createElement('button');
     worklist.type = 'button';
     worklist.dataset.demoDesk = '';
-    worklist.textContent = '返回诊断工作台';
+    worklist.textContent = reviewer ? '返回审核工作台' : '返回诊断工作台';
     const logout = document.createElement('button');
     logout.type = 'button';
     logout.dataset.demoLogout = '';
     logout.textContent = '退出登录';
     host.replaceChildren(worklist, logout);
-    const view = new URLSearchParams(location.search).get('view');
+    function checkCurrentEvidence() {
+      if (!allowWorkbench() || !reviewer) return;
+      if (readWorkspace().token === evidenceToken) return;
+      root.dataset.demoPortalBlocked = '';
+      location.replace(destinations.review);
+    }
+    window.addEventListener('storage', event => {
+      if (!event.key || event.key === workspaceKey()) checkCurrentEvidence();
+    });
+    window.addEventListener('pageshow', event => {
+      if (event.persisted) checkCurrentEvidence();
+    });
+    const view = workbenchView === 'report' ? 'report' : reviewer || workbenchView === 'review' ? 'review' : null;
     if (view === 'review' || view === 'report') window.addEventListener('load', () => {
       if (typeof selectCase !== 'function') return;
       // Case selection cancels in-flight reads. Let the shared index finish first.
       const open = () => {
-        if (allowWorkbench() && !state.caseId) selectCase(caseId, view).catch(handleError);
+        if (!allowWorkbench() || state.caseId) return;
+        selectCase(caseId, view).then(() => {
+          if (reviewer && view === 'report' && state.currentPage === 'report') {
+            openSubmittedReport();
+          }
+        }).catch(handleError);
       };
       const status = document.getElementById('caseIndexStatus');
       if (state.dashboardStatus !== 'loading' || !status) {
@@ -215,10 +300,10 @@
       }
       const role = button.dataset.demoRole;
       if (role && !Object.hasOwn(destinations, role)) return;
-      if (page === 'workbench' && typeof clinicalWorkflow !== 'undefined' && !clinicalWorkflow.allowLeave()) return;
+      if (page === 'workbench' && currentRole() === 'diagnosis' && !clinicalWorkflow.allowLeave()) return;
       if (desk && editorIsDirty() && !window.confirm('诊断结论尚未保存，仍然离开吗？')) return;
       if ('demoDesk' in button.dataset) {
-        location.assign(destinations.diagnosis);
+        location.assign(destinations[currentRole()]);
         return;
       }
       try {
@@ -238,10 +323,10 @@
     return;
   }
   if (!guardRole()) return;
+  if (page === 'workbench' && currentRole() === 'review') root.dataset.demoReviewMode = workbenchView === 'report' ? 'report' : 'evidence';
   document.addEventListener('DOMContentLoaded', bind, {once: true});
   window.addEventListener('pageshow', event => {
     if (!event.persisted) return;
-    if (page === 'workbench') allowWorkbench();
-    else if (guardRole() && desk) renderDesk('', true);
+    if (desk && guardRole()) renderDesk('', true);
   });
 })();
