@@ -1,9 +1,12 @@
 <!doctype html>
 <html lang="zh-CN" data-demo-portal-page="{{ page }}">
 <head>
+  {% set reviewer = page == 'review' %}
+  {% set desk = page in ('diagnosis', 'review') %}
+  {% set title = ('审核工作台' if reviewer else '诊断工作台') if desk else '演示登录' %}
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ '审核工作台' if page == 'review' else '演示登录' }} · CardioInsight</title>
+  <title>{{ title }} · CardioInsight</title>
   <link rel="icon" type="image/svg+xml" href="static/icon.svg">
   <link rel="stylesheet" href="static/css/demo-login.css">
   <script src="static/js/shared-source-version.js"></script>
@@ -15,36 +18,84 @@
       <img src="static/icon.svg" width="36" height="36" alt="">
       <div><strong>CardioInsight</strong><span>心电工作站 · 数学演示</span></div>
     </div>
-    {% if page == 'review' %}
+    {% if desk %}
     <div class="demo-account-actions" aria-label="演示账号">
-      <button type="button" data-demo-role="diagnosis">切换为诊断医生</button>
+      <button type="button" data-demo-role="{{ 'diagnosis' if reviewer else 'review' }}">切换为{{ '诊断医生' if reviewer else '审核医生' }}</button>
       <button type="button" data-demo-logout>退出登录</button>
     </div>
     {% endif %}
   </header>
-  {% if page == 'review' %}
-  <main class="demo-portal-main demo-review-main">
-    <h1>审核工作台</h1>
-    <p class="demo-portal-intro">查看本浏览器已保存的合成病例报告。</p>
+  {% if desk %}
+  <main class="demo-portal-main demo-desk-main">
+    <h1>{{ title }}</h1>
+    <p class="demo-portal-intro">{{ '查看送审报告，审核通过或退回修改。' if reviewer else '复核心电图、编写报告并提交审核。' }}</p>
+    <p class="demo-portal-feedback" data-demo-feedback role="status" hidden></p>
     <p class="demo-portal-error" data-demo-error role="alert" hidden></p>
-    <section class="demo-review-panel" data-demo-report-empty hidden>
-      <h2>暂无已保存报告</h2>
-      <p>以诊断医生身份保存演示报告后，可在这里查看。</p>
+    <section class="demo-review-panel demo-case-list" aria-labelledby="demo-case-title">
+      <header class="demo-report-header"><h2 id="demo-case-title">病例列表</h2><span>1 例</span></header>
+      <div class="demo-case-row" data-demo-case>
+        <span><strong>M01</strong> 数学合成病例</span>
+        <span data-demo-case-status></span>
+      </div>
     </section>
-    <section class="demo-review-panel" data-demo-report hidden aria-labelledby="demo-report-title">
+    <section class="demo-review-panel" aria-labelledby="demo-report-title">
       <header class="demo-report-header">
-        <h2 id="demo-report-title">病例 M01</h2>
+        <h2 id="demo-report-title">动态心电图报告</h2>
         <span class="demo-report-status" data-demo-report-status></span>
       </header>
-      <dl class="demo-report-meta">
-        <div data-demo-report-version-row hidden><dt>报告版本</dt><dd data-demo-report-version></dd></div>
-        <div><dt>已选图条</dt><dd data-demo-report-strips></dd></div>
-        <div data-demo-report-date-row hidden><dt>保存时间</dt><dd><time data-demo-report-date></time></dd></div>
-      </dl>
-      <h3>报告结论</h3>
-      <p class="demo-report-conclusion" data-demo-report-conclusion></p>
+      <ol class="demo-workflow-steps" aria-label="报告进度">
+        <li data-demo-stage="draft">诊断与复核</li>
+        <li data-demo-stage="pending">审核报告</li>
+        <li data-demo-stage="approved">审核完成</li>
+      </ol>
+      <aside class="demo-return-note" data-demo-states="returned" hidden>
+        <strong>退回原因</strong>
+        <p data-demo-return-detail></p>
+      </aside>
+      {% if not reviewer %}
+      <div data-demo-states="draft returned" hidden>
+        <nav class="demo-desk-actions" aria-label="心电工作台入口">
+          <a class="demo-portal-button" href="workbench.html?view=review">查看心电总览</a>
+          <a class="demo-portal-button" href="workbench.html?view=report">打开报告编排</a>
+        </nav>
+        <label class="demo-editor-label" for="demo-conclusion">诊断结论</label>
+        <textarea id="demo-conclusion" rows="5" maxlength="12000" data-demo-conclusion></textarea>
+        <div class="demo-desk-actions" aria-label="报告草稿操作">
+          <button class="demo-portal-button demo-portal-primary" type="button" data-demo-workflow-action="submit">提交审核</button>
+          <button class="demo-portal-button" type="button" data-demo-workflow-action="save">保存草稿</button>
+        </div>
+      </div>
+      {% else %}
+      <div data-demo-report-empty data-demo-states="draft returned" hidden>
+        <h3>暂无待审核报告</h3>
+        <p>诊断医生提交后，可在此查看送审结论。</p>
+      </div>
+      {% endif %}
+      <div data-demo-report data-demo-states="pending approved" hidden>
+        <dl class="demo-report-meta">
+          <div><dt>报告版本</dt><dd data-demo-report-version></dd></div>
+          <div><dt>已选图条</dt><dd data-demo-report-strips></dd></div>
+          <div data-demo-report-date-row hidden><dt>记录时间</dt><dd><time data-demo-report-date></time></dd></div>
+        </dl>
+        <h3>送审结论</h3>
+        <p class="demo-report-conclusion" data-demo-report-conclusion></p>
+      </div>
+      {% if reviewer %}
+      <div class="demo-review-controls" data-demo-states="pending" hidden>
+        <button class="demo-portal-button demo-portal-primary" type="button" data-demo-workflow-action="approve">审核通过</button>
+        <div class="demo-return-controls">
+          <label class="demo-editor-label" for="demo-return-reason">退回原因</label>
+          <textarea id="demo-return-reason" rows="3" maxlength="500" data-demo-return-reason></textarea>
+          <button class="demo-portal-button" type="button" data-demo-workflow-action="return">退回修改</button>
+        </div>
+      </div>
+      {% else %}
+      <div class="demo-review-controls" data-demo-states="pending" hidden>
+        <button class="demo-portal-button" type="button" data-demo-workflow-action="withdraw">撤回送审</button>
+      </div>
+      {% endif %}
     </section>
-    <p class="demo-portal-note">审核视图为只读演示，病例使用数学合成数据。</p>
+    <p class="demo-portal-note">演示病例使用数学合成数据，报告及审核记录仅保存在当前浏览器。</p>
   </main>
   {% else %}
   <main class="demo-portal-main demo-login-main">
@@ -53,12 +104,12 @@
     <div class="demo-role-choices">
       <section class="demo-role-card">
         <h2>诊断医生</h2>
-        <p>查看心电波形，编辑和保存演示报告。</p>
+        <p>复核心电波形，保存草稿并提交审核。</p>
         <button class="demo-portal-button demo-portal-primary" type="button" data-demo-role="diagnosis">以诊断医生身份登录</button>
       </section>
       <section class="demo-role-card">
         <h2>审核医生</h2>
-        <p>查看此浏览器中已保存的演示报告。</p>
+        <p>查看送审稿，审核通过或退回修改。</p>
         <button class="demo-portal-button" type="button" data-demo-role="review">以审核医生身份登录</button>
       </section>
     </div>

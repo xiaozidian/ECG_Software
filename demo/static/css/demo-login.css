@@ -138,12 +138,16 @@ html[data-demo-portal-blocked] body {
 }
 
 .demo-portal-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 44px;
   margin-top: 8px;
   padding: 8px 14px;
   border: 1px solid #9eb7c2;
   background: #fff;
   color: #173e4b;
+  text-decoration: none;
 }
 
 .demo-portal-button:hover {
@@ -162,12 +166,12 @@ html[data-demo-portal-blocked] body {
   color: #fff;
 }
 
-.demo-portal-button:focus-visible {
+.demo-portal-button:focus-visible, .demo-portal textarea:focus-visible {
   outline: 2px solid #096e6f;
   outline-offset: 3px;
 }
 
-.demo-portal .demo-portal-note, .demo-portal .demo-portal-error {
+.demo-portal .demo-portal-note, .demo-portal .demo-portal-error, .demo-portal .demo-portal-feedback {
   margin-top: 16px;
   font-size: 13px;
 }
@@ -180,6 +184,15 @@ html[data-demo-portal-blocked] body {
   color: #883c31;
 }
 
+.demo-portal .demo-portal-feedback {
+  color: #096e6f;
+}
+
+.demo-desk-main {
+  width: min(100%, 1100px);
+  padding-top: 28px;
+}
+
 .demo-review-panel {
   margin-top: 20px;
 }
@@ -188,7 +201,29 @@ html[data-demo-portal-blocked] body {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
   gap: 8px 12px;
+}
+
+.demo-case-list {
+  padding-block: 14px;
+}
+
+.demo-case-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px 12px;
+  margin-top: 9px;
+  padding: 7px 12px;
+  border: 1px solid #9eb7c2;
+  border-radius: 6px;
+  background: #f4f8f9;
+  color: #284852;
+}
+
+.demo-case-row strong {
+  margin-inline-end: 5px;
 }
 
 .demo-report-status {
@@ -197,6 +232,78 @@ html[data-demo-portal-blocked] body {
   background: #e5f0f2;
   color: #284852;
   font-size: 13px;
+}
+
+.demo-workflow-steps {
+  display: flex;
+  margin: 14px 0 18px;
+  padding: 0;
+  border: 1px solid #d4e0e5;
+  border-radius: 6px;
+  background: #f7f9fa;
+  list-style: none;
+  overflow: hidden;
+}
+
+.demo-workflow-steps li {
+  flex: 1;
+  padding: 7px 4px;
+  color: #415b68;
+  font-size: 13px;
+  text-align: center;
+}
+
+.demo-workflow-steps li + li {
+  border-inline-start: 1px solid #d4e0e5;
+}
+
+.demo-workflow-steps [aria-current="step"] {
+  background: #e1f0ee;
+  color: #075c5d;
+  font-weight: 700;
+}
+
+.demo-return-note {
+  margin-bottom: 14px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: #f9eeeb;
+  color: #76352c;
+}
+
+.demo-return-note p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.demo-desk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.demo-editor-label {
+  display: block;
+  margin: 12px 0 5px;
+  font-weight: 650;
+}
+
+.demo-portal textarea {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #9eb7c2;
+  border-radius: 6px;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+  resize: vertical;
+}
+
+.demo-review-controls {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid #dce6ea;
 }
 
 .demo-report-meta {

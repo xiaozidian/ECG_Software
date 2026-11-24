@@ -24,7 +24,7 @@ def replace_once(text: str, marker: str, replacement: str) -> str:
 
 
 def add_login(output: Path) -> None:
-    if any((output / name).exists() for name in ('workbench.html', 'review.html', *ASSETS)):
+    if any((output / name).exists() for name in ('workbench.html', 'diagnosis.html', 'review.html', *ASSETS)):
         raise ValueError('Use a freshly built mathematical demo directory.')
     manifest_path = output / 'mathematical-source-manifest.json'
     manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
@@ -40,8 +40,11 @@ def add_login(output: Path) -> None:
     index = output / 'index.html'
     workbench = index.read_text(encoding='utf-8')
     workbench = replace_once(workbench, '<html ', '<html data-demo-portal-page="workbench" ')
+    identity_tag = f'<script src="{identity_url}"></script>'
+    workbench = replace_once(workbench, f'{identity_tag}\n', '')
     workbench = replace_once(workbench, '</head>',
                              f'  <link rel="stylesheet" href="{css}">\n'
+                             f'  {identity_tag}\n'
                              f'  <script src="{script}"></script>\n</head>')
     workbench = replace_once(workbench, '<div class="role-chip">',
                              '<div id="demoAccountActions" class="demo-account-actions"></div>\n'
@@ -53,16 +56,16 @@ def add_login(output: Path) -> None:
     template_source = replace_once(template_source, identity, identity_url)
     env = Environment(autoescape=select_autoescape(['html']), undefined=StrictUndefined)
     template = env.from_string(template_source)
-    login_html = template.render(page='login')
-    review_html = template.render(page='review')
+    pages = {name: template.render(page=role) for name, role in
+             [('index.html', 'login'), ('diagnosis.html', 'diagnosis'), ('review.html', 'review')]}
 
     for name, data in assets.items():
         (output / name).write_bytes(data)
     (output / 'workbench.html').write_text(workbench, encoding='utf-8', newline='\n')
-    (output / 'review.html').write_text(review_html, encoding='utf-8', newline='\n')
-    index.write_text(login_html, encoding='utf-8', newline='\n')
+    for name, html in pages.items():
+        (output / name).write_text(html, encoding='utf-8', newline='\n')
     manifest['demo_role_login'] = {'mode': 'browser-only', 'roles': ['diagnosis', 'review'],
-                                   'clinical_credentials': False, 'review_access': 'read-only',
+                                   'clinical_credentials': False, 'review_access': 'simulated-handoff',
                                    'report_storage_namespace_unchanged': True}
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 
