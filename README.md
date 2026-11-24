@@ -16,6 +16,7 @@
 python scripts/shared_source.py build --output build/shared-source.zip
 python scripts/shared_source.py check build/shared-source.zip --target .
 python scripts/build_static_demo.py --shared-bundle build/shared-source.zip --output build/pages
+python scripts/add_demo_login.py --output build/pages
 python -m http.server 4173 --bind 127.0.0.1 --directory build/pages
 ```
 

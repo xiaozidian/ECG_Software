@@ -30,6 +30,8 @@ jobs:
           python scripts/shared_source.py check build/shared-source.zip --target .
       - name: Build mathematical demo from the same package
         run: python scripts/build_static_demo.py --shared-bundle build/shared-source.zip
+      - name: Add browser-only demo sign-in
+        run: python scripts/add_demo_login.py --output build/pages
       - name: Record capability and source identity
         run: |
           python - <<'PY'

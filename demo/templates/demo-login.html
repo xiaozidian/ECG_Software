@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN" data-demo-portal-page="{{ page }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ '审核工作台' if page == 'review' else '演示登录' }} · CardioInsight</title>
+  <link rel="icon" type="image/svg+xml" href="static/icon.svg">
+  <link rel="stylesheet" href="static/css/demo-login.css">
+  <script src="static/js/shared-source-version.js"></script>
+  <script src="static/js/demo-login.js"></script>
+</head>
+<body class="demo-portal">
+  <header class="demo-portal-header">
+    <div class="demo-portal-brand">
+      <img src="static/icon.svg" width="36" height="36" alt="">
+      <div><strong>CardioInsight</strong><span>心电工作站 · 数学演示</span></div>
+    </div>
+    {% if page == 'review' %}
+    <div class="demo-account-actions" aria-label="演示账号">
+      <button type="button" data-demo-role="diagnosis">切换为诊断医生</button>
+      <button type="button" data-demo-logout>退出登录</button>
+    </div>
+    {% endif %}
+  </header>
+  {% if page == 'review' %}
+  <main class="demo-portal-main demo-review-main">
+    <h1>审核工作台</h1>
+    <p class="demo-portal-intro">查看本浏览器已保存的合成病例报告。</p>
+    <p class="demo-portal-error" data-demo-error role="alert" hidden></p>
+    <section class="demo-review-panel" data-demo-report-empty hidden>
+      <h2>暂无已保存报告</h2>
+      <p>以诊断医生身份保存演示报告后，可在这里查看。</p>
+    </section>
+    <section class="demo-review-panel" data-demo-report hidden aria-labelledby="demo-report-title">
+      <header class="demo-report-header">
+        <h2 id="demo-report-title">病例 M01</h2>
+        <span class="demo-report-status" data-demo-report-status></span>
+      </header>
+      <dl class="demo-report-meta">
+        <div data-demo-report-version-row hidden><dt>报告版本</dt><dd data-demo-report-version></dd></div>
+        <div><dt>已选图条</dt><dd data-demo-report-strips></dd></div>
+        <div data-demo-report-date-row hidden><dt>保存时间</dt><dd><time data-demo-report-date></time></dd></div>
+      </dl>
+      <h3>报告结论</h3>
+      <p class="demo-report-conclusion" data-demo-report-conclusion></p>
+    </section>
+    <p class="demo-portal-note">审核视图为只读演示，病例使用数学合成数据。</p>
+  </main>
+  {% else %}
+  <main class="demo-portal-main demo-login-main">
+    <h1>登录演示工作台</h1>
+    <p class="demo-portal-intro">选择演示角色，无需填写账号或密码。</p>
+    <div class="demo-role-choices">
+      <section class="demo-role-card">
+        <h2>诊断医生</h2>
+        <p>查看心电波形，编辑和保存演示报告。</p>
+        <button class="demo-portal-button demo-portal-primary" type="button" data-demo-role="diagnosis">以诊断医生身份登录</button>
+      </section>
+      <section class="demo-role-card">
+        <h2>审核医生</h2>
+        <p>查看此浏览器中已保存的演示报告。</p>
+        <button class="demo-portal-button" type="button" data-demo-role="review">以审核医生身份登录</button>
+      </section>
+    </div>
+    <p class="demo-portal-error" data-demo-error role="alert" hidden></p>
+    <p class="demo-portal-note">演示病例使用数学合成数据，报告草稿仅保存在当前浏览器。</p>
+  </main>
+  {% endif %}
+  <noscript><p class="demo-noscript">启用 JavaScript 后可体验数学演示。</p></noscript>
+</body>
+</html>

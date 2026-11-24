@@ -1,0 +1,287 @@
+html[data-demo-portal-blocked] body {
+  visibility: hidden;
+}
+
+.demo-portal {
+  margin: 0;
+  min-height: 100dvh;
+  background: #edf3f5;
+  color: #172e3d;
+  font: 15px/1.55 "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+.demo-portal *, .demo-portal *::before, .demo-portal *::after {
+  box-sizing: border-box;
+}
+
+.demo-portal [hidden] {
+  display: none;
+}
+
+.demo-portal-header, .demo-portal-brand, .demo-account-actions {
+  display: flex;
+  align-items: center;
+}
+
+.demo-portal-header {
+  min-height: 64px;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px clamp(16px, 4vw, 48px);
+  background: #122f40;
+  color: #fff;
+}
+
+.demo-portal-brand {
+  gap: 10px;
+}
+
+.demo-portal-brand strong, .demo-portal-brand span {
+  display: block;
+  line-height: 1.3;
+}
+
+.demo-portal-brand span {
+  font-size: 12px;
+  color: #c3d5dd;
+}
+
+.demo-account-actions {
+  flex: none;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+:is(.demo-portal-button, .demo-account-actions button) {
+  cursor: pointer;
+  font: inherit;
+  font-weight: 650;
+  border-radius: 6px;
+}
+
+.demo-account-actions button {
+  min-height: 32px;
+  padding: 4px 9px;
+  border: 1px solid #75939f;
+  background: transparent;
+  color: #f0f7f9;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.demo-account-actions button:hover {
+  background: #274656;
+}
+
+.demo-account-actions button:focus-visible {
+  outline: 2px solid #8ad6d0;
+  outline-offset: 2px;
+}
+
+.demo-portal-main {
+  width: min(100%, 860px);
+  margin-inline: auto;
+  padding: 38px 24px 32px;
+}
+
+.demo-portal h1, .demo-portal h2, .demo-portal h3, .demo-portal p {
+  margin: 0;
+}
+
+.demo-portal h1 {
+  font-size: 28px;
+  line-height: 1.25;
+}
+
+.demo-portal h2 {
+  font-size: 19px;
+  line-height: 1.4;
+}
+
+.demo-portal h3 {
+  margin-bottom: 8px;
+  font-size: 15px;
+}
+
+.demo-portal .demo-portal-intro {
+  margin-top: 8px;
+  color: #415b68;
+}
+
+.demo-login-main {
+  padding-top: clamp(42px, 10vh, 92px);
+}
+
+.demo-role-choices {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.demo-role-card, .demo-review-panel {
+  padding: 20px;
+  border: 1px solid #c9d7de;
+  border-radius: 9px;
+  background: #fff;
+}
+
+.demo-role-card {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  justify-items: start;
+  gap: 8px;
+}
+
+.demo-role-card p, [data-demo-report-empty] p {
+  color: #415b68;
+}
+
+.demo-portal-button {
+  min-height: 44px;
+  margin-top: 8px;
+  padding: 8px 14px;
+  border: 1px solid #9eb7c2;
+  background: #fff;
+  color: #173e4b;
+}
+
+.demo-portal-button:hover {
+  border-color: #207773;
+  background: #f3fafa;
+}
+
+.demo-portal-primary {
+  border-color: #096e6f;
+  background: #096e6f;
+  color: #fff;
+}
+
+.demo-portal-primary:hover {
+  background: #075c5d;
+  color: #fff;
+}
+
+.demo-portal-button:focus-visible {
+  outline: 2px solid #096e6f;
+  outline-offset: 3px;
+}
+
+.demo-portal .demo-portal-note, .demo-portal .demo-portal-error {
+  margin-top: 16px;
+  font-size: 13px;
+}
+
+.demo-portal .demo-portal-note {
+  color: #425e6b;
+}
+
+.demo-portal .demo-portal-error {
+  color: #883c31;
+}
+
+.demo-review-panel {
+  margin-top: 20px;
+}
+
+.demo-report-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.demo-report-status {
+  padding: 3px 8px;
+  border-radius: 5px;
+  background: #e5f0f2;
+  color: #284852;
+  font-size: 13px;
+}
+
+.demo-report-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+  margin: 14px 0 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #dce6ea;
+}
+
+.demo-report-meta div {
+  display: flex;
+  gap: 6px;
+}
+
+.demo-report-meta dt {
+  color: #415b68;
+}
+
+.demo-report-meta dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.demo-report-conclusion {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.demo-noscript {
+  padding: 12px 24px;
+}
+
+@media (max-width: 600px) {
+  .demo-portal-header {
+    flex-wrap: wrap;
+  }
+
+  .demo-portal-main {
+    padding: 32px 16px;
+  }
+
+  .demo-role-choices {
+    grid-template-columns: 1fr;
+  }
+
+  .demo-portal .demo-account-actions button {
+    min-height: 40px;
+  }
+}
+
+@media (max-width: 760px) {
+  html[data-demo-portal-page="workbench"] .top-actions .role-chip {
+    display: none;
+  }
+
+  html[data-demo-portal-page="workbench"] .demo-account-actions button {
+    padding-inline: 6px;
+  }
+}
+
+@media (max-width: 540px) {
+  html[data-demo-portal-page="workbench"] .topbar .brand {
+    width: auto;
+    flex: none;
+  }
+
+  html[data-demo-portal-page="workbench"] .topbar .brand > :not(.brand-mark),
+  html[data-demo-portal-page="workbench"] .global-search kbd {
+    display: none;
+  }
+
+  html[data-demo-portal-page="workbench"] .global-search {
+    min-width: 0;
+    margin-inline: 6px;
+  }
+
+  html[data-demo-portal-page="workbench"] .global-search input {
+    min-width: 0;
+  }
+}
+
+@media print {
+  .demo-account-actions {
+    display: none;
+  }
+}
