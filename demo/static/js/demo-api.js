@@ -11,11 +11,13 @@
   if(!sourceCase?.integrity?.mathematical_fixture||sourceCase.simulation_profile?.real_patient_inputs_read!==false)throw new Error("纯数学输入未加载或来源不符合公开演示契约");
 
   const nativeFetch=window.fetch.bind(window),savedDefault={reports:{},annotations:{},patients:{},templates:{},beatOverrides:{},reviews:{},audit:[]};
+  const snapshot=window.ECGDemoTrialSnapshot;
+  const storedPayload=()=>snapshot?JSON.stringify(snapshot):localStorage.getItem(STORE_KEY);
   const defaultComposition={schema_version:3,selected_events:[],category_reviews:{},diagnosis_blocks:[],strip_defaults:{leads:["II","V1","V5"],duration_s:7},template:"comprehensive",included_pages:["cover","summary","hourly","event_strips","hrv_time","hrv_overview"],active_page:"summary",preview_mode:"compose",fast_slow_mode:"rr",paper:{size:"A4",orientation:"portrait",show_grid:true,show_labels:true,speed:"25 mm/s",gain:"10 mm/mV"}};
   let saved={...savedDefault};
-  try{saved={...savedDefault,...JSON.parse(localStorage.getItem(STORE_KEY)||"{}")} }catch(_){/* unavailable */}
+  try{saved={...savedDefault,...JSON.parse(storedPayload()||"{}")} }catch(_){/* unavailable */}
   saved.beatOverrides=saved.beatOverrides||{};
-  const persist=()=>{try{localStorage.setItem(STORE_KEY,JSON.stringify(saved))}catch(_){throw new Error("浏览器存储失败，请检查空间/隐私设置；修改未能持久保存");}};
+  const persist=()=>{if(snapshot)throw Error("送审批次只读");try{localStorage.setItem(STORE_KEY,JSON.stringify(saved))}catch(_){throw new Error("浏览器存储失败，请检查空间/隐私设置；修改未能持久保存");}};
   const copy=value=>JSON.parse(JSON.stringify(value));
   const round=(value,digits=2)=>{if(!Number.isFinite(value))return null;const p=10**digits;return Math.round(value*p)/p};
   const response=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store"}});
@@ -36,7 +38,7 @@
   }
   async function editorRoute(action,method,payload){
     if(!engine)throw Error("编辑计算模块未加载，请刷新");
-    const stored=JSON.parse(localStorage.getItem(STORE_KEY)||"{}");
+    const stored=JSON.parse(storedPayload()||"{}");
     saved={...savedDefault,...stored};
     const current=editorValue();
     if(method==="GET")return action.endsWith("/beats")?{items:editedFeed().beats,markers:editedFeed().markers}:editorSummary(current);
@@ -668,14 +670,14 @@
   async function clinicalRoute(url,options){
     const match=url.pathname.match(/^\/api\/cases\/([^/]+)(?:\/(.*))?$/),action=match?.[2]||'',method=String(options.method||'GET').toUpperCase();
     if(!match||decodeURIComponent(match[1])!==caseId||!clinicalReads.has(action)||(method!=='GET'&&!(['event-waveforms','waveform-density','scatter-selection','waveform-strips','rr-review/locate','stt-range','report-evidence/preview'].includes(action)&&method==='POST')))return route(url,options);
-    const stored=localStorage.getItem(STORE_KEY);
+    const stored=storedPayload();
     saved={...copy(savedDefault),...JSON.parse(stored||'{}')};
     const basis={case_id:caseId,analysis_basis:'public-math-4314-v2:'+caseId,analysis_revision:workflow().revision,beat_revision:editorValue().revision};
     const expected=action==='stt-range'?{}:method==='POST'?requestBody(options):Object.fromEntries(url.searchParams);
     if(Object.keys(basis).some(key=>expected[key]!==undefined&&String(expected[key])!==String(basis[key])))return failure('分析依据已变化，请重新读取后复核',409);
     const result=action==='analysis-basis'?response(basis):await route(url,options);
     if(!result.ok)return result;
-    if(stored!==localStorage.getItem(STORE_KEY)||basis.analysis_revision!==workflow().revision)return failure('分析期间病例已变化，请重新读取后复核',409);
+    if(stored!==storedPayload()||basis.analysis_revision!==workflow().revision)return failure('分析期间病例已变化，请重新读取后复核',409);
     const payload=await result.json();
     if(action==='stt-review'&&payload.stale)return response(payload,result.status);
     if(['event-waveforms','waveform-strips'].includes(action))payload.items=payload.items.map(item=>({...item,...basis}));
@@ -687,7 +689,7 @@
     const abort=()=>{if(signal?.aborted)throw new DOMException('读取已取消','AbortError');};
     const method=String(options.method||'GET').toUpperCase(),readPost=/\/(event-waveforms|waveform-density|scatter-selection|waveform-strips|preview|locate|stt-range)$/.test(url.pathname),reviewPreview=/\/hrv-review\/preview$/.test(url.pathname),mutation=method!=='GET'&&(!readPost||reviewPreview);
     const run=async()=>{
-      abort();saved={...copy(savedDefault),...JSON.parse(localStorage.getItem(STORE_KEY)||'{}')};const previous=copy(saved);
+      abort();saved={...copy(savedDefault),...JSON.parse(storedPayload()||'{}')};const previous=copy(saved);
       try{if(/\/(?:stt-review|report|report-events|report-sections|report-strip|annotations)(?:\/\d+)?$/.test(url.pathname)&&(sourceCase.stt_review||(saved.annotations[caseId]||[]).some(a=>['ST','ST_REVIEW_NOTE'].includes(a.details?.kind))))await prepareDemoSttSource().catch(()=>null);const result=await clinicalRoute(url,options);if(!mutation)abort();if(!result.ok&&mutation)saved=previous;return result;}
       catch(error){if(mutation)saved=previous;if(error.name==='AbortError')throw error;return failure(error.message,error.status||400);}
     };

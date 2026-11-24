@@ -77,7 +77,27 @@ const beatEditor=(()=>{
   }
   function registerOccurrence(card,item,scope){
     occurrenceCards.set(card,{item,scope});
-    card.oncontextmenu=event=>{event.preventDefault();event.stopPropagation();miniMenu(card,event)};
+    card.querySelector('.occurrence-open')?.setAttribute('aria-description','Ctrl 或 ⌘ 加右击可加入选集或取消选择。');
+    card.oncontextmenu=event=>{
+      // A Mac Control-click can open the native menu with button 0.
+      // Only a modified right click changes the selection here.
+      if(event.button!==2||!(event.ctrlKey||event.metaKey)){miniMenu(card,event);return;}
+      event.preventDefault();
+      event.stopPropagation();
+      if(busy||committing||scope.isCurrent?.()===false)return;
+      close();
+      const targets=item.target_samples||[item.sample_index];
+      const samples=state.editSelectedSamples;
+      const remove=targets.every(sample=>samples.has(sample));
+      for(const sample of targets){
+        if(remove)samples.delete(sample);
+        else samples.add(sample);
+      }
+      state.editSelectedSample=item.sample_index;
+      syncOccurrenceSelection();
+      renderEditScatter();
+      card.querySelector('.occurrence-open')?.focus({preventScroll:true});
+    };
     card.ondblclick=event=>{
       if(event.ctrlKey||event.metaKey||!scope.isCurrent?.())return;
       event.preventDefault();event.stopPropagation();
@@ -131,7 +151,7 @@ const beatEditor=(()=>{
     return savesSingleBeatDirectly(code,state.editSelectedSamples.size)?'修改这一搏并保存，可撤销':'预览所选心搏的改型，确认后保存';
   }
   function updateQuickBeatControls(reading){
-    const reason=busy||committing?'正在处理当前修订，请等待完成':!clinicalWorkflow.writable()?'当前版本只读':reading?'当前列表尚未读取完成，请重试后选择心搏':!state.editSelectedSamples?.size?'请先用 Ctrl / ⌘ 点击或空格选择要处理的心搏':'';
+    const reason=busy||committing?'正在处理当前修订，请等待完成':!clinicalWorkflow.writable()?'当前版本只读':reading?'当前列表尚未读取完成，请重试后选择心搏':!state.editSelectedSamples?.size?'请先用 Ctrl / ⌘ 加点击或右击，或按空格选择心搏':'';
     document.querySelectorAll('[data-clinical-beat]').forEach(button=>{
       button.disabled=Boolean(reason);
       button.title=reason||quickBeatHint(button.dataset.clinicalBeat);

@@ -49,6 +49,11 @@ globalThis.ECGUnsavedNavigation=ECGUnsavedNavigation;
  const pending=()=>Array.from(drafts.values());
  function clear(){drafts.clear();notify();}
  function forget(key){drafts.delete(key);notify();}
+ function forgetMany(keys){
+  let changed=false;
+  for(const key of keys){if(drafts.delete(key))changed=true;}
+  if(changed)notify();
+ }
  function assertApplied(){if(drafts.size)throw Error('当前区间尚未应用，请先应用或取消修改。');}
  async function resolveLeave(){
   const items=pending(),owner=context;if(!items.length)return true;
@@ -114,5 +119,5 @@ globalThis.ECGUnsavedNavigation=ECGUnsavedNavigation;
   function cancel(){if(busy||!current())return;a=entry.strip.start_s;b=entry.strip.end_s;drag=null;host.querySelector('.range-error').textContent='';render();remember();}host.querySelector('[data-range-cancel]').onclick=cancel;host.querySelector('[data-range-reset]').title='重新校验自动 7 秒 / 至少 5 个可用心搏；不改诊断确认';
   host.querySelector('[data-range-apply]').onclick=()=>commit(false);host.querySelector('[data-range-reset]').onclick=()=>commit(true);host._rangeReady=true;render();if(restored)remember();
  }
- globalThis.ECGReportRange={mount,setContext,pending,clear,forget,assertApplied,resolveLeave,formatTime:stamp};
+ globalThis.ECGReportRange={mount,setContext,pending,clear,forget,forgetMany,assertApplied,resolveLeave,formatTime:stamp};
 })();

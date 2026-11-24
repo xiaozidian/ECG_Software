@@ -544,6 +544,10 @@ async function loadDashboard() {
     return true;
   } catch (error) {
     if (requestId !== state.dashboardRequestId) return false;
+    if(error.name==='AbortError'&&!controller.signal.aborted){
+      state.dashboardStatus='idle';
+      return false;
+    }
     state.dashboardStatus = "error";
     state.dashboard = null;
     state.cases = [];
@@ -690,11 +694,28 @@ function renderCaseLoading() {
     panel.innerHTML='<h1>正在读取病例</h1><p role="status" aria-live="polite"></p><button type="button" class="button secondary">返回工作台</button>';
     panel.querySelector("button").onclick=()=>goPage("dashboard");$("#mainContent").append(panel);
   }
-  panel.hidden=!state.caseLoading;
+  panel.hidden=!state.caseLoading&&!state.caseLoadError;
+  panel.setAttribute('aria-busy',String(Boolean(state.caseLoading)));
   $("#mainContent").setAttribute("aria-busy",String(Boolean(state.caseLoading)));
-  if(!state.caseLoading)return;
-  const label=CASE_WORKFLOW_STEPS.find(x=>x.page===state.caseLoading.destination)?.label||"病例复核";
-  panel.querySelector("p").textContent=`正在读取波形索引与复核记录，完成后进入${label}。可在左侧切换目标步骤。`;
+  if(state.caseLoadError){
+    panel.querySelector('h1').textContent='病例尚未打开';
+    panel.querySelector('p').textContent=state.caseLoadError.message;
+    let retry=panel.querySelector('[data-case-load-retry]');
+    if(!retry){
+      retry=document.createElement('button');retry.type='button';retry.className='button primary';retry.dataset.caseLoadRetry='';retry.textContent='重新打开病例';panel.append(retry);
+      retry.onclick=()=>{const target=state.caseLoadError;if(target)selectCase(target.caseId,target.destination).catch(handleError);};
+    }
+    retry.hidden=false;
+  }else{
+    panel.querySelector('[data-case-load-retry]')?.setAttribute('hidden','');
+    if(!state.caseLoading)return;
+    panel.querySelector('h1').textContent='正在打开病例';
+  }
+  if(!state.caseLoading&&!state.caseLoadError)return;
+  if(state.caseLoading){
+    const label=CASE_WORKFLOW_STEPS.find(x=>x.page===state.caseLoading.destination)?.label||"病例复核";
+    panel.querySelector("p").textContent=`正在读取本例的复核记录，随后显示${label}。`;
+  }
   $$(".page").forEach(page=>page.classList.remove("active"));
   $("#caseWorkflow").hidden=true;
   document.body.classList.remove("case-workflow-visible");
@@ -759,6 +780,7 @@ async function selectCase(caseId, destination = "review") {
   globalThis.ECGReadRequests?.clear();
   clinicalWorkflow.reset();
   const requestId=++state.caseRequestId;
+  state.caseLoadError=null;
   state.caseLoading={requestId,destination};
   if(state.caseId!==caseId)state.editReadCache=null;
   state.caseId = caseId;
@@ -829,7 +851,8 @@ async function selectCase(caseId, destination = "review") {
   }catch(error){
     if(requestId!==state.caseRequestId)return;
     state.caseLoading=null;state.caseId=null;state.caseData=null;state.report=null;
-    renderCaseLoading();goPage("dashboard");throw error;
+    state.caseLoadError={caseId,destination,message:error.name==='AbortError'?'本例读取中断，请重新打开。':error.message||'本例暂时无法读取，请重新打开。'};
+    renderCaseLoading();throw error;
   }
 }
 
@@ -955,6 +978,7 @@ async function loadCase(caseId=state.caseId, requestId=null) {
 }
 
 function goPage(name, {reuseEditWorkspace=false,editFullscreenTransition=false,sttFullscreenTransition=false}={}) {
+  if(state.caseLoadError){state.caseLoadError=null;renderCaseLoading();}
   if(state.currentPage==='stt'&&name!=='stt'&&!sttFullscreenTransition&&(state.sttSaving||sttPageHasDraft())){
     resolveSttPageLeave().then(allowed=>{if(allowed)goPage(name,{reuseEditWorkspace,editFullscreenTransition});}).catch(handleError);
     return;
@@ -1068,11 +1092,13 @@ function openLeadPicker() {
 function applyLeadSelection() {
   const selected = $$('[data-lead-choice]:checked').map(choice => choice.value).sort((a, b) => ALL_LEADS.indexOf(a) - ALL_LEADS.indexOf(b));
   if (!selected.length || selected.length > 3) return;
+  const changed=selected.join(',')!==state.leads.join(',');
   state.leads = selected;
   persistPreviewLeads();
   updateWaveformModeUI();
   $("#leadPickerDialog").close();
-  if (!state.waveformExpanded) loadWaveform().catch(handleError);
+  if(!changed)return;
+  if (!state.waveformExpanded) loadWaveform({displayOnly:true}).catch(handleError);
   else toast(`主界面导联已设为 ${selected.join(" / ")}，退出全屏后生效`);
 }
 
@@ -1245,6 +1271,8 @@ async function loadWaveform() {
   const requestId=++state.waveformRequestId,caseId=state.caseId,caseToken=state.caseRequestId,workspaceEpoch=state.workspaceEpoch,fullscreenGeneration=state.waveformFullscreenGeneration;
   editOwner?.readAbort?.abort();const controller=editOwner?new AbortController():null;if(editOwner)editOwner.readAbort=controller;
   const current=()=>requestId===state.waveformRequestId&&caseId===state.caseId&&caseToken===state.caseRequestId&&workspaceEpoch===state.workspaceEpoch&&(!editOwner||state.editFullscreenReturn===editOwner&&state.waveformExpanded&&state.currentPage==='review'&&fullscreenGeneration===state.waveformFullscreenGeneration&&!controller.signal.aborted&&editTwelveScopeCurrent(editOwner));
+  const previous=state.waveform;
+  const displayOnly=arguments[0]?.displayOnly===true&&!editOwner&&previous&&previous.start_s===state.start&&previous.duration_s===state.duration;
   const requestedLeads = waveformRequestLeads();
   const overviewBasis=editOwner?{analysis_basis:editOwner.scope.analysis_basis,analysis_revision:editOwner.scope.analysis_revision}:typeof overviewWorkbench==='undefined'?null:overviewWorkbench.waveformBasis();
   const rhythmOwner=typeof rhythmRangeScope==='function'?rhythmRangeScope():null;
@@ -1282,6 +1310,7 @@ async function loadWaveform() {
   $("#calibrationNote").textContent = ECGVoltage.snapshot()?ECGVoltage.note(ECGVoltage.snapshot()):(data.calibration_note || '设备单位，电压未校准。');
   $("#calibrationNote").title = data.signal_profile?.basis || '采样率与通道映射尚未经设备资料核验';
   renderWaveform();
+  if(displayOnly&&data.analysis_basis&&data.analysis_basis===previous.analysis_basis&&data.analysis_revision===previous.analysis_revision&&data.beat_revision===previous.beat_revision)return;
   renderVisibleEvents();
   renderAnnotations(data.annotations || state.caseData?.annotations || []);
   renderOverview();
@@ -2161,12 +2190,16 @@ function renderSttWaveform(preview=null) {
   if(beat){const x=m.l+(beat.time_s-waveform.start_s)/waveform.duration_s*plotW;ECGReviewTools.markCanvas(ctx,x,m.t,m.t+plotH,editEffectiveCode(beat));}
 }
 
-async function loadStt() {
+async function loadStt({displayOnly=false}={}) {
   if(!state.caseId||!state.caseData)return;
   state.sttAbort?.abort();
   const requestId=++state.sttRequestId,privacyRequestId=state.privacyRequestId,total=Number(state.caseData.technical.duration_seconds_raw)||state.sttDuration;
   state.sttStart=Math.max(0,Math.min(state.sttStart,Math.max(0,total-state.sttDuration)));
   const selection=sttSelectionSnapshot(),caseId=selection.caseId,cachedReview=state.sttReview,C=ECGAnalysisConsistency;
+  const evidence=state.sttEvidence,previous=state.sttWaveformSelection||evidence?.displaySelection;
+  const sameWindow=displayOnly&&sttEvidenceMatches()&&previous&&
+    previous.caseId===caseId&&previous.caseToken===selection.caseToken&&previous.workspaceEpoch===selection.workspaceEpoch&&
+    previous.start===selection.start&&previous.duration===selection.duration;
   const controller=typeof AbortController==='function'?new AbortController():null;state.sttAbort=controller;
   let cancelled=false;
   const current=()=>!cancelled&&requestId===state.sttRequestId&&!controller?.signal.aborted&&sttSelectionMatches(selection);
@@ -2175,6 +2208,20 @@ async function loadStt() {
   const read=async path=>{
     assertCurrent();const payload=await api(path,{readLane:'stt:'+path.split('?')[0],...(controller?{signal:controller.signal}:{})});assertCurrent();return payload;
   };
+  if(sameWindow){
+    const cached=evidence.displayWave||state.sttWaveform, wanted=selection.leads.split(',');
+    evidence.displaySelection=previous;if(cached)evidence.displayWave=cached;
+    if(cached&&cached.start_s===selection.start&&cached.duration_s===selection.duration&&wanted.every(name=>Array.isArray(cached.leads?.[name])&&cached.leads[name].length)){
+      C.assertSame(evidence.basis,cached);
+      evidence.displayWave=cached;
+      state.sttWaveform={...cached,leads:Object.fromEntries(wanted.map(name=>[name,cached.leads[name]]))};
+      state.sttWaveformSelection=selection;state.sttAbort=null;
+      const wrapper=$('#sttWaveCanvasWrap');wrapper.dataset.sttWaveState='ready';wrapper.setAttribute('aria-busy','false');
+      analysisReadStatus('#sttAnalysisStatus','');$('#sttSelectedLeadLabel').textContent=wanted.join(' · ');
+      for(const button of $('#page-stt').querySelectorAll('[data-stt-display-count]'))button.setAttribute('aria-pressed',String(Number(button.dataset.sttDisplayCount)===wanted.length));
+      renderSttWaveform();updateSttSaveState();return;
+    }
+  }
   if(!sttEvidenceMatches())clearSttEvidence('正在读取当前 ST‑T 分析…');
   setSttWindowState('loading','正在读取所选时间窗与导联…');
   const meta=$('#sttWaveMeta');if(meta)meta.textContent='正在读取原始波形…';
@@ -2190,7 +2237,7 @@ async function loadStt() {
   });
   let caseData,trend,review,waveform,basis,reused=false;
   try{
-    basis=C.identity(await read(C.url(caseId,'analysis-basis')));
+    basis=sameWindow?state.sttEvidence.basis:C.identity(await read(C.url(caseId,'analysis-basis')));
     reused=sttEvidenceMatches(basis);
     const evidence=reused?state.sttEvidence:null;
     if(!reused)clearSttEvidence('分析依据已更新，正在读取当前 ST‑T 分析…');
@@ -2219,7 +2266,7 @@ async function loadStt() {
       checkedReview,checkedWave,
     ]);
     for(const result of [caseData,trend,review,waveform])C.assertSame(basis,result);
-    C.assertSame(basis,await read(C.url(caseId,'analysis-basis',{},basis)));
+    if(!sameWindow)C.assertSame(basis,await read(C.url(caseId,'analysis-basis',{},basis)));
   }catch(error){
     if(!current())return;
     controller?.abort();
@@ -2234,6 +2281,11 @@ async function loadStt() {
     return;
   }finally{if(state.sttAbort===controller)state.sttAbort=null;}
   if(!current())return;
+  if(sameWindow){
+    state.sttWaveform=waveform;state.sttWaveformSelection=selection;evidence.displayWave=waveform;
+    const wrapper=$('#sttWaveCanvasWrap');wrapper.dataset.sttWaveState='ready';wrapper.setAttribute('aria-busy','false');
+    analysisReadStatus('#sttAnalysisStatus','');renderSttWaveform();updateSttSaveState();return;
+  }
   preserveCurrentIdentity(caseData,privacyRequestId);
   state.caseData=caseData;state.trend=trend;state.sttReview=review;state.sttWaveform=waveform;state.sttStart=waveform.start_s;
   state.sttEvidence={caseId,caseToken:selection.caseToken,workspaceEpoch:selection.workspaceEpoch,includePhi:state.includePhi,basis,caseData,trend,review};
@@ -2265,9 +2317,14 @@ function updateSttLeadPickerState() {
 
 function setSttLeadPickerSelection(leads) {$$('[data-stt-lead-choice]').forEach(choice=>{choice.checked=leads.includes(choice.value);});updateSttLeadPickerState();}
 function openSttLeadPicker() {const dialog=$("#sttLeadDialog");if(!dialog||dialog.open)return;setSttLeadPickerSelection(sttVisibleLeads());dialog.showModal();}
+function displaySttLeads(leads) {
+  const selected=ALL_LEADS.filter(name=>leads.includes(name));
+  if(selected.join(',')===sttVisibleLeads().join(',')&&sttWaveformIsCurrent())return;
+  state.sttLeads=selected;loadStt({displayOnly:true}).catch(handleError);
+}
 function applySttLeadSelection() {
   const selected=$$('[data-stt-lead-choice]:checked').map(choice=>choice.value).sort((a,b)=>ALL_LEADS.indexOf(a)-ALL_LEADS.indexOf(b));if(!selected.length||selected.length>12)return;
-  state.sttLeads=selected;$("#sttLeadDialog").close();loadStt().catch(handleError);
+  $("#sttLeadDialog").close();displaySttLeads(selected);
 }
 
 async function openSttTwelveLead() {
@@ -3530,7 +3587,7 @@ function bindSttInteraction() {
   for(const selector of ['#sttEpisodeStart','#sttEpisodeEnd'])$(selector)?.addEventListener('change',()=>{try{const range=sttReadReviewRange();if(range){Object.assign(state.sttSelectedCandidate.item,range);markDraft();renderSttTrendRows();const label=$('#sttEpisodeDuration');if(label)label.textContent=(range.end_s-range.start_s).toFixed(3)+' 秒';}}catch(error){toast(error.message,'error');}});
   sttRoot?.addEventListener('click',event=>{
     const mode=event.target.closest?.('[data-stt-trend-mode]');if(mode){state.sttTrendMode=mode.dataset.sttTrendMode;$$('[data-stt-trend-mode]').forEach(node=>node.setAttribute('aria-pressed',String(node===mode)));renderSttTrendRows();}
-    const display=event.target.closest?.('[data-stt-display-count]');if(display){const count=Number(display.dataset.sttDisplayCount),lead=state.sttActiveLead||sttReviewLeadNames()[0]||'II';state.sttLeads=count===12?[...ALL_LEADS]:count===1?[lead]:[lead,...['II','V1','V5'].filter(name=>name!==lead)].slice(0,3);loadStt().catch(handleError);}
+    const display=event.target.closest?.('[data-stt-display-count]');if(display){const count=Number(display.dataset.sttDisplayCount),lead=state.sttActiveLead||sttReviewLeadNames()[0]||'II';displaySttLeads(count===12?ALL_LEADS:count===1?[lead]:[lead,...['II','V1','V5'].filter(name=>name!==lead)].slice(0,3));}
     const gain=event.target.closest?.('[data-stt-gain]');if(gain){state.sttGainFactor=Math.max(.125,Math.min(8,(state.sttGainFactor||1)*Math.pow(2,Number(gain.dataset.sttGain))));renderSttWaveform();}
     const edge=event.target.closest?.('[data-stt-boundary]');if(edge){if(!state.sttSelectedCandidate){toast('请先自选区间或选择事件','error');return;}const key=edge.dataset.sttBoundary==='start'?'start_s':'end_s',at=Math.round((state.sttStart+sttLandmarkFractions().j*state.sttDuration)*200)/200;state.sttSelectedCandidate.item[key]=at;renderSttCandidateSelection();markDraft();renderSttTrendRows();}
     const position=event.target.closest?.('[data-stt-position]');if(position){const item=state.sttSelectedCandidate?.item;if(item){const at=position.dataset.sttPosition==='start'?item.start_s:position.dataset.sttPosition==='end'?item.end_s:item.peak_time_s??(item.start_s+item.end_s)/2;setSttStart(at-state.sttDuration/2);}}
@@ -3712,7 +3769,7 @@ function bindEvents() {
 }
 
 async function init() {
-  const uiBuild=document.createElement('small');uiBuild.id='uiBuild';uiBuild.textContent='UI 20261113.4';uiBuild.title='ST-T 候选核对与计算加速 · 后端 0.12.34';
+  const uiBuild=document.createElement('small');uiBuild.id='uiBuild';uiBuild.textContent='UI 20261123.1';uiBuild.title='病例载入与诊断审核流程更新';
   document.querySelector('.sidebar-version')?.append(document.createElement('br'),uiBuild);
   globalThis.ecgChartInspection=globalThis.ECGChartInspection?.mount({getScope:()=>JSON.stringify([state.caseId,state.caseRequestId,state.currentPage,state.editMode,state.caseData?.analysis_basis,state.caseData?.analysis_revision,state.caseData?.review_workflow?.beat_revision,state.waveform?.analysis_revision,state.sttWaveform?.analysis_revision,state.editRequestId,state.trendsRequestId,state.reportRequestId])});
   initRhythmRangeEditor();
@@ -3731,8 +3788,19 @@ async function init() {
   try {
     const platformName=navigator.userAgentData?.platform||navigator.platform||"";
     applyPlatformIdentity(platformName);
-    if (!state.demoReadonly) loadSettings().catch(handleError);
-    await loadDashboard();
+    const entryCase=document.documentElement?.dataset?.trialCase;
+    if(entryCase){
+      const view=new URLSearchParams(location.search).get('view');
+      const health=await api('/api/health');
+      state.workspaceEpoch=health.workspace_epoch||'';
+      state.workspaceReady=true;
+      $('#dataSetupPanel').hidden=health.data_root_found;
+      if(view==='report'&&typeof clinicalUI!=='undefined')clinicalUI.prepareReportEntry();
+      await selectCase(entryCase,view==='report'?'report':'review');
+    }else{
+      if (!state.demoReadonly) loadSettings().catch(handleError);
+      await loadDashboard();
+    }
   } catch(error) {handleError(error);}
 }
 

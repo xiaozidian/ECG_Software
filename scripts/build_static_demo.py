@@ -80,7 +80,7 @@ def build(output: Path) -> Path:
     (output / 'static/js/stt-range-math.js').write_bytes(math_source.read_bytes())
     env = Environment(loader=FileSystemLoader(PROJECT_ROOT / 'templates'), autoescape=select_autoescape(['html']), undefined=StrictUndefined)
     env.globals['url_for'] = lambda endpoint, filename: 'static/' + filename
-    html = env.get_template('index.html').render(app_name='CardioInsight 数学交互演示', app_version=manifest['release_id'], app_version_short=manifest['app_version'].split('-', 1)[0] + ' 数学Demo', demo_readonly=True, allow_phi=False)
+    html = env.get_template('index.html').render(app_name='CardioInsight 数学交互演示', app_version=manifest['release_id'], app_version_short=manifest['app_version'].split('-', 1)[0] + ' 数学Demo', demo_readonly=True, allow_phi=False, account_trial=False, trial_login_url=None)
     html = html.replace('演示分析医生', '数学演示操作者').replace('本地工作站', '浏览器独立数学演示')
     html = html.replace('10 例仅用于功能回归', '纯数学输入仅演示交互')
     html = html.replace('在线 Demo 可体验测量交互，但不会保存复核意见。', '数学 Demo 的人工复核意见仅保存到当前浏览器，不上传。')
@@ -142,7 +142,8 @@ def build_shared(output: Path, bundle: Path) -> Path:
     env.globals['url_for'] = lambda endpoint, filename: 'static/' + filename
     template = env.from_string(payload['templates/index.html'].decode('utf-8'))
     html = template.render(app_name='CardioInsight 数学交互演示', app_version=release_id,
-                           app_version_short=source['ui_version'] + ' 数学Demo', demo_readonly=True, allow_phi=False)
+                           app_version_short=source['ui_version'] + ' 数学Demo', demo_readonly=True, allow_phi=False,
+                           account_trial=False, trial_login_url=None)
     anchor = '<script src="static/js/app.js"></script>'
     if html.count(anchor) != 1:
         raise ValueError('Demo adapter injection point changed')

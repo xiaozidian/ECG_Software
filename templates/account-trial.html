@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="trial-token" content="{{ trial_token }}">
+  <meta name="trial-workspace" content="{{ trial_epoch }}">
+  <title>{{ '医生登录' if login_page else accounts[account][0] ~ '工作台' }} · CardioInsight</title>
+  <link rel="icon" href="{{ url_for('static', filename='icon.svg') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/account-trial.css') }}">
+  <script defer src="{{ url_for('static', filename='js/account-trial.js') }}"></script>
+</head>
+<body class="account-portal">
+  <header class="account-bar">
+    <div class="account-brand"><img src="{{ url_for('static', filename='icon.svg') }}" alt=""><div><strong>CardioInsight</strong><span>Holter 心电分析工作站</span></div></div>
+    <div class="account-bar-right"><span class="trial-scope">{{ '流程演示副本' if config.TRIAL_SHOWCASE else '本机开发验证' }}</span>
+      {% if not login_page %}<span>{{ trial_user }} · {{ account }}</span><form action="{{ url_for('trial_logout') }}" method="post"><button class="alt">退出</button></form>{% endif %}
+    </div>
+  </header>
+  {% if login_page %}
+  <main class="login-layout">
+    <section class="login-card">
+      <h1>医生登录</h1><p class="intro">使用测试账号复核原工作区的 {{ trial_case_count }} 例{{ config.TRIAL_SOURCE_LABEL }}。</p>
+      <form action="{{ url_for('trial_login') }}" method="post" id="login-form">
+        <label for="account">工号</label><input name="account" id="account" autocomplete="username" required autofocus>
+        <label for="password">登录口令</label><input name="password" id="password" type="password" autocomplete="current-password" required>
+        <div class="form-error" role="alert"></div><button class="primary login-button">登录工作台</button>
+      </form>
+      <section class="quick-login"><h2>开发者快捷登录</h2>
+        <div class="action-row">{% for id, data in accounts.items() %}<button type="button" data-login-as="{{ id }}" data-demo-password="{{ data[2] }}">{{ data[0] }}医生登录</button>{% endfor %}</div>
+      </section>
+      <a class="text-link original-link" href="{{ config.TRIAL_ORIGINAL_URL }}">进入原病例复核工作区 <span aria-hidden="true">↗</span></a>
+    </section>
+  </main>
+  {% else %}
+  {% set reviewer = account == 'review01' %}
+  {% set other = 'diag01' if reviewer else 'review01' %}
+  {% set active = history|selectattr('id', 'equalto', flow.active)|first|default(none) %}
+  {% set case_url = url_for('trial_case', case_label=trial_case_label) %}
+  {% set popup_rel = config.get('TRIAL_POPUP_REL', 'noopener') %}
+  <main class="desk" data-revision="{{ queue_revision }}" data-case="{{ trial_case_label }}" data-case-revision="{{ flow.revision }}">
+    <div class="desk-heading"><div><h1>{{ accounts[account][0] }}工作台</h1><p class="intro">{{ '查看送审稿，退回修改或使用个人测试证书签发。' if reviewer else '复核心电图、编写结论并提交给审核医生。' }}</p></div>
+      <form action="{{ url_for('trial_login') }}" method="post" data-switch>
+        <input type="hidden" name="account" value="{{ other }}"><input type="hidden" name="password" value="{{ accounts[other][2] }}">
+        <input type="hidden" name="case" value="{{ trial_case_label }}">
+        <button>切换为{{ accounts[other][0] }}医生</button>
+      </form>
+    </div>
+    <div class="workflow-feedback"><span data-workflow-status role="status" aria-live="polite"></span><button type="button" data-refresh-workflow hidden>查看更新</button></div>
+    <div class="global-error form-error" role="alert"></div>
+    <nav class="trial-panel case-picker" aria-label="选择病例">
+      <div class="section-head"><h2>病例列表</h2><small>{{ cases|length }} 例 · {{ cases|selectattr('state','equalto','pending')|list|length }} 例待审核</small></div>
+      <div class="case-options">{% for item in cases %}
+        <a href="{{ url_for('trial_case', case_label=item.label) }}" data-case="{{ item.label }}" data-case-state="{{ item.state }}"{% if item.label == trial_case_label %} aria-current="page"{% endif %}>
+          <strong>{{ item.label }}</strong><span>{{ '待送审' if reviewer and item.state == 'draft' else states[item.state] }}</span>
+        </a>{% endfor %}</div>
+    </nav>
+    <div class="desk-columns">
+      <section class="trial-panel case-panel">
+        <div class="section-head"><div><small>{{ config.TRIAL_SOURCE_LABEL }} {{ trial_case_label }}</small><h2>动态心电图报告</h2></div><span class="flow-state" data-state="{{ flow.state }}">{{ states[flow.state] }}</span></div>
+        <ol class="workflow-steps" aria-label="报告进度">
+          <li{% if flow.state in ('draft','returned','withdrawn') %} aria-current="step"{% endif %}>诊断与复核</li>
+          <li{% if flow.state == 'pending' %} aria-current="step"{% endif %}>审核报告</li>
+          <li{% if flow.state == 'signed' %} aria-current="step"{% endif %}>签发归档</li>
+        </ol>
+        {% if flow.state == 'returned' and active %}<div class="return-note"><strong>退回原因</strong><p>{{ active.reason }}</p></div>{% endif %}
+        {% if editable %}
+        <div class="workbench-links"><a class="portal-button" href="{{ url_for('clinical_workbench', case=trial_case_label, view='review') }}">查看心电总览</a><a class="portal-button" href="{{ url_for('clinical_workbench', case=trial_case_label, view='report') }}">打开报告编排</a></div>
+        <form id="draft-form" method="post" action="{{ case_url }}/action/save">
+          <input type="hidden" name="revision" value="{{ flow.revision }}"><input type="hidden" name="clinical_version" value="{{ report.version }}"><input type="hidden" name="review_revision" value="{{ report.review_revision }}">
+          <label for="conclusion">诊断结论</label><textarea name="conclusion" id="conclusion" rows="5" maxlength="12000" required>{{ report.conclusion }}</textarea>
+          <small>本次提交给{{ accounts['review01'][1] }}，包含已保存的图条和结论。</small>
+          <div class="form-error" role="alert"></div><div class="action-row"><button class="primary" formaction="{{ case_url }}/action/submit">提交审核</button><button>保存草稿</button></div>
+        </form>
+        {% elif active and flow.state in ('pending','signed') %}
+        <div class="report-meta"><span>第 {{ active.round_no }} 次送审</span><span>诊断医生 {{ accounts[active.author][1] }}</span><span>{{ active.submitted|trial_time }}</span></div>
+        <h3>送审结论</h3><p class="readback">{{ active.conclusion }}</p>
+        {% if flow.state == 'pending' %}
+          <div class="action-row">
+            <a class="portal-button primary" href="{{ url_for('trial_file', case_label=trial_case_label, round_no=active.round_no, kind='preview') }}" target="_blank" rel="{{ popup_rel }}">查看整份送审 PDF</a>
+            {% if reviewer %}<a class="portal-button" href="{{ url_for('clinical_workbench', case=trial_case_label, view='review') }}">回看心电与入报依据</a>{% endif %}
+          </div>
+          {% if reviewer %}
+          <div class="review-controls"><button type="button" class="primary" data-open="sign-dialog">个人 CA 测试签发</button><button type="button" data-open="return-dialog">退回修改</button></div>
+          {% else %}<form class="review-controls" method="post" action="{{ case_url }}/action/withdraw"><input type="hidden" name="revision" value="{{ flow.revision }}"><input type="hidden" name="submission" value="{{ active.id }}"><button>撤回送审</button><span class="quiet">等待审核医生处理</span></form>{% endif %}
+        {% else %}
+          <div class="signed-note"><strong>个人测试签名已验证</strong><div>{{ accounts[active.reviewer][1] }} · {{ active.signed_at|trial_time }}</div></div>
+          <div class="action-row"><a class="portal-button primary" href="{{ url_for('trial_file', case_label=trial_case_label, round_no=active.round_no, kind='signed', download=1) }}">下载已签 PDF</a><a class="portal-button" href="{{ url_for('trial_file', case_label=trial_case_label, round_no=active.round_no, kind='signed') }}" target="_blank" rel="{{ popup_rel }}">查看已签报告</a>
+          {% if reviewer %}<a class="portal-button" href="{{ url_for('clinical_workbench', case=trial_case_label, view='review') }}">回看心电与入报依据</a>{% endif %}
+          {% if not reviewer %}<form method="post" action="{{ case_url }}/action/amend"><input type="hidden" name="revision" value="{{ flow.revision }}"><button>新建更正稿</button></form>{% endif %}</div>
+        {% endif %}
+        {% else %}
+          <div class="empty-queue"><h3>暂无待审报告</h3><p>诊断医生提交后，整份报告会出现在这里。</p></div>
+        {% endif %}
+      </section>
+      <aside class="trial-panel activity-panel"><h2>交接记录</h2>
+        <ol class="activity-list">{% for e in events %}<li><strong>{{ e.action }}</strong><span>{{ accounts[e.actor][0] }}医生 · {{ e.at|trial_time }}</span></li>{% else %}<li><span>本例尚无交接记录</span></li>{% endfor %}</ol>
+      </aside>
+    </div>
+    {% if history %}
+    <section class="trial-panel history-panel"><h2>送审版本</h2><div class="history-scroll"><table><thead><tr><th>批次</th><th>提交时间</th><th>处理结果</th><th>报告</th></tr></thead><tbody>
+    {% for h in history %}<tr><td>第 {{ h.round_no }} 次</td><td>{{ h.submitted|trial_time }}</td><td>{{ states[h.state] }}{% if h.reason %}<small>{{ h.reason }}</small>{% endif %}</td>
+    <td><a href="{{ url_for('trial_file', case_label=trial_case_label, round_no=h.round_no, kind='preview') }}" target="_blank" rel="{{ popup_rel }}">送审稿</a>{% if h.signed_at %} · <a href="{{ url_for('trial_file', case_label=trial_case_label, round_no=h.round_no, kind='signed') }}" target="_blank" rel="{{ popup_rel }}">已签版</a>{% endif %}</td></tr>{% endfor %}
+    </tbody></table></div></section>{% endif %}
+    <footer class="desk-footer"><span>验证记录独立保存 · 本机测试证书</span><a href="{{ config.TRIAL_ORIGINAL_URL }}">原病例复核工作区 ↗</a></footer>
+  </main>
+  {% if reviewer and flow.state == 'pending' %}
+    {% for id, title, field in [('return','退回修改','reason'),('sign','个人 CA 测试签发','pin')] %}
+    <dialog id="{{ id }}-dialog" aria-labelledby="{{ id }}-title"><form action="{{ case_url }}/action/{{ id }}" method="post">
+      <h2 id="{{ id }}-title">{{ title }}</h2><p>病例 {{ trial_case_label }} · 第 {{ active.round_no }} 次送审</p>
+      <input type="hidden" name="revision" value="{{ flow.revision }}"><input type="hidden" name="submission" value="{{ active.id }}">
+      {% if id == 'sign' %}<label for="pin">个人测试签章口令</label><input id="pin" name="pin" type="password" autocomplete="off" required><small>本次演练口令 <code>{{ test_pin }}</code>。签名覆盖整份报告。</small>
+      {% else %}<label for="reason">退回原因</label><textarea id="reason" name="reason" rows="3" maxlength="500" required></textarea>{% endif %}
+      <div class="form-error" role="alert"></div><div class="action-row"><button class="primary">{{ '验证并签发' if id == 'sign' else '确认退回' }}</button><button type="button" data-close>取消</button></div>
+    </form></dialog>
+    {% endfor %}
+  {% endif %}
+  {% endif %}
+</body>
+</html>

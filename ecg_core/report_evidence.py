@@ -31,6 +31,11 @@ def review_selection(event, entry):
 
 def evidence_descriptor(index, event, identity, pairs=None):
     scope = {k: identity[k] for k in ('case_id', 'analysis_basis', 'beat_revision')}
+    origin = event.get('candidate_context', {}).get('restored_from')
+    if origin:
+        # A restored card needs its own review, even if another printed strip
+        # at the same position has already been confirmed on this build.
+        scope['restored_card'] = [event['event_id'], origin]
     if event.get('category') in ('pause', 'rr_candidate'):
         pairs = pairs if pairs is not None else {b['sample_index']: (a, b) for a, b in valid_rr_pairs(index['rows'], index['duration_s'])}
         pair = pairs.get(event['start_sample'])

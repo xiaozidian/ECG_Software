@@ -1016,8 +1016,11 @@ const overviewWorkbench=(()=>{
       if(['ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();event.stopImmediatePropagation();const direction=event.key==='ArrowLeft'?-1:1;if(canvas.id==='ovHistogram'){navigateHistogram(direction)}else seek(state.start+direction*(event.shiftKey?60:state.duration))}
     },true);
     window.addEventListener('afterprint',()=>document.body.classList.remove('ov-print-strip'));
-    new ResizeObserver(()=>requestAnimationFrame(()=>{draw();linked?.draw();linked?.refresh();linked?.renderMini();run(navigatorWave)})).observe(qs('#page-review'));
-    new ResizeObserver(()=>requestAnimationFrame(()=>{drawScatter();renderScatterSelectionList()})).observe(qs('.scatter-canvas-wrap'));
+    new ResizeObserver(([entry])=>{
+      if(!entry.contentRect.width||state.currentPage!=='review')return;
+      requestAnimationFrame(()=>{if(state.currentPage==='review'){draw();linked?.draw();linked?.renderMini();}});
+    }).observe(qs('#page-review'));
+    new ResizeObserver(([entry])=>{if(entry.contentRect.width&&state.currentPage==='review')requestAnimationFrame(()=>{if(state.currentPage==='review'){drawScatter();renderScatterSelectionList();}});}).observe(qs('.scatter-canvas-wrap'));
   }
   const previousCase=loadCase,previousWave=renderWaveform,previousAnnotations=renderAnnotations;
   loadCase=async(...args)=>{

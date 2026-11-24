@@ -1,332 +1,104 @@
 'use strict';
 
-// Public demonstration only. No credentials, server sessions or signing keys.
+// Bind the shared clinical workspace to the synthetic case and trial roles.
 (() => {
   const root = document.documentElement;
-  const page = root.dataset.demoPortalPage;
-  const roleKey = 'cardioinsight.demo.portal.role';
-  const destinations = {diagnosis: 'diagnosis.html', review: 'review.html'};
-  const requiredRole = {diagnosis: 'diagnosis', review: 'review'}[page];
-  const caseId = 'math-4314-001';
-  const desk = page === 'diagnosis' || page === 'review';
-  const labels = {draft: '待诊断', pending: '待审核', returned: '已退回', approved: '已通过（演示）'};
-  const feedback = {save: '已保存演示草稿', submit: '已提交演示报告，请切换为审核医生', withdraw: '已撤回送审', return: '已退回诊断医生', approve: '演示审核已通过'};
-  const allowed = {diagnosis: {draft: ['save', 'submit'], returned: ['save', 'submit'], pending: ['withdraw']}, review: {pending: ['approve', 'return']}};
-  // Some workbench reads use POST to carry waveform ranges and event selections.
-  const evidenceReadPosts = new Set(['event-waveforms', 'waveform-density', 'scatter-selection', 'waveform-strips',
-    'rr-review/locate', 'stt-range', 'report-evidence/preview']);
-  const workbenchView = new URLSearchParams(location.search).get('view');
-  let viewed = null;
-  let viewedConclusion = '';
+  const trial = window.ECGDemoTrial;
+  const role = trial.currentRole();
+  const query = new URLSearchParams(location.search);
+  const round = /^\d+$/.test(query.get('round') || '') ? Number(query.get('round')) : 0;
+  const kind = query.get('kind') === 'signed' ? 'signed' : 'preview';
+  const readPosts = new Set(['event-waveforms', 'waveform-density', 'scatter-selection', 'waveform-strips',
+    'advanced-analysis', 'rr-review/locate', 'stt-range', 'report-evidence/preview']);
+  const reviewing = role === 'review';
+  const readOnly = reviewing || round > 0;
+  let openedToken;
 
-  function currentRole() {
-    try {
-      const role = sessionStorage.getItem(roleKey);
-      return Object.hasOwn(destinations, role) ? role : null;
-    } catch {
-      return null;
-    }
+  function back() {
+    root.dataset.trialBlocked = '';
+    location.replace(trial.deskUrl());
   }
 
-  function guardRole() {
-    const role = currentRole();
-    if (page === 'workbench' ? role : !requiredRole || role === requiredRole) return true;
-    root.dataset.demoPortalBlocked = '';
-    location.replace(destinations[role] || 'index.html');
-    return false;
+  function allowed() {
+    if (!role || role !== trial.currentRole()) return false;
+    if (round) return Boolean(trial.pastSubmission(round, kind));
+    const {status, active} = trial.readWorkspace();
+    const submitted = ['pending', 'signed'].includes(status);
+    return reviewing ? submitted && Boolean(active) : !submitted;
   }
 
-  function allowWorkbench() {
-    if (!guardRole()) return false;
-    const role = currentRole();
-    try {
-      const {status} = readWorkspace();
-      const submitted = status === 'pending' || status === 'approved';
-      if (role === 'review' ? submitted : !submitted) return true;
-    } catch {
-      if (role === 'diagnosis') return true; // The shared workbench reports storage errors.
-    }
-    root.dataset.demoPortalBlocked = '';
-    location.replace(destinations[role]);
-    return false;
-  }
-
-  function showError(message) {
-    const notice = document.querySelector('[data-demo-error]');
-    if (notice) {
-      notice.textContent = message;
-      notice.hidden = false;
-    } else if (typeof toast === 'function') toast(message, 'error');
-  }
-
-  function workspaceKey() {
-    const fingerprint = window.__CARDIOINSIGHT_SOURCE_VERSION__?.source_fingerprint;
-    return fingerprint ? `cardioinsight.math.${fingerprint}` : 'cardioinsight-public-math-4314-v2';
-  }
-
-  function readWorkspace() {
-    const store = JSON.parse(localStorage.getItem(workspaceKey()) || '{}');
-    if (!store || typeof store !== 'object' || Array.isArray(store)) throw Error('无法读取演示报告。');
-    const report = store.reports?.[caseId];
-    const flow = store.demoHandoff?.[caseId];
-    const version = Number.isSafeInteger(report?.version) ? report.version : 1;
-    const current = typeof flow?.state === 'string' && Object.hasOwn(labels, flow.state)
-      && (flow.reportVersion === version || flow.state === 'returned');
-    const status = current ? flow.state : 'draft';
-    return {store, report, flow, version, status, token: JSON.stringify([version, flow?.revision ?? 0, status])};
-  }
-
-  function editorIsDirty() {
-    const input = document.querySelector('[data-demo-conclusion]');
-    return input && !input.closest('[hidden]') && input.value !== viewedConclusion;
-  }
-
-  function renderDesk(message = '', preserveInput = false) {
-    try {
-      const {report, flow, status, token, version} = readWorkspace();
-      if (preserveInput && viewed !== token && editorIsDirty()) {
-        showError('报告在其他标签页中已更新。当前输入已保留，请刷新核对后再保存。');
-        return;
-      }
-      if (preserveInput && viewed === token) return;
-      viewed = token;
-      viewedConclusion = typeof report?.conclusion === 'string' ? report.conclusion : '';
-      const put = (selector, value) => document.querySelectorAll(selector).forEach(node => { node.textContent = value; });
-      const stage = status === 'returned' ? 'draft' : status;
-      put('[data-demo-case-status], [data-demo-report-status]', labels[status]);
-      put('[data-demo-return-detail]', status === 'returned' ? flow.reason : '');
-      const feedbackNotice = document.querySelector('[data-demo-feedback]');
-      feedbackNotice.textContent = message;
-      feedbackNotice.hidden = !message;
-      document.querySelector('[data-demo-error]').hidden = true;
-      document.querySelectorAll('[data-demo-states]').forEach(section => {
-        section.hidden = !section.dataset.demoStates.split(/\s+/).includes(status);
-      });
-      document.querySelectorAll('[data-demo-stage]').forEach(node => {
-        if (node.dataset.demoStage === stage) node.setAttribute('aria-current', 'step');
-        else node.removeAttribute('aria-current');
-      });
-      const input = document.querySelector('[data-demo-conclusion]');
-      if (input) input.value = viewedConclusion;
-      const reason = document.querySelector('[data-demo-return-reason]');
-      if (reason) reason.value = '';
-      put('[data-demo-report-conclusion]', viewedConclusion || '尚无报告结论');
-      put('[data-demo-report-version]', String(version));
-      const count = Array.isArray(report?.composition?.selected_events) ? report.composition.selected_events.length : 0;
-      put('[data-demo-report-strips]', `${count} 张`);
-      const time = document.querySelector('[data-demo-report-date]');
-      const timestamp = typeof report?.updated_at === 'string' ? Date.parse(report.updated_at) : NaN;
-      if (time) time.closest('[data-demo-report-date-row]').hidden = !Number.isFinite(timestamp);
-      if (time && Number.isFinite(timestamp)) {
-        time.dateTime = new Date(timestamp).toISOString();
-        time.textContent = new Intl.DateTimeFormat('zh-CN', {dateStyle: 'medium', timeStyle: 'short'}).format(timestamp);
-      }
-    } catch {
-      showError('无法读取浏览器中的演示报告。请检查站点存储设置。');
-    }
-  }
-
-  function handleAction(action) {
-    try {
-      const {store, report, flow, version, status, token} = readWorkspace();
-      if (token !== viewed) throw Error('报告版本已变化，请重新打开后核对。');
-      if (!allowed[page]?.[status]?.includes(action)) throw Error('当前报告状态下无法执行此操作。');
-      const next = {state: status, reportVersion: version, revision: (flow?.revision ?? 0) + 1};
-      if (action === 'save' || action === 'submit') {
-        const conclusion = document.querySelector('[data-demo-conclusion]').value;
-        if (action === 'submit' && !conclusion.trim()) throw Error('请填写演示报告结论后再提交审核。');
-        if (conclusion.length > 12000) throw Error('报告结论最多 12000 字。');
-        next.reportVersion++;
-        const reports = store.reports ||= {};
-        reports[caseId] = {...report, conclusion, status: 'draft', version: next.reportVersion, updated_at: new Date().toISOString()};
-        if (action === 'submit') next.state = 'pending';
-        else if (status === 'returned') next.reason = flow.reason;
-      } else if (action === 'return') {
-        const reason = document.querySelector('[data-demo-return-reason]').value.trim();
-        if (!reason || reason.length > 500) throw Error('请填写退回原因，最多 500 字。');
-        next.state = 'returned';
-        next.reason = reason;
-      } else {
-        next.state = action === 'approve' ? 'approved' : 'draft';
-      }
-      (store.demoHandoff ||= {})[caseId] = next;
-      localStorage.setItem(workspaceKey(), JSON.stringify(store));
-      renderDesk(feedback[action]);
-    } catch (error) {
-      showError(error.name === 'QuotaExceededError' || error.name === 'SecurityError'
-        ? '浏览器无法保存修改。请检查站点存储设置。' : error.message);
-    }
-  }
-
-  function guardWorkbenchWrites(reviewer) {
-    const workbenchFetch = window.fetch.bind(window);
-    window.fetch = (input, options = {}) => {
-      const path = new URL(typeof input === 'string' || input instanceof URL ? input : input.url, location.href).pathname;
-      const method = String(options.method || input?.method || 'GET').toUpperCase();
-      if (!path.startsWith('/api/') || method === 'GET' || method === 'HEAD') return workbenchFetch(input, options);
-      const action = path.match(/^\/api\/cases\/[^/]+\/(.+)$/)?.[1];
-      if (method === 'POST' && evidenceReadPosts.has(action)) return workbenchFetch(input, options);
-      if (reviewer && method === 'POST' && action === 'open') return Promise.resolve(Response.json({ok: true}));
-      if (!reviewer && allowWorkbench()) return workbenchFetch(input, options);
-      return Promise.resolve(Response.json({error: '送审报告处于只读复核状态。修改前请退回或撤回送审。'}, {status: 403}));
-    };
-  }
-
-  function setReviewerView() {
-    // The shared UI consults this capability when mounting the editing controls.
-    clinicalWorkflow.writable = () => false;
-    loadLocalReportComposition = () => null;
-    window.addEventListener('load', () => {
-      const editor = document.getElementById('conclusionEditor');
-      editor.readOnly = true;
-      editor.placeholder = '送审报告结论';
-      const dock = editor.closest('article');
-      dock.querySelector('.report-panel-heading small').textContent = '送审版本 · 只读复核';
-      dock.querySelector('footer span').textContent = '审核决定在审核工作台提交';
-    }, {once: true});
-    const suppressEditingMenu = event => {
-      if (!event.target.closest('.rw-strip, #editTemplateGallery, #scatterSelectionList, #waveformCard')) return;
-      if (event.type === 'keydown' && event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-    };
-    document.addEventListener('contextmenu', suppressEditingMenu, true);
-    document.addEventListener('keydown', suppressEditingMenu, true);
-  }
-
-  function openSubmittedReport() {
-    const content = document.getElementById('reportV2Content');
-    const finalTab = document.querySelector('#reportV2Nav [data-category="final"]');
-    if (!content || !finalTab) return;
-    if (!state.reportEvidenceLoading && !state.reportViewLoading) {
-      if (!state.reportEvidenceError && !state.reportViewError) finalTab.click();
+  try {
+    if (!allowed()) {
+      document.addEventListener('DOMContentLoaded', event => event.stopImmediatePropagation(), {capture: true, once: true});
+      back();
       return;
     }
-    const observer = new MutationObserver(() => {
-      if (state.currentPage === 'report' && (state.reportEvidenceLoading || state.reportViewLoading)) return;
-      observer.disconnect();
-      if (state.currentPage === 'report' && !state.reportEvidenceError && !state.reportViewError) finalTab.click();
-    });
-    observer.observe(content, {attributes: true, attributeFilter: ['aria-busy'], childList: true});
-  }
-
-  function mountWorkbenchAccount() {
-    const role = currentRole();
-    const reviewer = role === 'review';
-    const host = document.getElementById('demoAccountActions');
-    const card = document.querySelector('.topbar .role-chip');
-    let evidenceToken;
-    guardWorkbenchWrites(reviewer);
-    if (reviewer) {
-      const {token, version} = readWorkspace();
-      evidenceToken = token;
-      setReviewerView();
-      if (card) card.querySelector('small').textContent = `报告 v${version} · 只读复核`;
+    openedToken = trial.readWorkspace().token;
+    if (readOnly) root.dataset.reviewReadonly = '';
+    if (round) {
+      const {store, report} = trial.readWorkspace();
+      const submitted = trial.pastSubmission(round, kind);
+      const id = root.dataset.trialCase;
+      window.ECGDemoTrialSnapshot = {...(submitted.evidence || store),
+        reports: {[id]: {...report, version: submitted.clinical_version, conclusion: submitted.conclusion,
+          updated_at: submitted.submitted, composition: submitted.composition, status: 'draft'}}};
     }
-    if (card) {
-      card.querySelector('strong').textContent = reviewer ? '审核医生' : '诊断医生';
-      if (!reviewer) card.querySelector('small').textContent = '演示登录';
-    }
-    if (!host) return;
-    host.setAttribute('aria-label', '演示账号');
-    const worklist = document.createElement('button');
-    worklist.type = 'button';
-    worklist.dataset.demoDesk = '';
-    worklist.textContent = reviewer ? '返回审核工作台' : '返回诊断工作台';
-    const logout = document.createElement('button');
-    logout.type = 'button';
-    logout.dataset.demoLogout = '';
-    logout.textContent = '退出登录';
-    host.replaceChildren(worklist, logout);
-    function checkCurrentEvidence() {
-      if (!allowWorkbench() || !reviewer) return;
-      if (readWorkspace().token === evidenceToken) return;
-      root.dataset.demoPortalBlocked = '';
-      location.replace(destinations.review);
-    }
-    window.addEventListener('storage', event => {
-      if (!event.key || event.key === workspaceKey()) checkCurrentEvidence();
-    });
-    window.addEventListener('pageshow', event => {
-      if (event.persisted) checkCurrentEvidence();
-    });
-    const view = workbenchView === 'report' ? 'report' : reviewer || workbenchView === 'review' ? 'review' : null;
-    if (view === 'review' || view === 'report') window.addEventListener('load', () => {
-      if (typeof selectCase !== 'function') return;
-      // Case selection cancels in-flight reads. Let the shared index finish first.
-      const open = () => {
-        if (!allowWorkbench() || state.caseId) return;
-        selectCase(caseId, view).then(() => {
-          if (reviewer && view === 'report' && state.currentPage === 'report') {
-            openSubmittedReport();
-          }
-        }).catch(handleError);
-      };
-      const status = document.getElementById('caseIndexStatus');
-      if (state.dashboardStatus !== 'loading' || !status) {
-        open();
-        return;
-      }
-      const observer = new MutationObserver(() => {
-        if (state.dashboardStatus === 'loading') return;
-        observer.disconnect();
-        open();
-      });
-      observer.observe(status, {childList: true, characterData: true, subtree: true});
-    }, {once: true});
+  } catch {
+    document.addEventListener('DOMContentLoaded', event => event.stopImmediatePropagation(), {capture: true, once: true});
+    back();
+    return;
   }
 
   function bind() {
-    if (!guardRole()) return;
-    if (page === 'workbench') mountWorkbenchAccount();
-    if (desk) {
-      renderDesk();
-      window.addEventListener('storage', event => {
-        if (!event.key || event.key === workspaceKey()) renderDesk('', true);
-      });
-    }
-
-    document.addEventListener('click', event => {
-      if (desk && event.target.closest('a[href^="workbench.html"]') && editorIsDirty()
-          && !window.confirm('诊断结论尚未保存，仍然离开吗？')) {
-        event.preventDefault();
-        return;
+    // The mathematical data adapter has already installed its fetch handler.
+    const mathFetch = window.fetch.bind(window);
+    window.fetch = (input, options = {}) => {
+      const path = new URL(input instanceof Request ? input.url : input, location.href).pathname;
+      const method = String(options.method || input?.method || 'GET').toUpperCase();
+      if (!path.startsWith('/api/') || method === 'GET' || method === 'HEAD') return mathFetch(input, options);
+      const action = path.match(/^\/api\/cases\/[^/]+\/(.+)$/)?.[1];
+      if (method === 'POST' && readPosts.has(action)) return mathFetch(input, options);
+      if (readOnly && method === 'POST' && action === 'open') return Promise.resolve(Response.json({ok: true}));
+      if (!readOnly && allowed()) return mathFetch(input, options);
+      return Promise.resolve(Response.json({error: '送审报告处于只读复核状态。'}, {status: 403}));
+    };
+    const label = reviewing ? '审核' : '诊断';
+    const deskLink = document.querySelector('[data-trial-leave]');
+    deskLink.textContent = label + '工作台';
+    deskLink.href = trial.deskUrl();
+    const badge = document.querySelector('.role-chip');
+    badge.querySelector('strong').textContent = label + '医生（测试）';
+    badge.querySelector('small').textContent = readOnly ? '只读复核' : '浏览器账号验证';
+    if (readOnly) loadLocalReportComposition = () => null;
+    if (!round) return;
+    // Use the actual report paper renderer as soon as the submitted report has loaded.
+    const content = document.getElementById('page-report');
+    const observer = new MutationObserver(async () => {
+      const preview = content.querySelector('#reportV2Content [data-paper-preview]');
+      if (!preview || state.reportEvidenceLoading || state.reportViewLoading) return;
+      observer.disconnect();
+      const submitted = trial.pastSubmission(round, kind);
+      if (kind === 'signed' && submitted?.test_signature) {
+        if (!await trial.verifySubmission(submitted).catch(() => false)) {
+          handleError(new Error('浏览器演示签名校验失败，请重新核对送审版本。'));
+          return;
+        }
       }
-      const button = event.target.closest('button[data-demo-role], button[data-demo-logout], button[data-demo-desk], button[data-demo-workflow-action]');
-      if (!button || button.disabled || !guardRole()) return;
-      if (button.dataset.demoWorkflowAction) {
-        handleAction(button.dataset.demoWorkflowAction);
-        return;
-      }
-      const role = button.dataset.demoRole;
-      if (role && !Object.hasOwn(destinations, role)) return;
-      if (page === 'workbench' && currentRole() === 'diagnosis' && !clinicalWorkflow.allowLeave()) return;
-      if (desk && editorIsDirty() && !window.confirm('诊断结论尚未保存，仍然离开吗？')) return;
-      if ('demoDesk' in button.dataset) {
-        location.assign(destinations[currentRole()]);
-        return;
-      }
-      try {
-        if (role) sessionStorage.setItem(roleKey, role);
-        else sessionStorage.removeItem(roleKey);
-      } catch {
-        showError('浏览器无法保存演示登录状态。请检查站点存储设置后重试。');
-        return;
-      }
-      location.assign(role ? destinations[role] : 'index.html');
+      if (query.get('download') === '1') clinicalUI.print().catch(handleError);
+      else preview.click();
     });
+    observer.observe(content, {childList: true, subtree: true});
   }
 
-  if (page === 'workbench' && !allowWorkbench()) {
-    // Navigation may complete after parsing. Avoid starting shared reads in the meantime.
-    document.addEventListener('DOMContentLoaded', event => event.stopImmediatePropagation(), {capture: true, once: true});
-    return;
+  function checkContext() {
+    try {
+      if (!allowed() || (reviewing && !round && trial.readWorkspace().token !== openedToken)) back();
+    } catch { back(); }
   }
-  if (!guardRole()) return;
-  if (page === 'workbench' && currentRole() === 'review') root.dataset.demoReviewMode = workbenchView === 'report' ? 'report' : 'evidence';
-  document.addEventListener('DOMContentLoaded', bind, {once: true});
-  window.addEventListener('pageshow', event => {
-    if (!event.persisted) return;
-    if (desk && guardRole()) renderDesk('', true);
+
+  document.addEventListener('DOMContentLoaded', bind, {capture: true, once: true});
+  window.addEventListener('storage', event => {
+    if (!event.key || event.key === trial.storageKey()) checkContext();
   });
+  window.addEventListener('pageshow', event => { if (event.persisted) checkContext(); });
 })();

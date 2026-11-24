@@ -81,6 +81,10 @@ button:focus-visible,a:focus-visible,select:focus-visible,textarea:focus-visible
 .case-loading-panel[hidden]{display:none}
 .case-loading-panel h1{font-size:20px;margin:0 0 12px}
 .case-loading-panel p{font-size:14px;line-height:1.6;margin:0 0 20px}
+.case-loading-panel button+button{margin-left:8px}
+.case-loading-panel[aria-busy="true"] h1::before{content:"";display:inline-block;width:13px;height:13px;margin-right:10px;border:2px solid #a8d5d5;border-top-color:#087d7d;border-radius:50%;animation:case-load-spin .9s linear infinite}
+@keyframes case-load-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.case-loading-panel[aria-busy="true"] h1::before{animation:none}}
 .report-reload-dialog{width:min(540px,calc(100vw - 32px))}
 .report-reload-dialog p{font-size:14px;line-height:1.6;color:var(--ink-900,#152834)}
 .report-reload-dialog .modal-actions{flex-wrap:wrap}

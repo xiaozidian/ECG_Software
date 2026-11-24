@@ -1,5 +1,7 @@
 <!doctype html>
-<html lang="zh-CN" data-demo-readonly="{{ 'true' if demo_readonly else 'false' }}" data-allow-phi="{{ 'true' if allow_phi else 'false' }}">
+{% set account_trial = config is defined and config.get('ACCOUNT_TRIAL', false) -%}
+{% set trial_login_url = config.get('TRIAL_LOGIN_URL') if config is defined else none -%}
+<html lang="zh-CN" data-demo-readonly="{{ 'true' if demo_readonly else 'false' }}" data-allow-phi="{{ 'true' if allow_phi else 'false' }}"{% if account_trial %} data-account-trial data-trial-case="{{ trial_case_id }}"{% if trial_reviewer %} data-review-readonly{% endif %}{% endif %}>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -12,6 +14,8 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/clinical-workflow.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/beat-editor.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/review-candidates.css') }}">
+  {% if account_trial or trial_login_url %}<link rel="stylesheet" href="{{ url_for('static', filename='css/account-trial.css') }}">{% endif %}
+  {% if account_trial %}<meta name="trial-token" content="{{ trial_token }}"><meta name="trial-workspace" content="{{ trial_epoch }}"><script src="{{ url_for('static', filename='js/account-trial.js') }}"></script>{% endif %}
 </head>
 <body>
   <a class="skip-link" href="#mainContent">跳到主要内容</a>
@@ -40,7 +44,8 @@
       <button id="privacyToggle" class="privacy-toggle" type="button" aria-pressed="false"{% if not allow_phi %} hidden disabled aria-hidden="true"{% endif %}>
         <span class="privacy-dot"></span><span id="privacyText">身份信息已遮蔽</span>
       </button>
-      <div class="role-chip"><span class="avatar">医</span><div><strong>演示分析医生</strong><small>本地工作站</small></div></div>
+      {% if account_trial %}<a class="trial-top-link" href="{{ url_for('trial_case', case_label=trial_case_label) }}" data-trial-leave>{{ '审核工作台' if trial_reviewer else '诊断工作台' }}</a>{% elif trial_login_url %}<a class="trial-top-link" href="{{ trial_login_url }}">开发者验证</a>{% endif %}
+      <div class="role-chip"><span class="avatar">医</span><div><strong>{{ trial_user if account_trial else '演示分析医生' }}</strong><small>{{ '只读复核' if account_trial and trial_reviewer else '本机账号验证' if account_trial else '本地工作站' }}</small></div></div>
     </div>
   </header>
 
@@ -470,7 +475,7 @@
             <div id="reportPreviewBody" class="report-preview-body" aria-live="polite"><div class="report-loading-state"><span></span><strong>正在组织报告内容</strong><small>读取趋势、事件图条与复核统计…</small></div></div>
             <footer class="report-preview-footer"><span id="reportNavigatorLabel">第 1 / 1 页</span><span>所见即当前编排预览 · 未提供的数据不会生成结果</span></footer>
           </article>
-          <article class="card report-conclusion-dock"><div class="report-panel-heading"><div><strong>报告结论</strong><small>{% if demo_readonly %}在线 Demo 可预览编排，结论保持只读{% else %}编辑后自动保存；审核由医生完成{% endif %}</small></div><span class="autosave-state" id="reportSaveState">尚未修改</span></div><textarea id="conclusionEditor" rows="5" maxlength="12000" placeholder="输入医生复核结论…"{% if demo_readonly %} readonly{% endif %}></textarea><footer><span>{% if demo_readonly %}演示编排只保存在当前浏览器{% else %}变更写入本地草稿与审计日志{% endif %}</span><span id="conclusionCount">0 / 12000</span></footer></article>
+          <article class="card report-conclusion-dock"><div class="report-panel-heading"><div><strong>报告结论</strong><small>{% if account_trial and trial_reviewer %}送审版本 · 只读复核{% elif demo_readonly %}在线 Demo 可预览编排，结论保持只读{% else %}编辑后自动保存；审核由医生完成{% endif %}</small></div><span class="autosave-state" id="reportSaveState">尚未修改</span></div><textarea id="conclusionEditor" rows="5" maxlength="12000" placeholder="{{ '送审报告结论' if account_trial and trial_reviewer else '输入医生复核结论…' }}"{% if demo_readonly or (account_trial and trial_reviewer) %} readonly{% endif %}></textarea><footer><span>{% if account_trial and trial_reviewer %}审核决定在审核工作台提交{% elif demo_readonly %}演示编排只保存在当前浏览器{% else %}变更写入本地草稿与审计日志{% endif %}</span><span id="conclusionCount">0 / 12000</span></footer></article>
         </section>
 
         <aside class="report-summary-rail">

@@ -998,3 +998,174 @@
 #reportV2 .rw-hospital-report .rw-af-report-group>.rw-strip:has(.rw-strip-body:not([hidden])){height:auto;grid-column:1/-1;overflow:visible}
 .rw-af-report-group [data-af-strip-clock]{flex-basis:100%;font-variant-numeric:tabular-nums}
 @media screen and (min-height:800px){#reportV2 .rw-hospital-report .rw-af-report-group>.rw-strip{height:316px;min-height:316px}#reportV2 .rw-hospital-report .rw-af-report-group>.rw-strip:has(.rw-strip-body:not([hidden])){height:auto}}
+
+/* Card filters preserve the mounted waves while grid and flex layouts are active. */
+.rw-workspace :is(.rw-strip,.rw-af-report-group,[data-rw-index],[data-clear-strip-filters],[data-rw-no-match])[hidden]{display:none!important}
+.rw-strip-batch {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-inline-start: auto;
+}
+
+#reportV2 .rw-evidence-heading:has(.rw-strip-batch) > :is(h3, span) {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+#reportV2 .rw-evidence-heading:has(.rw-strip-batch) {
+  flex-wrap: wrap;
+}
+
+@media screen and (min-width:1600px) {
+  #reportV2 .rw-evidence:has(.rw-strip-batch) { grid-template-rows: auto auto minmax(0, 1fr); }
+  #reportV2 .rw-evidence:has(.rw-strip-batch) > .rw-evidence-heading { grid-column: 1 / -1; }
+  #reportV2 .rw-evidence:has(.rw-strip-batch) > .rw-review-queue { grid-column: 1 / 3; grid-row: 2; }
+  #reportV2 .rw-evidence:has(.rw-strip-batch) > .rw-strip-index { grid-row: 2; }
+  #reportV2 .rw-evidence:has(.rw-strip-batch) > .rw-selected-strips { grid-row: 3; }
+}
+
+.rw-strip-batch label {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  padding: 2px 4px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.rw-strip-batch input, .rw-strip input[data-rw-batch-pick] {
+  flex: none;
+  accent-color: #087e7e;
+  margin: 0;
+  inline-size: 15px;
+  block-size: 15px;
+  padding: 0;
+}
+
+#reportV2 .rw-strip-batch [data-rw-batch-remove] {
+  min-inline-size: 120px;
+}
+
+#reportV2 .rw-hospital-report .rw-main .rw-selected-strips .rw-strip[data-rw-batch-selected] {
+  box-shadow: inset 0 0 0 2px #087e7e;
+  background: #d9eeeb;
+}
+
+#reportV2 .rw-strip-batch [data-rw-batch-remove]:enabled {
+  color: #762b26;
+  border-color: #c98c85;
+  background: #fff5f3;
+}
+
+.rw-strip-batch [data-rw-batch-status] {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+dialog.rw-strip-remove-dialog { width: min(420px, calc(100vw - 32px)); }
+.rw-strip-remove-dialog p { padding: 0 16px; }
+
+/* Keep notices on the existing status line and show their actions on demand. */
+#reportNoticeRow {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 28px;
+}
+
+#page-report #reportV2 #reportNoticeRow > #reportV2Notice {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#reportV2 #reportNoticeToggle {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 2px 8px;
+  background: #fff8e9;
+  border-color: #d9bf91;
+  color: #704817;
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+#reportV2 #reportNoticeToggle[hidden], #reportUndoSlot:empty { display: none; }
+
+#reportV2 #reportNoticeToggle:hover,
+#reportV2:has(#reportNoticePanel:popover-open) #reportNoticeToggle { background: #f8eed8; }
+
+#reportNoticeToggle::after {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border: solid currentColor;
+  border-width: 0 1px 1px 0;
+  transform: translateY(-2px) rotate(45deg);
+}
+
+#reportNoticeCounts { font-weight: 500; }
+#reportNoticeCounts:not(:empty) { padding-inline-start: 6px; border-inline-start: 1px solid #d9bf91; }
+
+#reportV2 #reportNoticePanel {
+  position: fixed;
+  inset: auto;
+  right: var(--report-notice-offset, 8px);
+  box-sizing: border-box;
+  width: min(440px, calc(100% - var(--report-notice-offset, 8px) - 8px));
+  margin: 0;
+  padding: 8px 12px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid #c5d3d9;
+  border-radius: 8px;
+  background: #fff;
+  color: #243f4b;
+  box-shadow: 0 6px 18px #102a3b21;
+}
+
+#reportNoticeTitle { margin: 2px 0 6px; font-size: 14px; }
+
+#reportV2 #reportNoticePanel > :is(.rw-evidence-pending, #reportRhythmReturn) {
+  min-height: 0;
+  margin: 0;
+  padding: 8px 0;
+  border: 0;
+  border-top: 1px solid #e3ebee;
+  background: transparent;
+  color: #243f4b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+#reportNoticePanel .rw-evidence-pending { flex-wrap: wrap; }
+#reportNoticePanel > #reportRhythmReturn:not([hidden]) { display: block; }
+#reportNoticePanel #reportRhythmReturn p { margin: 4px 0 6px; }
+#reportNoticePanel #reportRhythmReturn .v2-review-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+#reportV2 #reportNoticePanel button { min-height: 28px; padding: 3px 8px; font-size: 12px; }
+#reportV2 #reportUndoSlot .rw-strip-undo { padding: 0; gap: 4px; background: transparent; white-space: nowrap; }
+#reportV2 #reportUndoSlot button { min-height: 26px; padding: 2px 7px; font-size: 12px; }
+
+@media (max-width: 840px) {
+  #reportNoticeCounts, #reportUndoSlot .rw-strip-undo > span { display: none; }
+}
+
+@media (pointer: coarse) {
+  #reportV2 :is(#reportNoticeToggle, #reportNoticePanel button, #reportUndoSlot button) { min-height: 40px; }
+}

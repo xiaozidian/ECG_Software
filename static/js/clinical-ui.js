@@ -27,7 +27,7 @@ const clinicalUI=(()=>{
   const tabs=[...reportCategories,['tables','数据表格'],['strips','报告图条'],['final','报告']];
   let occurrenceToken=0,reportToken=0,waveToken=0,editCase=null,occurrence=null,occurrenceContext=null,editMode='all',template='all',type='N',pageCache=new Map(),tileWidth=150,editTimeTimer=0,occurrenceReadAbort=null;
   const reportWaveCache=new Map();
-  let waveEvidenceScope='',waveEvidence={};
+  let waveEvidenceScope='',waveEvidence={},unavailableStripReasons={};
   const thumbnailCache=ECGWaveformLoader.create(async(group,ranges)=>{
     const [id,leads,evidence={}]=JSON.parse(group);
     const result=await api(`/api/cases/${id}/event-waveforms`,{method:'POST',body:JSON.stringify({ranges,leads:leads.split(','),max_points:1200,...evidence})});
@@ -534,6 +534,16 @@ const clinicalUI=(()=>{
       const freshLookup=new Map(data.items.map(e=>[e.event_id,e]));
       const referenceIds=[...new Set([...selected(),...(state.reportComposition.stt_report_use||[])].map(e=>e.event_id))];
       for(let i=0;i<referenceIds.length;i+=100){const result=await endpoint('report-events',{ids:referenceIds.slice(i,i+100).join('|'),limit:200},id,controller?{signal:controller.signal}:{});if(!current())return;if(!sameEvidence(result,data))throw Error('读取期间事件依据已变化，请重新加载');result.items.forEach(e=>freshLookup.set(e.event_id,e));}
+      unavailableStripReasons={};
+      const missingManual=selected().filter(s=>s.event_id.startsWith('local-pick:')&&freshLookup.get(s.event_id)?.basis_version!==s.basis_version);
+      if(missingManual.length&&document.documentElement.dataset.localReview&&!state.reportDirty&&!state.reportSaving&&clinicalWorkflow.writable()){
+        const recovery=await api(`/api/cases/${id}/report-strip-recovery`,{method:'POST',signal:controller?.signal,
+          body:JSON.stringify({case_id:id,analysis_basis:data.analysis_basis,analysis_revision:data.analysis_revision,beat_revision:data.beat_revision,
+            report_version:remote.version,missing_event_ids:missingManual.map(s=>s.event_id)})});
+        if(!current())return;
+        if(recovery.restored.length)return refreshReport(navigation);
+        unavailableStripReasons=recovery.reasons;
+      }
       syncWaveEvidence(id,data);reportData=data;selectedLookup=freshLookup;projectRRSelections();state.reportEvidenceLoading=false;
       const context=reportViewContext(data);if(state.reportViewContext!==context){state.reportViews=new Map();state.reportBookmarks=new Map();}state.reportViewContext=context;state.reportDisplayedCategory=category;
       state.reportViews?.set(reportViewKey(reportViewParams(),data),data);host.inert=false;host.setAttribute?.('aria-busy','false');
@@ -711,7 +721,9 @@ const clinicalUI=(()=>{
     const retained=target?null:index==='active'?selectionForEvent(active):selected()[Number(index)];
     const event=target?null:retained?selectedLookup.get(retained.event_id):index==='active'?active:null;
     if(!target&&(!ECGReportEvidenceUI.eligible(event)||retained&&retained.basis_version!==event.basis_version))throw Error('本条依据已变化，请重新选择');
-    const entry=retained?copy(retained):event?{...ECGReportEngine.settings(event.retained_settings||composition().strip_defaults),caption:event.label}:{};
+    const before=!retained&&event&&selectionUndoCurrent()?reportSelectionUndo.before:null;
+    const removed=before?.event_id===event?.event_id&&before?.basis_version===event?.basis_version?before:null;
+    const entry=retained?copy(retained):event?{...copy(removed||{}),...newStripSettings(event,removed||null),caption:removed?.caption??event.label}:{};
     reportEvidenceOpening=true;
     let signature,version,identity;
     const current=()=>own()&&!state.reportStale&&(version===undefined||state.report.version===version&&signature===ECGReportConsistency.content(qs('#conclusionEditor').value,composition()));
@@ -849,15 +861,18 @@ const clinicalUI=(()=>{
     if(state.currentPage!=='report')return;
     await refreshReport();
     if(!hasRhythmReturn()||origin!==rhythmReturn||state.currentPage!=='report')return;
-    const notice=qs('#reportRhythmReturn');notice?.scrollIntoView({block:'center'});notice?.focus({preventScroll:true});
+    const notice=qs('#reportRhythmReturn'),panel=qs('#reportNoticePanel');
+    if(panel?.showPopover&&notice&&!notice.hidden&&!panel.matches(':popover-open'))panel.showPopover();
+    notice?.scrollIntoView({block:'nearest'});notice?.focus({preventScroll:true});
   }
   function renderRhythmReturn(){
     let host=qs('#reportRhythmReturn');
     if(!host){host=document.createElement('section');host.id='reportRhythmReturn';host.className='v2-event-navigation';host.tabIndex=-1;host.setAttribute('aria-label','房颤片段复核返回');qs('#reportV2Notice').after(host);}
     host.hidden=!hasRhythmReturn();if(host.hidden)return;
-    host.innerHTML='<strong>片段复核返回</strong><p>原选图、导联、图注和报告正文仍保留。片段修改后，旧图条必须重新核对；返回不代表确认或审核。</p><div class="v2-review-actions"><button type="button" data-rhythm-current>核对当前片段图条</button><button type="button" data-rhythm-dismiss>结束此次往返</button></div>';
+    if(host.firstChild)return;
+    host.innerHTML='<strong>片段复核返回</strong><p>如修改了片段，请重新核对原图条。核对后再提交审核。</p><div class="v2-review-actions"><button type="button" data-rhythm-current>核对当前片段图条</button><button type="button" data-rhythm-dismiss>结束此次往返</button></div>';
     host.querySelector('[data-rhythm-current]').onclick=()=>run(viewReturnedRhythm);
-    host.querySelector('[data-rhythm-dismiss]').onclick=()=>{rhythmReturn=null;renderRhythmReturn();};
+    host.querySelector('[data-rhythm-dismiss]').onclick=()=>{rhythmReturn=null;renderRhythmReturn();qs('#reportNoticeRow')?._syncNotices?.();};
   }
   async function viewReturnedRhythm(){
     if(!hasRhythmReturn()||!reportData||state.reportEvidenceLoading||state.reportEvidenceError)throw Error('请先载入报告依据');
@@ -901,11 +916,13 @@ const clinicalUI=(()=>{
     state.reportComposition.diagnosis_blocks.forEach(b=>{if(b.key.startsWith('AF:')){b.acknowledged=false;if(b.manual)b.needs_review=true;}});
     rhythmReturn.event_id=e.event_id;syncText();dirty();
   }
-  async function backToReportEvent(index){
+  async function backToReportEvent(index,{reviewCurrentRhythm=false}={}){
     if(globalThis.ECGReportRange?.pending?.().length&&!await ECGReportRange.resolveLeave())return;
     const selection=selected()[index],e=selection&&selectedLookup.get(selection.event_id);
-    if(!e||e.basis_version!==selection.basis_version)throw Error('图条依据已失效，请重新选择');
-    activeStripKey=stripKey(selection);reportReturn={id:state.caseId,category,event_id:e.event_id,stripKey:activeStripKey};
+    const stale=e?.basis_version!==selection?.basis_version;
+    if(!e||stale&&!(reviewCurrentRhythm&&e.category==='AF'&&e.rhythm_episode_id))throw Error('图条依据已失效，请重新选择');
+    // The pending review may open the current rhythm episode, but it cannot reuse a stale strip.
+    activeStripKey=stale?null:stripKey(selection);reportReturn={id:state.caseId,category,event_id:e.event_id,stripKey:stripKey(selection)};
     category=reportCategoryOf(e);reportOffset=0;reportMode=category==='rr_interval'?'all':e.subtype;reportTimeRange=null;pauseBand='all';
     await refreshReport({viewOnly:true,focusEvent:e});
     if(reportReturn?.id===state.caseId)focusEventNavigation();
@@ -1025,7 +1042,11 @@ const clinicalUI=(()=>{
     const wasIncluded=!!selectionForEvent(e),advanceCase=state.caseId,advanceCaseToken=state.caseRequestId,advanceData=reportData,advanceCategory=category,advanceScope=waveEvidenceScope;
     const c=state.reportComposition;selectedLookup.set(e.event_id,e);
     c.selected_events=c.selected_events.filter(s=>!eventAliases(e).some(a=>a.event_id===s.event_id&&(e.category==='AF'||a.basis_version===s.basis_version)));
-    if(checked)c.selected_events.push({event_id:e.event_id,basis_version:e.basis_version,caption:e.label,...newStripSettings(e,settings),...(e.category==='AF'?{strip_id:newStripId(),representative_role:'start'}:{})});
+    if(checked)c.selected_events.push({
+      event_id:e.event_id,basis_version:e.basis_version,caption:settings?.caption??e.label,...newStripSettings(e,settings),
+      ...(settings?.notes!==undefined?{notes:settings.notes}:{}),...(settings?.preview_lead?{preview_lead:settings.preview_lead}:{}),
+      ...(e.category==='AF'?{strip_id:newStripId(),representative_role:'start'}:{})
+    });
     if(e.category==='AF'&&checked){c.schema_version=3;activeStripKey=stripKey(c.selected_events.at(-1));}
     if(settings===null&&reportCategories.some(([key])=>key===category))reportSelectionUndo={id:advanceCase,caseToken:advanceCaseToken,scope:advanceScope,event:copy(e),before:undoBefore,siblingsBefore:undoSiblings,index:Math.max(0,undoIndex),after:copy(c.selected_events.find(s=>s.event_id===e.event_id)||null),siblingsAfter:e.category==='AF'?copy(selectionsForEvent(e,false)):null};
     delete c.category_reviews[e.category];c.diagnosis_blocks.forEach(b=>{if(b.key===e.category+':'+e.subtype){b.acknowledged=false;if(b.manual)b.needs_review=true}});syncText();dirty(true);renderReportShell();
@@ -1047,19 +1068,101 @@ const clinicalUI=(()=>{
     return run(renderReportBody);
   }
   let removedReportStrip=null;
+  function canRemoveReportStrips(){
+    return state.currentPage==='report'&&clinicalWorkflow.writable()&&!state.reportStale
+      &&!state.reportEvidenceLoading&&!state.reportEvidenceError&&!state.reportViewLoading&&!state.reportViewError
+      &&!state.sttReportAdding&&!state.afReportAdding;
+  }
+  function syncRemovedSTTUses(uses,eventIds){
+    if(!eventIds.size)return;
+    for(const use of uses){
+      if(eventIds.has(use.event_id))use.strip=use.strip===true&&sttHasPrintableStrip(use.event_id,use.basis_version);
+    }
+    state.reportComposition.stt_report_use=uses.filter(use=>use.table||use.text||use.strip);
+  }
+  function sttRemovalEvidence(event){
+    return JSON.stringify([event?.category,event?.basis_version,sttReviewed(event),sttEligibility(event).strip]);
+  }
+  function refreshReportStripRemoval(){
+    syncText();dirty();renderReportShell();run(renderReportBody);
+  }
+  function undoRemovedReportStrips(removed){
+    if(removed!==removedReportStrip||removed.id!==state.caseId||removed.caseToken!==state.caseRequestId)return;
+    if(!canRemoveReportStrips()||removed.scope!==waveEvidenceScope){
+      toast('报告依据或视图已变化，无法撤销这次移除','error');return;
+    }
+    const picks=selected(),counts=new Map();
+    for(const entry of picks){
+      const key=stripKey(entry);
+      counts.set(key,(counts.get(key)||0)+1);
+    }
+    // Preserve later edits and avoid re-inserting a strip already added back.
+    const restored=removed.entries.filter(({entry})=>{
+      const key=stripKey(entry),live=counts.get(key)||0;
+      if(live<=(removed.remainingCounts.get(key)||0))return true;
+      counts.set(key,live-1);
+      return false;
+    });
+    const uses=copy(sttUses()),restoredSTT=new Set();
+    for(const {entry} of restored){
+      const eventId=entry.event_id,proof=removed.sttEvidence.get(eventId);
+      if(!proof)continue;
+      const e=selectedLookup.get(eventId);
+      let use=uses.find(row=>row.event_id===eventId);
+      if(sttRemovalEvidence(e)!==proof.evidence||use&&use.basis_version!==proof.basisVersion){
+        toast('复核依据已变化，未恢复这次移除的图条；请重新采用','error');return;
+      }
+      if(!use){
+        use={event_id:eventId,basis_version:proof.basisVersion,table:false,text:false,strip:false};
+        uses.push(use);
+      }
+      if(proof.printable&&entry.basis_version===proof.basisVersion&&entry.print_enabled!==false)use.strip=true;
+      restoredSTT.add(eventId);
+    }
+    removedReportStrip=null;
+    if(!restored.length){renderStripUndo();return;}
+    for(const {index,entry} of restored)picks.splice(Math.min(index,picks.length),0,copy(entry));
+    syncRemovedSTTUses(uses,restoredSTT);
+    refreshReportStripRemoval();
+  }
   function renderStripUndo(){
     document.querySelector('#rwStripUndo')?.remove();
     const x=removedReportStrip;if(!x||x.id!==state.caseId||x.caseToken!==state.caseRequestId)return;
-    const node=document.createElement('div');node.id='rwStripUndo';node.className='rw-strip-undo';node.setAttribute('role','status');node.textContent='已移除图条；原始记录与候选仍保留。';
-    const b=document.createElement('button');b.type='button';b.textContent='撤销移除图条';b.onclick=()=>{if(x!==removedReportStrip||x.id!==state.caseId||x.caseToken!==state.caseRequestId)return;if(!selected().some(s=>stripKey(s)===stripKey(x.entry))){const e=selectedLookup.get(x.entry.event_id),use=sttUse(e);if(e?.category==='ST'&&(!sttReviewed(e)||!sttEligibility(e).strip||e.basis_version!==x.entry.basis_version||use&&use.basis_version!==x.entry.basis_version)){toast('复核依据已变化，未恢复旧图条；请重新采用','error');return;}state.reportComposition.selected_events.splice(Math.min(x.index,selected().length),0,copy(x.entry));if(selectedLookup.get(x.entry.event_id)?.category==='ST'){const uses=copy(sttUses()),original=x.sttUses.find(use=>use.event_id===x.entry.event_id),live=uses.find(use=>use.event_id===x.entry.event_id);const printable=sttHasPrintableStrip(x.entry.event_id,x.entry.basis_version);if(live&&live.basis_version===x.entry.basis_version)live.strip=printable;else if(!live)uses.push({event_id:x.entry.event_id,basis_version:x.entry.basis_version,table:false,text:false,strip:printable});state.reportComposition.stt_report_use=uses.filter(use=>use.table||use.text||use.strip);}syncText();dirty();}removedReportStrip=null;renderReportShell();run(renderReportBody);};node.append(b);qs('#reportV2Notice').after(node);
+    const node=document.createElement('div');node.id='rwStripUndo';node.className='rw-strip-undo';node.setAttribute('role','status');
+    const message=document.createElement('span');message.textContent=`已移除 ${x.entries.length} 张`;
+    message.title='从报告移除图条，原始记录与候选保留';
+    node.append(message);
+    const b=document.createElement('button');b.type='button';b.textContent=x.entries.length===1?'撤销移除图条':'撤销批量移除';
+    b.onclick=()=>undoRemovedReportStrips(x);node.append(b);
+    const slot=qs('#reportUndoSlot');if(slot)slot.append(node);else qs('#reportV2Notice').after(node);
   }
   function removeReportSelection(index){
-    const entry=selected()[index];if(!entry)return;
-    removedReportStrip={id:state.caseId,caseToken:state.caseRequestId,index,entry:copy(entry),sttUses:copy(sttUses())};
-    state.reportComposition.selected_events.splice(index,1);
-    if(selectedLookup.get(entry.event_id)?.category==='ST'){const remaining=sttHasPrintableStrip(entry.event_id,entry.basis_version);state.reportComposition.stt_report_use=copy(sttUses()).map(use=>use.event_id===entry.event_id?{...use,strip:remaining}:use).filter(use=>use.table||use.text||use.strip);}
-    ECGReportRange.forget?.(stripKey(entry));
-    syncText();dirty();renderReportShell();run(renderReportBody);
+    return removeReportSelections([index]);
+  }
+  function removeReportSelections(indices){
+    if(!canRemoveReportStrips())return false;
+    const picks=selected(),ordered=[...new Set(indices)].sort((a,b)=>a-b);
+    if(!ordered.length||ordered.some(index=>!Number.isInteger(index)||!picks[index]))return false;
+    const entries=ordered.map(index=>({index,entry:copy(picks[index])})),uses=copy(sttUses());
+    const sttEvidence=new Map();
+    for(const {entry} of entries){
+      const id=entry.event_id,e=selectedLookup.get(id),use=uses.find(row=>row.event_id===id);
+      if(!sttEvidence.has(id)&&(e?.category==='ST'||use)){
+        sttEvidence.set(id,{evidence:sttRemovalEvidence(e),basisVersion:use?.basis_version??entry.basis_version,printable:use?.strip===true});
+      }
+    }
+    for(const index of ordered.reverse())picks.splice(index,1);
+    const remainingCounts=new Map();
+    for(const entry of picks){
+      const key=stripKey(entry);
+      remainingCounts.set(key,(remainingCounts.get(key)||0)+1);
+    }
+    removedReportStrip={id:state.caseId,caseToken:state.caseRequestId,scope:waveEvidenceScope,entries,sttEvidence,remainingCounts};
+    syncRemovedSTTUses(uses,new Set(sttEvidence.keys()));
+    const removedKeys=new Set(entries.map(({entry})=>stripKey(entry)).filter(key=>!remainingCounts.has(key)));
+    ECGReportRange.forgetMany(removedKeys);
+    refreshReportStripRemoval();
+    return true;
   }
   function enableReportDraftSelections(items){
     document.querySelectorAll('[data-include]').forEach(control=>{const e=items[Number(control.dataset.include)];if(!e)return;const pick=selectionForEvent(e),evidence=pick?selectedLookup.get(pick.event_id)||e:e,confirmed=evidence.evidence_only?ECGReportEvidenceUI.confirmed(pick||{...e.retained_settings,caption:e.label},evidence):evidence.diagnosis_status==='confirmed',status=control.closest('tr')?.querySelector('[data-event-status]'),replacement=!!returnedRhythmSelection(e);control.disabled=replacement;control.title=replacement?'先查看当前波形，再用当前片段替换原图条，保留导联与图注':confirmed?'加入报告':'可先加入报告草稿；最终审核前需完成诊断确认';control.setAttribute('aria-label',`${formatElapsed(e.time_s)} ${e.label}${replacement?'需核对并替换旧图条':confirmed?'加入报告':'加入报告草稿（待诊断确认）'}`);if(status&&!confirmed)status.textContent=`${e.beat_count} 搏 · 待诊断确认，可先入草稿`;if(status){status.title=status.textContent;status.textContent=`${e.beat_count} 搏 · ${confirmed?'已核对':e.evidence_only?'待核对':'待确认'}`;}});
@@ -1157,17 +1260,24 @@ const clinicalUI=(()=>{
     state.reportEvidencePending=selected().flatMap((s,i)=>{const e=selectedLookup.get(s.event_id);if(!globalThis.ECGReportEvidenceUI?.used(composition(),s,e))return [];return !e||e.basis_version!==s.basis_version?[{index:i,status:'stale'}]:e.evidence_only&&!ECGReportEvidenceUI.confirmed(s,e)?[{index:i,status:'pending'}]:[];});
     state.reportSTTPending=sttUses().filter(use=>{const c=composition(),used=use.text||use.table&&c.included_pages.includes('st_events')||use.strip&&c.included_pages.includes('event_strips');if(!used)return false;const e=selectedLookup.get(use.event_id),eligible=sttEligibility(e);return !e||e.basis_version!==use.basis_version||!sttReviewed(e)||['table','text','strip'].some(key=>use[key]&&!eligible[key]);});
     state.reportRhythmPending=pendingRhythmPicks();
-    let sttNotice=qs('#reportSTTPending');if(!sttNotice){sttNotice=document.createElement('div');sttNotice.id='reportSTTPending';sttNotice.className='rw-evidence-pending';qs('#reportV2Notice').after(sttNotice);}sttNotice.hidden=!state.reportSTTPending.length||state.reportEvidenceLoading;if(!sttNotice.hidden){sttNotice.replaceChildren(document.createTextNode(`${state.reportSTTPending.length} 条已采用ST-T复核依据待核对 `));const b=document.createElement('button');b.type='button';b.textContent='查看复核记录';b.onclick=()=>run(()=>chooseReportCategory('ST'));sttNotice.append(b);const remove=document.createElement('button');remove.type='button';remove.textContent='撤下这些失效用途';remove.disabled=!!(state.reportSaving||state.reportStale||state.reportEvidenceLoading);remove.onclick=()=>run(async()=>{if(!await resolveWorkstationLeave())return;const ids=new Set(state.reportSTTPending.map(use=>use.event_id));state.reportComposition=composition();state.reportComposition.stt_report_use=copy(sttUses()).filter(use=>!ids.has(use.event_id));state.reportComposition.selected_events=selected().filter(pick=>!ids.has(pick.event_id));syncText();dirty();renderReportShell();await renderReportBody();});sttNotice.append(remove);}
+    let sttNotice=qs('#reportSTTPending');if(!sttNotice){sttNotice=document.createElement('div');sttNotice.id='reportSTTPending';sttNotice.className='rw-evidence-pending';qs('#reportV2Notice').after(sttNotice);}sttNotice.hidden=!state.reportSTTPending.length||state.reportEvidenceLoading;if(!sttNotice.hidden&&!sttNotice.firstChild){sttNotice.replaceChildren(document.createTextNode(`${state.reportSTTPending.length} 条已采用ST-T复核依据待核对 `));const b=document.createElement('button');b.type='button';b.textContent='查看复核记录';b.onclick=()=>run(()=>chooseReportCategory('ST'));sttNotice.append(b);const remove=document.createElement('button');remove.type='button';remove.textContent='撤下这些失效用途';remove.disabled=!!(state.reportSaving||state.reportStale||state.reportEvidenceLoading);remove.onclick=()=>run(async()=>{if(!await resolveWorkstationLeave())return;const ids=new Set(state.reportSTTPending.map(use=>use.event_id));state.reportComposition=composition();state.reportComposition.stt_report_use=copy(sttUses()).filter(use=>!ids.has(use.event_id));state.reportComposition.selected_events=selected().filter(pick=>!ids.has(pick.event_id));syncText();dirty();renderReportShell();await renderReportBody();});sttNotice.append(remove);}
+    if(!sttNotice.hidden){const message=state.reportSTTPending.length+' 条已采用ST-T复核依据待核对 ';if(sttNotice.firstChild.nodeValue!==message)sttNotice.firstChild.nodeValue=message;sttNotice.lastElementChild.disabled=!!(state.reportSaving||state.reportStale||state.reportEvidenceLoading);}
 
     let evidenceNotice=qs('#reportEvidencePending');
     if(!evidenceNotice){evidenceNotice=document.createElement('div');evidenceNotice.id='reportEvidencePending';evidenceNotice.className='rw-evidence-pending';qs('#reportV2Notice').after(evidenceNotice);}
     evidenceNotice.hidden=!state.reportEvidencePending.length||state.reportEvidenceLoading;
-    if(!evidenceNotice.hidden){evidenceNotice.replaceChildren(document.createTextNode(`${state.reportEvidencePending.length} 条本次报告证据待核对或依据已变化 `));const button=document.createElement('button');button.type='button';button.textContent='查看待处理图条';button.onclick=()=>run(async()=>{ECGReportWorkspace.setReviewFilter(state.reportEvidencePending[0].status);await chooseReportCategory('strips');});evidenceNotice.append(button);}
+    if(!evidenceNotice.hidden&&!evidenceNotice.firstChild){evidenceNotice.replaceChildren(document.createTextNode(`${state.reportEvidencePending.length} 条本次报告证据待核对或依据已变化 `));const button=document.createElement('button');button.type='button';button.textContent='查看待处理图条';button.onclick=()=>run(async()=>{const host=category==='strips'?qs('#reportV2Content'):null;ECGReportWorkspace.setReviewFilter(state.reportEvidencePending[0].status,host);await chooseReportCategory('strips');});evidenceNotice.append(button);}
+    if(!evidenceNotice.hidden){const message=state.reportEvidencePending.length+' 条本次报告证据待核对或依据已变化 ';if(evidenceNotice.firstChild.nodeValue!==message)evidenceNotice.firstChild.nodeValue=message;}
     let rhythmNotice=qs('#reportRhythmPending');
     if(!rhythmNotice){rhythmNotice=document.createElement('div');rhythmNotice.id='reportRhythmPending';rhythmNotice.className='rw-evidence-pending';qs('#reportV2Notice').after(rhythmNotice);}
     rhythmNotice.hidden=!state.reportRhythmPending.length||state.reportEvidenceLoading;
-    if(!rhythmNotice.hidden){rhythmNotice.replaceChildren(document.createTextNode(`${state.reportRhythmPending.length} 段入报房颤 / 房扑待确认 `));const button=document.createElement('button');button.type='button';button.textContent='在报告中复核';button.disabled=!!(state.reportSaving||state.reportStale||state.reportViewLoading||state.reportViewError);button.onclick=()=>run(()=>backToReportEvent(state.reportRhythmPending[0]));rhythmNotice.append(button);}
-    qs('#reportV2Notice').textContent=state.reportEvidenceLoading?`正在核对报告依据；原有选图和人工文字保留${reportData?` · 下列计数仍为已读取依据 r${reportData.analysis_revision}，本次核对未完成`:''}`:state.reportEvidenceError?'报告依据未能完整读取，请重新加载后复核；不能认定无事件':`已选 ${selected().length} 条 · 统计为全记录${reportData?.analysis_revision!==undefined?' · 依据 r'+reportData.analysis_revision:''} · ${clinicalWorkflow.readiness()?"模板编辑已确认":"模板编辑待确认"}${state.reportCategoryPending.length?' · '+state.reportCategoryPending.length+' 类报告筛选待确认':''}${stale?' · '+stale+'条已失效，须重新核对；房颤片段可复核后替换，其余移除后重新筛选':''}`;
+    if(!rhythmNotice.hidden&&!rhythmNotice.firstChild){rhythmNotice.replaceChildren(document.createTextNode(`${state.reportRhythmPending.length} 段入报房颤 / 房扑待确认 `));const button=document.createElement('button');button.type='button';button.textContent='在报告中复核';button.disabled=!!(state.reportSaving||state.reportStale||state.reportViewLoading||state.reportViewError);button.onclick=()=>run(()=>backToReportEvent(state.reportRhythmPending[0],{reviewCurrentRhythm:true}));rhythmNotice.append(button);}
+    if(!rhythmNotice.hidden){const message=state.reportRhythmPending.length+' 段入报房颤 / 房扑待确认 ';if(rhythmNotice.firstChild.nodeValue!==message)rhythmNotice.firstChild.nodeValue=message;rhythmNotice.lastElementChild.disabled=!!(state.reportSaving||state.reportStale||state.reportViewLoading||state.reportViewError);}
+    const notice=qs('#reportV2Notice');
+    const summary=state.reportEvidenceLoading?`正在核对报告依据；原有选图和人工文字保留${reportData?` · 下列计数仍为已读取依据 r${reportData.analysis_revision}，本次核对未完成`:''}`:state.reportEvidenceError?'报告依据未能完整读取，请重新加载后复核；不能认定无事件':`已选 ${selected().length} 条 · 统计为全记录${reportData?.analysis_revision!==undefined?' · 依据 r'+reportData.analysis_revision:''} · ${clinicalWorkflow.readiness()?"模板编辑已确认":"模板编辑待确认"}${stale?' · 依据失效 '+stale+' 张':''}`;
+    if(notice.textContent!==summary)notice.textContent=summary;
+    notice.title=summary;
+    qs('#reportNoticeRow')?._syncNotices?.();
     let viewStatus=qs('#reportViewStatus');
     if(!viewStatus&&typeof document!=='undefined'){viewStatus=document.createElement('section');viewStatus.id='reportViewStatus';viewStatus.className='v2-view-status';viewStatus.setAttribute('role','status');qs('#reportV2Content').before(viewStatus);}
     if(viewStatus){
@@ -1186,7 +1296,7 @@ const clinicalUI=(()=>{
       }
     }
     let conflict=qs('#reportConflict');
-    if(!conflict){conflict=document.createElement('p');conflict.id='reportConflict';conflict.setAttribute('role','status');conflict.innerHTML='<span>病例或报告已有新版本。当前修改仍保留，请先复制需要保留的文字，再载入最新版本核对。</span> <button type="button" class="button secondary">载入最新版本</button>';qs('#reportV2Notice').after(conflict);conflict.querySelector('button').onclick=()=>run(reloadReport);}
+    if(!conflict){conflict=document.createElement('p');conflict.id='reportConflict';conflict.setAttribute('role','status');conflict.innerHTML='<span>病例或报告已有新版本。当前修改仍保留，请先复制需要保留的文字，再载入最新版本核对。</span> <button type="button" class="button secondary">载入最新版本</button>';(qs('#reportNoticeRow')||qs('#reportV2Notice')).after(conflict);conflict.querySelector('button').onclick=()=>run(reloadReport);}
     conflict.hidden=!state.reportStale;
     for(const key of ['saveReport','approveReport','returnReport']){
       const button=qs('#'+key);if(button)button.disabled=key==='approveReport'
@@ -1252,7 +1362,7 @@ const clinicalUI=(()=>{
     if(category==='strips'||category==='final'){
       const token=bodyToken,id=state.caseId;
       if(category==='final'||category==='strips'){
-        ECGReportWorkspace.compose(host,{id,inspection:category==='strips',renderPaperSettings:paperSettingsHtml,recordStart:state.caseData?.metadata?.start_time,composition:composition(),selected:selected(),lookup:selectedLookup,sections:ECGReportSections.catalog(),overview:{categories:reportCategories.map(([key,label])=>({label,events:reportData.confirmed_category_counts?.[key]??null,beats:reportData.confirmed_beat_counts?.[key]??null})),source:{total_beats:state.caseData.summary.total_beats,avg_hr:state.caseData.summary.avg_hr,sdnn_ms:state.caseData.summary.sdnn_ms},revision:reportData.analysis_revision},isCurrent:bodyCurrent,termContext:{api,reportContext:JSON.stringify([id,state.caseRequestId,state.report?.version])},onUsages:usages=>{if(!bodyCurrent())return;state.reportComposition=composition();state.reportComposition.terminology_usages=copy(usages);dirty()},loadWave:async(e,s)=>{const entry=await reportStrip(e,s,id);if(!bodyCurrent())throw Error('报告视图已变化');return {...entry,waveform:await reportReviewWave(entry,id)};},renderWave:entry=>ECGReportPaper.stripSvg(entry,composition().paper),onStripEdit:i=>run(()=>editReportStrip(i,bodyCurrent)),onStripPrint:(i,enabled)=>{if(!bodyCurrent()||!selected()[i])return;const pick=selected()[i],e=selectedLookup.get(pick.event_id),uses=copy(sttUses());pick.print_enabled=enabled;if(e?.category==='ST'){let use=uses.find(x=>x.event_id===e.event_id);if(!use){use={event_id:e.event_id,basis_version:e.basis_version,table:false,text:false,strip:false};uses.push(use);}use.strip=sttHasPrintableStrip(e.event_id,e.basis_version);state.reportComposition.stt_report_use=uses.filter(x=>x.table||x.text||x.strip);}dirty(true);renderReportShell();run(renderReportBody);},onStripRemove:i=>{if(bodyCurrent())removeReportSelection(i);},onStripReference:(i,checked)=>{if(!bodyCurrent()||!selected()[i])return;selected()[i].referenced_in_report=checked;dirty();run(renderReportBody);},onReviewEvidence:i=>run(()=>reviewReportEvidence(i)),onReviewLongest:()=>run(()=>reviewReportEvidence(null,'longest')),loadLongestRR:()=>endpoint('report-rr-evidence',{...waveEvidence},id),onTemplates:()=>run(()=>editNarrativeTemplates(bodyCurrent)),loadTrend:async()=>{const data=await endpoint('overview',{...waveEvidence},id);if(!bodyCurrent())throw Error('病例或依据已变化');ECGAnalysisConsistency.assertSame(reportData,data);return data;},onSTTrendMetric:metric=>{if(!bodyCurrent()||!['st_level','delta'].includes(metric))return;state.reportComposition.stt_trend_metric=metric;dirty();},onPages:pages=>{state.reportComposition.included_pages=pages;state.reportComposition.page_selection_version=1;state.reportComposition.include_hrv=pages.some(k=>k.startsWith('hrv_'));dirty();renderReportShell()},onMode:mode=>{state.reportComposition=ECGReportWorkspace.withRateMode(state.reportComposition,mode);dirty();run(()=>refreshReport({viewOnly:true}))},onPreview:()=>run(previewPaper),onStripLeads:(i,leads)=>{if(!bodyCurrent()||!selected()[i])return;selected()[i].leads=[...leads];dirty(true);run(renderReportBody);},onSort:order=>{if(!bodyCurrent())return;state.reportComposition.selected_events=ECGReportWorkspace.sortSelections(selected(),selectedLookup,order);dirty();run(renderReportBody);},renderAdvanced:panel=>mountAdvanced(panel,id)});
+        ECGReportWorkspace.compose(host,{id,unavailableStripReasons,inspection:category==='strips',renderPaperSettings:paperSettingsHtml,recordStart:state.caseData?.metadata?.start_time,composition:composition(),selected:selected(),lookup:selectedLookup,sections:ECGReportSections.catalog(),overview:{categories:reportCategories.map(([key,label])=>({label,events:reportData.confirmed_category_counts?.[key]??null,beats:reportData.confirmed_beat_counts?.[key]??null})),source:{total_beats:state.caseData.summary.total_beats,avg_hr:state.caseData.summary.avg_hr,sdnn_ms:state.caseData.summary.sdnn_ms},revision:reportData.analysis_revision},isCurrent:bodyCurrent,termContext:{api,reportContext:JSON.stringify([id,state.caseRequestId,state.report?.version])},onUsages:usages=>{if(!bodyCurrent())return;state.reportComposition=composition();state.reportComposition.terminology_usages=copy(usages);dirty()},loadWave:async(e,s)=>{const entry=await reportStrip(e,s,id);if(!bodyCurrent())throw Error('报告视图已变化');return {...entry,waveform:await reportReviewWave(entry,id)};},renderWave:entry=>ECGReportPaper.stripSvg(entry,composition().paper),onStripEdit:i=>run(()=>editReportStrip(i,bodyCurrent)),onStripPrint:(i,enabled)=>{if(!bodyCurrent()||!selected()[i])return;const pick=selected()[i],e=selectedLookup.get(pick.event_id),uses=copy(sttUses());pick.print_enabled=enabled;if(e?.category==='ST'){let use=uses.find(x=>x.event_id===e.event_id);if(!use){use={event_id:e.event_id,basis_version:e.basis_version,table:false,text:false,strip:false};uses.push(use);}use.strip=sttHasPrintableStrip(e.event_id,e.basis_version);state.reportComposition.stt_report_use=uses.filter(x=>x.table||x.text||x.strip);}dirty(true);updateReportCard(i);},onStripRemove:i=>bodyCurrent()&&removeReportSelection(i),onStripRemoveMany:indices=>bodyCurrent()&&removeReportSelections(indices),canRemoveStrips:()=>bodyCurrent()&&canRemoveReportStrips(),batchScope:bodyCaseToken,onStripReference:(i,checked)=>{if(!bodyCurrent()||!selected()[i])return;selected()[i].referenced_in_report=checked;dirty();updateReportCard(i);},onReviewEvidence:i=>run(()=>reviewReportEvidence(i)),onReviewLongest:()=>run(()=>reviewReportEvidence(null,'longest')),loadLongestRR:()=>endpoint('report-rr-evidence',{...waveEvidence},id),onTemplates:()=>run(()=>editNarrativeTemplates(bodyCurrent)),loadTrend:async()=>{const data=await endpoint('overview',{...waveEvidence},id);if(!bodyCurrent())throw Error('病例或依据已变化');ECGAnalysisConsistency.assertSame(reportData,data);return data;},onSTTrendMetric:metric=>{if(!bodyCurrent()||!['st_level','delta'].includes(metric))return;state.reportComposition.stt_trend_metric=metric;dirty();},onPages:pages=>{state.reportComposition.included_pages=pages;state.reportComposition.page_selection_version=1;state.reportComposition.include_hrv=pages.some(k=>k.startsWith('hrv_'));dirty();renderReportShell()},onMode:mode=>{state.reportComposition=ECGReportWorkspace.withRateMode(state.reportComposition,mode);dirty();run(()=>refreshReport({viewOnly:true}))},onPreview:()=>run(previewPaper),onStripLeads:(i,leads)=>{if(!bodyCurrent()||!selected()[i])return;if(selected()[i].leads?.join(',')===leads.join(','))return;selected()[i].leads=[...leads];dirty(true);updateReportCard(i,{wave:true});},onSort:order=>{if(!bodyCurrent())return;state.reportComposition.selected_events=ECGReportWorkspace.sortSelections(selected(),selectedLookup,order);dirty();run(renderReportBody);},renderAdvanced:panel=>mountAdvanced(panel,id)});
         if(composition().diagnosis_blocks.some(b=>b.needs_review))host.querySelector('#rwConclusionSlot').insertAdjacentHTML('afterbegin','<section aria-label="人工诊断文字复核"><h3>依据变化后，请重新核对人工文字</h3><p>原文字已保留；核对当前波形及报告正文后再确认。</p>'+diagnosisBlocksHtml()+'</section>');
         return;
       }
@@ -1534,6 +1644,7 @@ const clinicalUI=(()=>{
     if(status==='reviewed'&&pendingRhythmPicks().length)throw Error('请先确认本次入报的房颤 / 房扑片段');
     const id=state.caseId,caseToken=state.caseRequestId,payload={status,expected_version:state.report.version,expected_review_revision:state.report.review_revision,conclusion:qs('#conclusionEditor').value,composition:copy(composition())};
     let submitted=ECGReportConsistency.content(payload.conclusion,payload.composition);
+    let savedMessage='';
     state.reportSaving=true;renderReportShell();
     try{
       if(payload.composition.include_hrv||payload.composition.included_pages.some(k=>k.startsWith('hrv_'))){
@@ -1554,13 +1665,13 @@ const clinicalUI=(()=>{
       const changed=submitted!==ECGReportConsistency.content(qs('#conclusionEditor').value,composition());
       state.report=result;state.caseData.report_workflow=result;state.reportDirty=changed;state.reportStale=false;reportVersion=result.version;
       if(!changed)state.reportComposition=copy(result.composition);
-      if(automatic){renderReportShell();if(qs('#reportSaveState'))qs('#reportSaveState').textContent=changed?'正在自动保存后续修改…':'已自动保存';if(changed)queueReportAutosave();return;}
+      if(automatic){savedMessage=changed?'正在自动保存后续修改…':'已自动保存';if(changed)queueReportAutosave();return;}
       await clinicalWorkflow.refresh(id);await refreshReport();
       toast(globalThis.ECGAdvancedAnalysis?.pending()?'已保存提交时的版本；后续研究测量修改尚未应用':ECGReportRange.pending?.().length?'已保存提交时的版本；后续游标修改尚未应用':changed?'已保存提交时的版本；后续修改尚未保存':result.status==='reviewed'?'报告已审核':'报告已保存');
     }catch(error){
       if(id===state.caseId&&caseToken===state.caseRequestId){const remote=await endpoint('report',{},id).catch(()=>null);if(remote&&!ECGReportConsistency.sameBase(state.report,remote))state.reportStale=true;}
       throw error;
-    }finally{if(id===state.caseId&&caseToken===state.caseRequestId){state.reportSaving=false;renderReportShell();}}
+    }finally{if(id===state.caseId&&caseToken===state.caseRequestId){state.reportSaving=false;renderReportShell();if(savedMessage&&qs('#reportSaveState'))qs('#reportSaveState').textContent=savedMessage;}}
   }
   function gainHtml(){const paper=composition().paper,estimate=paper.voltage_estimate;return estimate?`<span>${esc(ECGVoltage.note(estimate))}</span><label>全报告图条导出幅度<select data-estimate-paper-gain aria-label="报告估算电压增益">${['5 mm/mV','10 mm/mV','20 mm/mV'].map(v=>`<option ${paper.gain===v?'selected':''} value="${v}">${v.replace('mV','估算mV')}</option>`).join('')}</select></label><span>增益影响所有已选及以后入报的图条；请重新预览并保存。</span>`:'<span>幅度：逐导联自适应（设备单位，电压未校准）</span>';}
   function paperSettingsHtml(){
@@ -1593,7 +1704,7 @@ const clinicalUI=(()=>{
     else {spec.duration_s=Number(el.value);delete spec.range_start_s;delete spec.range_end_s;}
     try{ECGReportEngine.settings(spec);}catch(error){if(el.type==='checkbox')el.checked=!el.checked;else el.value=old.duration_s||7;handleError(error);return true;}
     if(scope==='default'){if(reportCategories.some(([key])=>key===category)){state.reportComposition.strip_category_defaults={...(composition().strip_category_defaults||{}),[category]:spec};}else state.reportComposition.strip_defaults=spec;}else {if(el.dataset.stripDuration!==undefined){delete old.range_start_s;delete old.range_end_s;}Object.assign(selected()[Number(scope)],spec);}
-    dirty();if(scope==='default'){holder.outerHTML=stripSettingsHtml(spec,scope);const summary=qs('.v2-candidate-settings>summary');if(summary)summary.textContent=defaultStripSummary();}else run(renderReportBody);return true;
+    dirty();if(scope==='default'){holder.outerHTML=stripSettingsHtml(spec,scope);const summary=qs('.v2-candidate-settings>summary');if(summary)summary.textContent=defaultStripSummary();}else updateReportCard(Number(scope),{wave:true});return true;
   }
   async function reportStrip(e,selection,id=state.caseId,fresh=false){
     const scope=waveEvidenceScope,spec=ECGReportEngine.settings(selection),key=['report',scope,id,e.event_id,e.basis_version,JSON.stringify(spec)].join('|');
@@ -1603,6 +1714,14 @@ const clinicalUI=(()=>{
     const result=await reportWaveCache.get(key);
     if(scope!==waveEvidenceScope)throw Error('波形依据已变化，请重新加载');
     return {...result,...ECGReportEngine.stripIdentity(selection),caption:selection.caption||e.label,...ECGReportStripEditor.curation(selection)};
+  }
+  function updateReportCard(index, options={}){
+    const host=qs('#reportV2Content'),pick=selected()[index];
+    if(host?._rwUpdateCard?.(index,pick,options)){
+      renderReportShell();
+      return;
+    }
+    run(renderReportBody);
   }
   async function editReportStrip(i,isCurrent=()=>true){
     const original=selected()[i],e=original&&selectedLookup.get(original.event_id),id=state.caseId,caseToken=state.caseRequestId;
@@ -1614,7 +1733,7 @@ const clinicalUI=(()=>{
     const current=()=>isCurrent()&&id===state.caseId&&caseToken===state.caseRequestId&&!state.reportStale&&liveIndex()>=0&&clinicalWorkflow.writable();
     await ECGReportStripEditor.open({selection:original,event:e,metadata:state.caseData.metadata,total:state.caseData.technical.duration_seconds_raw,isCurrent:current,
       loadWave:async(event,settings)=>{const entry=await reportStrip(event,settings,id,true);if(!current())throw Error('病例或报告已变化');return {...entry,waveform:await reportReviewWave(entry,id)};},
-      onApply:async(next,{setDefaults})=>{if(!current())throw Error('报告已变化，本条未应用');const index=liveIndex();state.reportComposition.selected_events[index]=next;if(setDefaults)state.reportComposition.strip_defaults={leads:[...next.leads],duration_s:next.duration_s};dirty();await renderReportBody();}
+      onApply:async(next,{setDefaults})=>{if(!current())throw Error('报告已变化，本条未应用');const index=liveIndex();state.reportComposition.selected_events[index]=next;if(setDefaults)state.reportComposition.strip_defaults={leads:[...next.leads],duration_s:next.duration_s};dirty();updateReportCard(index,{wave:true});}
     });
   }
   async function editNarrativeTemplates(isCurrent=()=>true){
@@ -1818,7 +1937,7 @@ const clinicalUI=(()=>{
     return wave;
   }
   function renderRangeDraftNotice(){
-    const anchor=qs('#reportV2Notice');if(!anchor)return;
+    const anchor=qs('#reportNoticeRow')||qs('#reportV2Notice');if(!anchor)return;
     let host=qs('#reportRangeDraftNotice');if(!host){host=document.createElement('section');host.id='reportRangeDraftNotice';host.setAttribute('aria-label','待应用游标区间');anchor.after(host);}host.className='v2-range-draft-bar';
     const drafts=ECGReportRange.pending?.()||[];host.hidden=!drafts.length;if(!drafts.length)return;
     const currentSelections=typeof state!=='undefined'&&state.reportComposition?state.reportComposition.selected_events||[]:null;
@@ -1996,6 +2115,50 @@ const clinicalUI=(()=>{
     }catch(error){frame.remove?.();throw error;}
     finally{document.removeEventListener?.('ecg-report-privacy-change',cancel);}
   }
+  function bindReportNotices(root){
+    const row=root.querySelector('#reportNoticeRow'),toggle=root.querySelector('#reportNoticeToggle');
+    const panel=root.querySelector('#reportNoticePanel'),counts=root.querySelector('#reportNoticeCounts');
+    const sections=['reportRhythmReturn','reportRhythmPending','reportEvidencePending','reportSTTPending'];
+    function position(){
+      const anchor=toggle.getBoundingClientRect(),width=document.documentElement.clientWidth;
+      const below=innerHeight-anchor.bottom-12,above=anchor.top-12;
+      const placeAbove=below<200&&above>below;
+      panel.style.setProperty('--report-notice-offset',`${Math.max(8,width-anchor.right)}px`);
+      panel.style.top=placeAbove?'auto':`${anchor.bottom+4}px`;
+      panel.style.bottom=placeAbove?`${innerHeight-anchor.top+4}px`:'auto';
+      panel.style.maxHeight=`${Math.max(0,placeAbove?above:below)}px`;
+    }
+    function close(){if(panel.matches(':popover-open'))panel.hidePopover();}
+    panel.addEventListener('beforetoggle',event=>{if(event.newState==='open')position();});
+    const move=()=>{if(panel.matches(':popover-open'))position();};
+    window.addEventListener('resize',move);
+    window.addEventListener('scroll',move,{passive:true});
+    panel.addEventListener('click',event=>{
+      if(event.target.closest('button')){
+        close();
+        if(!toggle.hidden&&document.activeElement===document.body)toggle.focus({preventScroll:true});
+      }
+    });
+    row._syncNotices=()=>{
+      for(const id of sections){
+        const item=root.querySelector('#'+id);
+        if(item&&item.parentElement!==panel)panel.append(item);
+      }
+      const items=[];
+      if(!state.reportEvidenceLoading){
+        if(state.reportRhythmPending.length)items.push(`房颤／房扑 ${state.reportRhythmPending.length} 段`);
+        if(state.reportEvidencePending.length)items.push(`图条 ${state.reportEvidencePending.length} 张`);
+        if(state.reportSTTPending.length)items.push(`ST‑T ${state.reportSTTPending.length} 条`);
+      }
+      const returning=panel.querySelector('#reportRhythmReturn');
+      if(returning&&!returning.hidden)items.push('片段复核返回');
+      const detail=items.join(' · ');
+      if(counts.textContent!==detail)counts.textContent=detail;
+      toggle.setAttribute('aria-label',detail?'报告待办，'+detail:'报告待办');
+      toggle.hidden=!items.length;
+      if(toggle.hidden)close();else move();
+    };
+  }
   function bind(){
     qs('#conclusionEditor')?.addEventListener('input',()=>queueReportAutosave());
     document.addEventListener('ecg-report-range-change',()=>{if(state.report)renderReportShell();else renderRangeDraftNotice();});
@@ -2034,12 +2197,17 @@ const clinicalUI=(()=>{
     new ResizeObserver(()=>{if(occurrence)renderOccurrences()}).observe(qs('#editTemplateGallery'));
     let scrollFrame;qs('#editTemplateGallery').addEventListener('scroll',()=>{cancelAnimationFrame(scrollFrame);scrollFrame=requestAnimationFrame(renderOccurrences)});
     qs('#editTemplateGallery').addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight')e.stopPropagation()});
-    const old=qs('.report-workbench'),root=document.createElement('section');root.id='reportV2';root.innerHTML='<nav id="reportV2Nav" aria-label="报告二级导航"></nav><p id="reportV2Notice"></p><div id="reportV2Content"></div>';old.before(root);old.hidden=true;root.after(qs('.report-conclusion-dock'));
+    const old=qs('.report-workbench'),root=document.createElement('section');root.id='reportV2';root.innerHTML=`<nav id="reportV2Nav" aria-label="报告二级导航"></nav>
+      <div id="reportNoticeRow"><p id="reportV2Notice"></p><div id="reportUndoSlot"></div>
+        <button id="reportNoticeToggle" type="button" popovertarget="reportNoticePanel" hidden>报告待办<span id="reportNoticeCounts"></span></button>
+        <div id="reportNoticePanel" popover="auto" role="region" aria-labelledby="reportNoticeTitle"><h2 id="reportNoticeTitle">报告待办</h2></div>
+      </div><div id="reportV2Content"></div>`;old.before(root);old.hidden=true;root.after(qs('.report-conclusion-dock'));
+    bindReportNotices(root);
     // Core report actions expose their own state; no preflight panel is mounted.
     root.addEventListener('click',event=>{const b=event.target.closest('button');if(!b||b.disabled)return;if(b.dataset.reviewRhythm!==undefined)run(()=>openRhythmReview(b.dataset.reviewRhythm));if(b.dataset.confirmRhythm!==undefined){const pick=b.dataset.confirmRhythm==='active'?null:selected()[Number(b.dataset.confirmRhythm)];run(()=>confirmReportRhythm(pick?selectedLookup.get(pick.event_id):active,pick));}if(b.hasAttribute('data-rhythm-replace'))run(replaceReturnedRhythm);});
     root.addEventListener('click',event=>{const b=event.target.closest('button');if(!b||b.disabled)return;if(b.dataset.category)run(()=>chooseReportCategory(b.dataset.category));if(b.dataset.locate!==undefined)run(()=>locate(reportData.items[Number(b.dataset.locate)]));if(b.dataset.remove!==undefined)removeReportSelection(Number(b.dataset.remove));if(b.dataset.move!==undefined){const i=Number(b.dataset.move),j=i+Number(b.dataset.delta);[state.reportComposition.selected_events[i],state.reportComposition.selected_events[j]]=[selected()[j],selected()[i]];dirty();run(renderReportBody)}if(b.dataset.backEvent!==undefined)run(()=>backToReportEvent(Number(b.dataset.backEvent)));if(b.dataset.ack!==undefined){Object.assign(state.reportComposition.diagnosis_blocks[Number(b.dataset.ack)],{acknowledged:true,needs_review:false});dirty();run(renderReportBody)}});
     root.addEventListener('change',event=>{const el=event.target;if(el.hasAttribute('data-estimate-paper-gain')){state.reportComposition=composition();state.reportComposition.paper.gain=el.value;dirty();return;}if(changePaperSettings(el)||changeStripSettings(el))return;if(el.dataset.include!==undefined)selectEvent(reportData.items[Number(el.dataset.include)],el.checked)});
-    root.addEventListener('input',event=>{const el=event.target;if(el.dataset.caption!==undefined){selected()[Number(el.dataset.caption)].caption=el.value;dirty()}if(el.dataset.block!==undefined){Object.assign(state.reportComposition.diagnosis_blocks[Number(el.dataset.block)],{text:el.value,manual:true,acknowledged:false});dirty()}});
+    root.addEventListener('input',event=>{const el=event.target;if(el.dataset.caption!==undefined){const index=Number(el.dataset.caption);selected()[index].caption=el.value;dirty();updateReportCard(index)}if(el.dataset.block!==undefined){Object.assign(state.reportComposition.diagnosis_blocks[Number(el.dataset.block)],{text:el.value,manual:true,acknowledged:false});dirty()}});
     qs('#downloadReport').addEventListener('click',event=>{event.preventDefault();event.stopImmediatePropagation();run(downloadReport)},true);
     const timebar=document.createElement('input');timebar.type='range';timebar.id='v2EditTime';timebar.min='0';timebar.step='.1';timebar.setAttribute('aria-label','编辑连续波形时间导航');qs('#editWaveCanvasWrap').after(timebar);
     const requestEditTime=()=>{clearTimeout(editTimeTimer);editTimeTimer=0;run(loadEditWaveform)};
@@ -2083,7 +2251,7 @@ const clinicalUI=(()=>{
     beatEditor.syncOccurrenceSelection?.();renderOccurrences();renderEditWaveform();if(state.editMode==='library')renderEditLibrary();
     return true;
   }
-  return {insertWaveStrip,printWaveStrip,async showSTReport(receipt=null){if(!await resolveWorkstationLeave())return;const eventId=receipt?.event_id||receipt?.record_id||(receipt?.id?'annotation:'+receipt.id:null);sttReportFocus=eventId?{caseId:state.caseId,caseToken:state.caseRequestId,eventId}:null;category='ST';sttGroup='all';reportMode='all';reportOffset=0;reportTimeRange=null;if(state.currentPage==='report')return refreshReport();goPage('report');},showAFCandidates,refreshCurrentCaseEvidence:refreshHrvCase,receiveCandidateState,showRRCandidates(){if(state.currentPage==='report')return chooseReportCategory('rr_candidate');category='rr_interval';rrSource='manual';reportSort='hr_asc';reportMode='all';reportOffset=0;reportTimeRange=null;goPage('report');},reviewReportEvidence,showReportStrips(){if(state.currentPage==='report')return chooseReportCategory('strips');category='strips';reportMode='all';reportOffset=0;ECGReportWorkspace.setReviewFilter('all');goPage('report');},setRRDestination(){category='rr_interval';rrSource='manual';reportSort='hr_asc';reportMode='all';reportOffset=0;reportTimeRange=null;},includeRRCandidate,queueReportAutosave,flushReportAutosave,resolveReportLeave,setPauseEdges(edges){state.reportComposition=composition();state.reportComposition.pause_edges_ms=ECGOverviewEngine.pauseEdges(edges);dirty();},linkedContext,focusLinkedBeat,setLinkedChecked,prepareHrvLoad,refreshPrivacyViews,cancelReportExport,hasRhythmReturn,returnFromRhythm,captureEditView,activateEditView,occurrenceBookmark,currentOccurrenceBookmark,loadOccurrences,renderOccurrences,releaseOccurrenceWaves,refreshReport,renderReportShell,loadHrv,save,print,applyVoltageEstimate,addStrip(e,settings=null){category='strips';return selectEvent(e,true,settings)}};
+  return {prepareReportEntry(){category='final';reportMode='all';reportOffset=0;reportTimeRange=null;},insertWaveStrip,printWaveStrip,async showSTReport(receipt=null){if(!await resolveWorkstationLeave())return;const eventId=receipt?.event_id||receipt?.record_id||(receipt?.id?'annotation:'+receipt.id:null);sttReportFocus=eventId?{caseId:state.caseId,caseToken:state.caseRequestId,eventId}:null;category='ST';sttGroup='all';reportMode='all';reportOffset=0;reportTimeRange=null;if(state.currentPage==='report')return refreshReport();goPage('report');},showAFCandidates,refreshCurrentCaseEvidence:refreshHrvCase,receiveCandidateState,showRRCandidates(){if(state.currentPage==='report')return chooseReportCategory('rr_candidate');category='rr_interval';rrSource='manual';reportSort='hr_asc';reportMode='all';reportOffset=0;reportTimeRange=null;goPage('report');},reviewReportEvidence,showReportStrips(){if(state.currentPage==='report')return chooseReportCategory('strips');category='strips';reportMode='all';reportOffset=0;ECGReportWorkspace.setReviewFilter('all');goPage('report');},setRRDestination(){category='rr_interval';rrSource='manual';reportSort='hr_asc';reportMode='all';reportOffset=0;reportTimeRange=null;},includeRRCandidate,queueReportAutosave,flushReportAutosave,resolveReportLeave,setPauseEdges(edges){state.reportComposition=composition();state.reportComposition.pause_edges_ms=ECGOverviewEngine.pauseEdges(edges);dirty();},linkedContext,focusLinkedBeat,setLinkedChecked,prepareHrvLoad,refreshPrivacyViews,cancelReportExport,hasRhythmReturn,returnFromRhythm,captureEditView,activateEditView,occurrenceBookmark,currentOccurrenceBookmark,loadOccurrences,renderOccurrences,releaseOccurrenceWaves,refreshReport,renderReportShell,loadHrv,save,print,applyVoltageEstimate,addStrip(e,settings=null){category='strips';return selectEvent(e,true,settings)}};
 })();
 // Replace representative-only loaders; preserve existing continuous-waveform editor tools.
 loadEditTemplateStrips=clinicalUI.loadOccurrences;
