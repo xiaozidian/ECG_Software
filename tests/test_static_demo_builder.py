@@ -16,7 +16,7 @@ def digest(path: Path) -> str:
 
 
 def build(output: Path) -> None:
-    subprocess.run([sys.executable, str(ROOT / 'scripts/build_static_demo.py'), '--output', str(output)], cwd=ROOT, check=True)
+    subprocess.run([sys.executable, str(ROOT / 'scripts/build_static_demo.py'), '--legacy-frozen', '--output', str(output)], cwd=ROOT, check=True)
 
 
 def test_static_demo_builder(tmp_path: Path) -> None:
@@ -103,7 +103,7 @@ def test_math_payload_is_deterministic_and_output_is_never_overwritten(tmp_path:
         assert (one / relative).read_bytes() == (two / relative).read_bytes()
     marker = one / 'explicitly-preserved.txt'
     marker.write_text('existing output must survive', encoding='utf-8', newline='\n')
-    result = subprocess.run([sys.executable, str(ROOT / 'scripts/build_static_demo.py'), '--output', str(one)], capture_output=True, text=True)
+    result = subprocess.run([sys.executable, str(ROOT / 'scripts/build_static_demo.py'), '--legacy-frozen', '--output', str(one)], capture_output=True, text=True)
     assert result.returncode != 0 and 'Output must be new' in result.stderr
     assert marker.read_text(encoding='utf-8') == 'existing output must survive'
 

@@ -59,10 +59,10 @@ def jinja_portal(output: Path, desk: str, assets: dict[str, bytes]) -> Environme
     return env
 
 
-def render_portal(output: Path, assets: dict[str, bytes], role='login', variant='empty') -> str:
+def render_portal(output: Path, assets: dict[str, bytes], role='login', variant='empty', template_source=None) -> str:
     desk = ('review' if role == 'review' else 'diagnosis') + '.html'
     env = jinja_portal(output, desk, assets)
-    template = env.from_string((ROOT / 'templates/account-trial.html').read_text(encoding='utf-8'))
+    template = env.from_string(template_source if template_source is not None else (ROOT / 'templates/account-trial.html').read_text(encoding='utf-8'))
     account = 'review01' if role == 'review' else 'diag01'
     status = 'draft' if variant == 'empty' else variant
     active = {'id': 'DEMO_SUBMISSION_ID', 'round_no': 'DEMO_ROUND', 'author': 'diag01', 'reviewer': 'review01',
@@ -84,7 +84,7 @@ def render_portal(output: Path, assets: dict[str, bytes], role='login', variant=
     return replace_once(page, '<html ', f'<html data-demo-portal-page="{role}" ')
 
 
-def add_login(output: Path) -> None:
+def add_login(output: Path, shared_bundle: Path | None = None) -> None:
     if any((output / name).exists() for name in ('workbench.html', 'diagnosis.html', 'review.html', PORTAL, WORKBENCH, LAYOUTS)):
         raise ValueError('Use a freshly built mathematical demo directory.')
     manifest_path = output / 'mathematical-source-manifest.json'
@@ -94,8 +94,23 @@ def add_login(output: Path) -> None:
             or manifest.get('mathematical_source', {}).get('patient_inputs_read') is not False):
         raise ValueError('The account interface requires the verified mathematical demo.')
 
-    assets = {name: (ROOT / 'demo' / name).read_bytes() for name in (PORTAL, WORKBENCH)}
-    layouts = {role: {variant: render_portal(output, assets, role, variant)
+    if shared_bundle is not None:
+        if __package__:
+            from .shared_source import read_bundle, source_bytes
+        else:
+            from shared_source import read_bundle, source_bytes
+        source, payload = read_bundle(shared_bundle)
+        if manifest.get('source_fingerprint') != source['source_fingerprint']:
+            raise ValueError('Login package differs from the mathematical website source.')
+        recipe = 'scripts/add_demo_login.py'
+        if source_bytes(ROOT, recipe) != payload[recipe]:
+            raise ValueError('Login build recipe differs from shared package.')
+        assets = {name: payload['demo/' + name] for name in (PORTAL, WORKBENCH)}
+        template_source = payload['templates/account-trial.html'].decode('utf-8')
+    else:
+        assets = {name: (ROOT / 'demo' / name).read_bytes() for name in (PORTAL, WORKBENCH)}
+        template_source = (ROOT / 'templates/account-trial.html').read_text(encoding='utf-8')
+    layouts = {role: {variant: render_portal(output, assets, role, variant, template_source)
                       for variant in ('empty', 'draft', 'pending', 'returned', 'signed')}
                for role in ('diagnosis', 'review')}
     assets[LAYOUTS] = ('window.ECGDemoTrialLayouts = ' + json.dumps(layouts, ensure_ascii=False) + ';\n').encode()
@@ -118,7 +133,7 @@ def add_login(output: Path) -> None:
                              '<a class="trial-top-link" href="diagnosis.html" data-trial-leave>诊断工作台</a>\n'
                              '      <div class="role-chip">')
     portal_head = '\n'.join(script(name) for name in (IDENTITY, LAYOUTS, PORTAL))
-    pages = {name: replace_once(render_portal(output, assets, role), '</head>', portal_head + '\n</head>')
+    pages = {name: replace_once(render_portal(output, assets, role, template_source=template_source), '</head>', portal_head + '\n</head>')
              for name, role in [('index.html', 'login'), ('diagnosis.html', 'diagnosis'), ('review.html', 'review')]}
 
     for name, data in assets.items():
@@ -128,7 +143,8 @@ def add_login(output: Path) -> None:
         (output / name).write_text(html, encoding='utf-8', newline='\n')
     manifest['demo_role_login'] = {'mode': 'browser-only', 'roles': ['diagnosis', 'review'],
                                   'clinical_credentials': False, 'review_access': 'shared-account-trial',
-                                  'shared_account_template': hashlib.sha256((ROOT / 'templates/account-trial.html').read_bytes()).hexdigest()}
+                                  'shared_account_template': hashlib.sha256(template_source.encode('utf-8')).hexdigest(),
+                                  'adapter_sha256': {name: hashlib.sha256(assets[name]).hexdigest() for name in (PORTAL, WORKBENCH)}}
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 
 

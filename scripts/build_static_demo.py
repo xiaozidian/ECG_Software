@@ -1,10 +1,11 @@
-"""Build the public mathematical browser Demo from manifest-verified software."""
+"""Build the shared mathematical website, including its diagnosis/review login."""
 from __future__ import annotations
 import argparse
 import hashlib
 import json
 import re
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 if __package__:
     from .build_math_payload import generate
@@ -19,6 +20,13 @@ MANIFEST = PROJECT_ROOT / 'docs/releases/0.12.34-stt-candidate-performance.20261
 ASSET = 'static/demo-data/mathematical-4314'
 NAMESPACE = 'cardioinsight-public-math-4314-v2'
 sha = lambda b: hashlib.sha256(b).hexdigest()
+HEADERS = """/*
+  Content-Security-Policy: default-src 'self'; base-uri 'none'; connect-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data: blob:; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'
+  Permissions-Policy: camera=(), geolocation=(), microphone=()
+  Referrer-Policy: no-referrer
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+"""
 
 
 def enable_mathematical_st_save(html: str) -> str:
@@ -96,13 +104,7 @@ def build(output: Path) -> Path:
     html = re.sub(r'(?m)^[ \t]+$', '', html)
     (output / 'index.html').write_text(html, encoding='utf-8', newline='\n')
     (output / '.nojekyll').write_text('', encoding='utf-8', newline='\n')
-    (output / '_headers').write_text("""/*
-  Content-Security-Policy: default-src 'self'; base-uri 'none'; connect-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data: blob:; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'
-  Permissions-Policy: camera=(), geolocation=(), microphone=()
-  Referrer-Policy: no-referrer
-  X-Content-Type-Options: nosniff
-  X-Frame-Options: DENY
-""", encoding='utf-8', newline='\n')
+    (output / '_headers').write_text(HEADERS, encoding='utf-8', newline='\n')
     receipt = {'schema': 1, 'release_id': manifest['release_id'], 'production_source_sha256': manifest['source_sha256'], 'production_files_verified': len(manifest['files']), 'production_files_modified': False, 'storage_namespace': NAMESPACE, 'mathematical_source': payload, 'software_assets': copied, 'demo_api_sha256': sha(api_source.read_bytes()), 'demo_review_api_sha256':sha(review_api_source.read_bytes()), 'legacy_demo_inputs_read': False, 'scope': 'Browser-only mathematical interaction; no desktop database, native PDF, backup/restore, clinical or hardware validation.'}
     (output / 'mathematical-source-manifest.json').write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + '\n', encoding='utf-8', newline='\n')
     return output
@@ -157,6 +159,7 @@ def build_shared(output: Path, bundle: Path) -> Path:
     html = re.sub(r'(src|href)="(static/(?:js|css)/[^"]+)"', asset_version, html)
     (output / 'index.html').write_text(html, encoding='utf-8', newline='\n')
     (output / '.nojekyll').write_text('', encoding='utf-8')
+    (output / '_headers').write_text(HEADERS, encoding='utf-8', newline='\n')
     receipt = {**identity, 'shared_bundle_sha256': sha(bundle.read_bytes()), 'software_assets': copied,
                'mathematical_source': mathematical, 'legacy_demo_inputs_read': False,
                'python_core_executed_in_browser': False, 'common_ui_bytes_modified': False,
@@ -165,12 +168,53 @@ def build_shared(output: Path, bundle: Path) -> Path:
     return output
 
 
+def build_site(output: Path, save_shared_bundle: Path | None = None) -> Path:
+    """One entry point for Cloudflare and GitHub; never modify source or old output."""
+    if __package__:
+        from . import shared_source
+        from .add_demo_login import add_login
+    else:
+        import shared_source
+        from add_demo_login import add_login
+    output = output.resolve()
+    if output.exists():
+        raise ValueError('Output must be new; preserve existing generated artifacts.')
+    if save_shared_bundle is not None:
+        save_shared_bundle = save_shared_bundle.resolve()
+        if save_shared_bundle == output or output in save_shared_bundle.parents:
+            raise ValueError('The source bundle must be outside the published output directory.')
+
+    def assemble(bundle: Path) -> Path:
+        shared_source.build(bundle, PROJECT_ROOT)
+        if not shared_source.check(bundle, PROJECT_ROOT)['matches']:
+            raise ValueError('Source changed while building the shared package.')
+        build_shared(output, bundle)
+        add_login(output, shared_bundle=bundle)
+        return output
+
+    if save_shared_bundle is not None:
+        return assemble(save_shared_bundle)
+    with TemporaryDirectory(prefix='cardioinsight-pages-') as temporary:
+        return assemble(Path(temporary) / 'shared-source.zip')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, default=DEFAULT_OUTPUT)
-    parser.add_argument('--shared-bundle', type=Path, help='Build byte-identical common UI from a versioned source bundle')
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--shared-bundle', type=Path, help='Build common UI only from an existing package; add login separately if needed')
+    mode.add_argument('--legacy-frozen', action='store_true', help='Explicitly reproduce the historical manifest-frozen build')
+    parser.add_argument('--save-shared-bundle', type=Path, help='Also preserve the default site build source package outside the output')
     args = parser.parse_args()
-    print(build_shared(args.output, args.shared_bundle) if args.shared_bundle else build(args.output))
+    if args.save_shared_bundle and (args.shared_bundle or args.legacy_frozen):
+        parser.error('--save-shared-bundle applies only to the default complete website build')
+    if args.legacy_frozen:
+        result = build(args.output)
+    elif args.shared_bundle:
+        result = build_shared(args.output, args.shared_bundle)
+    else:
+        result = build_site(args.output, args.save_shared_bundle)
+    print(result)
 
 if __name__ == '__main__':
     main()

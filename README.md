@@ -10,17 +10,17 @@
 
 ## 数学网页构建
 
-在已有Python/Jinja环境中运行：
+Cloudflare 与 GitHub Pages 使用同一构建入口（Python 3.12）：
 
 ```sh
-python scripts/shared_source.py build --output build/shared-source.zip
-python scripts/shared_source.py check build/shared-source.zip --target .
-python scripts/build_static_demo.py --shared-bundle build/shared-source.zip --output build/pages
-python scripts/add_demo_login.py --output build/pages
+python -m pip install "Jinja2>=3.1,<4" "numpy>=2.2.6,<3"
+python scripts/build_static_demo.py
 python -m http.server 4173 --bind 127.0.0.1 --directory build/pages
 ```
 
-共同JS/CSS按字节来自同一包，数学适配器单独标识。载荷由固定种子和数学函数生成，600秒、200Hz、8存储通道；不读取病例、工作库或医院资料。修改只保存在浏览器的来源版本命名空间。构建完成、网页实际部署、Windows原生包验收需分别核实，不能互相代替。
+默认输出 `build/pages`，包含登录、诊断工作台、审核工作台及共同波形界面；同时保留 Cloudflare `_headers`。Cloudflare 生产分支为 `main`，仓库根目录构建。可加 `--save-shared-bundle build/shared-source.zip` 保留共同源码包，源码包不能放进公开网页输出目录。已有输出不会被覆盖。`--shared-bundle` 继续支持从指定包仅生成共同界面，历史冻结构建须显式使用 `--legacy-frozen`，不能用于发布当前主线。
+
+共同JS/CSS按字节来自同一包，数学适配器、登录适配器与生成配方均计入来源指纹。载荷由固定种子和数学函数生成，600秒、200Hz、8存储通道；不读取病例、工作库或医院资料。修改只保存在浏览器的来源版本命名空间。构建完成、网页实际部署、Windows原生包验收需分别核实，不能互相代替。
 
 既有 [GitHub Pages](https://xiaozidian.github.io/ECG_Software/) 与 [Cloudflare数学Demo](https://ecg-software.pages.dev/) 的实际部署版本应各查自身清单；本仓库的Pages工作流不更新其他托管服务。
 
